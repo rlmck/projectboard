@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Problem Board</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f13;
+      --surface: #1a1a24;
+      --surface2: #23232f;
+      --border: #2e2e3e;
+      --accent: #6c63ff;
+      --accent-hover: #857dff;
+      --accent-cast: #22c55e;
+      --accent-cast-hover: #16a34a;
+      --text: #e8e8f0;
+      --text-muted: #8888aa;
+      --radius: 12px;
+      --shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+    }
+
+    /* ── Header ── */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 16px 12px;
+    }
+
+    .header-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header-title .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent-cast);
+      box-shadow: 0 0 8px var(--accent-cast);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .search-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .search-wrap {
+      position: relative;
+      flex: 1;
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+      font-size: 15px;
+    }
+
+    input[type="search"] {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 15px;
+      padding: 9px 10px 9px 34px;
+      outline: none;
+      transition: border-color 0.15s;
+      -webkit-appearance: none;
+    }
+
+    input[type="search"]:focus { border-color: var(--accent); }
+    input[type="search"]::placeholder { color: var(--text-muted); }
+
+    .count-badge {
+      font-size: 12px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      padding: 0 2px;
+    }
+
+    /* ── List ── */
+    main {
+      padding: 12px 12px 80px;
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    .problem-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .problem-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 14px 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .problem-card:active { background: var(--surface2); }
+
+    .problem-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .problem-name {
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.3;
+      word-break: break-word;
+    }
+
+    .problem-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 3px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .meta-tag {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+    }
+
+    /* ── Cast button ── */
+    .cast-btn {
+      flex-shrink: 0;
+      background: var(--accent-cast);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 8px 14px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s, opacity 0.2s;
+      white-space: nowrap;
+      letter-spacing: 0.02em;
+      touch-action: manipulation;
+    }
+
+    .cast-btn:hover { background: var(--accent-cast-hover); }
+    .cast-btn:active { transform: scale(0.95); }
+    .cast-btn.casting { opacity: 0.6; pointer-events: none; }
+    .cast-btn.sent {
+      background: var(--accent);
+      animation: flash 0.4s ease;
+    }
+
+    @keyframes flash {
+      0%   { transform: scale(1.08); }
+      100% { transform: scale(1); }
+    }
+
+    /* ── States ── */
+    .state-msg {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 60px 20px;
+      font-size: 15px;
+    }
+
+    .state-msg .icon { font-size: 36px; margin-bottom: 10px; }
+
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 60px auto 12px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-size: 14px;
+      font-weight: 500;
+      box-shadow: var(--shadow);
+      transition: transform 0.25s cubic-bezier(.175,.885,.32,1.275);
+      z-index: 200;
+      max-width: 90vw;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    #toast.show { transform: translateX(-50%) translateY(0); }
+    #toast.success { border-color: var(--accent-cast); color: var(--accent-cast); }
+    #toast.error { border-color: #f87171; color: #f87171; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-title">
+    <span class="dot"></span>
+    Problem Board
+  </div>
+  <div class="search-row">
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input id="search" type="search" placeholder="Search problems…" autocomplete="off" />
+    </div>
+    <span class="count-badge" id="count"></span>
+  </div>
+</header>
+
+<main>
+  <div id="list-container">
+    <div class="spinner"></div>
+    <p class="state-msg" style="padding-top:8px">Loading problems…</p>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+  // ── Supabase client ──────────────────────────────────────────────────────────
+  const { createClient } = supabase;
+  const sb = createClient(
+    'https://uqirowyfqwiceyjznosl.supabase.co',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA'
+  );
+
+  // ── Realtime channel for casting ─────────────────────────────────────────────
+  const channel = sb.channel('board:HangoutPortland');
+  channel.subscribe();
+
+  // ── State ────────────────────────────────────────────────────────────────────
+  let allProblems = [];
+  let nameKey = 'name'; // auto-detected column for problem name
+
+  // ── Toast helper ─────────────────────────────────────────────────────────────
+  let toastTimer;
+  function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = `show ${type}`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.className = ''; }, 2800);
+  }
+
+  // ── Detect the "name" column ─────────────────────────────────────────────────
+  function detectNameKey(row) {
+    const candidates = ['name', 'title', 'problem_name', 'problem', 'label', 'description'];
+    for (const k of candidates) {
+      if (k in row) return k;
+    }
+    // Fallback: first string column
+    for (const [k, v] of Object.entries(row)) {
+      if (typeof v === 'string') return k;
+    }
+    return Object.keys(row)[0];
+  }
+
+  // ── Build meta tags from extra columns ───────────────────────────────────────
+  function metaTags(row) {
+    const skip = new Set([nameKey, 'id', 'created_at', 'updated_at']);
+    return Object.entries(row)
+      .filter(([k, v]) => !skip.has(k) && v !== null && v !== undefined && v !== '')
+      .slice(0, 4) // cap at 4 extra tags
+      .map(([k, v]) => {
+        const display = typeof v === 'object' ? JSON.stringify(v) : String(v);
+        return `<span class="meta-tag" title="${k}">${display.length > 30 ? display.slice(0, 28) + '…' : display}</span>`;
+      })
+      .join('');
+  }
+
+  // ── Render list ───────────────────────────────────────────────────────────────
+  function render(problems) {
+    const container = document.getElementById('list-container');
+    document.getElementById('count').textContent = `${problems.length} problem${problems.length !== 1 ? 's' : ''}`;
+
+    if (problems.length === 0) {
+      container.innerHTML = `<div class="state-msg"><div class="icon">🔎</div>No problems match your search.</div>`;
+      return;
+    }
+
+    const cards = problems.map(p => {
+      const name = p[nameKey] ?? '(unnamed)';
+      const tags = metaTags(p);
+      return `
+        <div class="problem-card">
+          <div class="problem-info">
+            <div class="problem-name">${escHtml(String(name))}</div>
+            ${tags ? `<div class="problem-meta">${tags}</div>` : ''}
+          </div>
+          <button class="cast-btn" data-name="${escAttr(String(name))}">Cast ▶</button>
+        </div>`;
+    }).join('');
+
+    container.innerHTML = `<div class="problem-list">${cards}</div>`;
+
+    // Delegate cast clicks
+    container.querySelectorAll('.cast-btn').forEach(btn => {
+      btn.addEventListener('click', () => castProblem(btn));
+    });
+  }
+
+  // ── Cast a problem ────────────────────────────────────────────────────────────
+  async function castProblem(btn) {
+    const problemName = btn.dataset.name;
+    btn.classList.add('casting');
+    btn.textContent = '…';
+
+    try {
+      await channel.send({
+        type: 'broadcast',
+        event: 'cast_problem',
+        payload: { problem_name: problemName }
+      });
+      btn.textContent = '✓ Sent';
+      btn.classList.remove('casting');
+      btn.classList.add('sent');
+      showToast(`Cast: ${problemName}`, 'success');
+      setTimeout(() => {
+        btn.textContent = 'Cast ▶';
+        btn.classList.remove('sent');
+      }, 2000);
+    } catch (err) {
+      btn.textContent = 'Cast ▶';
+      btn.classList.remove('casting');
+      showToast('Cast failed — check connection', 'error');
+      console.error(err);
+    }
+  }
+
+  // ── Search/filter ─────────────────────────────────────────────────────────────
+  document.getElementById('search').addEventListener('input', e => {
+    const q = e.target.value.trim().toLowerCase();
+    if (!q) { render(allProblems); return; }
+    render(allProblems.filter(p => {
+      return Object.values(p).some(v => String(v ?? '').toLowerCase().includes(q));
+    }));
+  });
+
+  // ── Load problems ─────────────────────────────────────────────────────────────
+  async function loadProblems() {
+    const { data, error } = await sb.from('problems').select('*').order('id');
+
+    if (error) {
+      document.getElementById('list-container').innerHTML =
+        `<div class="state-msg"><div class="icon">⚠️</div>Failed to load problems.<br><small style="opacity:.6">${escHtml(error.message)}</small></div>`;
+      document.getElementById('count').textContent = '';
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      document.getElementById('list-container').innerHTML =
+        `<div class="state-msg"><div class="icon">📭</div>No problems found in the table.</div>`;
+      document.getElementById('count').textContent = '0 problems';
+      return;
+    }
+
+    nameKey = detectNameKey(data[0]);
+    allProblems = data;
+    render(allProblems);
+  }
+
+  // ── Escape helpers ────────────────────────────────────────────────────────────
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function escAttr(s) {
+    return s.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────────────────────
+  loadProblems();
+</script>
+</body>
+</html>
