@@ -1,0 +1,10 @@
+pi/
+db/
+docs/
+reference/
+reverse-engineering/
+dtb-backup.img
+*.png
+*.jpg
+*.img
+README.md
