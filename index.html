@@ -9,6 +9,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Problem Board" />
   <title>Problem Board — The Hangout</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon.svg" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -328,9 +330,16 @@
 
     .action-row {
       display: flex;
-      flex-direction: column;
-      gap: 10px;
+      flex-direction: row;
+      gap: 8px;
       margin-bottom: 24px;
+    }
+    .action-row .btn-lg {
+      flex: 1 1 0;
+      min-width: 0;
+      padding: 16px 8px;
+      font-size: 15px;
+      white-space: nowrap;
     }
 
     .btn-lg {
@@ -350,6 +359,14 @@
     .btn-cast:hover { background: var(--cast-hover); }
     .btn-cast.casting { opacity: 0.6; pointer-events: none; }
     .btn-cast.sent { background: var(--accent); }
+    .btn-mirror {
+      background: var(--surface2);
+      border-color: var(--accent);
+      color: var(--accent-hover);
+    }
+    .btn-mirror:hover { background: rgba(236,72,153,0.12); }
+    .btn-mirror.casting { opacity: 0.6; pointer-events: none; }
+    .btn-mirror.sent { background: var(--accent); color: #fff; }
     .btn-tick {
       background: transparent;
       border-color: var(--accent);
@@ -541,7 +558,7 @@
       position: fixed;
       bottom: calc(var(--nav-h) + 16px + env(safe-area-inset-bottom));
       left: 50%;
-      transform: translateX(-50%) translateY(120px);
+      transform: translateX(-50%) translateY(calc(100% + var(--nav-h) + 60px));
       background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -558,6 +575,40 @@
     #toast.show { transform: translateX(-50%) translateY(0); }
     #toast.success { border-color: var(--cast); color: var(--cast); }
     #toast.error { border-color: #f87171; color: #f87171; }
+
+    /* ── Install (A2HS) banner ───────────────────────────────────────── */
+    #install-banner {
+      position: fixed;
+      left: 12px; right: 12px;
+      bottom: calc(var(--nav-h) + 12px + env(safe-area-inset-bottom));
+      z-index: 210;
+      display: none;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--accent);
+      border-radius: 14px;
+      padding: 12px 14px;
+      box-shadow: var(--shadow);
+      max-width: 660px;
+      margin: 0 auto;
+    }
+    #install-banner.show { display: flex; animation: fade 0.2s ease; }
+    .install-msg { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.4; color: var(--text); }
+    .install-msg b { color: var(--accent-hover); }
+    .install-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .install-btn {
+      border: none;
+      border-radius: 9px;
+      padding: 9px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      touch-action: manipulation;
+      white-space: nowrap;
+    }
+    .install-btn.add { background: var(--accent); color: #fff; }
+    .install-btn.dismiss { background: var(--surface2); color: var(--text-muted); }
   </style>
 </head>
 <body>
@@ -647,6 +698,15 @@
     <span>Profile</span>
   </a>
 </nav>
+
+<!-- ══ INSTALL BANNER (Add to Home Screen) ════════════════════════════ -->
+<div id="install-banner">
+  <div class="install-msg" id="install-msg"><b>Add to home screen</b> to use Problem Board like an app.</div>
+  <div class="install-actions">
+    <button class="install-btn add" id="install-add">Add</button>
+    <button class="install-btn dismiss" id="install-dismiss">Not now</button>
+  </div>
+</div>
 
 <div id="toast"></div>
 
@@ -850,12 +910,14 @@
       ${showComment ? `<p class="detail-comment">${escHtml(comment)}</p>` : ''}
 
       <div class="action-row">
-        <button class="btn-lg btn-cast" id="detail-cast" data-name="${escAttr(p.name || '')}">📡 Cast to board</button>
-        <button class="btn-lg btn-tick" id="detail-tick">✓ Tick</button>
+        <button class="btn-lg btn-cast" id="detail-cast" data-name="${escAttr(p.name || '')}">Cast</button>
+        <button class="btn-lg btn-mirror" id="detail-mirror" data-name="${escAttr(p.name || '')}">Mirror</button>
+        <button class="btn-lg btn-tick" id="detail-tick">Tick</button>
       </div>
     `;
 
     document.getElementById('detail-cast').addEventListener('click', e => castByName(p.name, e.currentTarget));
+    document.getElementById('detail-mirror').addEventListener('click', e => castByName(p.name, e.currentTarget, true));
     document.getElementById('detail-tick').addEventListener('click', () => {
       showToast('Sign in to track ticks — coming soon', 'success');
       location.hash = '#auth';
@@ -863,23 +925,26 @@
   }
 
   // ── Cast a problem (broadcast contract unchanged) ─────────────────────────────
-  async function castByName(name, btn) {
+  async function castByName(name, btn, mirror = false) {
     if (!name) return;
     const prev = btn.innerHTML;
     btn.classList.add('casting');
     btn.disabled = true;
-    btn.innerHTML = '…';
+    btn.innerHTML = 'Sending';
+
+    const payload = { problem_name: name };
+    if (mirror) payload.mirror = true;
 
     try {
       await channel.send({
         type: 'broadcast',
         event: 'cast_problem',
-        payload: { problem_name: name }
+        payload
       });
       btn.classList.remove('casting');
       btn.classList.add('sent');
-      btn.innerHTML = '✓ Sent';
-      showToast(`Cast: ${name}`, 'success');
+      btn.innerHTML = 'Sent';
+      showToast(`${mirror ? 'Mirror cast' : 'Cast'}: ${name}`, 'success');
       setTimeout(() => {
         btn.innerHTML = prev;
         btn.classList.remove('sent');
@@ -943,6 +1008,60 @@
   // Auth / profile shell actions
   document.getElementById('auth-back').addEventListener('click', () => { location.hash = '#list'; });
   document.getElementById('profile-signin').addEventListener('click', () => { location.hash = '#auth'; });
+
+  // ── PWA: service worker + install (Add to Home Screen) ───────────────────────
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW registration failed', err));
+    });
+  }
+
+  const DISMISS_KEY = 'pb-install-dismissed';
+  const installBanner = document.getElementById('install-banner');
+  const installAdd = document.getElementById('install-add');
+  let deferredPrompt = null;
+
+  const isStandalone = () =>
+    window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const dismissed = () => localStorage.getItem(DISMISS_KEY) === '1';
+
+  function showInstallBanner() { installBanner.classList.add('show'); }
+  function hideInstallBanner() { installBanner.classList.remove('show'); }
+
+  // Chrome / Android / desktop: capture the native prompt and offer our own UI.
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (!isStandalone() && !dismissed()) showInstallBanner();
+  });
+
+  installAdd.addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    hideInstallBanner();
+  });
+
+  document.getElementById('install-dismiss').addEventListener('click', () => {
+    localStorage.setItem(DISMISS_KEY, '1');
+    hideInstallBanner();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredPrompt = null;
+    hideInstallBanner();
+    localStorage.setItem(DISMISS_KEY, '1');
+  });
+
+  // iOS Safari never fires beforeinstallprompt — show manual instructions instead.
+  if (isIOS() && !isStandalone() && !dismissed()) {
+    document.getElementById('install-msg').innerHTML =
+      '<b>Install this app:</b> tap the Share icon, then “Add to Home Screen”.';
+    installAdd.style.display = 'none';
+    showInstallBanner();
+  }
 
   // ── Boot ──────────────────────────────────────────────────────────────────────
   window.addEventListener('hashchange', router);
