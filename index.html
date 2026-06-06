@@ -251,7 +251,7 @@
     }
 
     /* ── Detail view ─────────────────────────────────────────────────── */
-    .detail-bar { display: flex; align-items: center; gap: 10px; }
+    .detail-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 
     .icon-btn {
       background: var(--surface);
@@ -278,6 +278,15 @@
       text-overflow: ellipsis;
     }
 
+    /* Name + meta on the left, cast icon on the right */
+    .detail-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .detail-head-info { flex: 1; min-width: 0; }
+
     .detail-name {
       font-size: 1.5rem;
       font-weight: 800;
@@ -291,10 +300,26 @@
       flex-wrap: wrap;
       align-items: center;
       gap: 10px;
-      margin-bottom: 16px;
       font-size: 13px;
       color: var(--text-muted);
     }
+
+    /* Pink cast icon (top-right of the title block) */
+    .cast-icon-btn {
+      flex-shrink: 0;
+      background: transparent;
+      border: none;
+      color: var(--accent);
+      cursor: pointer;
+      padding: 2px;
+      line-height: 0;
+      touch-action: manipulation;
+      transition: transform 0.1s, opacity 0.2s, color 0.15s;
+    }
+    .cast-icon-btn svg { width: 34px; height: 34px; }
+    .cast-icon-btn:active { transform: scale(0.9); }
+    .cast-icon-btn.casting { opacity: 0.5; pointer-events: none; }
+    .cast-icon-btn.sent { color: var(--accent-hover); animation: flash 0.4s ease; }
 
     .bench-badge {
       background: rgba(245,158,11,0.16);
@@ -317,6 +342,54 @@
       color: #c8c8da;
       margin-bottom: 18px;
     }
+
+    /* ── Info modal (bottom sheet) ───────────────────────────────────── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      background: rgba(0,0,0,0.6);
+      -webkit-backdrop-filter: blur(2px);
+      backdrop-filter: blur(2px);
+    }
+    .modal-overlay.show { display: flex; animation: fade 0.18s ease; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-top-left-radius: 18px;
+      border-top-right-radius: 18px;
+      width: 100%;
+      max-width: 680px;
+      padding: 20px 20px calc(24px + env(safe-area-inset-bottom));
+      box-shadow: var(--shadow);
+      animation: sheetUp 0.22s cubic-bezier(.2,.8,.2,1);
+    }
+    @keyframes sheetUp { from { transform: translateY(50px); opacity: 0.5; } to { transform: translateY(0); opacity: 1; } }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+    .modal-title { font-size: 1.2rem; font-weight: 800; }
+    .modal-close {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 17px;
+      line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      touch-action: manipulation;
+    }
+    .info-row { margin-bottom: 18px; }
+    .info-row:last-child { margin-bottom: 0; }
+    .info-label {
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-muted); margin-bottom: 7px;
+    }
+    .info-value { font-size: 15px; line-height: 1.5; color: var(--text); }
 
     /* ── Board graphic (detail) ──────────────────────────────────────── */
     .board-graphic {
@@ -643,7 +716,9 @@
     <button class="icon-btn" id="back-btn" aria-label="Back">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
     </button>
-    <div class="detail-bar-title" id="detail-name">Problem</div>
+    <button class="icon-btn" id="info-btn" aria-label="Problem info">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+    </button>
   </header>
   <main>
     <div id="detail-content"></div>
@@ -699,6 +774,17 @@
   </a>
 </nav>
 
+<!-- ══ INFO MODAL ═════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="info-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Problem info">
+    <div class="modal-header">
+      <div class="modal-title">Problem info</div>
+      <button class="modal-close" id="info-close" aria-label="Close">✕</button>
+    </div>
+    <div id="info-body"></div>
+  </div>
+</div>
+
 <!-- ══ INSTALL BANNER (Add to Home Screen) ════════════════════════════ -->
 <div id="install-banner">
   <div class="install-msg" id="install-msg"><b>Add to home screen</b> to use Problem Board like an app.</div>
@@ -734,6 +820,7 @@
   let loaded = false;
   let currentView = 'list';
   let listScroll = 0;
+  let currentProblem = null;
 
   // ── Escape helpers ───────────────────────────────────────────────────────────
   function escHtml(s) {
@@ -763,6 +850,19 @@
     return `<span class="stars" title="${n} star${n !== 1 ? 's' : ''}">${out}</span>`;
   }
 
+  // Name with the trailing grade stripped: "4beginnerz 5b" -> "4beginnerz".
+  // The grade is shown separately as a badge, so it's redundant in the name.
+  function displayName(p) {
+    let name = String(p.name || '').trim();
+    const g = String(p.grade || '').trim();
+    if (g) {
+      const re = new RegExp('\\s*' + g.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$', 'i');
+      const stripped = name.replace(re, '').trim();
+      if (stripped) name = stripped;
+    }
+    return name || '(unnamed)';
+  }
+
   // Display a hold id compactly: "hold235" -> "235", otherwise raw.
   function holdNum(id) {
     const m = /^hold(\d+)$/i.exec(String(id));
@@ -785,6 +885,9 @@
   function setView(name) {
     // Preserve the list's scroll position across navigation.
     if (currentView === 'list' && name !== 'list') listScroll = window.scrollY;
+
+    // The info modal only belongs to the detail view.
+    if (name !== 'detail') closeInfo();
 
     ['list','detail','auth','profile'].forEach(v => {
       document.getElementById('view-' + v).classList.toggle('active', v === name);
@@ -841,7 +944,7 @@
     return `
       <div class="problem-card" data-id="${escAttr(p.id)}">
         <div class="problem-info">
-          <div class="problem-name">${escHtml(p.name || '(unnamed)')}</div>
+          <div class="problem-name">${escHtml(displayName(p))}</div>
           <div class="problem-meta">
             <span class="grade-badge">${escHtml(p.grade || '—')}</span>
             <span class="meta-setter">${escHtml(p.setter || '—')}</span>
@@ -876,41 +979,41 @@
   // ── Detail ───────────────────────────────────────────────────────────────────
   function renderDetail(id) {
     const wrap = document.getElementById('detail-content');
-    const titleEl = document.getElementById('detail-name');
 
     if (!loaded) {
-      titleEl.textContent = 'Loading…';
+      currentProblem = null;
       wrap.innerHTML = `<div class="spinner"></div>`;
       return;
     }
 
     const p = allProblems.find(x => String(x.id) === String(id));
     if (!p) {
-      titleEl.textContent = 'Not found';
+      currentProblem = null;
       wrap.innerHTML = `<div class="state-msg"><div class="icon">🤷</div>That problem couldn't be found.<br><a class="link" href="#list">Back to problems</a></div>`;
       return;
     }
 
-    titleEl.textContent = p.name || '(unnamed)';
-
-    const comment = String(p.comment || '').trim();
-    const showComment = comment && !/^no comments?\.?$/i.test(comment);
+    currentProblem = p;
 
     wrap.innerHTML = `
-      <h1 class="detail-name">${escHtml(p.name || '(unnamed)')}</h1>
-      <div class="detail-meta">
-        <span class="grade-badge">${escHtml(p.grade || '—')}</span>
-        <span class="meta-setter">by ${escHtml(p.setter || 'unknown')}</span>
-        ${starsHtml(p.stars)}
-        ${p.is_benchmark ? `<span class="bench-badge">★ Benchmark</span>` : ''}
+      <div class="detail-head">
+        <div class="detail-head-info">
+          <h1 class="detail-name">${escHtml(displayName(p))}</h1>
+          <div class="detail-meta">
+            <span class="grade-badge">${escHtml(p.grade || '—')}</span>
+            <span class="meta-setter">by ${escHtml(p.setter || 'unknown')}</span>
+            ${starsHtml(p.stars)}
+            ${p.is_benchmark ? `<span class="bench-badge">★ Benchmark</span>` : ''}
+          </div>
+        </div>
+        <button class="cast-icon-btn" id="detail-cast" data-name="${escAttr(p.name || '')}" aria-label="Cast to board">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zM21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>
+        </button>
       </div>
 
       <img class="board-graphic" src="BoardGraphic.jpg" alt="The Hangout symmetry board" />
 
-      ${showComment ? `<p class="detail-comment">${escHtml(comment)}</p>` : ''}
-
       <div class="action-row">
-        <button class="btn-lg btn-cast" id="detail-cast" data-name="${escAttr(p.name || '')}">Cast</button>
         <button class="btn-lg btn-mirror" id="detail-mirror" data-name="${escAttr(p.name || '')}">Mirror</button>
         <button class="btn-lg btn-tick" id="detail-tick">Tick</button>
       </div>
@@ -924,13 +1027,41 @@
     });
   }
 
+  // ── Info modal ─────────────────────────────────────────────────────────────────
+  function openInfo() {
+    const p = currentProblem;
+    if (!p) return;
+    const comment = String(p.comment || '').trim();
+    const showComment = comment && !/^no comments?\.?$/i.test(comment);
+    const stars = Math.max(0, Math.min(3, Number(p.stars) || 0));
+
+    document.getElementById('info-body').innerHTML = `
+      <div class="info-row">
+        <div class="info-label">Consensus grade</div>
+        <div class="info-value"><span class="grade-badge">${escHtml(p.grade || '—')}</span></div>
+      </div>
+      <div class="info-row">
+        <div class="info-label">Rating</div>
+        <div class="info-value">${starsHtml(stars)} &nbsp;${stars}/3</div>
+      </div>
+      <div class="info-row">
+        <div class="info-label">Comments</div>
+        <div class="info-value">${showComment ? escHtml(comment) : 'No comments yet.'}</div>
+      </div>
+    `;
+    document.getElementById('info-modal').classList.add('show');
+  }
+  function closeInfo() { document.getElementById('info-modal').classList.remove('show'); }
+
   // ── Cast a problem (broadcast contract unchanged) ─────────────────────────────
   async function castByName(name, btn, mirror = false) {
     if (!name) return;
+    // Icon-only cast buttons keep their icon; text buttons swap to status text.
+    const isIcon = btn.classList.contains('cast-icon-btn');
     const prev = btn.innerHTML;
     btn.classList.add('casting');
     btn.disabled = true;
-    btn.innerHTML = 'Sending';
+    if (!isIcon) btn.innerHTML = 'Sending';
 
     const payload = { problem_name: name };
     if (mirror) payload.mirror = true;
@@ -943,17 +1074,17 @@
       });
       btn.classList.remove('casting');
       btn.classList.add('sent');
-      btn.innerHTML = 'Sent';
+      if (!isIcon) btn.innerHTML = 'Sent';
       showToast(`${mirror ? 'Mirror cast' : 'Cast'}: ${name}`, 'success');
       setTimeout(() => {
-        btn.innerHTML = prev;
+        if (!isIcon) btn.innerHTML = prev;
         btn.classList.remove('sent');
         btn.disabled = false;
       }, 2000);
     } catch (err) {
       btn.classList.remove('casting');
       btn.disabled = false;
-      btn.innerHTML = prev;
+      if (!isIcon) btn.innerHTML = prev;
       showToast('Cast failed — check connection', 'error');
       console.error(err);
     }
@@ -1004,6 +1135,14 @@
 
   // Detail back
   document.getElementById('back-btn').addEventListener('click', goBack);
+
+  // Info modal: open from header button, close via X, overlay tap, or Escape
+  document.getElementById('info-btn').addEventListener('click', openInfo);
+  document.getElementById('info-close').addEventListener('click', closeInfo);
+  document.getElementById('info-modal').addEventListener('click', e => {
+    if (e.target.id === 'info-modal') closeInfo();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeInfo(); });
 
   // Auth / profile shell actions
   document.getElementById('auth-back').addEventListener('click', () => { location.hash = '#list'; });
