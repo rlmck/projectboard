@@ -106,7 +106,7 @@
       border-radius: 8px;
       color: var(--text);
       font-size: 15px;
-      padding: 9px 10px 9px 34px;
+      padding: 9px 12px;
       outline: none;
       transition: border-color 0.15s;
       -webkit-appearance: none;
@@ -401,6 +401,33 @@
       background: var(--surface);
     }
 
+    /* Detail view fills the screen — the whole page fits, no scrolling */
+    #view-detail.active {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      overflow: hidden;
+    }
+    #view-detail main {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      padding-bottom: calc(var(--nav-h) + 12px + env(safe-area-inset-bottom));
+    }
+    #detail-content {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    #view-detail .board-graphic {
+      flex: 1 1 auto;
+      min-height: 0;
+      height: auto;
+      object-fit: contain;
+      margin-bottom: 14px;
+    }
+
     .action-row {
       display: flex;
       flex-direction: row;
@@ -689,13 +716,8 @@
 <!-- ══ LIST VIEW ══════════════════════════════════════════════════════ -->
 <section id="view-list" class="view active">
   <header class="topbar">
-    <div class="header-title">
-      <span class="dot"></span>
-      Problem Board
-    </div>
     <div class="search-row">
       <div class="search-wrap">
-        <span class="search-icon">🔍</span>
         <input id="search" type="search" placeholder="Search name, setter, grade…" autocomplete="off" />
       </div>
       <span class="count-badge" id="count"></span>
@@ -951,7 +973,6 @@
             ${starsHtml(p.stars)}
           </div>
         </div>
-        <button class="cast-btn" data-name="${escAttr(p.name || '')}">Cast ▶</button>
       </div>`;
   }
 
@@ -1125,10 +1146,8 @@
     renderList();
   });
 
-  // List clicks: cast button vs. open detail (delegated)
+  // List clicks: open detail (delegated)
   document.getElementById('list-container').addEventListener('click', e => {
-    const cast = e.target.closest('.cast-btn');
-    if (cast) { e.stopPropagation(); castByName(cast.dataset.name, cast); return; }
     const card = e.target.closest('.problem-card');
     if (card) location.hash = '#detail/' + encodeURIComponent(card.dataset.id);
   });
