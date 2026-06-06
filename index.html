@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0f0f13" />
+  <meta name="theme-color" content="#0a0a0a" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -14,22 +14,22 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #0f0f13;
-      --surface: #1a1a24;
-      --surface2: #23232f;
-      --border: #2e2e3e;
-      --accent: #6c63ff;
-      --accent-hover: #857dff;
-      --cast: #22c55e;
-      --cast-hover: #16a34a;
+      --bg: #0a0a0a;
+      --surface: #161616;
+      --surface2: #202020;
+      --border: #2c2c2c;
+      --accent: #ec4899;
+      --accent-hover: #f472b6;
+      --cast: #ec4899;
+      --cast-hover: #f472b6;
       /* hold-type colours */
       --start: #22c55e;
       --int: #3b82f6;
       --finish: #ef4444;
       --feet: #f59e0b;
       --gold: #fbbf24;
-      --text: #e8e8f0;
-      --text-muted: #8888aa;
+      --text: #f5f5f5;
+      --text-muted: #9a9a9a;
       --radius: 12px;
       --shadow: 0 4px 24px rgba(0,0,0,0.4);
       --nav-h: 60px;
@@ -54,7 +54,7 @@
       position: sticky;
       top: 0;
       z-index: 100;
-      background: rgba(15,15,19,0.92);
+      background: rgba(10,10,10,0.92);
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
       border-bottom: 1px solid var(--border);
@@ -207,9 +207,9 @@
     /* ── Grade badge ─────────────────────────────────────────────────── */
     .grade-badge {
       display: inline-block;
-      background: rgba(108,99,255,0.16);
-      border: 1px solid rgba(108,99,255,0.5);
-      color: #a5a0ff;
+      background: rgba(236,72,153,0.16);
+      border: 1px solid rgba(236,72,153,0.5);
+      color: #f9a8d4;
       border-radius: 6px;
       padding: 2px 8px;
       font-size: 12px;
@@ -316,6 +316,16 @@
       margin-bottom: 18px;
     }
 
+    /* ── Board graphic (detail) ──────────────────────────────────────── */
+    .board-graphic {
+      width: 100%;
+      display: block;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      margin-bottom: 18px;
+      background: var(--surface);
+    }
+
     .action-row {
       display: flex;
       flex-direction: column;
@@ -345,7 +355,7 @@
       border-color: var(--accent);
       color: var(--accent-hover);
     }
-    .btn-tick:hover { background: rgba(108,99,255,0.12); }
+    .btn-tick:hover { background: rgba(236,72,153,0.12); }
 
     .detail-section { margin-bottom: 22px; }
 
@@ -423,9 +433,9 @@
     .shell-sub { font-size: 14px; color: var(--text-muted); line-height: 1.5; margin-bottom: 20px; }
     .pill {
       display: inline-block;
-      background: rgba(108,99,255,0.16);
-      border: 1px solid rgba(108,99,255,0.4);
-      color: #a5a0ff;
+      background: rgba(236,72,153,0.16);
+      border: 1px solid rgba(236,72,153,0.4);
+      color: #f9a8d4;
       border-radius: 999px;
       padding: 4px 12px;
       font-size: 12px;
@@ -483,7 +493,7 @@
       height: calc(var(--nav-h) + env(safe-area-inset-bottom));
       padding-bottom: env(safe-area-inset-bottom);
       display: flex;
-      background: rgba(20,20,28,0.95);
+      background: rgba(15,15,15,0.95);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border-top: 1px solid var(--border);
@@ -823,11 +833,6 @@
 
     titleEl.textContent = p.name || '(unnamed)';
 
-    const start = Array.isArray(p.start_holds) ? p.start_holds : [];
-    const inter = Array.isArray(p.intermediate_holds) ? p.intermediate_holds : [];
-    const finish = p.finish_hold ? [p.finish_hold] : [];
-    const holdCount = start.length + inter.length + finish.length;
-
     const comment = String(p.comment || '').trim();
     const showComment = comment && !/^no comments?\.?$/i.test(comment);
 
@@ -840,28 +845,13 @@
         ${p.is_benchmark ? `<span class="bench-badge">★ Benchmark</span>` : ''}
       </div>
 
+      <img class="board-graphic" src="BoardGraphic.jpg" alt="The Hangout symmetry board" />
+
       ${showComment ? `<p class="detail-comment">${escHtml(comment)}</p>` : ''}
 
       <div class="action-row">
         <button class="btn-lg btn-cast" id="detail-cast" data-name="${escAttr(p.name || '')}">📡 Cast to board</button>
         <button class="btn-lg btn-tick" id="detail-tick">✓ Tick</button>
-      </div>
-
-      <div class="detail-section">
-        <div class="section-label">Feet</div>
-        <div class="chip-row"><span class="chip feet">${escHtml(p.feet_mode || 'any')}</span></div>
-      </div>
-
-      <div class="detail-section">
-        <div class="section-label">Holds <span class="muted">· ${holdCount}</span></div>
-        <div class="legend">
-          <span><i class="dot-start"></i>Start</span>
-          <span><i class="dot-int"></i>Intermediate</span>
-          <span><i class="dot-finish"></i>Finish</span>
-        </div>
-        ${start.length ? `<div class="hold-group"><span class="hg-label start">Start</span><div class="chip-row">${holdChips(start, 'start')}</div></div>` : ''}
-        ${inter.length ? `<div class="hold-group"><span class="hg-label int">Intermediate</span><div class="chip-row">${holdChips(inter, 'int')}</div></div>` : ''}
-        ${finish.length ? `<div class="hold-group"><span class="hg-label finish">Finish</span><div class="chip-row">${holdChips(finish, 'finish')}</div></div>` : ''}
       </div>
     `;
 
