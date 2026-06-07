@@ -288,6 +288,28 @@
       text-overflow: ellipsis;
     }
 
+    /* Title block (name + meta), sits between header and board */
+    .detail-head-info {
+      min-width: 0;
+      padding: 12px 14px 10px;
+      flex-shrink: 0;
+    }
+    .detail-name {
+      font-size: 1.35rem;
+      font-weight: 800;
+      line-height: 1.2;
+      margin-bottom: 7px;
+      word-break: break-word;
+    }
+    .detail-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
     /* Tick · Mirror · Cast — boxed icon buttons (same style as the "i" button) */
     .detail-actions {
       flex-shrink: 0;
@@ -411,14 +433,14 @@
       display: flex;
       flex-direction: column;
     }
-    /* Board fills the entire body area, cropping edges as needed */
+    /* Board fills the remaining body area exactly — stretched, so nothing is
+       cropped and no empty space is left (aspect ratio is not preserved). */
     #view-detail .board-graphic,
     #view-create .board-graphic {
       flex: 1 1 auto;
       min-height: 0;
       width: 100%;
-      object-fit: cover;
-      object-position: center;
+      object-fit: fill;
     }
 
     .detail-section { margin-bottom: 22px; }
@@ -994,6 +1016,16 @@
     currentProblem = p;
 
     wrap.innerHTML = `
+      <div class="detail-head-info">
+        <h1 class="detail-name">${escHtml(displayName(p))}</h1>
+        <div class="detail-meta">
+          <span class="grade-badge">${escHtml(p.grade || '—')}</span>
+          <span class="meta-setter">by ${escHtml(p.setter || 'unknown')}</span>
+          ${starsHtml(p.stars)}
+          ${p.is_benchmark ? `<span class="bench-badge">★ Benchmark</span>` : ''}
+        </div>
+      </div>
+
       <img class="board-graphic" src="BoardGraphic.jpg" alt="The Hangout symmetry board" />
     `;
   }
@@ -1007,10 +1039,6 @@
     const stars = Math.max(0, Math.min(3, Number(p.stars) || 0));
 
     document.getElementById('info-body').innerHTML = `
-      <div class="info-row">
-        <div class="info-label">Problem</div>
-        <div class="info-value"><strong>${escHtml(displayName(p))}</strong> · by ${escHtml(p.setter || 'unknown')}</div>
-      </div>
       <div class="info-row">
         <div class="info-label">Consensus grade</div>
         <div class="info-value"><span class="grade-badge">${escHtml(p.grade || '—')}</span></div>
