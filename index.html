@@ -288,48 +288,15 @@
       text-overflow: ellipsis;
     }
 
-    /* Title block (name + meta), sits above the board */
-    .detail-head-info { min-width: 0; margin-bottom: 12px; }
-
-    .detail-name {
-      font-size: 1.4rem;
-      font-weight: 800;
-      line-height: 1.2;
-      margin-bottom: 8px;
-      word-break: break-word;
-    }
-
-    .detail-meta {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 10px;
-      font-size: 13px;
-      color: var(--text-muted);
-    }
-
-    /* Tick · Mirror · Cast — icon actions inline in the detail header */
+    /* Tick · Mirror · Cast — boxed icon buttons (same style as the "i" button) */
     .detail-actions {
       flex-shrink: 0;
       display: flex;
       align-items: center;
       gap: 8px;
     }
-    .info-gap { margin-left: 4px; }
-    .icon-action {
-      background: transparent;
-      border: none;
-      color: var(--accent);
-      cursor: pointer;
-      padding: 4px;
-      line-height: 0;
-      touch-action: manipulation;
-      transition: transform 0.1s, opacity 0.2s, color 0.15s;
-    }
-    .icon-action svg { width: 30px; height: 30px; }
-    .icon-action:active { transform: scale(0.88); }
-    .icon-action.casting { opacity: 0.5; pointer-events: none; }
-    .icon-action.sent { color: var(--accent-hover); animation: flash 0.4s ease; }
+    .icon-btn.casting { opacity: 0.55; pointer-events: none; }
+    .icon-btn.sent { border-color: var(--accent); color: var(--accent-hover); animation: flash 0.4s ease; }
 
     .bench-badge {
       background: rgba(245,158,11,0.16);
@@ -401,39 +368,57 @@
     }
     .info-value { font-size: 15px; line-height: 1.5; color: var(--text); }
 
-    /* ── Board graphic (detail) ──────────────────────────────────────── */
-    .board-graphic {
-      width: 100%;
-      display: block;
-      margin-bottom: 18px;
-    }
+    /* ── Board graphic ───────────────────────────────────────────────── */
+    .board-graphic { width: 100%; display: block; }
 
-    /* Detail view fills the screen — the whole page fits, no scrolling */
-    #view-detail.active {
+    /* Detail + Create views are pinned to the viewport — no page scrolling.
+       Fixed positioning takes them out of body flow so nothing can scroll. */
+    #view-detail.active,
+    #view-create.active {
+      position: fixed;
+      inset: 0;
       display: flex;
       flex-direction: column;
-      height: 100dvh;
       overflow: hidden;
     }
-    #view-detail main {
+    /* main = everything between the sticky header and the bottom nav */
+    #view-detail main,
+    #view-create main {
       flex: 1;
       min-height: 0;
+      padding: 0;
+      position: relative;
       display: flex;
-      padding-bottom: calc(var(--nav-h) + 12px + env(safe-area-inset-bottom));
+      flex-direction: column;
+      margin-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
     }
+
+    /* Create-view hint, overlaid at the bottom of the board */
+    .board-hint {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+      text-align: center;
+      font-size: 13px;
+      color: var(--text);
+      background: linear-gradient(to top, rgba(10,10,10,0.85), rgba(10,10,10,0));
+      pointer-events: none;
+    }
+    .board-hint span { color: var(--accent-hover); font-weight: 700; }
     #detail-content {
       flex: 1;
       min-height: 0;
       display: flex;
       flex-direction: column;
     }
-    #view-detail .board-graphic {
+    /* Board fills the entire body area, cropping edges as needed */
+    #view-detail .board-graphic,
+    #view-create .board-graphic {
       flex: 1 1 auto;
       min-height: 0;
-      height: auto;
-      object-fit: contain;
+      width: 100%;
+      object-fit: cover;
       object-position: center;
-      margin-bottom: 0;
     }
 
     .detail-section { margin-bottom: 22px; }
@@ -704,16 +689,16 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
     </button>
     <div class="detail-actions">
-      <button class="icon-action" id="detail-tick" aria-label="Tick — mark as completed">
+      <button class="icon-btn" id="detail-tick" aria-label="Tick — mark as completed">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
       </button>
-      <button class="icon-action cast-icon-btn" id="detail-mirror" aria-label="Mirror cast to board">
+      <button class="icon-btn cast-icon-btn" id="detail-mirror" aria-label="Mirror cast to board">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"></line><polyline points="8 8 4 12 8 16"></polyline><polyline points="16 8 20 12 16 16"></polyline></svg>
       </button>
-      <button class="icon-action cast-icon-btn" id="detail-cast" aria-label="Cast to board">
+      <button class="icon-btn cast-icon-btn" id="detail-cast" aria-label="Cast to board">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zM21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>
       </button>
-      <button class="icon-btn info-gap" id="info-btn" aria-label="Problem info">
+      <button class="icon-btn" id="info-btn" aria-label="Problem info">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
       </button>
     </div>
@@ -734,7 +719,7 @@
   </header>
   <main>
     <img class="board-graphic" src="BoardGraphic.jpg" alt="The Hangout symmetry board — empty" />
-    <p class="state-msg" style="padding:18px 20px">Tap holds to build a problem.<br><small style="opacity:.6">Coming soon.</small></p>
+    <div class="board-hint">Tap holds to build a problem · <span>coming soon</span></div>
   </main>
 </section>
 
@@ -1009,16 +994,6 @@
     currentProblem = p;
 
     wrap.innerHTML = `
-      <div class="detail-head-info">
-        <h1 class="detail-name">${escHtml(displayName(p))}</h1>
-        <div class="detail-meta">
-          <span class="grade-badge">${escHtml(p.grade || '—')}</span>
-          <span class="meta-setter">by ${escHtml(p.setter || 'unknown')}</span>
-          ${starsHtml(p.stars)}
-          ${p.is_benchmark ? `<span class="bench-badge">★ Benchmark</span>` : ''}
-        </div>
-      </div>
-
       <img class="board-graphic" src="BoardGraphic.jpg" alt="The Hangout symmetry board" />
     `;
   }
@@ -1032,6 +1007,10 @@
     const stars = Math.max(0, Math.min(3, Number(p.stars) || 0));
 
     document.getElementById('info-body').innerHTML = `
+      <div class="info-row">
+        <div class="info-label">Problem</div>
+        <div class="info-value"><strong>${escHtml(displayName(p))}</strong> · by ${escHtml(p.setter || 'unknown')}</div>
+      </div>
       <div class="info-row">
         <div class="info-label">Consensus grade</div>
         <div class="info-value"><span class="grade-badge">${escHtml(p.grade || '—')}</span></div>
