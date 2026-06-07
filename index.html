@@ -122,6 +122,16 @@
       padding: 0 2px;
     }
 
+    /* "+" create button in the list search row */
+    .add-btn {
+      width: 40px;
+      height: 40px;
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .add-btn:active { background: rgba(236,72,153,0.12); }
+    .add-btn svg { width: 22px; height: 22px; }
+
     /* ── Grade filter tabs ───────────────────────────────────────────── */
     .grade-tabs {
       display: flex;
@@ -721,6 +731,9 @@
         <input id="search" type="search" placeholder="Search name, setter, grade…" autocomplete="off" />
       </div>
       <span class="count-badge" id="count"></span>
+      <button class="icon-btn add-btn" id="create-btn" aria-label="Create problem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      </button>
     </div>
     <div class="grade-tabs" id="grade-tabs"></div>
   </header>
@@ -744,6 +757,21 @@
   </header>
   <main>
     <div id="detail-content"></div>
+  </main>
+</section>
+
+<!-- ══ CREATE VIEW (placeholder) ══════════════════════════════════════ -->
+<section id="view-create" class="view">
+  <header class="topbar detail-bar">
+    <button class="icon-btn" id="create-back" aria-label="Back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
+    <div class="detail-bar-title">Create problem</div>
+    <div style="width:38px"></div>
+  </header>
+  <main>
+    <img class="board-graphic" src="BoardGraphic.jpg" alt="The Hangout symmetry board — empty" />
+    <p class="state-msg" style="padding:18px 20px">Tap holds to build a problem.<br><small style="opacity:.6">Coming soon.</small></p>
   </main>
 </section>
 
@@ -911,7 +939,7 @@
     // The info modal only belongs to the detail view.
     if (name !== 'detail') closeInfo();
 
-    ['list','detail','auth','profile'].forEach(v => {
+    ['list','detail','create','auth','profile'].forEach(v => {
       document.getElementById('view-' + v).classList.toggle('active', v === name);
     });
 
@@ -919,7 +947,7 @@
     document.getElementById('bottom-nav').style.display = name === 'auth' ? 'none' : 'flex';
 
     // Active nav highlight.
-    const navFor = { list: 'list', detail: 'list', profile: 'profile', auth: 'profile' }[name] || 'list';
+    const navFor = { list: 'list', detail: 'list', create: 'list', profile: 'profile', auth: 'profile' }[name] || 'list';
     document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.nav === navFor));
 
     if (name === 'list') window.scrollTo(0, listScroll);
@@ -932,6 +960,7 @@
     const { route, param } = parseHash();
     switch (route) {
       case 'detail':  renderDetail(param); setView('detail'); break;
+      case 'create':  setView('create'); break;
       case 'auth':    setView('auth'); break;
       case 'profile': setView('profile'); break;
       case 'list':
@@ -1154,6 +1183,10 @@
 
   // Detail back
   document.getElementById('back-btn').addEventListener('click', goBack);
+
+  // Create (placeholder) — open from list, back returns to list
+  document.getElementById('create-btn').addEventListener('click', () => { location.hash = '#create'; });
+  document.getElementById('create-back').addEventListener('click', goBack);
 
   // Info modal: open from header button, close via X, overlay tap, or Escape
   document.getElementById('info-btn').addEventListener('click', openInfo);
