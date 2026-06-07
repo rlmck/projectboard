@@ -288,11 +288,11 @@
       text-overflow: ellipsis;
     }
 
-    /* Name + meta on the left, cast icon on the right */
+    /* Name + meta on the left, action icons on the right */
     .detail-head {
       display: flex;
-      align-items: flex-start;
-      gap: 12px;
+      align-items: center;
+      gap: 14px;
       margin-bottom: 16px;
     }
     .detail-head-info { flex: 1; min-width: 0; }
@@ -301,7 +301,7 @@
       font-size: 1.5rem;
       font-weight: 800;
       line-height: 1.2;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
       word-break: break-word;
     }
 
@@ -314,22 +314,27 @@
       color: var(--text-muted);
     }
 
-    /* Pink cast icon (top-right of the title block) */
-    .cast-icon-btn {
+    /* Tick · Mirror · Cast — icon actions to the right of the title block */
+    .detail-actions {
       flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .icon-action {
       background: transparent;
       border: none;
       color: var(--accent);
       cursor: pointer;
-      padding: 2px;
+      padding: 4px;
       line-height: 0;
       touch-action: manipulation;
       transition: transform 0.1s, opacity 0.2s, color 0.15s;
     }
-    .cast-icon-btn svg { width: 34px; height: 34px; }
-    .cast-icon-btn:active { transform: scale(0.9); }
-    .cast-icon-btn.casting { opacity: 0.5; pointer-events: none; }
-    .cast-icon-btn.sent { color: var(--accent-hover); animation: flash 0.4s ease; }
+    .icon-action svg { width: 30px; height: 30px; }
+    .icon-action:active { transform: scale(0.88); }
+    .icon-action.casting { opacity: 0.5; pointer-events: none; }
+    .icon-action.sent { color: var(--accent-hover); animation: flash 0.4s ease; }
 
     .bench-badge {
       background: rgba(245,158,11,0.16);
@@ -405,10 +410,7 @@
     .board-graphic {
       width: 100%;
       display: block;
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
       margin-bottom: 18px;
-      background: var(--surface);
     }
 
     /* Detail view fills the screen — the whole page fits, no scrolling */
@@ -437,52 +439,6 @@
       object-fit: contain;
       margin-bottom: 14px;
     }
-
-    .action-row {
-      display: flex;
-      flex-direction: row;
-      gap: 8px;
-      margin-bottom: 24px;
-    }
-    .action-row .btn-lg {
-      flex: 1 1 0;
-      min-width: 0;
-      padding: 16px 8px;
-      font-size: 15px;
-      white-space: nowrap;
-    }
-
-    .btn-lg {
-      width: 100%;
-      border-radius: 12px;
-      font-size: 16px;
-      font-weight: 700;
-      padding: 16px;
-      cursor: pointer;
-      letter-spacing: 0.02em;
-      touch-action: manipulation;
-      border: 1px solid transparent;
-      transition: background 0.15s, transform 0.1s, opacity 0.2s;
-    }
-    .btn-lg:active { transform: scale(0.98); }
-    .btn-cast { background: var(--cast); color: #fff; }
-    .btn-cast:hover { background: var(--cast-hover); }
-    .btn-cast.casting { opacity: 0.6; pointer-events: none; }
-    .btn-cast.sent { background: var(--accent); }
-    .btn-mirror {
-      background: var(--surface2);
-      border-color: var(--accent);
-      color: var(--accent-hover);
-    }
-    .btn-mirror:hover { background: rgba(236,72,153,0.12); }
-    .btn-mirror.casting { opacity: 0.6; pointer-events: none; }
-    .btn-mirror.sent { background: var(--accent); color: #fff; }
-    .btn-tick {
-      background: transparent;
-      border-color: var(--accent);
-      color: var(--accent-hover);
-    }
-    .btn-tick:hover { background: rgba(236,72,153,0.12); }
 
     .detail-section { margin-bottom: 22px; }
 
@@ -1056,17 +1012,20 @@
             ${p.is_benchmark ? `<span class="bench-badge">★ Benchmark</span>` : ''}
           </div>
         </div>
-        <button class="cast-icon-btn" id="detail-cast" data-name="${escAttr(p.name || '')}" aria-label="Cast to board">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zM21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>
-        </button>
+        <div class="detail-actions">
+          <button class="icon-action" id="detail-tick" aria-label="Tick — mark as completed">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </button>
+          <button class="icon-action cast-icon-btn" id="detail-mirror" data-name="${escAttr(p.name || '')}" aria-label="Mirror cast to board">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"></line><polyline points="8 8 4 12 8 16"></polyline><polyline points="16 8 20 12 16 16"></polyline></svg>
+          </button>
+          <button class="icon-action cast-icon-btn" id="detail-cast" data-name="${escAttr(p.name || '')}" aria-label="Cast to board">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zM21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>
+          </button>
+        </div>
       </div>
 
       <img class="board-graphic" src="BoardGraphic.jpg" alt="The Hangout symmetry board" />
-
-      <div class="action-row">
-        <button class="btn-lg btn-mirror" id="detail-mirror" data-name="${escAttr(p.name || '')}">Mirror</button>
-        <button class="btn-lg btn-tick" id="detail-tick">Tick</button>
-      </div>
     `;
 
     document.getElementById('detail-cast').addEventListener('click', e => castByName(p.name, e.currentTarget));
