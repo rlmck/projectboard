@@ -1,4 +1,4 @@
-// Problem Board — service worker
+// Project Board — service worker
 // Strategy:
 //   * HTML / navigations  -> network-first  (always get the latest app, fall back to cache offline)
 //   * other same-origin   -> stale-while-revalidate (fast, but refreshes in the background)
@@ -6,13 +6,13 @@
 //
 // Bump CACHE whenever the asset list changes so old caches are cleared.
 
-const CACHE = 'pb-v2';
+const CACHE = 'pb-v3';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './icon.svg',
-  './BoardGraphic.jpg'
+  './ProjectBoard.png'
 ];
 
 self.addEventListener('install', event => {

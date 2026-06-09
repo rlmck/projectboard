@@ -7,8 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Problem Board" />
-  <title>Problem Board — The Hangout</title>
+  <meta name="apple-mobile-web-app-title" content="Project Board" />
+  <title>Project Board — The Hangout</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon.svg" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -45,6 +45,31 @@
       min-height: 100dvh;
       -webkit-tap-highlight-color: transparent;
     }
+
+    /* ── Splash / boot overlay ───────────────────────────────────────────
+       Matches the native PWA launch screen (same bg + mark) so the two read
+       as one continuous splash, then fades out shortly after boot. */
+    #splash {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 22px;
+      background: var(--bg);
+      transition: opacity 0.45s ease;
+    }
+    #splash.hide { opacity: 0; pointer-events: none; }
+    #splash img { width: 96px; height: 96px; border-radius: 22px; }
+    #splash .splash-name {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--text);
+    }
+    #splash .splash-name span { color: var(--accent); }
 
     /* ── View switching ──────────────────────────────────────────────── */
     .view { display: none; }
@@ -682,6 +707,12 @@
 </head>
 <body>
 
+<!-- ══ SPLASH / BOOT OVERLAY ══════════════════════════════════════════ -->
+<div id="splash">
+  <img src="icon.svg" alt="" />
+  <div class="splash-name">Project<span> Board</span></div>
+</div>
+
 <!-- ══ LIST VIEW ══════════════════════════════════════════════════════ -->
 <section id="view-list" class="view active">
   <header class="topbar">
@@ -740,7 +771,7 @@
     <div style="width:38px"></div>
   </header>
   <main>
-    <img class="board-graphic" src="BoardGraphic.jpg" alt="The Hangout symmetry board — empty" />
+    <img class="board-graphic" src="ProjectBoard.png" alt="The Hangout symmetry board — empty" />
     <div class="board-hint">Tap holds to build a problem · <span>coming soon</span></div>
   </main>
 </section>
@@ -807,7 +838,7 @@
 
 <!-- ══ INSTALL BANNER (Add to Home Screen) ════════════════════════════ -->
 <div id="install-banner">
-  <div class="install-msg" id="install-msg"><b>Add to home screen</b> to use Problem Board like an app.</div>
+  <div class="install-msg" id="install-msg"><b>Add to home screen</b> to use Project Board like an app.</div>
   <div class="install-actions">
     <button class="install-btn add" id="install-add">Add</button>
     <button class="install-btn dismiss" id="install-dismiss">Not now</button>
@@ -1026,7 +1057,7 @@
         </div>
       </div>
 
-      <img class="board-graphic" src="BoardGraphic.jpg" alt="The Hangout symmetry board" />
+      <img class="board-graphic" src="ProjectBoard.png" alt="The Hangout symmetry board" />
     `;
   }
 
@@ -1237,6 +1268,15 @@
   window.addEventListener('hashchange', router);
   router();        // show initial view (list shows its loading spinner)
   loadProblems();  // fetch, then render + re-route
+
+  // Splash: linger briefly, then fade out and remove from the DOM.
+  const splash = document.getElementById('splash');
+  if (splash) {
+    setTimeout(() => {
+      splash.classList.add('hide');
+      splash.addEventListener('transitionend', () => splash.remove(), { once: true });
+    }, 1800);
+  }
 </script>
 </body>
 </html>
