@@ -9,5 +9,4 @@ dtb-backup.img
 *.img
 README.md
 # Keep the board graphic — used in the app UI
-!BoardGraphic.jpg
 !ProjectBoard.png
