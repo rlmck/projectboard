@@ -415,6 +415,19 @@
     }
     .info-value { font-size: 15px; line-height: 1.5; color: var(--text); }
 
+    /* ── Auth ─────────────────────────────────────────────────────────── */
+    .btn-google {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      background: #fff; color: #1f1f1f; font-weight: 700; border: none;
+    }
+    .btn-google svg { width: 18px; height: 18px; flex: none; }
+    .auth-divider { display: flex; align-items: center; gap: 10px; margin: 16px 0 6px; color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+    .auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+    .auth-toggle { font-size: 13px; color: var(--text-muted); margin: 14px 0 2px; }
+    .auth-toggle a { color: var(--accent-hover); font-weight: 700; text-decoration: none; cursor: pointer; }
+    .auth-error { color: #f87171; font-size: 13px; min-height: 18px; margin: 6px 0 2px; }
+    #name-modal .name-body { padding: 4px 18px 20px; }
+
     /* ── Board graphic ───────────────────────────────────────────────── */
     .board-graphic { width: 100%; display: block; }
 
@@ -804,12 +817,18 @@
       <div class="shell-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
       </div>
-      <div class="shell-title">Sign in</div>
-      <div class="pill">Coming soon</div>
-      <div class="shell-sub">Accounts let you tick problems and track your sends. Browsing and casting work without an account.</div>
-      <input class="fld" type="email" placeholder="Email" disabled />
-      <input class="fld" type="password" placeholder="Password" disabled />
-      <button class="btn-block btn-primary" id="auth-submit" disabled>Sign in</button>
+      <div class="shell-title" id="auth-title">Sign in</div>
+      <div class="shell-sub">Accounts let you set problems and track your sends. Browsing and casting work without one.</div>
+      <button class="btn-block btn-google" id="auth-google">
+        <svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Continue with Google
+      </button>
+      <div class="auth-divider"><span>or</span></div>
+      <input class="fld" id="auth-email" type="email" placeholder="Email" autocomplete="email" />
+      <input class="fld" id="auth-password" type="password" placeholder="Password" autocomplete="current-password" />
+      <div class="auth-error" id="auth-error"></div>
+      <button class="btn-block btn-primary" id="auth-submit">Sign in</button>
+      <div class="auth-toggle"><span id="auth-toggle-text">New here?</span> <a id="auth-toggle-link">Create an account</a></div>
       <button class="btn-block btn-ghost" id="auth-back">Back to problems</button>
     </div>
   </main>
@@ -821,16 +840,7 @@
     <div class="header-title">Profile</div>
   </header>
   <main>
-    <div class="shell-card" style="margin:8px auto 18px;text-align:center">
-      <div class="shell-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-      </div>
-      <div class="shell-title">Browsing as guest</div>
-      <div class="shell-sub">Sign in to tick problems and see your stats here.</div>
-      <button class="btn-block btn-primary" id="profile-signin">Sign in</button>
-    </div>
-    <div class="profile-row"><span class="k">Total ticks</span><span class="v">—</span></div>
-    <div class="profile-row"><span class="k">Hardest send</span><span class="v">—</span></div>
+    <div id="profile-content"></div>
   </main>
 </section>
 
@@ -854,6 +864,21 @@
       <button class="modal-close" id="info-close" aria-label="Close">✕</button>
     </div>
     <div id="info-body"></div>
+  </div>
+</div>
+
+<!-- ══ DISPLAY NAME MODAL (first sign-in) ═════════════════════════════ -->
+<div class="modal-overlay" id="name-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Choose a display name">
+    <div class="modal-header">
+      <div class="modal-title">Choose a display name</div>
+    </div>
+    <div class="name-body">
+      <p class="shell-sub" style="margin:0 0 12px">This is the name shown on problems you set. It must be unique — you can change it later.</p>
+      <input class="fld" id="name-input" type="text" placeholder="Display name" maxlength="32" autocomplete="off" />
+      <div class="auth-error" id="name-error"></div>
+      <button class="btn-block btn-primary" id="name-save">Save</button>
+    </div>
   </div>
 </div>
 
@@ -894,6 +919,9 @@
   let listScroll = 0;
   let currentProblem = null;
   let HOLD_MAP = null;   // hold id -> {x,y} %, loaded from hold_map.json
+  let session = null;    // Supabase auth session (null = guest)
+  let profile = null;    // { id, username } for the signed-in user
+  let authMode = 'signin'; // 'signin' | 'signup' for the #auth form
 
   // ── Escape helpers ───────────────────────────────────────────────────────────
   function escHtml(s) {
@@ -984,6 +1012,8 @@
   // ── Routing ──────────────────────────────────────────────────────────────────
   function parseHash() {
     const raw = location.hash.replace(/^#/, '') || 'list';
+    // After a Google redirect the hash carries OAuth tokens (or an error) — never route to that.
+    if (raw.includes('access_token') || raw.includes('error=')) return { route: 'list', param: '' };
     const idx = raw.indexOf('/');
     if (idx === -1) return { route: raw, param: '' };
     return { route: raw.slice(0, idx), param: decodeURIComponent(raw.slice(idx + 1)) };
@@ -1018,8 +1048,8 @@
     switch (route) {
       case 'detail':  renderDetail(param); setView('detail'); break;
       case 'create':  setView('create'); break;
-      case 'auth':    setView('auth'); break;
-      case 'profile': setView('profile'); break;
+      case 'auth':    setAuthMode('signin'); setView('auth'); break;
+      case 'profile': renderProfile(); setView('profile'); break;
       case 'list':
       default:        setView('list'); break;
     }
@@ -1214,6 +1244,126 @@
     router();
   }
 
+  // ── Auth ────────────────────────────────────────────────────────────────────
+  async function initAuth() {
+    const { data } = await sb.auth.getSession();   // also consumes any OAuth redirect in the URL
+    session = data.session || null;
+    if (session) await loadProfile();
+    renderProfile();
+    if (location.hash.includes('access_token')) location.replace(location.pathname + '#list');
+
+    sb.auth.onAuthStateChange(async (_event, s) => {
+      session = s || null;
+      if (session) await loadProfile();
+      else profile = null;
+      renderProfile();
+    });
+  }
+
+  async function loadProfile() {
+    if (!session) { profile = null; return; }
+    const { data, error } = await sb
+      .from('profiles').select('id, username').eq('id', session.user.id).maybeSingle();
+    if (error) console.warn('profile load failed', error);
+    profile = data || null;
+    if (session && !profile) promptDisplayName();   // brand-new user (Google or email)
+  }
+
+  async function authEmail() {
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    const errEl = document.getElementById('auth-error');
+    errEl.textContent = '';
+    if (!email || !password) { errEl.textContent = 'Enter your email and password.'; return; }
+    const btn = document.getElementById('auth-submit');
+    const prev = btn.textContent; btn.disabled = true; btn.textContent = '…';
+    const res = authMode === 'signup'
+      ? await sb.auth.signUp({ email, password })
+      : await sb.auth.signInWithPassword({ email, password });
+    btn.disabled = false; btn.textContent = prev;
+    if (res.error) { errEl.textContent = res.error.message; return; }
+    if (authMode === 'signup' && !res.data.session) {   // email confirmation is on
+      showToast('Check your email to confirm your account', 'success');
+      return;
+    }
+    location.hash = '#list';   // onAuthStateChange handles profile + display-name prompt
+  }
+
+  async function authGoogle() {
+    const redirectTo = location.origin + location.pathname;   // back to the app, no hash
+    const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+    if (error) showToast(error.message, 'error');
+  }
+
+  async function doSignOut() {
+    await sb.auth.signOut();
+    showToast('Signed out', 'success');
+    location.hash = '#list';
+  }
+
+  function setAuthMode(mode) {
+    authMode = mode;
+    const signup = mode === 'signup';
+    document.getElementById('auth-title').textContent = signup ? 'Create account' : 'Sign in';
+    document.getElementById('auth-submit').textContent = signup ? 'Create account' : 'Sign in';
+    document.getElementById('auth-password').setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
+    document.getElementById('auth-toggle-text').textContent = signup ? 'Already have an account?' : 'New here?';
+    document.getElementById('auth-toggle-link').textContent = signup ? 'Sign in' : 'Create an account';
+    const e = document.getElementById('auth-error'); if (e) e.textContent = '';
+  }
+
+  function promptDisplayName() {
+    const email = (session && session.user && session.user.email) || '';
+    document.getElementById('name-input').value = (email.split('@')[0] || '').trim();
+    document.getElementById('name-error').textContent = '';
+    document.getElementById('name-modal').classList.add('show');
+  }
+
+  async function saveDisplayName() {
+    const errEl = document.getElementById('name-error');
+    const name = document.getElementById('name-input').value.trim();
+    if (name.length < 2) { errEl.textContent = 'Pick a name (at least 2 characters).'; return; }
+    if (!session) { errEl.textContent = 'Session expired — please sign in again.'; return; }
+    const btn = document.getElementById('name-save'); btn.disabled = true;
+    const { error } = await sb.from('profiles').insert({ id: session.user.id, username: name });
+    btn.disabled = false;
+    if (error) {
+      errEl.textContent = error.code === '23505' ? 'That name is taken — try another.' : error.message;
+      return;
+    }
+    document.getElementById('name-modal').classList.remove('show');
+    await loadProfile();
+    renderProfile();
+    showToast('Welcome, ' + name, 'success');
+  }
+
+  function renderProfile() {
+    const el = document.getElementById('profile-content');
+    if (!el) return;
+    const userSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>';
+    if (session && profile) {
+      el.innerHTML = `
+        <div class="shell-card" style="margin:8px auto 18px;text-align:center">
+          <div class="shell-icon">${userSvg}</div>
+          <div class="shell-title">${escHtml(profile.username)}</div>
+          <div class="shell-sub">${escHtml((session.user && session.user.email) || '')}</div>
+          <button class="btn-block btn-ghost" id="profile-signout">Sign out</button>
+        </div>
+        <div class="profile-row"><span class="k">Total ticks</span><span class="v">—</span></div>
+        <div class="profile-row"><span class="k">Hardest send</span><span class="v">—</span></div>`;
+      document.getElementById('profile-signout').addEventListener('click', doSignOut);
+    } else {
+      el.innerHTML = `
+        <div class="shell-card" style="margin:8px auto 18px;text-align:center">
+          <div class="shell-icon">${userSvg}</div>
+          <div class="shell-title">Browsing as guest</div>
+          <div class="shell-sub">Sign in to set problems and track your sends.</div>
+          <button class="btn-block btn-primary" id="profile-signin">Sign in</button>
+        </div>`;
+      document.getElementById('profile-signin').addEventListener('click', () => { location.hash = '#auth'; });
+    }
+  }
+
   // ── Wire up events ────────────────────────────────────────────────────────────
   // Search
   document.getElementById('search').addEventListener('input', e => {
@@ -1247,8 +1397,8 @@
     if (currentProblem) castByName(currentProblem.name, e.currentTarget, true);
   });
   document.getElementById('detail-tick').addEventListener('click', () => {
-    showToast('Sign in to track ticks — coming soon', 'success');
-    location.hash = '#auth';
+    if (!session) { showToast('Sign in to track ticks', 'success'); location.hash = '#auth'; return; }
+    showToast('Ticks coming soon', 'success');
   });
 
   // Create (placeholder) — open from list, back returns to list
@@ -1263,9 +1413,14 @@
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeInfo(); });
 
-  // Auth / profile shell actions
+  // Auth view actions
   document.getElementById('auth-back').addEventListener('click', () => { location.hash = '#list'; });
-  document.getElementById('profile-signin').addEventListener('click', () => { location.hash = '#auth'; });
+  document.getElementById('auth-google').addEventListener('click', authGoogle);
+  document.getElementById('auth-submit').addEventListener('click', authEmail);
+  document.getElementById('auth-password').addEventListener('keydown', e => { if (e.key === 'Enter') authEmail(); });
+  document.getElementById('auth-toggle-link').addEventListener('click', () => setAuthMode(authMode === 'signup' ? 'signin' : 'signup'));
+  document.getElementById('name-save').addEventListener('click', saveDisplayName);
+  document.getElementById('name-input').addEventListener('keydown', e => { if (e.key === 'Enter') saveDisplayName(); });
 
   // ── PWA: service worker + install (Add to Home Screen) ───────────────────────
   if ('serviceWorker' in navigator) {
@@ -1340,6 +1495,7 @@
   router();        // show initial view (list shows its loading spinner)
   loadProblems();  // fetch, then render + re-route
   loadHoldMap();   // fetch hold positions for the detail board overlay
+  initAuth();      // restore session, wire auth state, handle Google redirect
 
   // Splash: linger briefly, then fade out and remove from the DOM.
   const splash = document.getElementById('splash');
