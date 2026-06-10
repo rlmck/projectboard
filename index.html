@@ -468,6 +468,27 @@
       object-fit: fill;
     }
 
+    /* ── Problem hold overlay (detail view) ──────────────────────────── */
+    /* The board is object-fit:fill (stretched to the box), so percentage
+       positions from hold_map.json still land correctly on each hold. */
+    .board-wrap { position: relative; }
+    #view-detail .board-wrap { flex: 1 1 auto; min-height: 0; }
+    #view-detail .board-wrap .board-graphic { height: 100%; }
+    .hold-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+    .hold-dot {
+      position: absolute;
+      width: 4.6%;
+      aspect-ratio: 1;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      border: clamp(2px, 0.7vw, 4px) solid;
+      box-sizing: border-box;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.45), 0 0 9px rgba(0,0,0,0.4);
+    }
+    .hold-dot.start  { border-color: #22c55e; background: rgba(34,197,94,0.28); }
+    .hold-dot.int    { border-color: #3b82f6; background: rgba(59,130,246,0.24); }
+    .hold-dot.finish { border-color: #ef4444; background: rgba(239,68,68,0.30); }
+
     .detail-section { margin-bottom: 22px; }
 
     .section-label {
@@ -872,6 +893,7 @@
   let currentView = 'list';
   let listScroll = 0;
   let currentProblem = null;
+  let HOLD_MAP = null;   // hold id -> {x,y} %, loaded from hold_map.json
 
   // ── Escape helpers ───────────────────────────────────────────────────────────
   function escHtml(s) {
@@ -923,6 +945,40 @@
   function holdChips(arr, cls) {
     if (!Array.isArray(arr)) arr = (arr === null || arr === undefined) ? [] : [arr];
     return arr.map(h => `<span class="chip ${cls}" title="${escAttr(h)}">${escHtml(holdNum(h))}</span>`).join('');
+  }
+
+  // The Supabase migration assigned start_holds/finish_hold back-to-front vs the
+  // original DTB order (proven against test.csv + the joe smells 2.0 cast). Rebuild
+  // Gareth's true order — finish first, then intermediates, then the two starts —
+  // so the low holds come out green and the top hold red, matching the real board.
+  function problemHoldOrder(p) {
+    const f = p.finish_hold ? [p.finish_hold] : [];
+    const mid = Array.isArray(p.intermediate_holds) ? p.intermediate_holds : [];
+    const s = Array.isArray(p.start_holds) ? p.start_holds : [];
+    return f.concat(mid, s);
+  }
+
+  // hold id -> 'start' | 'int' | 'finish' (first two = starts, last = finish).
+  function classifyHolds(order) {
+    const cls = {};
+    order.forEach(h => { if (!(h in cls)) cls[h] = 'int'; });
+    order.slice(0, 2).forEach(h => { cls[h] = 'start'; });
+    if (order.length) cls[order[order.length - 1]] = 'finish';
+    return cls;
+  }
+
+  // Coloured dots positioned over the board from hold_map.json (loaded async).
+  function boardOverlayHtml(p) {
+    const order = problemHoldOrder(p);
+    if (!HOLD_MAP || !order.length) return '';
+    const cls = classifyHolds(order);
+    const seen = new Set();
+    const dots = order.filter(h => (seen.has(h) ? false : seen.add(h))).map(h => {
+      const pos = HOLD_MAP[h];
+      if (!pos) return '';   // hold has no mapped dot (board gap) — skip
+      return `<div class="hold-dot ${cls[h]}" style="left:${pos.x}%;top:${pos.y}%"></div>`;
+    }).join('');
+    return `<div class="hold-layer">${dots}</div>`;
   }
 
   // ── Routing ──────────────────────────────────────────────────────────────────
@@ -1057,7 +1113,10 @@
         </div>
       </div>
 
-      <img class="board-graphic" src="ProjectBoard.png" alt="The Hangout symmetry board" />
+      <div class="board-wrap">
+        <img class="board-graphic" src="ProjectBoard.png" alt="The Hangout symmetry board" />
+        ${boardOverlayHtml(p)}
+      </div>
     `;
   }
 
@@ -1122,6 +1181,18 @@
       showToast('Cast failed — check connection', 'error');
       console.error(err);
     }
+  }
+
+  // ── Load hold position map (for the board overlay) ───────────────────────────
+  async function loadHoldMap() {
+    try {
+      const res = await fetch('hold_map.json', { cache: 'no-cache' });
+      if (res.ok) HOLD_MAP = await res.json();
+    } catch (err) {
+      console.warn('hold_map.json load failed — board overlay disabled', err);
+    }
+    // If we're already on a detail view, re-render so the dots appear.
+    if (currentView === 'detail') router();
   }
 
   // ── Load problems ─────────────────────────────────────────────────────────────
@@ -1268,6 +1339,7 @@
   window.addEventListener('hashchange', router);
   router();        // show initial view (list shows its loading spinner)
   loadProblems();  // fetch, then render + re-route
+  loadHoldMap();   // fetch hold positions for the detail board overlay
 
   // Splash: linger briefly, then fade out and remove from the DOM.
   const splash = document.getElementById('splash');

@@ -6,13 +6,14 @@
 //
 // Bump CACHE whenever the asset list changes so old caches are cleared.
 
-const CACHE = 'pb-v3';
+const CACHE = 'pb-v4';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './icon.svg',
-  './ProjectBoard.png'
+  './ProjectBoard.png',
+  './hold_map.json'
 ];
 
 self.addEventListener('install', event => {
