@@ -18,7 +18,12 @@ The app is hosted on **GitHub Pages** from the `main` branch.
 **Live URL:** https://rlmck.github.io/projectboard  
 **Local path (Ross's laptop):** `C:\Users\rossl\Documents\ProjectBoard\projectboard\`
 
-The repo currently contains one file: `index.html` — a working PWA prototype with problem list, search, and cast functionality. This is the foundation to build on. Do not throw it away; extend it.
+Key files in the repo:
+- `index.html` — the whole PWA (list, detail, create/auth/profile shells, cast). Extend this; don't throw it away.
+- `ProjectBoard.png` — illustrated board image used in the detail/create views.
+- `hold_map.json` — hold id → `{x, y}` percentage position on `ProjectBoard.png`. Drives the detail-view hold overlay. See "Hold positions" below.
+- `register_holds.py` — regenerates `hold_map.json` from the original DTB hold coordinates + `hold_positions.json`.
+- `sw.js` / `manifest.json` — service worker (bump `CACHE` on asset changes) + PWA manifest.
 
 ---
 
@@ -34,8 +39,9 @@ The repo currently contains one file: `index.html` — a working PWA prototype w
 ### Schema (deployed, do not modify structure without being asked)
 
 ```
-problems      — id, name, grade, setter, comments, stars, hold_ids (array), feet
-holds         — id, hold_name, x_coord, y_coord (coords deferred — not yet populated)
+problems      — id, name, grade, setter, comment, stars,
+                start_holds (array), intermediate_holds (array), finish_hold (text), feet_mode, is_benchmark
+holds         — id, hold_name, x_coord, y_coord (coords NOT populated in Supabase; PWA uses hold_map.json instead)
 board_state   — id='HangoutPortland', current_problem
 ticks         — id, user_id, problem_id, created_at
 likes         — id, user_id, problem_id
@@ -61,28 +67,54 @@ await channel.send({
 
 ## problems table — column reference
 
-The problems table was migrated from a CSV. Key columns:
+The problems table was migrated from `test.csv` (271 rows). Key columns:
 
 | Column | Content |
 |---|---|
 | `name` | Problem name (e.g. "Good Bug 5b+") |
 | `grade` | French bouldering grade (e.g. "5b+", "7a") |
 | `setter` | Setter username |
-| `comments` | Short description / comment |
+| `comment` | Short description / comment (note: **`comment`**, singular — not `comments`) |
 | `stars` | Star rating (integer) |
-| `hold_ids` | Array of hold IDs (e.g. ["hold24", "hold106", ...]) — order: starts first, then intermediates, then finish last |
-| `feet` | Feet restriction string (e.g. "Orange", "Black", "Orange,Black") or null |
+| `start_holds` | Array of hold IDs, e.g. `["hold235","hold234"]` (always 2) |
+| `intermediate_holds` | Array of hold IDs |
+| `finish_hold` | Single hold ID, e.g. `"hold10"` |
+| `feet_mode` | Feet restriction, e.g. `"any"` |
+| `is_benchmark` | Boolean |
 
-**Hold type convention (from Gareth's original code — do not change):**
-- `hold_ids[last]` = finish hold (red)
-- `hold_ids[0]` and `hold_ids[1]` = start holds (green) — problems always have exactly 2 starts
-- `hold_ids[2..last-1]` = intermediate holds (blue)
+Hold IDs are `hold{N}` strings. `N` maps to a real board position via `hold_map.json` (key = `holdN`).
+
+**⚠️ Start/finish are stored INVERTED.** The migration assigned `start_holds`/`finish_hold` back-to-front vs the original DTB order (confirmed on 263 of 271 problems, and against the physical board via the *joe smells 2.0* cast). Reading the columns literally puts green starts at the **top** of the wall — wrong.
+
+**Rebuild the true order before colouring** (this is what `index.html` does):
+```js
+order = [finish_hold, ...intermediate_holds, ...start_holds]  // = Gareth's original test.csv order
+// then, per the canonical convention:
+//   order[0], order[1] = start holds (green)   ← physically LOW on the wall
+//   order[last]        = finish hold  (red)    ← physically HIGH
+//   the rest           = intermediates (blue)
+```
+The Pi cast path is unaffected — it reads its own `test.csv`, which is already in correct order.
 
 **Colour convention:**
 - Start = green
 - Finish = red
 - Intermediate = blue
 - Feet indicator = orange
+
+---
+
+## Hold positions & the board overlay
+
+The PWA renders a problem's holds as coloured dots over `ProjectBoard.png` in the detail view, using `hold_map.json` (`holdN` → `{x, y}` as **percentages** of the image).
+
+How `hold_map.json` was produced (see `register_holds.py`):
+- The original DTB system stored the **hand-calibrated** pixel position of every hold in `reference/original-pi-codebase/dtb/dicholdlist.txt` (grid name → `[x, y]`; `[-30,-30]` = no hold). **189 real holds**, 58 empty cells. This is the ground-truth layout — do **not** re-derive positions from a uniform grid (the board is hand-set/staggered, so grid-fitting mislabels holds).
+- `register_holds.py` ICP-aligns that labelled layout onto the **187 dots** Ross placed on `ProjectBoard.png` (`hold_positions.json`) at ~2% RMS, and writes `hold_map.json`.
+
+**Orientation gotcha:** on the real board, **row 1 (A1 = hold1) is at the BOTTOM**, row 13 at the top. Do not assume hold1 is top-left.
+
+`holdN` → grid name: `names[N]` where `names[0]=A0, names[1]=A1, names[2]=B1, …` so `hold1=A1`, `hold19=S1`, `hold20=A2`, `hold247=S13`.
 
 ---
 
@@ -104,7 +136,7 @@ This is a **single-page app** using vanilla HTML/CSS/JS (no framework). Keep it 
 | View | Description |
 |---|---|
 | `#list` | Problem list — default view. Grade filter tabs, search bar, scrollable cards. Each card shows name, grade, setter, stars, tick status. Cast button on each card. |
-| `#detail` | Problem detail. Shows name, grade, setter, comments, stars, feet restriction. Hold breakdown as coloured chips (green=start, blue=intermediate, red=finish). Cast button. Tick button (requires auth). Back button. |
+| `#detail` | Problem detail. Shows name, grade, setter, stars, and the problem's holds lit on the board image (green=start, blue=intermediate, red=finish) via the `hold_map.json` overlay. Cast + mirror + tick + info in the header. Back button. |
 | `#auth` | Login / sign up. Supabase Auth. Email + password only for now. |
 | `#profile` | User profile. Username, total ticks, list of ticked problems. Logout button. |
 
@@ -118,7 +150,7 @@ Dark theme. The existing `index.html` has a good dark colour palette — keep it
 - Large tap targets (cast and tick buttons especially)
 - High contrast
 - Fast loading (no heavy frameworks)
-- The illustrated board image (`board.png` — to be added to repo) used as a decorative header on the list view and detail view, not as an interactive element yet
+- The illustrated board image (`ProjectBoard.png`, in the repo) fills the detail and create views. In detail it carries the coloured hold overlay; the create view will make it interactive (tap holds) — see the create discussion
 
 ---
 
@@ -142,8 +174,6 @@ French bouldering grades in correct difficulty order (for filter tabs and sortin
 
 ## What is deferred — do not build yet
 
-- Wall diagram with hold coordinate overlay (needs physical coordinate capture at gym)
-- Coordinate capture tool
 - Mirror mode toggle
 - Setter tools (create/edit problems)
 - Circuits and tags
@@ -185,6 +215,6 @@ French bouldering grades in correct difficulty order (for filter tabs and sortin
 
 ---
 
-*Last updated: June 2026*
+*Last updated: 10 June 2026 — hold overlay + hold_map.json added; start/finish inversion documented*
 *Maintained by: Ross (rlmck)*
-*For questions about this project, context is in DTB_PROJECT_NOTES.md (not in this repo — lives in Claude.ai project knowledge)*
+*Fuller context in `docs/project-notes.md` (in this repo) and the Claude.ai project knowledge.*
