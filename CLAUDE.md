@@ -12,6 +12,14 @@ The app is hosted on **GitHub Pages** from the `main` branch.
 
 ---
 
+## Build status (10 June 2026)
+
+**Done:** problem list + grade tabs + search + cast (Supabase Realtime); **detail view hold overlay** (a problem's holds lit on `ProjectBoard.png` via `hold_map.json`); **auth** — Google OAuth + email/password with a first-login display name (`profiles.username`, unique).
+
+**Next session — create-a-problem:** tap holds on the board (`ProjectBoard.png` + `hold_map.json`, nearest-dot hit-testing) to set start/intermediate/finish, add name/grade/feet, then save to Supabase. Any signed-in user may create. **Store start/finish correctly** (first two = start, last = finish — see the inversion note below). Needs a `problems` INSERT policy for authenticated users (not yet added — see `db/04_auth_policies.sql`).
+
+---
+
 ## Repository
 
 **GitHub:** https://github.com/rlmck/projectboard  
@@ -137,8 +145,8 @@ This is a **single-page app** using vanilla HTML/CSS/JS (no framework). Keep it 
 |---|---|
 | `#list` | Problem list — default view. Grade filter tabs, search bar, scrollable cards. Each card shows name, grade, setter, stars, tick status. Cast button on each card. |
 | `#detail` | Problem detail. Shows name, grade, setter, stars, and the problem's holds lit on the board image (green=start, blue=intermediate, red=finish) via the `hold_map.json` overlay. Cast + mirror + tick + info in the header. Back button. |
-| `#auth` | Login / sign up. Supabase Auth. Email + password only for now. |
-| `#profile` | User profile. Username, total ticks, list of ticked problems. Logout button. |
+| `#auth` | Sign in / create account — **Google OAuth + email/password** (Supabase Auth). Implemented. |
+| `#profile` | Signed in: display name, email, sign out. Guest: prompt to sign in. (Tick stats still deferred.) |
 
 ### Navigation
 
@@ -164,18 +172,19 @@ French bouldering grades in correct difficulty order (for filter tabs and sortin
 
 ---
 
-## Auth rules
+## Auth rules (implemented)
 
 - Browsing problems and casting: **no login required**
-- Ticking a problem: **requires login**
-- Profiles are created automatically on first sign-up (insert into `profiles` table with username = email prefix)
+- Ticking **and creating** a problem: **requires login** — any signed-in user can create
+- Sign-in methods: **Google OAuth** and **email + password** (Supabase Auth). Email confirmation is **off** for now.
+- On first sign-in (either method) the user picks a **display name** (defaults to the email prefix), stored in `profiles.username`. Display names are **unique** (case-insensitive). Profile is created via a modal in `index.html`; RLS policies + unique index live in `db/04_auth_policies.sql` (already applied in Supabase).
 
 ---
 
 ## What is deferred — do not build yet
 
 - Mirror mode toggle
-- Setter tools (create/edit problems)
+- Editing / deleting existing problems (basic create-a-problem is the next session)
 - Circuits and tags
 - Session/logbook tracking beyond basic ticks
 - Flutter migration
@@ -215,6 +224,6 @@ French bouldering grades in correct difficulty order (for filter tabs and sortin
 
 ---
 
-*Last updated: 10 June 2026 — hold overlay + hold_map.json added; start/finish inversion documented*
+*Last updated: 10 June 2026 — auth (Google + email/password) live; hold overlay live. Next: create-a-problem.*
 *Maintained by: Ross (rlmck)*
 *Fuller context in `docs/project-notes.md` (in this repo) and the Claude.ai project knowledge.*
