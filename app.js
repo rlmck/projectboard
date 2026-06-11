@@ -719,7 +719,10 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').then(reg => {
+      // updateViaCache:'none' = always fetch sw.js from the network, never the
+      // HTTP cache. A stale sw.js served from cache is the classic reason SW
+      // updates stall and a device gets stranded on old code — this prevents it.
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
         // Check for a new version now, and whenever the app regains focus.
         reg.update();
         document.addEventListener('visibilitychange', () => {
