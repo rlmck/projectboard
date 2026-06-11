@@ -247,6 +247,9 @@
     .star-on { color: var(--gold); }
     .star-off { color: #44445a; }
 
+    /* Subtle "sent" tick on a list card, sits next to the stars */
+    .tick-flag { color: var(--start); font-size: 13px; font-weight: 800; line-height: 1; opacity: 0.85; }
+
     /* ── Cast button (card) ──────────────────────────────────────────── */
     .cast-btn {
       flex-shrink: 0;
@@ -332,6 +335,8 @@
     }
     .icon-btn.casting { opacity: 0.55; pointer-events: none; }
     .icon-btn.sent { border-color: var(--accent); color: var(--accent-hover); animation: flash 0.4s ease; }
+    /* Ticked (sent) — the detail tick button turns green */
+    #detail-tick.ticked { color: var(--start); border-color: var(--start); background: rgba(34,197,94,0.14); }
 
     .bench-badge {
       background: rgba(245,158,11,0.16);

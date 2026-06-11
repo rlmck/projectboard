@@ -25,7 +25,10 @@
   let HOLD_MAP = null;   // hold id -> {x,y} %, loaded from hold_map.json
   let session = null;    // Supabase auth session (null = guest)
   let profile = null;    // { id, username } for the signed-in user
+  let myTicks = new Set(); // problem_ids the signed-in user has ticked (sent)
   let authMode = 'signin'; // 'signin' | 'signup' for the #auth form
+
+  const isTicked = id => myTicks.has(String(id));
 
   // ── Escape helpers ───────────────────────────────────────────────────────────
   function escHtml(s) {
@@ -191,6 +194,7 @@
             <span class="grade-badge">${escHtml(p.grade || '—')}</span>
             <span class="meta-setter">${escHtml(p.setter || '—')}</span>
             ${starsHtml(p.stars)}
+            ${isTicked(p.id) ? '<span class="tick-flag" title="Sent">✓</span>' : ''}
           </div>
         </div>
       </div>`;
@@ -224,6 +228,7 @@
 
     if (!loaded) {
       currentProblem = null;
+      updateTickButton();
       wrap.innerHTML = `<div class="spinner"></div>`;
       return;
     }
@@ -231,11 +236,13 @@
     const p = allProblems.find(x => String(x.id) === String(id));
     if (!p) {
       currentProblem = null;
+      updateTickButton();
       wrap.innerHTML = `<div class="state-msg"><div class="icon">🤷</div>That problem couldn't be found.<br><a class="link" href="#list">Back to problems</a></div>`;
       return;
     }
 
     currentProblem = p;
+    updateTickButton();
 
     wrap.innerHTML = `
       <div class="detail-head-info">
@@ -367,19 +374,72 @@
     router();
   }
 
+  // ── Ticks (personal sends — private to the signed-in user) ───────────────────
+  // Reflect the current problem's tick state on the detail header button.
+  function updateTickButton() {
+    const btn = document.getElementById('detail-tick');
+    if (!btn) return;
+    const ticked = currentProblem && isTicked(currentProblem.id);
+    btn.classList.toggle('ticked', !!ticked);
+    btn.setAttribute('aria-label', ticked ? 'Ticked — tap to remove' : 'Tick — mark as completed');
+  }
+
+  // Load the signed-in user's ticks into myTicks; clear for guests. RLS limits
+  // the rows to this user, so we never see anyone else's sends.
+  async function loadTicks() {
+    if (!session) { myTicks = new Set(); return; }
+    const { data, error } = await sb.from('ticks').select('problem_id').eq('user_id', session.user.id);
+    if (error) { console.warn('ticks load failed', error); return; }
+    myTicks = new Set((data || []).map(r => String(r.problem_id)));
+  }
+
+  // Toggle the current problem's tick. Optimistic: flip the UI first, revert on
+  // failure. The unique(user_id, problem_id) constraint keeps it idempotent.
+  async function toggleTick() {
+    if (!session) { showToast('Sign in to track ticks', 'success'); location.hash = '#auth'; return; }
+    const p = currentProblem;
+    if (!p) return;
+    const id = String(p.id);
+    const wasTicked = isTicked(id);
+
+    // Optimistic UI.
+    if (wasTicked) myTicks.delete(id); else myTicks.add(id);
+    updateTickButton();
+    renderList();
+
+    const res = wasTicked
+      ? await sb.from('ticks').delete().eq('user_id', session.user.id).eq('problem_id', id)
+      : await sb.from('ticks').insert({ user_id: session.user.id, problem_id: id });
+
+    // 23505 = unique violation → the tick already exists, which is the state we
+    // wanted, so treat it as success rather than rolling back.
+    if (res.error && res.error.code !== '23505') {
+      if (wasTicked) myTicks.add(id); else myTicks.delete(id);   // revert
+      updateTickButton();
+      renderList();
+      showToast('Could not save — check connection', 'error');
+      return;
+    }
+    showToast(wasTicked ? 'Removed tick' : 'Ticked ✓', 'success');
+  }
+
   // ── Auth ────────────────────────────────────────────────────────────────────
   async function initAuth() {
     const { data } = await sb.auth.getSession();   // also consumes any OAuth redirect in the URL
     session = data.session || null;
-    if (session) await loadProfile();
+    if (session) { await loadProfile(); await loadTicks(); }
     renderProfile();
+    if (loaded) renderList();   // refresh tick flags (skip if problems still loading)
+    if (currentView === 'detail') updateTickButton();
     if (location.hash.includes('access_token')) location.replace(location.pathname + '#list');
 
     sb.auth.onAuthStateChange(async (_event, s) => {
       session = s || null;
-      if (session) await loadProfile();
-      else profile = null;
+      if (session) { await loadProfile(); await loadTicks(); }
+      else { profile = null; myTicks = new Set(); }
       renderProfile();
+      if (loaded) renderList();
+      if (currentView === 'detail') updateTickButton();
     });
   }
 
@@ -591,10 +651,7 @@
   document.getElementById('detail-mirror').addEventListener('click', e => {
     if (currentProblem) castByName(currentProblem.name, e.currentTarget, true);
   });
-  document.getElementById('detail-tick').addEventListener('click', () => {
-    if (!session) { showToast('Sign in to track ticks', 'success'); location.hash = '#auth'; return; }
-    showToast('Ticks coming soon', 'success');
-  });
+  document.getElementById('detail-tick').addEventListener('click', toggleTick);
 
   // Swipe left/right on the detail board to step through the filtered deck.
   // Attached to the stable <main> (detail-content is replaced on every render).
