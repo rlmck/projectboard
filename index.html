@@ -75,9 +75,6 @@
     .view { display: none; }
     .view.active { display: block; animation: fade 0.18s ease; }
     @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
-    /* Quick cross-fade when swiping the detail view to the next/prev problem
-       (the view itself stays put — only its content is swapped). */
-    @keyframes detailSwap { from { opacity: 0.3; } to { opacity: 1; } }
 
     /* ── Top bar (per view) ──────────────────────────────────────────── */
     .topbar {
@@ -915,7 +912,7 @@
 
   // ── State ────────────────────────────────────────────────────────────────────
   let allProblems = [];
-  let activeGrade = 'all';
+  let activeGrades = new Set();   // selected grade filters; empty = "All"
   let searchQuery = '';
   let loaded = false;
   let currentView = 'list';
@@ -1066,7 +1063,7 @@
   // ── List: filter + sort ──────────────────────────────────────────────────────
   function visibleProblems() {
     let arr = allProblems;
-    if (activeGrade !== 'all') arr = arr.filter(p => p.grade === activeGrade);
+    if (activeGrades.size) arr = arr.filter(p => activeGrades.has(p.grade));
     if (searchQuery) {
       const q = searchQuery;
       arr = arr.filter(p =>
@@ -1111,22 +1108,15 @@
     const present = [...new Set(allProblems.map(p => p.grade).filter(Boolean))]
       .sort((a, b) => gradeRank(a) - gradeRank(b) || a.localeCompare(b));
     const tabs = ['all', ...present];
-    document.getElementById('grade-tabs').innerHTML = tabs.map(g =>
-      `<button class="grade-tab${g === activeGrade ? ' active' : ''}" data-grade="${escAttr(g)}">${g === 'all' ? 'All' : escHtml(g)}</button>`
-    ).join('');
+    document.getElementById('grade-tabs').innerHTML = tabs.map(g => {
+      const active = g === 'all' ? activeGrades.size === 0 : activeGrades.has(g);
+      return `<button class="grade-tab${active ? ' active' : ''}" data-grade="${escAttr(g)}">${g === 'all' ? 'All' : escHtml(g)}</button>`;
+    }).join('');
   }
 
   // ── Detail ───────────────────────────────────────────────────────────────────
-  function renderDetail(id, animate) {
+  function renderDetail(id) {
     const wrap = document.getElementById('detail-content');
-
-    // On a swipe the view doesn't change, so re-trigger a quick fade on the
-    // content itself so the switch reads as a deliberate change, not a flicker.
-    if (animate) {
-      wrap.style.animation = 'none';
-      void wrap.offsetWidth;            // force reflow so the animation re-runs
-      wrap.style.animation = 'detailSwap 0.18s ease';
-    }
 
     if (!loaded) {
       currentProblem = null;
@@ -1176,7 +1166,7 @@
     // then render in place — the view stays put, only its content swaps.
     history.replaceState(null, '', '#detail/' + encodeURIComponent(next.id));
     closeInfo();
-    renderDetail(next.id, true);
+    renderDetail(next.id);
   }
 
   // ── Info modal ─────────────────────────────────────────────────────────────────
@@ -1400,12 +1390,26 @@
     renderList();
   });
 
-  // Grade tabs (delegated)
+  // Grade tabs (delegated) — multi-select:
+  //   • "All" clears every filter.
+  //   • Tapping an unselected grade adds it.
+  //   • Tapping a selected grade removes it — unless it's the only one selected,
+  //     in which case it stays (tapping does nothing).
   document.getElementById('grade-tabs').addEventListener('click', e => {
+    const tabs = e.currentTarget;
     const tab = e.target.closest('.grade-tab');
     if (!tab) return;
-    activeGrade = tab.dataset.grade;
-    document.querySelectorAll('.grade-tab').forEach(x => x.classList.toggle('active', x === tab));
+    const g = tab.dataset.grade;
+    if (g === 'all') {
+      activeGrades.clear();
+    } else if (activeGrades.has(g)) {
+      if (activeGrades.size > 1) activeGrades.delete(g);   // last one stays
+    } else {
+      activeGrades.add(g);
+    }
+    const scroll = tabs.scrollLeft;
+    buildGradeTabs();        // re-render so "All" and the chips reflect the new state
+    tabs.scrollLeft = scroll;  // keep the strip where the user left it
     renderList();
   });
 
