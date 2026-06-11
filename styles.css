@@ -70,7 +70,11 @@
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
       border-bottom: 1px solid var(--border);
-      padding: 14px 16px 10px;
+      /* Reserve the iOS status-bar / notch area (viewport-fit=cover +
+         black-translucent draw the page under it). The header background fills
+         the inset so the clock/battery sit on dark, not over the content. */
+      padding: calc(14px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+               10px calc(16px + env(safe-area-inset-left));
     }
 
     .header-title {
@@ -191,6 +195,9 @@
       justify-content: center;
       min-height: 100dvh;
       text-align: center;
+      /* Keep the card clear of the notch / status bar (auth has no top bar). */
+      padding-top: calc(20px + env(safe-area-inset-top));
+      padding-bottom: calc(20px + env(safe-area-inset-bottom));
     }
 
     /* ── Problem cards (list) ────────────────────────────────────────── */
