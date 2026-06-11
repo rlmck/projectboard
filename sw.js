@@ -1,15 +1,19 @@
 // Project Board — service worker
 // Strategy:
-//   * HTML / navigations  -> network-first  (always get the latest app, fall back to cache offline)
-//   * other same-origin   -> stale-while-revalidate (fast, but refreshes in the background)
-//   * Supabase + CDN      -> never intercepted (straight to network)
+//   * HTML / navigations + app JS/CSS -> network-first  (always get the latest app, fall back to cache offline)
+//   * other same-origin (icons/image) -> stale-while-revalidate (fast, refreshes in the background)
+//   * Supabase + CDN                   -> never intercepted (straight to network)
 //
+// JS/CSS are network-first so a code change shows up on the next load without a
+// cache-version bump — matching how the all-in-one index.html used to behave.
 // Bump CACHE whenever the asset list changes so old caches are cleared.
 
-const CACHE = 'pb-v5';
+const CACHE = 'pb-v6';
 const ASSETS = [
   './',
   './index.html',
+  './styles.css',
+  './app.js',
   './manifest.json',
   './icon.svg',
   './ProjectBoard.png',
@@ -49,6 +53,23 @@ self.addEventListener('fetch', event => {
           return resp;
         })
         .catch(() => caches.match('./index.html').then(r => r || caches.match('./')))
+    );
+    return;
+  }
+
+  // Network-first for the app's own JS/CSS too, so code/style changes appear on
+  // the next load (no cache-version bump needed). Falls back to cache offline.
+  if (req.destination === 'script' || req.destination === 'style') {
+    event.respondWith(
+      fetch(req)
+        .then(resp => {
+          if (resp && resp.ok) {
+            const copy = resp.clone();
+            caches.open(CACHE).then(cache => cache.put(req, copy));
+          }
+          return resp;
+        })
+        .catch(() => caches.match(req))
     );
     return;
   }
