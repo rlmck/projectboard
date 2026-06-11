@@ -564,13 +564,19 @@
 
   const holdsWithRole = role => Object.keys(createRoles).filter(h => createRoles[h] === role);
 
-  // The top row (row 13 = the 12 highest holds) is the finish zone — tapping any
-  // of them sets the finish. holdN numbering runs row by row (A1..S1 = hold1..19,
-  // …, row 13 = hold229..247, which is exactly 12 mapped holds).
-  function isTopHold(h) {
-    const m = /^hold(\d+)$/.exec(h);
-    return m ? Math.ceil(Number(m[1]) / 19) === 13 : false;
+  // The top row is the finish zone — tapping any of those holds sets the finish.
+  // hold numbering doesn't map cleanly to visual rows (the board is hand-set), so
+  // identify the top row by position: the 12 highest holds in hold_map.json (there
+  // is a clean vertical gap after them — y ≈ 1.6–3.3, then jumps to ≈ 7.6).
+  let topHoldsSet = null;
+  function topHolds() {
+    if (topHoldsSet) return topHoldsSet;
+    if (!HOLD_MAP) return new Set();
+    const byHeight = Object.keys(HOLD_MAP).sort((a, b) => HOLD_MAP[a].y - HOLD_MAP[b].y);
+    topHoldsSet = new Set(byHeight.slice(0, 12));
+    return topHoldsSet;
   }
+  function isTopHold(h) { return topHolds().has(h); }
 
   // Draw a coloured dot for each assigned hold (only assigned ones — no faint
   // reference dots) and refresh the running count summary.
