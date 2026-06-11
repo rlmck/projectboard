@@ -413,11 +413,13 @@
     updateAdminUI();
   }
 
-  // The delete (✕) button only appears for admins, on a real problem.
+  // The admin-only buttons (delete + edit grade) appear only for admins, on a real problem.
   function updateAdminUI() {
-    const del = document.getElementById('detail-delete');
-    if (!del) return;
-    del.hidden = !(profile && profile.is_admin && currentProblem);
+    const show = !!(profile && profile.is_admin && currentProblem);
+    ['detail-delete', 'detail-edit'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.hidden = !show;
+    });
   }
 
   // ── Delete a problem (admins only; the DB enforces it via RLS) ───────────────
@@ -453,6 +455,49 @@
     renderList();
     showToast('Problem deleted', 'success');
     location.hash = '#list';
+  }
+
+  // ── Edit a problem's grade (admins only; DB enforces it via RLS) ─────────────
+  let editGrade = '';
+  function buildGradeEditOptions() {
+    document.getElementById('grade-edit-options').innerHTML = GRADE_ORDER.map(g =>
+      `<button class="grade-tab${g === editGrade ? ' active' : ''}" data-grade="${escAttr(g)}" type="button">${escHtml(g)}</button>`
+    ).join('');
+  }
+  function openGradeEdit() {
+    if (!currentProblem || !(profile && profile.is_admin)) return;
+    editGrade = currentProblem.grade || '';
+    document.getElementById('grade-problem-name').textContent = displayName(currentProblem);
+    document.getElementById('grade-error').textContent = '';
+    buildGradeEditOptions();
+    document.getElementById('grade-modal').classList.add('show');
+  }
+  function closeGradeEdit() { document.getElementById('grade-modal').classList.remove('show'); }
+
+  async function saveGradeEdit() {
+    const p = currentProblem;
+    if (!p) return;
+    const errEl = document.getElementById('grade-error');
+    if (!editGrade) { errEl.textContent = 'Pick a grade.'; return; }
+    if (editGrade === p.grade) { closeGradeEdit(); return; }   // no change
+    const btn = document.getElementById('grade-save');
+    const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+
+    const { error } = await sb.from('problems').update({ grade: editGrade }).eq('id', p.id);
+    btn.disabled = false; btn.textContent = prev;
+    if (error) {
+      errEl.textContent = error.code === '42501'
+        ? 'You don’t have permission to edit problems.'   // not an admin (RLS)
+        : error.message;
+      return;
+    }
+
+    p.grade = editGrade;                 // update in place (same object lives in allProblems)
+    closeGradeEdit();
+    buildGradeTabs();                    // a new grade may add/remove a filter tab
+    renderList();
+    if (currentView === 'detail') renderDetail(p.id);
+    showToast('Grade updated', 'success');
   }
 
   // Load the signed-in user's ticks into myTicks; clear for guests. RLS limits
@@ -927,12 +972,27 @@
   });
   document.getElementById('detail-tick').addEventListener('click', toggleTick);
   document.getElementById('detail-delete').addEventListener('click', openDeleteConfirm);
+  document.getElementById('detail-edit').addEventListener('click', openGradeEdit);
 
   // Delete confirm modal
   document.getElementById('delete-cancel').addEventListener('click', closeDeleteConfirm);
   document.getElementById('delete-confirm').addEventListener('click', doDeleteProblem);
   document.getElementById('delete-modal').addEventListener('click', e => {
     if (e.target.id === 'delete-modal') closeDeleteConfirm();
+  });
+
+  // Edit grade modal
+  document.getElementById('grade-edit-options').addEventListener('click', e => {
+    const t = e.target.closest('.grade-tab');
+    if (!t) return;
+    editGrade = t.dataset.grade;
+    buildGradeEditOptions();
+  });
+  document.getElementById('grade-save').addEventListener('click', saveGradeEdit);
+  document.getElementById('grade-cancel').addEventListener('click', closeGradeEdit);
+  document.getElementById('grade-close').addEventListener('click', closeGradeEdit);
+  document.getElementById('grade-modal').addEventListener('click', e => {
+    if (e.target.id === 'grade-modal') closeGradeEdit();
   });
 
   // Swipe left/right on the detail board to step through the filtered deck.
@@ -998,7 +1058,7 @@
   document.getElementById('info-modal').addEventListener('click', e => {
     if (e.target.id === 'info-modal') closeInfo();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeInfo(); closeDeleteConfirm(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeInfo(); closeDeleteConfirm(); closeGradeEdit(); } });
 
   // Auth view actions
   document.getElementById('auth-back').addEventListener('click', () => { location.hash = '#list'; });

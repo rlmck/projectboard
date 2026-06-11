@@ -655,6 +655,15 @@
     #detail-delete:active { background: rgba(239,68,68,0.14); }
     #detail-delete[hidden] { display: none; }
 
+    /* Admin edit-grade button — accent to flag it */
+    #detail-edit { color: var(--accent-hover); border-color: rgba(236,72,153,0.5); }
+    #detail-edit:active { background: rgba(236,72,153,0.14); }
+    #detail-edit[hidden] { display: none; }
+    #detail-edit svg { width: 17px; height: 17px; }
+
+    /* Grade chips inside the edit-grade modal */
+    .grade-edit-options { flex-wrap: wrap; margin: 0 0 6px; }
+
     /* Side-by-side modal buttons (cancel / confirm) */
     .modal-actions { display: flex; gap: 10px; }
     .modal-actions .btn-block { flex: 1; margin-top: 0; }
