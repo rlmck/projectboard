@@ -12,9 +12,9 @@ The app is hosted on **GitHub Pages** from the `main` branch.
 
 ---
 
-## Build status (10 June 2026)
+## Build status (11 June 2026)
 
-**Done:** problem list + grade tabs + search + cast (Supabase Realtime); **detail view hold overlay** (a problem's holds lit on `ProjectBoard.png` via `hold_map.json`); **auth** — Google OAuth + email/password with a first-login display name (`profiles.username`, unique).
+**Done:** problem list + grade tabs + search + cast (Supabase Realtime); **multi-select grade filters** (tap = switch to one grade, tap-and-hold = toggle into a multi-select; "All" clears); **detail view hold overlay** (a problem's holds lit on `ProjectBoard.png` via `hold_map.json`) with **swipe between problems** (respects active filters); **auth** — Google OAuth + email/password with a first-login display name (`profiles.username`, unique); **ticks** — signed-in users toggle a problem as sent (private per-user, green check on the detail button + a subtle check on list cards). Code is split into `index.html` / `app.js` / `styles.css`.
 
 **Next session — create-a-problem:** tap holds on the board (`ProjectBoard.png` + `hold_map.json`, nearest-dot hit-testing) to set start/intermediate/finish, add name/grade/feet, then save to Supabase. Any signed-in user may create. **Store start/finish correctly** (first two = start, last = finish — see the inversion note below). Needs a `problems` INSERT policy for authenticated users (not yet added — see `db/04_auth_policies.sql`).
 
@@ -33,7 +33,7 @@ Key files in the repo:
 - `ProjectBoard.png` — illustrated board image used in the detail/create views.
 - `hold_map.json` — hold id → `{x, y}` percentage position on `ProjectBoard.png`. Drives the detail-view hold overlay. See "Hold positions" below.
 - `register_holds.py` — regenerates `hold_map.json` from the original DTB hold coordinates + `hold_positions.json`.
-- `sw.js` / `manifest.json` — service worker (bump `CACHE` on asset changes) + PWA manifest.
+- `sw.js` / `manifest.json` — service worker + PWA manifest. **Deploy/caching:** HTML + app JS/CSS are network-first, so a fresh page load always gets the latest. To push an update to an *already-open* client (auto-reload on next focus), **bump `CACHE`** in `sw.js`. Registered with `updateViaCache:'none'` so `sw.js` is never served stale. ⚠️ Uninstalling the PWA does **not** clear its service worker/caches — a stranded device needs the browser's site-data cleared (Safari: Settings→Safari→Website Data; Chrome: Site settings→Clear & reset).
 
 ---
 
@@ -226,6 +226,6 @@ French bouldering grades in correct difficulty order (for filter tabs and sortin
 
 ---
 
-*Last updated: 11 June 2026 — list now has problem-swipe + multi-select grade filters (tap = one grade, hold = toggle); code split into index.html / app.js / styles.css. Next: create-a-problem.*
+*Last updated: 11 June 2026 — added problem-swipe, multi-select grade filters (tap = one grade, hold = toggle), and personal ticks; code split into index.html / app.js / styles.css; SW hardened (network-first JS/CSS + updateViaCache:'none'). Next: create-a-problem.*
 *Maintained by: Ross (rlmck)*
 *Fuller context in `docs/project-notes.md` (in this repo) and the Claude.ai project knowledge.*
