@@ -27,7 +27,9 @@ The app is hosted on **GitHub Pages** from the `main` branch.
 **Local path (Ross's laptop):** `C:\Users\rossl\Documents\ProjectBoard\projectboard\`
 
 Key files in the repo:
-- `index.html` — the whole PWA (list, detail, create/auth/profile shells, cast). Extend this; don't throw it away.
+- `index.html` — the PWA's markup only (~170 lines): the list/detail/create/auth/profile view shells + modals + nav. Links `styles.css` and `app.js`.
+- `app.js` — **all the app logic** (routing, Supabase data + cast, list/detail/filters/swipe, auth, profile). This is where features go. Read it fully before modifying.
+- `styles.css` — all the styling (dark theme, board overlay, components).
 - `ProjectBoard.png` — illustrated board image used in the detail/create views.
 - `hold_map.json` — hold id → `{x, y}` percentage position on `ProjectBoard.png`. Drives the detail-view hold overlay. See "Hold positions" below.
 - `register_holds.py` — regenerates `hold_map.json` from the original DTB hold coordinates + `hold_positions.json`.
@@ -137,7 +139,7 @@ How `hold_map.json` was produced (see `register_holds.py`):
 
 ## App structure — what to build
 
-This is a **single-page app** using vanilla HTML/CSS/JS (no framework). Keep it that way unless explicitly told to switch. All in `index.html` or split into logical files if the codebase gets large — ask first before splitting.
+This is a **single-page app** using vanilla HTML/CSS/JS (no framework, no build step). Keep it that way unless explicitly told to switch. Code is split across `index.html` (markup), `app.js` (logic), and `styles.css` (styles). `app.js` can be broken into ES modules when it gets large — ask first.
 
 ### Pages / views (client-side routing via hash or shown/hidden divs)
 
@@ -199,9 +201,9 @@ French bouldering grades in correct difficulty order (for filter tabs and sortin
 4. **Rewrite whole files** rather than providing inline diffs.
 5. **Do not install frameworks** (React, Vue, etc.) without being explicitly asked.
 6. **Do not modify the Supabase schema** without being explicitly asked. If a schema change is needed, flag it and wait for confirmation.
-7. **Check what already exists before writing new code.** Read `index.html` fully before modifying it.
+7. **Check what already exists before writing new code.** Read `app.js` (logic) and `index.html` (markup) fully before modifying them.
 8. **The Supabase anon key is safe to commit** — it is a public key, not a secret. Do not replace it with an environment variable placeholder.
-9. **Ask before splitting into multiple files.** Single `index.html` is preferred for now.
+9. **The app is split into `index.html` (markup) + `app.js` (logic) + `styles.css` (styles).** Keep that structure; `app.js` may be split into ES modules later when it gets large — ask before doing so.
 10. **When in doubt about behaviour, ask.** Do not invent product decisions.
 
 ---
@@ -224,6 +226,6 @@ French bouldering grades in correct difficulty order (for filter tabs and sortin
 
 ---
 
-*Last updated: 10 June 2026 — auth (Google + email/password) live; hold overlay live. Next: create-a-problem.*
+*Last updated: 11 June 2026 — list now has problem-swipe + multi-select grade filters (tap = one grade, hold = toggle); code split into index.html / app.js / styles.css. Next: create-a-problem.*
 *Maintained by: Ross (rlmck)*
 *Fuller context in `docs/project-notes.md` (in this repo) and the Claude.ai project knowledge.*
