@@ -182,6 +182,9 @@
       white-space: nowrap;
       transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
       touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
     .grade-tab:active { transform: scale(0.95); }
     .grade-tab.active {
@@ -1390,28 +1393,77 @@
     renderList();
   });
 
-  // Grade tabs (delegated) — multi-select:
-  //   • "All" clears every filter.
-  //   • Tapping an unselected grade adds it.
-  //   • Tapping a selected grade removes it — unless it's the only one selected,
-  //     in which case it stays (tapping does nothing).
-  document.getElementById('grade-tabs').addEventListener('click', e => {
-    const tabs = e.currentTarget;
+  // Grade tabs — simple tap selects one grade, tap-and-hold builds a multi-select.
+  const gradeTabsEl = document.getElementById('grade-tabs');
+
+  // Re-render the tabs + list, preserving the strip's horizontal scroll.
+  function refreshGradeFilter() {
+    const scroll = gradeTabsEl.scrollLeft;
+    buildGradeTabs();
+    gradeTabsEl.scrollLeft = scroll;
+    renderList();
+  }
+
+  // Simple tap: clear everything and keep only this grade ("All" clears entirely).
+  function selectOnlyGrade(g) {
+    activeGrades.clear();
+    if (g !== 'all') activeGrades.add(g);
+    refreshGradeFilter();
+  }
+
+  // Tap-and-hold: toggle this grade in/out of the selection.
+  //   • not selected  → add it
+  //   • selected       → remove it, unless it's the only one left (then keep it)
+  //   • "All"          → just clears (nothing to multi-select)
+  function toggleGrade(g) {
+    if (g === 'all') activeGrades.clear();
+    else if (activeGrades.has(g)) { if (activeGrades.size > 1) activeGrades.delete(g); }
+    else activeGrades.add(g);
+    refreshGradeFilter();
+  }
+
+  let holdTimer = null, holdStartX = 0, holdStartY = 0, suppressTabClick = false;
+  const HOLD_MS = 450;
+
+  gradeTabsEl.addEventListener('touchstart', e => {
+    const tab = e.target.closest('.grade-tab');
+    if (!tab || e.touches.length !== 1) return;
+    suppressTabClick = false;
+    holdStartX = e.touches[0].clientX;
+    holdStartY = e.touches[0].clientY;
+    const g = tab.dataset.grade;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      suppressTabClick = true;                 // swallow the click that follows touchend
+      if (navigator.vibrate) navigator.vibrate(15);
+      toggleGrade(g);
+    }, HOLD_MS);
+  }, { passive: true });
+
+  // A drag means the user is scrolling the strip, not holding — cancel the hold.
+  gradeTabsEl.addEventListener('touchmove', e => {
+    if (!holdTimer) return;
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - holdStartX) > 10 || Math.abs(t.clientY - holdStartY) > 10) {
+      clearTimeout(holdTimer); holdTimer = null;
+    }
+  }, { passive: true });
+
+  const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
+  gradeTabsEl.addEventListener('touchend', cancelHold, { passive: true });
+  gradeTabsEl.addEventListener('touchcancel', cancelHold, { passive: true });
+
+  // Click handles the simple tap (mouse + touch). Skipped right after a hold fired.
+  gradeTabsEl.addEventListener('click', e => {
     const tab = e.target.closest('.grade-tab');
     if (!tab) return;
-    const g = tab.dataset.grade;
-    if (g === 'all') {
-      activeGrades.clear();
-    } else if (activeGrades.has(g)) {
-      if (activeGrades.size > 1) activeGrades.delete(g);   // last one stays
-    } else {
-      activeGrades.add(g);
-    }
-    const scroll = tabs.scrollLeft;
-    buildGradeTabs();        // re-render so "All" and the chips reflect the new state
-    tabs.scrollLeft = scroll;  // keep the strip where the user left it
-    renderList();
+    if (suppressTabClick) { suppressTabClick = false; return; }
+    selectOnlyGrade(tab.dataset.grade);
   });
+
+  // Suppress the long-press context menu on the tabs (mobile + desktop).
+  gradeTabsEl.addEventListener('contextmenu', e => e.preventDefault());
 
   // List clicks: open detail (delegated)
   document.getElementById('list-container').addEventListener('click', e => {
