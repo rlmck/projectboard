@@ -650,15 +650,16 @@
     .btn-danger { background: #dc2626; color: #fff; }
     .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
+    /* Admin-only header buttons hide via the hidden attribute (overrides icon-btn's flex) */
+    .admin-only[hidden] { display: none; }
+
     /* Admin delete (✕) button in the detail header — red to flag it */
     #detail-delete { color: #f87171; border-color: rgba(239,68,68,0.5); }
     #detail-delete:active { background: rgba(239,68,68,0.14); }
-    #detail-delete[hidden] { display: none; }
 
     /* Admin edit-grade button — accent to flag it */
     #detail-edit { color: var(--accent-hover); border-color: rgba(236,72,153,0.5); }
     #detail-edit:active { background: rgba(236,72,153,0.14); }
-    #detail-edit[hidden] { display: none; }
     #detail-edit svg { width: 17px; height: 17px; }
 
     /* Grade chips inside the edit-grade modal */

@@ -24,6 +24,7 @@
   let currentProblem = null;
   let HOLD_MAP = null;   // hold id -> {x,y} %, loaded from hold_map.json
   let session = null;    // Supabase auth session (null = guest)
+  let authReady = false; // true once getSession has resolved (don't gate routes before then)
   let profile = null;    // { id, username, is_admin } for the signed-in user
   let profileNames = {}; // account id -> current username (for live setter names)
   let myTicks = new Set(); // problem_ids the signed-in user has ticked (sent)
@@ -76,12 +77,12 @@
     return name || '(unnamed)';
   }
 
-  // The setter to show. App-created problems carry created_by (the owner's account
+  // The setter to show. App-created problems carry setter_id (the owner's account
   // id), so we resolve the *live* display name from profileNames — that way a rename
   // propagates everywhere. Legacy/migrated rows have no owner, so fall back to the
   // text setter captured at creation.
   function setterName(p) {
-    if (p.created_by && profileNames[p.created_by]) return profileNames[p.created_by];
+    if (p.setter_id && profileNames[p.setter_id]) return profileNames[p.setter_id];
     return p.setter || 'unknown';
   }
 
@@ -169,7 +170,9 @@
     switch (route) {
       case 'detail':  renderDetail(param); setView('detail'); break;
       case 'create':
-        if (!session) { location.replace(location.pathname + '#auth'); break; }
+        // Only bounce guests once we actually know the auth state — otherwise a
+        // cold reload/deep-link on #create would kick a signed-in user to #auth.
+        if (authReady && !session) { location.replace(location.pathname + '#auth'); break; }
         initCreateView();
         setView('create');
         break;
@@ -230,14 +233,21 @@
     container.innerHTML = `<div class="problem-list">${list.map(cardHtml).join('')}</div>`;
   }
 
+  // Shared grade-tab markup. `isActive(g)` decides the highlight; 'all' renders as "All".
+  function gradeTabButtons(grades, isActive) {
+    return grades.map(g =>
+      `<button class="grade-tab${isActive(g) ? ' active' : ''}" data-grade="${escAttr(g)}" type="button">${g === 'all' ? 'All' : escHtml(g)}</button>`
+    ).join('');
+  }
+
   function buildGradeTabs() {
     const present = [...new Set(allProblems.map(p => p.grade).filter(Boolean))]
       .sort((a, b) => gradeRank(a) - gradeRank(b) || a.localeCompare(b));
-    const tabs = ['all', ...present];
-    document.getElementById('grade-tabs').innerHTML = tabs.map(g => {
-      const active = g === 'all' ? activeGrades.size === 0 : activeGrades.has(g);
-      return `<button class="grade-tab${active ? ' active' : ''}" data-grade="${escAttr(g)}">${g === 'all' ? 'All' : escHtml(g)}</button>`;
-    }).join('');
+    // Drop any active filter whose grade no longer exists (last problem deleted/regraded),
+    // otherwise visibleProblems() would filter on an absent grade and show nothing.
+    [...activeGrades].forEach(g => { if (!present.includes(g)) activeGrades.delete(g); });
+    document.getElementById('grade-tabs').innerHTML =
+      gradeTabButtons(['all', ...present], g => g === 'all' ? activeGrades.size === 0 : activeGrades.has(g));
   }
 
   // ── Detail ───────────────────────────────────────────────────────────────────
@@ -413,13 +423,10 @@
     updateAdminUI();
   }
 
-  // The admin-only buttons (delete + edit grade) appear only for admins, on a real problem.
+  // Every .admin-only control appears only for admins, on a real problem.
   function updateAdminUI() {
     const show = !!(profile && profile.is_admin && currentProblem);
-    ['detail-delete', 'detail-edit'].forEach(id => {
-      const btn = document.getElementById(id);
-      if (btn) btn.hidden = !show;
-    });
+    document.querySelectorAll('.admin-only').forEach(btn => { btn.hidden = !show; });
   }
 
   // ── Delete a problem (admins only; the DB enforces it via RLS) ───────────────
@@ -460,9 +467,8 @@
   // ── Edit a problem's grade (admins only; DB enforces it via RLS) ─────────────
   let editGrade = '';
   function buildGradeEditOptions() {
-    document.getElementById('grade-edit-options').innerHTML = GRADE_ORDER.map(g =>
-      `<button class="grade-tab${g === editGrade ? ' active' : ''}" data-grade="${escAttr(g)}" type="button">${escHtml(g)}</button>`
-    ).join('');
+    document.getElementById('grade-edit-options').innerHTML =
+      gradeTabButtons(GRADE_ORDER, g => g === editGrade);
   }
   function openGradeEdit() {
     if (!currentProblem || !(profile && profile.is_admin)) return;
@@ -543,11 +549,13 @@
   async function initAuth() {
     const { data } = await sb.auth.getSession();   // also consumes any OAuth redirect in the URL
     session = data.session || null;
+    authReady = true;
     if (session) { await loadProfile(); await loadTicks(); }
     renderProfile();
     if (loaded) renderList();   // refresh tick flags (skip if problems still loading)
     if (currentView === 'detail') updateTickButton();
     if (location.hash.includes('access_token')) location.replace(location.pathname + '#list');
+    else router();              // re-evaluate the route now auth is known (gates #create for guests)
 
     sb.auth.onAuthStateChange(async (_event, s) => {
       session = s || null;
@@ -563,9 +571,11 @@
     if (!session) { profile = null; return; }
     const { data, error } = await sb
       .from('profiles').select('id, username, is_admin').eq('id', session.user.id).maybeSingle();
-    if (error) console.warn('profile load failed', error);
+    // A load *error* is not the same as "no profile" — don't null an existing profile
+    // or wrongly prompt an existing user to pick a name (which then 23505s on insert).
+    if (error) { console.warn('profile load failed', error); return; }
     profile = data || null;
-    if (session && !profile) promptDisplayName();   // brand-new user (Google or email)
+    if (session && !profile) promptDisplayName();   // genuinely new user (Google or email)
   }
 
   async function authEmail() {
@@ -783,9 +793,8 @@
   }
 
   function buildCreateGrades() {
-    document.getElementById('create-grades').innerHTML = GRADE_ORDER.map(g =>
-      `<button class="grade-tab${g === createGrade ? ' active' : ''}" data-grade="${escAttr(g)}" type="button">${escHtml(g)}</button>`
-    ).join('');
+    document.getElementById('create-grades').innerHTML =
+      gradeTabButtons(GRADE_ORDER, g => g === createGrade);
   }
 
   function resetCreate() {
@@ -818,9 +827,10 @@
     if (ints.length < 1) { errEl.textContent = 'Add at least one intermediate hold.'; return; }
     if (fins.length !== 1) { errEl.textContent = 'Add exactly one finish hold.'; return; }
 
-    // Names must be unique (case-insensitive) — they're how a problem is cast.
-    const nameKey = name.toLowerCase();
-    if (allProblems.some(p => String(p.name || '').trim().toLowerCase() === nameKey)) {
+    // Names must be unique — they're how a problem is cast. Compare on the *displayed*
+    // name (grade stripped) so a new "Crimpy" can't collide with a migrated "Crimpy 6a".
+    const newDisplay = displayName({ name, grade: createGrade }).toLowerCase();
+    if (allProblems.some(p => displayName(p).toLowerCase() === newDisplay)) {
       errEl.textContent = 'That name is taken — pick another.';
       return;
     }
@@ -836,8 +846,8 @@
     const row = {
       name,
       grade: createGrade,
-      setter: (profile && profile.username) || null,   // snapshot; display uses created_by
-      created_by: session.user.id,                     // owner — drives the live setter name
+      setter: (profile && profile.username) || '',     // snapshot (NOT NULL); display uses setter_id
+      setter_id: session.user.id,                      // owner — drives the live setter name
       finish_hold: D[0],
       intermediate_holds: D.slice(1, D.length - 2),
       start_holds: D.slice(D.length - 2),
@@ -850,8 +860,9 @@
     const { data, error } = await sb.from('problems').insert(row).select().single();
     btn.disabled = false; btn.textContent = prev;
     if (error) {
-      errEl.textContent = error.code === '42501'
-        ? 'You don’t have permission to create problems yet.'   // RLS INSERT policy missing
+      errEl.textContent =
+        error.code === '42501' ? 'You don’t have permission to create problems yet.'   // RLS INSERT policy missing
+        : error.code === '23505' ? 'That name is taken — pick another.'                // unique-name backstop
         : error.message;
       return;
     }
