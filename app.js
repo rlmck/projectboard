@@ -24,7 +24,8 @@
   let currentProblem = null;
   let HOLD_MAP = null;   // hold id -> {x,y} %, loaded from hold_map.json
   let session = null;    // Supabase auth session (null = guest)
-  let profile = null;    // { id, username } for the signed-in user
+  let profile = null;    // { id, username, is_admin } for the signed-in user
+  let profileNames = {}; // account id -> current username (for live setter names)
   let myTicks = new Set(); // problem_ids the signed-in user has ticked (sent)
   let authMode = 'signin'; // 'signin' | 'signup' for the #auth form
 
@@ -73,6 +74,15 @@
       if (stripped) name = stripped;
     }
     return name || '(unnamed)';
+  }
+
+  // The setter to show. App-created problems carry created_by (the owner's account
+  // id), so we resolve the *live* display name from profileNames — that way a rename
+  // propagates everywhere. Legacy/migrated rows have no owner, so fall back to the
+  // text setter captured at creation.
+  function setterName(p) {
+    if (p.created_by && profileNames[p.created_by]) return profileNames[p.created_by];
+    return p.setter || 'unknown';
   }
 
   // Display a hold id compactly: "hold235" -> "235", otherwise raw.
@@ -183,7 +193,7 @@
       const q = searchQuery;
       arr = arr.filter(p =>
         String(p.name || '').toLowerCase().includes(q) ||
-        String(p.setter || '').toLowerCase().includes(q) ||
+        setterName(p).toLowerCase().includes(q) ||
         String(p.grade || '').toLowerCase().includes(q)
       );
     }
@@ -200,7 +210,7 @@
           <div class="problem-name">${escHtml(displayName(p))}</div>
           <div class="problem-meta">
             <span class="grade-badge">${escHtml(p.grade || '—')}</span>
-            <span class="meta-setter">${escHtml(p.setter || '—')}</span>
+            <span class="meta-setter">${escHtml(setterName(p))}</span>
             ${starsHtml(p.stars)}
             ${isTicked(p.id) ? '<span class="tick-flag" title="Sent">✓</span>' : ''}
           </div>
@@ -257,7 +267,7 @@
         <h1 class="detail-name">${escHtml(displayName(p))}</h1>
         <div class="detail-meta">
           <span class="grade-badge">${escHtml(p.grade || '—')}</span>
-          <span class="meta-setter">by ${escHtml(p.setter || 'unknown')}</span>
+          <span class="meta-setter">by ${escHtml(setterName(p))}</span>
           ${starsHtml(p.stars)}
           ${p.is_benchmark ? `<span class="bench-badge">★ Benchmark</span>` : ''}
         </div>
@@ -362,6 +372,15 @@
     // If we're already on a detail/create view, render now that positions exist.
     if (currentView === 'detail') router();
     if (currentView === 'create') applyCreateRoles();
+  }
+
+  // ── Load the id -> username map (so setters show the live display name) ───────
+  async function loadProfileNames() {
+    const { data, error } = await sb.from('profiles').select('id, username');
+    if (error) { console.warn('profile names load failed', error); return; }
+    profileNames = Object.fromEntries((data || []).map(r => [r.id, r.username]));
+    if (loaded) renderList();                       // refresh setters once names arrive
+    if (currentView === 'detail') router();
   }
 
   // ── Load problems ─────────────────────────────────────────────────────────────
@@ -582,7 +601,10 @@
     const wasEditing = !!profile;
     closeNameModal();
     await loadProfile();
+    profileNames[session.user.id] = name;   // reflect the rename on this user's problems
     renderProfile();
+    renderList();
+    if (currentView === 'detail') router();
     showToast(wasEditing ? 'Name updated' : 'Welcome, ' + name, 'success');
   }
 
@@ -769,7 +791,8 @@
     const row = {
       name,
       grade: createGrade,
-      setter: (profile && profile.username) || null,
+      setter: (profile && profile.username) || null,   // snapshot; display uses created_by
+      created_by: session.user.id,                     // owner — drives the live setter name
       finish_hold: D[0],
       intermediate_holds: D.slice(1, D.length - 2),
       start_holds: D.slice(D.length - 2),
@@ -1061,8 +1084,9 @@
   // ── Boot ──────────────────────────────────────────────────────────────────────
   window.addEventListener('hashchange', router);
   router();        // show initial view (list shows its loading spinner)
-  loadProblems();  // fetch, then render + re-route
-  loadHoldMap();   // fetch hold positions for the detail board overlay
+  loadProblems();     // fetch, then render + re-route
+  loadProfileNames(); // id -> username map so setters show the live display name
+  loadHoldMap();      // fetch hold positions for the detail board overlay
   initAuth();      // restore session, wire auth state, handle Google redirect
 
   // Splash: linger briefly, then fade out and remove from the DOM.
