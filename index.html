@@ -75,6 +75,9 @@
     .view { display: none; }
     .view.active { display: block; animation: fade 0.18s ease; }
     @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+    /* Quick cross-fade when swiping the detail view to the next/prev problem
+       (the view itself stays put — only its content is swapped). */
+    @keyframes detailSwap { from { opacity: 0.3; } to { opacity: 1; } }
 
     /* ── Top bar (per view) ──────────────────────────────────────────── */
     .topbar {
@@ -1114,8 +1117,16 @@
   }
 
   // ── Detail ───────────────────────────────────────────────────────────────────
-  function renderDetail(id) {
+  function renderDetail(id, animate) {
     const wrap = document.getElementById('detail-content');
+
+    // On a swipe the view doesn't change, so re-trigger a quick fade on the
+    // content itself so the switch reads as a deliberate change, not a flicker.
+    if (animate) {
+      wrap.style.animation = 'none';
+      void wrap.offsetWidth;            // force reflow so the animation re-runs
+      wrap.style.animation = 'detailSwap 0.18s ease';
+    }
 
     if (!loaded) {
       currentProblem = null;
@@ -1148,6 +1159,24 @@
         ${boardOverlayHtml(p)}
       </div>
     `;
+  }
+
+  // ── Swipe between problems (detail view) ──────────────────────────────────────
+  // The "deck" is the same filtered + sorted list the cards came from, so swiping
+  // honours the active grade tab and search. dir = +1 (next) / -1 (previous).
+  function swipeToAdjacent(dir) {
+    if (currentView !== 'detail' || !currentProblem) return;
+    const deck = visibleProblems();
+    const idx = deck.findIndex(p => String(p.id) === String(currentProblem.id));
+    if (idx === -1) return;                       // current isn't in the filtered deck
+    const nextIdx = idx + dir;
+    if (nextIdx < 0 || nextIdx >= deck.length) return;   // stop at the ends
+    const next = deck[nextIdx];
+    // Replace the hash (don't push history) so Back still returns to the list,
+    // then render in place — the view stays put, only its content swaps.
+    history.replaceState(null, '', '#detail/' + encodeURIComponent(next.id));
+    closeInfo();
+    renderDetail(next.id, true);
   }
 
   // ── Info modal ─────────────────────────────────────────────────────────────────
@@ -1399,6 +1428,40 @@
   document.getElementById('detail-tick').addEventListener('click', () => {
     if (!session) { showToast('Sign in to track ticks', 'success'); location.hash = '#auth'; return; }
     showToast('Ticks coming soon', 'success');
+  });
+
+  // Swipe left/right on the detail board to step through the filtered deck.
+  // Attached to the stable <main> (detail-content is replaced on every render).
+  // Listeners are passive + never preventDefault, so taps on the header buttons
+  // and the cast/tick actions are unaffected.
+  (function wireDetailSwipe() {
+    const area = document.querySelector('#view-detail main');
+    if (!area) return;
+    let startX = 0, startY = 0, tracking = false;
+    area.addEventListener('touchstart', e => {
+      if (e.touches.length !== 1) { tracking = false; return; }
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      tracking = true;
+    }, { passive: true });
+    area.addEventListener('touchend', e => {
+      if (!tracking) return;
+      tracking = false;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      if (Math.abs(dx) < 55) return;                    // too short to be a swipe
+      if (Math.abs(dx) < Math.abs(dy) * 1.4) return;    // too vertical
+      swipeToAdjacent(dx < 0 ? 1 : -1);                 // swipe left = next
+    }, { passive: true });
+  })();
+
+  // Arrow keys step through the deck too (handy for desktop testing).
+  document.addEventListener('keydown', e => {
+    if (currentView !== 'detail') return;
+    if (document.getElementById('info-modal').classList.contains('show')) return;
+    if (e.key === 'ArrowRight') swipeToAdjacent(1);
+    else if (e.key === 'ArrowLeft') swipeToAdjacent(-1);
   });
 
   // Create (placeholder) — open from list, back returns to list

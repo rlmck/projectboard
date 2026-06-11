@@ -6,7 +6,7 @@
 //
 // Bump CACHE whenever the asset list changes so old caches are cleared.
 
-const CACHE = 'pb-v4';
+const CACHE = 'pb-v5';
 const ASSETS = [
   './',
   './index.html',
