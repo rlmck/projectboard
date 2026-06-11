@@ -547,12 +547,22 @@
     const e = document.getElementById('auth-error'); if (e) e.textContent = '';
   }
 
-  function promptDisplayName() {
+  // The name modal does double duty: mandatory first-sign-in (no profile yet,
+  // no Cancel) and editing later from the profile page (Cancel allowed).
+  function openNameModal(mode) {
+    const editing = mode === 'edit';
+    document.getElementById('name-modal-title').textContent = editing ? 'Edit display name' : 'Choose a display name';
+    document.getElementById('name-cancel').hidden = !editing;
     const email = (session && session.user && session.user.email) || '';
-    document.getElementById('name-input').value = (email.split('@')[0] || '').trim();
+    document.getElementById('name-input').value = editing
+      ? ((profile && profile.username) || '')
+      : (email.split('@')[0] || '').trim();
     document.getElementById('name-error').textContent = '';
     document.getElementById('name-modal').classList.add('show');
+    if (editing) setTimeout(() => document.getElementById('name-input').focus(), 50);
   }
+  function promptDisplayName() { openNameModal('create'); }   // first sign-in
+  function closeNameModal() { document.getElementById('name-modal').classList.remove('show'); }
 
   async function saveDisplayName() {
     const errEl = document.getElementById('name-error');
@@ -560,16 +570,31 @@
     if (name.length < 2) { errEl.textContent = 'Pick a name (at least 2 characters).'; return; }
     if (!session) { errEl.textContent = 'Session expired — please sign in again.'; return; }
     const btn = document.getElementById('name-save'); btn.disabled = true;
-    const { error } = await sb.from('profiles').insert({ id: session.user.id, username: name });
+    // Update if a profile row already exists (editing), otherwise create it.
+    const { error } = profile
+      ? await sb.from('profiles').update({ username: name }).eq('id', session.user.id)
+      : await sb.from('profiles').insert({ id: session.user.id, username: name });
     btn.disabled = false;
     if (error) {
       errEl.textContent = error.code === '23505' ? 'That name is taken — try another.' : error.message;
       return;
     }
-    document.getElementById('name-modal').classList.remove('show');
+    const wasEditing = !!profile;
+    closeNameModal();
     await loadProfile();
     renderProfile();
-    showToast('Welcome, ' + name, 'success');
+    showToast(wasEditing ? 'Name updated' : 'Welcome, ' + name, 'success');
+  }
+
+  // Personal stats from the user's ticks (private to them).
+  function tickStats() {
+    const total = myTicks.size;
+    let hardest = null;
+    allProblems.forEach(p => {
+      if (!isTicked(p.id) || gradeRank(p.grade) === 999) return;   // skip un-ticked / ungraded
+      if (!hardest || gradeRank(p.grade) > gradeRank(hardest.grade)) hardest = p;
+    });
+    return { total, hardest };
   }
 
   function renderProfile() {
@@ -577,16 +602,25 @@
     if (!el) return;
     const userSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>';
     if (session && profile) {
+      const editSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>';
+      const { total, hardest } = tickStats();
+      const hardestHtml = hardest
+        ? `<span class="grade-badge">${escHtml(hardest.grade)}</span> <span class="hardest-name">${escHtml(displayName(hardest))}</span>`
+        : '—';
       el.innerHTML = `
         <div class="shell-card" style="margin:8px auto 18px;text-align:center">
           <div class="shell-icon">${userSvg}</div>
-          <div class="shell-title">${escHtml(profile.username)}</div>
-          <div class="shell-sub">${escHtml((session.user && session.user.email) || '')}</div>
+          <div class="profile-name-row">
+            <div class="shell-title" style="margin-bottom:0">${escHtml(profile.username)}</div>
+            <button class="icon-btn profile-edit" id="profile-edit-name" aria-label="Edit display name">${editSvg}</button>
+          </div>
+          <div class="shell-sub" style="margin-top:6px">${escHtml((session.user && session.user.email) || '')}</div>
           <button class="btn-block btn-ghost" id="profile-signout">Sign out</button>
         </div>
-        <div class="profile-row"><span class="k">Total ticks</span><span class="v">—</span></div>
-        <div class="profile-row"><span class="k">Hardest send</span><span class="v">—</span></div>`;
+        <div class="profile-row"><span class="k">Total ticks</span><span class="v">${total}</span></div>
+        <div class="profile-row"><span class="k">Hardest send</span><span class="v">${hardestHtml}</span></div>`;
       document.getElementById('profile-signout').addEventListener('click', doSignOut);
+      document.getElementById('profile-edit-name').addEventListener('click', () => openNameModal('edit'));
     } else {
       el.innerHTML = `
         <div class="shell-card" style="margin:8px auto 18px;text-align:center">
@@ -950,6 +984,7 @@
   document.getElementById('auth-password').addEventListener('keydown', e => { if (e.key === 'Enter') authEmail(); });
   document.getElementById('auth-toggle-link').addEventListener('click', () => setAuthMode(authMode === 'signup' ? 'signin' : 'signup'));
   document.getElementById('name-save').addEventListener('click', saveDisplayName);
+  document.getElementById('name-cancel').addEventListener('click', closeNameModal);
   document.getElementById('name-input').addEventListener('keydown', e => { if (e.key === 'Enter') saveDisplayName(); });
 
   // ── PWA: service worker + install (Add to Home Screen) ───────────────────────

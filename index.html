@@ -179,17 +179,20 @@
   </div>
 </div>
 
-<!-- ══ DISPLAY NAME MODAL (first sign-in) ═════════════════════════════ -->
+<!-- ══ DISPLAY NAME MODAL (first sign-in + edit) ══════════════════════ -->
 <div class="modal-overlay" id="name-modal">
   <div class="modal" role="dialog" aria-modal="true" aria-label="Choose a display name">
     <div class="modal-header">
-      <div class="modal-title">Choose a display name</div>
+      <div class="modal-title" id="name-modal-title">Choose a display name</div>
     </div>
     <div class="name-body">
       <p class="shell-sub" style="margin:0 0 12px">This is the name shown on problems you set. It must be unique — you can change it later.</p>
       <input class="fld" id="name-input" type="text" placeholder="Display name" maxlength="32" autocomplete="off" />
       <div class="auth-error" id="name-error"></div>
-      <button class="btn-block btn-primary" id="name-save">Save</button>
+      <div class="modal-actions">
+        <button class="btn-block btn-ghost" id="name-cancel" hidden>Cancel</button>
+        <button class="btn-block btn-primary" id="name-save">Save</button>
+      </div>
     </div>
   </div>
 </div>

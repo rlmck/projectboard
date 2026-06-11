@@ -673,7 +673,17 @@
       margin-bottom: 8px;
     }
     .profile-row .k { color: var(--text-muted); font-size: 14px; }
-    .profile-row .v { font-weight: 700; }
+    .profile-row .v { font-weight: 700; display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .profile-row .v .hardest-name {
+      font-weight: 600; color: var(--text-muted); font-size: 13px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46vw;
+    }
+
+    /* Display-name row with inline edit button */
+    .profile-name-row { display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .profile-edit { width: 32px; height: 32px; color: var(--text-muted); }
+    .profile-edit svg { width: 16px; height: 16px; }
+    .profile-edit:active { color: var(--text); }
 
     /* ── Bottom nav ──────────────────────────────────────────────────── */
     #bottom-nav {
