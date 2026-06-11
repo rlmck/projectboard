@@ -12,11 +12,18 @@ The app is hosted on **GitHub Pages** from the `main` branch.
 
 ---
 
-## Build status (11 June 2026)
+## Build status (12 June 2026)
 
-**Done:** problem list + grade tabs + search + cast (Supabase Realtime); **multi-select grade filters** (tap = switch to one grade, tap-and-hold = toggle into a multi-select; "All" clears); **detail view hold overlay** (a problem's holds lit on `ProjectBoard.png` via `hold_map.json`) with **swipe between problems** (respects active filters); **auth** — Google OAuth + email/password with a first-login display name (`profiles.username`, unique); **ticks** — signed-in users toggle a problem as sent (private per-user, green check on the detail button + a subtle check on list cards). Code is split into `index.html` / `app.js` / `styles.css`.
+**Done:** problem list + grade tabs + search + cast (Supabase Realtime); **multi-select grade filters** (tap = switch to one grade, tap-and-hold = toggle into a multi-select; "All" clears); **detail view hold overlay** (a problem's holds lit on `ProjectBoard.png` via `hold_map.json`) with **swipe between problems** (respects active filters); **auth** — Google OAuth + email/password with a first-login display name (`profiles.username`, unique); **ticks** — signed-in users toggle a problem as sent (private per-user); code split into `index.html` / `app.js` / `styles.css`.
 
-**Next session — create-a-problem:** tap holds on the board (`ProjectBoard.png` + `hold_map.json`, nearest-dot hit-testing) to set start/intermediate/finish, add name/grade/feet, then save to Supabase. Any signed-in user may create. **Store start/finish correctly** (first two = start, last = finish — see the inversion note below). Needs a `problems` INSERT policy for authenticated users (not yet added — see `db/04_auth_policies.sql`).
+**Done (this session):**
+- **Create-a-problem** — tap holds on the board (nearest-dot hit-testing) to build a route. **Tap-to-cycle**, no mode buttons: a non-top hold cycles start (green, first two) → hold (blue) → off; tapping any **top-row hold** (the 12 highest in `hold_map.json` — identified by y-position, *not* hold number) sets the single finish (red) ↔ off. Rules: 1–2 starts (a lone matched start is **duplicated** on save), ≥1 intermediate, exactly 1 finish. Name + grade only (no feet — no foot LEDs). Stored INVERTED to match migrated rows (see inversion note). Owner recorded in `problems.setter_id`.
+- **Admin tools** (admins only, gated in Postgres via `is_admin()`): **delete a problem** (red bin) and **edit its grade** (pencil) from the detail header. Promotion is **manual** — flip `profiles.is_admin` in the Supabase dashboard.
+- **Profile page** — edit display name; **Total ticks** + **Hardest send** (highest-grade ticked problem).
+- **Live setter names** — a problem's displayed setter resolves from the owner's *current* `profiles.username` via `setter_id`, so a rename propagates to all their problems. Legacy/migrated rows (no owner) keep their text setter.
+- **iOS safe-area fix** — the header reserves the notch/status-bar area (`env(safe-area-inset-*)`).
+
+**Next:** edit a problem's holds (admins); mirror-mode toggle; circuits/tags; richer logbook. (See "What is deferred".)
 
 ---
 
@@ -49,17 +56,32 @@ Key files in the repo:
 ### Schema (deployed, do not modify structure without being asked)
 
 ```
-problems      — id, name, grade, setter, comment, stars,
-                start_holds (array), intermediate_holds (array), finish_hold (text), feet_mode, is_benchmark
+problems      — id, name (UNIQUE, not null), grade, setter (text not null default ''),
+                setter_id (uuid → auth.users; owner of app-created problems, null on migrated rows),
+                comment, stars, start_holds (array), intermediate_holds (array),
+                finish_hold (text), feet_mode, is_benchmark
 holds         — id, hold_name, x_coord, y_coord (coords NOT populated in Supabase; PWA uses hold_map.json instead)
 board_state   — id='HangoutPortland', current_problem
-ticks         — id, user_id, problem_id, created_at
-likes         — id, user_id, problem_id
+ticks         — id, user_id, problem_id, created_at   (FK problem_id → problems ON DELETE CASCADE)
+likes         — id, user_id, problem_id               (FK problem_id → problems ON DELETE CASCADE)
 sessions      — id, user_id, wall, date, problems (jsonb)
-profiles      — id (= auth.users.id), username, created_at
+profiles      — id (= auth.users.id), username (unique, case-insensitive), is_admin (bool default false), created_at
 ```
 
 Row Level Security (RLS) is enabled on all tables.
+
+### DB scripts & policies (`db/` — kept LOCAL, gitignored, applied by hand in the Supabase SQL editor)
+
+Apply in order; each is idempotent. **`db/` is not in the repo** — these live only on Ross's laptop.
+
+- `04_auth_policies.sql` — `profiles` RLS (public read; insert/update only your own row) + case-insensitive unique username.
+- `05_problems_insert.sql` — first `problems` INSERT policy (superseded by 07's policy).
+- `06_admin_delete.sql` — `is_admin` column; `is_admin()` (SECURITY DEFINER) helper; `problems` admin DELETE policy; `ticks`/`likes` FKs set to `ON DELETE CASCADE`; **locks `profiles` UPDATE to the `username` column** (no self-promotion via update).
+- `07_problem_owner.sql` — uses the existing `problems.setter_id` as owner; hardens INSERT to `setter_id = auth.uid()` (drop policy → drop the old redundant `created_by` column → recreate policy, in that order or the drop fails).
+- `08_problems_update_admin.sql` — admin UPDATE policy on `problems` (powers grade editing).
+- `09_lock_profile_insert.sql` — **locks `profiles` INSERT to `id`+`username`** so `is_admin` can't be self-set on insert. Closes the last self-promotion path.
+
+**Admin model:** admin = `profiles.is_admin = true`, keyed by account id (independent of `username`, so renames keep admin). Promotion is **manual in the Supabase dashboard** — there is no in-app promotion UI by design. The app's admin buttons are UX only; the real gate is the RLS policies above.
 
 ### Cast payload format
 
@@ -81,18 +103,21 @@ The problems table was migrated from `test.csv` (271 rows). Key columns:
 
 | Column | Content |
 |---|---|
-| `name` | Problem name (e.g. "Good Bug 5b+") |
+| `name` | Problem name (e.g. "Good Bug 5b+"). **UNIQUE.** Migrated names include the grade suffix; app-created names do **not** (the app strips the trailing grade for display, so it dedupes on the *displayed* name). |
 | `grade` | French bouldering grade (e.g. "5b+", "7a") |
-| `setter` | Setter username |
+| `setter` | Setter display-name **snapshot** at creation (text, NOT NULL, default `''`). For app-created problems the *displayed* setter comes from `setter_id` → live `profiles.username`, not this column. |
+| `setter_id` | Owner's account id (uuid → `auth.users`). Set on app-created problems; **null** on migrated rows. Drives the live setter name + the INSERT RLS check (`setter_id = auth.uid()`). |
 | `comment` | Short description / comment (note: **`comment`**, singular — not `comments`) |
 | `stars` | Star rating (integer) |
 | `start_holds` | Array of hold IDs, e.g. `["hold235","hold234"]` (always 2) |
 | `intermediate_holds` | Array of hold IDs |
 | `finish_hold` | Single hold ID, e.g. `"hold10"` |
-| `feet_mode` | Feet restriction, e.g. `"any"` |
+| `feet_mode` | Feet restriction, e.g. `"any"` (app sets `"any"` — no foot LEDs exist) |
 | `is_benchmark` | Boolean |
 
 Hold IDs are `hold{N}` strings. `N` maps to a real board position via `hold_map.json` (key = `holdN`).
+
+> **Top-row / finish zone:** the create UI treats the **12 highest holds** as the finish zone, found by sorting `hold_map.json` by `y` (there's a clean gap after 12) — **not** by hold number (`hold{N}` numbering does *not* map cleanly to visual rows on this hand-set board).
 
 **⚠️ Start/finish are stored INVERTED.** The migration assigned `start_holds`/`finish_hold` back-to-front vs the original DTB order (confirmed on 263 of 271 problems, and against the physical board via the *joe smells 2.0* cast). Reading the columns literally puts green starts at the **top** of the wall — wrong.
 
@@ -178,17 +203,20 @@ French bouldering grades in correct difficulty order (for filter tabs and sortin
 
 - Browsing problems and casting: **no login required**
 - Ticking **and creating** a problem: **requires login** — any signed-in user can create
+- **Deleting** a problem and **editing its grade**: **admins only** (`profiles.is_admin`), enforced in Postgres (RLS + `is_admin()`), not just the UI.
 - Sign-in methods: **Google OAuth** and **email + password** (Supabase Auth). Email confirmation is **off** for now.
-- On first sign-in (either method) the user picks a **display name** (defaults to the email prefix), stored in `profiles.username`. Display names are **unique** (case-insensitive). Profile is created via a modal in `index.html`; RLS policies + unique index live in `db/04_auth_policies.sql` (already applied in Supabase).
+- On first sign-in (either method) the user picks a **display name** (defaults to the email prefix), stored in `profiles.username`. Display names are **unique** (case-insensitive) and **editable later** from the profile page. Profile is created via a modal in `index.html`; RLS policies + unique index live in `db/04_auth_policies.sql`.
+- **No self-promotion:** users can only INSERT/UPDATE their own `id`+`username` on `profiles` (column grants in `db/06` + `db/09`); `is_admin` is set **only** via the Supabase dashboard.
 
 ---
 
 ## What is deferred — do not build yet
 
 - Mirror mode toggle
-- Editing / deleting existing problems (basic create-a-problem is the next session)
+- Editing a problem's **holds/name/setter** (admins can already delete + edit grade; full edit not built)
 - Circuits and tags
-- Session/logbook tracking beyond basic ticks
+- Session/logbook tracking beyond basic ticks (Total ticks + Hardest send are done)
+- In-app admin promotion UI (promotion is manual in Supabase by design)
 - Flutter migration
 
 ---
@@ -226,6 +254,6 @@ French bouldering grades in correct difficulty order (for filter tabs and sortin
 
 ---
 
-*Last updated: 11 June 2026 — added problem-swipe, multi-select grade filters (tap = one grade, hold = toggle), and personal ticks; code split into index.html / app.js / styles.css; SW hardened (network-first JS/CSS + updateViaCache:'none'). Next: create-a-problem.*
+*Last updated: 12 June 2026 — create-a-problem (tap-to-cycle, top-12 finish zone by y-position, inverted storage, `setter_id` owner); admin delete + grade-edit (RLS-gated, manual promotion); profile name edit + tick stats; live setter names; iOS safe-area fix. DB scripts now go up to `db/09`. SW at `pb-v17`. Next: full problem editing / mirror mode.*
 *Maintained by: Ross (rlmck)*
 *Fuller context in `docs/project-notes.md` (in this repo) and the Claude.ai project knowledge.*
