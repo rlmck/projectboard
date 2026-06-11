@@ -640,6 +640,17 @@
     .btn-block:active { transform: scale(0.98); }
     .btn-primary { background: var(--accent); color: #fff; }
     .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-danger { background: #dc2626; color: #fff; }
+    .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Admin delete (✕) button in the detail header — red to flag it */
+    #detail-delete { color: #f87171; border-color: rgba(239,68,68,0.5); }
+    #detail-delete:active { background: rgba(239,68,68,0.14); }
+    #detail-delete[hidden] { display: none; }
+
+    /* Side-by-side modal buttons (cancel / confirm) */
+    .modal-actions { display: flex; gap: 10px; }
+    .modal-actions .btn-block { flex: 1; margin-top: 0; }
     .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); margin-top: 10px; }
     .link { color: var(--accent-hover); text-decoration: none; font-weight: 600; }
 

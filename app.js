@@ -391,6 +391,49 @@
     const ticked = currentProblem && isTicked(currentProblem.id);
     btn.classList.toggle('ticked', !!ticked);
     btn.setAttribute('aria-label', ticked ? 'Ticked — tap to remove' : 'Tick — mark as completed');
+    updateAdminUI();
+  }
+
+  // The delete (✕) button only appears for admins, on a real problem.
+  function updateAdminUI() {
+    const del = document.getElementById('detail-delete');
+    if (!del) return;
+    del.hidden = !(profile && profile.is_admin && currentProblem);
+  }
+
+  // ── Delete a problem (admins only; the DB enforces it via RLS) ───────────────
+  function openDeleteConfirm() {
+    if (!currentProblem || !(profile && profile.is_admin)) return;
+    document.getElementById('delete-name').textContent = displayName(currentProblem);
+    document.getElementById('delete-error').textContent = '';
+    document.getElementById('delete-modal').classList.add('show');
+  }
+  function closeDeleteConfirm() { document.getElementById('delete-modal').classList.remove('show'); }
+
+  async function doDeleteProblem() {
+    const p = currentProblem;
+    if (!p) return;
+    const errEl = document.getElementById('delete-error');
+    const btn = document.getElementById('delete-confirm');
+    errEl.textContent = '';
+    btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Deleting…';
+
+    const { error } = await sb.from('problems').delete().eq('id', p.id);
+    btn.disabled = false; btn.textContent = prev;
+    if (error) {
+      errEl.textContent = error.code === '42501'
+        ? 'You don’t have permission to delete problems.'   // not an admin (RLS)
+        : error.message;
+      return;
+    }
+
+    allProblems = allProblems.filter(x => String(x.id) !== String(p.id));
+    myTicks.delete(String(p.id));
+    closeDeleteConfirm();
+    buildGradeTabs();
+    renderList();
+    showToast('Problem deleted', 'success');
+    location.hash = '#list';
   }
 
   // Load the signed-in user's ticks into myTicks; clear for guests. RLS limits
@@ -455,7 +498,7 @@
   async function loadProfile() {
     if (!session) { profile = null; return; }
     const { data, error } = await sb
-      .from('profiles').select('id, username').eq('id', session.user.id).maybeSingle();
+      .from('profiles').select('id, username, is_admin').eq('id', session.user.id).maybeSingle();
     if (error) console.warn('profile load failed', error);
     profile = data || null;
     if (session && !profile) promptDisplayName();   // brand-new user (Google or email)
@@ -826,6 +869,14 @@
     if (currentProblem) castByName(currentProblem.name, e.currentTarget, true);
   });
   document.getElementById('detail-tick').addEventListener('click', toggleTick);
+  document.getElementById('detail-delete').addEventListener('click', openDeleteConfirm);
+
+  // Delete confirm modal
+  document.getElementById('delete-cancel').addEventListener('click', closeDeleteConfirm);
+  document.getElementById('delete-confirm').addEventListener('click', doDeleteProblem);
+  document.getElementById('delete-modal').addEventListener('click', e => {
+    if (e.target.id === 'delete-modal') closeDeleteConfirm();
+  });
 
   // Swipe left/right on the detail board to step through the filtered deck.
   // Attached to the stable <main> (detail-content is replaced on every render).
@@ -890,7 +941,7 @@
   document.getElementById('info-modal').addEventListener('click', e => {
     if (e.target.id === 'info-modal') closeInfo();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeInfo(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeInfo(); closeDeleteConfirm(); } });
 
   // Auth view actions
   document.getElementById('auth-back').addEventListener('click', () => { location.hash = '#list'; });
