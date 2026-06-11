@@ -505,17 +505,26 @@
     renderList();
   }
 
-  // Simple tap: clear everything and keep only this grade ("All" clears entirely).
-  function selectOnlyGrade(g) {
-    activeGrades.clear();
-    if (g !== 'all') activeGrades.add(g);
+  // Simple tap — meaning depends on how many grades are selected:
+  //   • single-select (0–1 active) → switch to just this grade ("All" clears).
+  //   • multi-select  (2+ active)  → toggle this grade in/out. Dropping back to
+  //     one grade returns to single-select, so the next tap switches again.
+  function tapGrade(g) {
+    if (g === 'all') {
+      activeGrades.clear();
+    } else if (activeGrades.size >= 2) {        // multi-select: tap toggles
+      if (activeGrades.has(g)) activeGrades.delete(g);
+      else activeGrades.add(g);
+    } else {                                     // single-select: tap switches
+      activeGrades.clear();
+      activeGrades.add(g);
+    }
     refreshGradeFilter();
   }
 
-  // Tap-and-hold: toggle this grade in/out of the selection.
-  //   • not selected  → add it
-  //   • selected       → remove it, unless it's the only one left (then keep it)
-  //   • "All"          → just clears (nothing to multi-select)
+  // Tap-and-hold: the way to grow a selection — adds this grade (entering
+  // multi-select from a single grade). On an already-selected grade it removes
+  // it, unless it's the only one left (then keep it). "All" just clears.
   function toggleGrade(g) {
     if (g === 'all') activeGrades.clear();
     else if (activeGrades.has(g)) { if (activeGrades.size > 1) activeGrades.delete(g); }
@@ -560,7 +569,7 @@
     const tab = e.target.closest('.grade-tab');
     if (!tab) return;
     if (suppressTabClick) { suppressTabClick = false; return; }
-    selectOnlyGrade(tab.dataset.grade);
+    tapGrade(tab.dataset.grade);
   });
 
   // Suppress the long-press context menu on the tabs (mobile + desktop).
