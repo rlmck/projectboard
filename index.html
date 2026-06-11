@@ -70,18 +70,39 @@
   </main>
 </section>
 
-<!-- ══ CREATE VIEW (placeholder) ══════════════════════════════════════ -->
+<!-- ══ CREATE VIEW ════════════════════════════════════════════════════ -->
 <section id="view-create" class="view">
   <header class="topbar detail-bar">
     <button class="icon-btn" id="create-back" aria-label="Back">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
     </button>
     <div class="detail-bar-title">Create problem</div>
-    <div style="width:38px"></div>
+    <button class="icon-btn" id="create-reset" aria-label="Clear all holds">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+    </button>
   </header>
   <main>
-    <img class="board-graphic" src="ProjectBoard.png" alt="The Hangout symmetry board — empty" />
-    <div class="board-hint">Tap holds to build a problem · <span>coming soon</span></div>
+    <div class="board-wrap" id="create-board">
+      <img class="board-graphic" src="ProjectBoard.png" alt="The Hangout symmetry board" />
+      <div class="hold-layer" id="create-hold-layer"></div>
+    </div>
+
+    <div class="create-panel">
+      <div class="mode-row" id="create-modes">
+        <button class="mode-btn active" data-mode="start" type="button">Start <span class="mode-count" id="cnt-start">0</span></button>
+        <button class="mode-btn" data-mode="int" type="button">Holds <span class="mode-count" id="cnt-int">0</span></button>
+        <button class="mode-btn" data-mode="finish" type="button">Finish <span class="mode-count" id="cnt-finish">0</span></button>
+      </div>
+      <p class="create-tip" id="create-tip">Tap the board to place your start hold(s) — one or two.</p>
+
+      <input class="fld" id="create-name" type="text" placeholder="Problem name" maxlength="60" autocomplete="off" />
+
+      <div class="create-grade-label">Grade</div>
+      <div class="grade-tabs create-grades" id="create-grades"></div>
+
+      <div class="auth-error" id="create-error"></div>
+      <button class="btn-block btn-primary" id="create-save">Save problem</button>
+    </div>
   </main>
 </section>
 

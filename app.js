@@ -28,6 +28,12 @@
   let myTicks = new Set(); // problem_ids the signed-in user has ticked (sent)
   let authMode = 'signin'; // 'signin' | 'signup' for the #auth form
 
+  // ── Create-a-problem state ───────────────────────────────────────────────────
+  let createRoles = {};        // hold id -> 'start' | 'int' | 'finish'
+  let createMode = 'start';    // active paint mode
+  let createGrade = '';        // selected grade
+  let createDotsBuilt = false; // whether the tappable board dots are rendered
+
   const isTicked = id => myTicks.has(String(id));
 
   // ── Escape helpers ───────────────────────────────────────────────────────────
@@ -154,7 +160,11 @@
     const { route, param } = parseHash();
     switch (route) {
       case 'detail':  renderDetail(param); setView('detail'); break;
-      case 'create':  setView('create'); break;
+      case 'create':
+        if (!session) { location.replace(location.pathname + '#auth'); break; }
+        initCreateView();
+        setView('create');
+        break;
       case 'auth':    setAuthMode('signin'); setView('auth'); break;
       case 'profile': renderProfile(); setView('profile'); break;
       case 'list':
@@ -351,8 +361,9 @@
     } catch (err) {
       console.warn('hold_map.json load failed — board overlay disabled', err);
     }
-    // If we're already on a detail view, re-render so the dots appear.
+    // If we're already on a detail/create view, render now that positions exist.
     if (currentView === 'detail') router();
+    if (currentView === 'create') buildCreateBoard();
   }
 
   // ── Load problems ─────────────────────────────────────────────────────────────
@@ -547,6 +558,161 @@
     }
   }
 
+  // ── Create a problem ──────────────────────────────────────────────────────────
+  // Holds keep their physical role in createRoles; the board shows every hold as a
+  // faint dot (reference) and colours the assigned ones. On save we build the
+  // canonical display order and store it INVERTED so the existing renderer
+  // (problemHoldOrder) un-inverts it back to the right colours — see CLAUDE.md.
+
+  const holdsWithRole = role => Object.keys(createRoles).filter(h => createRoles[h] === role);
+
+  // Top row (row 13) can only be intermediate or finish, never a start.
+  // holdN numbering runs row by row (A1..S1 = hold1..19, …, row 13 = hold229..247).
+  function isTopRow(h) {
+    const m = /^hold(\d+)$/.exec(h);
+    return m ? Math.ceil(Number(m[1]) / 19) === 13 : false;
+  }
+
+  // Render a tappable dot for every mapped hold (once HOLD_MAP is available).
+  function buildCreateBoard() {
+    const layer = document.getElementById('create-hold-layer');
+    if (!layer) return;
+    if (!HOLD_MAP) { layer.innerHTML = ''; createDotsBuilt = false; return; }
+    layer.innerHTML = Object.keys(HOLD_MAP).map(h => {
+      const pos = HOLD_MAP[h];
+      return `<div class="hold-dot empty" data-hold="${escAttr(h)}" style="left:${pos.x}%;top:${pos.y}%"></div>`;
+    }).join('');
+    createDotsBuilt = true;
+    applyCreateRoles();
+  }
+
+  // Repaint every dot from createRoles and refresh the counts.
+  function applyCreateRoles() {
+    document.querySelectorAll('#create-hold-layer .hold-dot').forEach(d => {
+      d.className = 'hold-dot ' + (createRoles[d.dataset.hold] || 'empty');
+    });
+    document.getElementById('cnt-start').textContent = holdsWithRole('start').length;
+    document.getElementById('cnt-int').textContent = holdsWithRole('int').length;
+    document.getElementById('cnt-finish').textContent = holdsWithRole('finish').length;
+  }
+
+  // Nearest hold to a tap (in pixel space, since x/y are % of different axes).
+  // Returns null if the tap is too far from any hold to count.
+  function nearestHold(clientX, clientY) {
+    if (!HOLD_MAP) return null;
+    const r = document.getElementById('create-board').getBoundingClientRect();
+    const px = (clientX - r.left) / r.width * 100;
+    const py = (clientY - r.top) / r.height * 100;
+    let best = null, bestD = Infinity;
+    for (const h in HOLD_MAP) {
+      const dx = (HOLD_MAP[h].x - px) / 100 * r.width;
+      const dy = (HOLD_MAP[h].y - py) / 100 * r.height;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = h; }
+    }
+    return Math.sqrt(bestD) <= r.width * 0.06 ? best : null;   // ~half a hold spacing
+  }
+
+  // Assign (or clear) the tapped hold according to the active mode.
+  function assignHold(h) {
+    if (createRoles[h] === createMode) { delete createRoles[h]; applyCreateRoles(); return; }
+    if (createMode === 'start') {
+      if (isTopRow(h)) { showToast("Start holds can't be on the top row", 'error'); return; }
+      if (holdsWithRole('start').length >= 2) { showToast('Two start holds max', 'error'); return; }
+    }
+    if (createMode === 'finish') {
+      holdsWithRole('finish').forEach(x => delete createRoles[x]);   // exactly one finish
+    }
+    createRoles[h] = createMode;
+    applyCreateRoles();
+  }
+
+  const CREATE_TIPS = {
+    start:  'Tap the board to place your start hold(s) — one or two.',
+    int:    'Tap the intermediate holds.',
+    finish: 'Tap the single finish hold.'
+  };
+  function updateCreateTip() { document.getElementById('create-tip').textContent = CREATE_TIPS[createMode]; }
+
+  function buildCreateGrades() {
+    document.getElementById('create-grades').innerHTML = GRADE_ORDER.map(g =>
+      `<button class="grade-tab${g === createGrade ? ' active' : ''}" data-grade="${escAttr(g)}" type="button">${escHtml(g)}</button>`
+    ).join('');
+  }
+
+  function resetCreate() {
+    createRoles = {}; createGrade = ''; createMode = 'start';
+    const nameEl = document.getElementById('create-name'); if (nameEl) nameEl.value = '';
+    document.getElementById('create-error').textContent = '';
+    document.querySelectorAll('#create-modes .mode-btn')
+      .forEach(b => b.classList.toggle('active', b.dataset.mode === 'start'));
+    buildCreateGrades();
+    applyCreateRoles();
+    updateCreateTip();
+  }
+
+  // Prepare the create view on entry (builds the board lazily once HOLD_MAP loads).
+  function initCreateView() {
+    if (!createDotsBuilt) buildCreateBoard();
+    buildCreateGrades();
+    applyCreateRoles();
+    updateCreateTip();
+  }
+
+  async function saveProblem() {
+    const errEl = document.getElementById('create-error');
+    errEl.textContent = '';
+    if (!session) { location.hash = '#auth'; return; }
+
+    const name = document.getElementById('create-name').value.trim();
+    const starts = holdsWithRole('start');
+    const ints = holdsWithRole('int');
+    const fins = holdsWithRole('finish');
+
+    if (!name) { errEl.textContent = 'Give your problem a name.'; return; }
+    if (!createGrade) { errEl.textContent = 'Pick a grade.'; return; }
+    if (starts.length < 1) { errEl.textContent = 'Add at least one start hold.'; return; }
+    if (ints.length < 1) { errEl.textContent = 'Add at least one intermediate hold.'; return; }
+    if (fins.length !== 1) { errEl.textContent = 'Add exactly one finish hold.'; return; }
+
+    // Canonical display order D = [start, start, …intermediates, finish].
+    // A single (matched) start is duplicated so the renderer's "first two = start"
+    // rule paints it green; the overlay de-dupes the repeated dot.
+    const startPair = starts.length === 1 ? [starts[0], starts[0]] : starts.slice(0, 2);
+    const D = [...startPair, ...ints, fins[0]];
+
+    // Store INVERTED to match the migrated rows (see CLAUDE.md / problemHoldOrder):
+    //   finish_hold = D[0], intermediate_holds = D[1..n-2], start_holds = last two.
+    const row = {
+      name,
+      grade: createGrade,
+      setter: (profile && profile.username) || null,
+      finish_hold: D[0],
+      intermediate_holds: D.slice(1, D.length - 2),
+      start_holds: D.slice(D.length - 2),
+      feet_mode: 'any',
+      is_benchmark: false
+    };
+
+    const btn = document.getElementById('create-save');
+    const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+    const { data, error } = await sb.from('problems').insert(row).select().single();
+    btn.disabled = false; btn.textContent = prev;
+    if (error) {
+      errEl.textContent = error.code === '42501'
+        ? 'You don’t have permission to create problems yet.'   // RLS INSERT policy missing
+        : error.message;
+      return;
+    }
+
+    allProblems.push(data);
+    buildGradeTabs();
+    renderList();
+    resetCreate();
+    showToast('Problem created ✓', 'success');
+    location.hash = '#detail/' + encodeURIComponent(data.id);
+  }
+
   // ── Wire up events ────────────────────────────────────────────────────────────
   // Search
   document.getElementById('search').addEventListener('input', e => {
@@ -687,9 +853,37 @@
     else if (e.key === 'ArrowLeft') swipeToAdjacent(-1);
   });
 
-  // Create (placeholder) — open from list, back returns to list
-  document.getElementById('create-btn').addEventListener('click', () => { location.hash = '#create'; });
+  // Create — open from list (login required), back returns to list
+  document.getElementById('create-btn').addEventListener('click', () => {
+    location.hash = session ? '#create' : '#auth';
+  });
   document.getElementById('create-back').addEventListener('click', goBack);
+  document.getElementById('create-reset').addEventListener('click', resetCreate);
+
+  // Tap the board: assign the nearest hold to the active mode.
+  document.getElementById('create-board').addEventListener('click', e => {
+    const h = nearestHold(e.clientX, e.clientY);
+    if (h) assignHold(h);
+  });
+
+  // Mode switch (Start / Holds / Finish).
+  document.getElementById('create-modes').addEventListener('click', e => {
+    const btn = e.target.closest('.mode-btn');
+    if (!btn) return;
+    createMode = btn.dataset.mode;
+    document.querySelectorAll('#create-modes .mode-btn').forEach(b => b.classList.toggle('active', b === btn));
+    updateCreateTip();
+  });
+
+  // Grade picker (single select).
+  document.getElementById('create-grades').addEventListener('click', e => {
+    const t = e.target.closest('.grade-tab');
+    if (!t) return;
+    createGrade = createGrade === t.dataset.grade ? '' : t.dataset.grade;
+    buildCreateGrades();
+  });
+
+  document.getElementById('create-save').addEventListener('click', saveProblem);
 
   // Info modal: open from header button, close via X, overlay tap, or Escape
   document.getElementById('info-btn').addEventListener('click', openInfo);
