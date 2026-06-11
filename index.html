@@ -88,12 +88,8 @@
     </div>
 
     <div class="create-panel">
-      <div class="mode-row" id="create-modes">
-        <button class="mode-btn active" data-mode="start" type="button">Start <span class="mode-count" id="cnt-start">0</span></button>
-        <button class="mode-btn" data-mode="int" type="button">Holds <span class="mode-count" id="cnt-int">0</span></button>
-        <button class="mode-btn" data-mode="finish" type="button">Finish <span class="mode-count" id="cnt-finish">0</span></button>
-      </div>
-      <p class="create-tip" id="create-tip">Tap the board to place your start hold(s) — one or two.</p>
+      <p class="create-tip">Tap holds to build your problem. The first two are the <b class="c-start">start</b>, the rest are <b class="c-int">holds</b>. Tap a <b class="c-finish">top</b> hold for the finish. Tap a hold again to change it.</p>
+      <div class="create-counts" id="create-counts"></div>
 
       <input class="fld" id="create-name" type="text" placeholder="Problem name" maxlength="60" autocomplete="off" />
 

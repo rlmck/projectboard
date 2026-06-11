@@ -30,9 +30,7 @@
 
   // ── Create-a-problem state ───────────────────────────────────────────────────
   let createRoles = {};        // hold id -> 'start' | 'int' | 'finish'
-  let createMode = 'start';    // active paint mode
   let createGrade = '';        // selected grade
-  let createDotsBuilt = false; // whether the tappable board dots are rendered
 
   const isTicked = id => myTicks.has(String(id));
 
@@ -363,7 +361,7 @@
     }
     // If we're already on a detail/create view, render now that positions exist.
     if (currentView === 'detail') router();
-    if (currentView === 'create') buildCreateBoard();
+    if (currentView === 'create') applyCreateRoles();
   }
 
   // ── Load problems ─────────────────────────────────────────────────────────────
@@ -566,34 +564,33 @@
 
   const holdsWithRole = role => Object.keys(createRoles).filter(h => createRoles[h] === role);
 
-  // Top row (row 13) can only be intermediate or finish, never a start.
-  // holdN numbering runs row by row (A1..S1 = hold1..19, …, row 13 = hold229..247).
-  function isTopRow(h) {
+  // The top row (row 13 = the 12 highest holds) is the finish zone — tapping any
+  // of them sets the finish. holdN numbering runs row by row (A1..S1 = hold1..19,
+  // …, row 13 = hold229..247, which is exactly 12 mapped holds).
+  function isTopHold(h) {
     const m = /^hold(\d+)$/.exec(h);
     return m ? Math.ceil(Number(m[1]) / 19) === 13 : false;
   }
 
-  // Render a tappable dot for every mapped hold (once HOLD_MAP is available).
-  function buildCreateBoard() {
-    const layer = document.getElementById('create-hold-layer');
-    if (!layer) return;
-    if (!HOLD_MAP) { layer.innerHTML = ''; createDotsBuilt = false; return; }
-    layer.innerHTML = Object.keys(HOLD_MAP).map(h => {
-      const pos = HOLD_MAP[h];
-      return `<div class="hold-dot empty" data-hold="${escAttr(h)}" style="left:${pos.x}%;top:${pos.y}%"></div>`;
-    }).join('');
-    createDotsBuilt = true;
-    applyCreateRoles();
-  }
-
-  // Repaint every dot from createRoles and refresh the counts.
+  // Draw a coloured dot for each assigned hold (only assigned ones — no faint
+  // reference dots) and refresh the running count summary.
   function applyCreateRoles() {
-    document.querySelectorAll('#create-hold-layer .hold-dot').forEach(d => {
-      d.className = 'hold-dot ' + (createRoles[d.dataset.hold] || 'empty');
-    });
-    document.getElementById('cnt-start').textContent = holdsWithRole('start').length;
-    document.getElementById('cnt-int').textContent = holdsWithRole('int').length;
-    document.getElementById('cnt-finish').textContent = holdsWithRole('finish').length;
+    const layer = document.getElementById('create-hold-layer');
+    if (layer) {
+      layer.innerHTML = Object.keys(createRoles).map(h => {
+        const pos = HOLD_MAP && HOLD_MAP[h];
+        if (!pos) return '';
+        return `<div class="hold-dot ${createRoles[h]}" style="left:${pos.x}%;top:${pos.y}%"></div>`;
+      }).join('');
+    }
+    const s = holdsWithRole('start').length, i = holdsWithRole('int').length, f = holdsWithRole('finish').length;
+    const counts = document.getElementById('create-counts');
+    if (counts) {
+      counts.innerHTML =
+        `<span class="c-start">${s} start</span>` +
+        `<span class="c-int">${i} hold${i === 1 ? '' : 's'}</span>` +
+        `<span class="c-finish">${f} finish</span>`;
+    }
   }
 
   // Nearest hold to a tap (in pixel space, since x/y are % of different axes).
@@ -613,26 +610,27 @@
     return Math.sqrt(bestD) <= r.width * 0.06 ? best : null;   // ~half a hold spacing
   }
 
-  // Assign (or clear) the tapped hold according to the active mode.
-  function assignHold(h) {
-    if (createRoles[h] === createMode) { delete createRoles[h]; applyCreateRoles(); return; }
-    if (createMode === 'start') {
-      if (isTopRow(h)) { showToast("Start holds can't be on the top row", 'error'); return; }
-      if (holdsWithRole('start').length >= 2) { showToast('Two start holds max', 'error'); return; }
+  // Tap to cycle a hold's role:
+  //   • top-row hold → finish (red) ↔ off  (only one finish at a time)
+  //   • any other   → start (green) → hold (blue) → off, where a fresh tap starts
+  //     green while fewer than two starts exist, otherwise blue.
+  function cycleHold(h) {
+    const cur = createRoles[h];
+    if (isTopHold(h)) {
+      if (cur === 'finish') delete createRoles[h];
+      else {
+        holdsWithRole('finish').forEach(x => delete createRoles[x]);   // single finish
+        createRoles[h] = 'finish';
+      }
+    } else if (cur === 'start') {
+      createRoles[h] = 'int';
+    } else if (cur === 'int') {
+      delete createRoles[h];
+    } else {
+      createRoles[h] = holdsWithRole('start').length < 2 ? 'start' : 'int';
     }
-    if (createMode === 'finish') {
-      holdsWithRole('finish').forEach(x => delete createRoles[x]);   // exactly one finish
-    }
-    createRoles[h] = createMode;
     applyCreateRoles();
   }
-
-  const CREATE_TIPS = {
-    start:  'Tap the board to place your start hold(s) — one or two.',
-    int:    'Tap the intermediate holds.',
-    finish: 'Tap the single finish hold.'
-  };
-  function updateCreateTip() { document.getElementById('create-tip').textContent = CREATE_TIPS[createMode]; }
 
   function buildCreateGrades() {
     document.getElementById('create-grades').innerHTML = GRADE_ORDER.map(g =>
@@ -641,22 +639,17 @@
   }
 
   function resetCreate() {
-    createRoles = {}; createGrade = ''; createMode = 'start';
+    createRoles = {}; createGrade = '';
     const nameEl = document.getElementById('create-name'); if (nameEl) nameEl.value = '';
     document.getElementById('create-error').textContent = '';
-    document.querySelectorAll('#create-modes .mode-btn')
-      .forEach(b => b.classList.toggle('active', b.dataset.mode === 'start'));
     buildCreateGrades();
     applyCreateRoles();
-    updateCreateTip();
   }
 
-  // Prepare the create view on entry (builds the board lazily once HOLD_MAP loads).
+  // Prepare the create view on entry.
   function initCreateView() {
-    if (!createDotsBuilt) buildCreateBoard();
     buildCreateGrades();
     applyCreateRoles();
-    updateCreateTip();
   }
 
   async function saveProblem() {
@@ -674,6 +667,13 @@
     if (starts.length < 1) { errEl.textContent = 'Add at least one start hold.'; return; }
     if (ints.length < 1) { errEl.textContent = 'Add at least one intermediate hold.'; return; }
     if (fins.length !== 1) { errEl.textContent = 'Add exactly one finish hold.'; return; }
+
+    // Names must be unique (case-insensitive) — they're how a problem is cast.
+    const nameKey = name.toLowerCase();
+    if (allProblems.some(p => String(p.name || '').trim().toLowerCase() === nameKey)) {
+      errEl.textContent = 'That name is taken — pick another.';
+      return;
+    }
 
     // Canonical display order D = [start, start, …intermediates, finish].
     // A single (matched) start is duplicated so the renderer's "first two = start"
@@ -710,7 +710,9 @@
     renderList();
     resetCreate();
     showToast('Problem created ✓', 'success');
-    location.hash = '#detail/' + encodeURIComponent(data.id);
+    // Replace the #create history entry with the new problem's detail, so Back
+    // from there returns to the list (not into the create form).
+    location.replace('#detail/' + encodeURIComponent(data.id));
   }
 
   // ── Wire up events ────────────────────────────────────────────────────────────
@@ -860,19 +862,10 @@
   document.getElementById('create-back').addEventListener('click', goBack);
   document.getElementById('create-reset').addEventListener('click', resetCreate);
 
-  // Tap the board: assign the nearest hold to the active mode.
+  // Tap the board: cycle the nearest hold's role.
   document.getElementById('create-board').addEventListener('click', e => {
     const h = nearestHold(e.clientX, e.clientY);
-    if (h) assignHold(h);
-  });
-
-  // Mode switch (Start / Holds / Finish).
-  document.getElementById('create-modes').addEventListener('click', e => {
-    const btn = e.target.closest('.mode-btn');
-    if (!btn) return;
-    createMode = btn.dataset.mode;
-    document.querySelectorAll('#create-modes .mode-btn').forEach(b => b.classList.toggle('active', b === btn));
-    updateCreateTip();
+    if (h) cycleHold(h);
   });
 
   // Grade picker (single select).
