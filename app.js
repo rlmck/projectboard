@@ -291,7 +291,7 @@
       </div>
 
       <div class="board-wrap">
-        <img class="board-graphic" src="ProjectBoard.png" alt="The Hangout symmetry board" />
+        <img class="board-graphic" src="Gareths.png" alt="The Hangout symmetry board" />
         ${boardOverlayHtml(p)}
       </div>
     `;

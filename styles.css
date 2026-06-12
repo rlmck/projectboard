@@ -468,14 +468,14 @@
       min-height: 0;
       display: flex;
       flex-direction: column;
+      justify-content: center;   /* centre the natural-aspect board in the pinned area */
     }
-    /* Board fills the remaining body area exactly — stretched, so nothing is
-       cropped and no empty space is left (aspect ratio is not preserved). */
+    /* Board shown at its TRUE aspect ratio (no stretch) so a wide board reads as
+       wide. The overlay is %-positioned and the board-wrap matches the image box,
+       so dots still land on every hold. */
     #view-detail .board-graphic {
-      flex: 1 1 auto;
-      min-height: 0;
       width: 100%;
-      object-fit: fill;
+      height: auto;
     }
 
     /* ── Create view ─────────────────────────────────────────────────── */
@@ -553,11 +553,11 @@
     .cal-help b { color: var(--text); font-weight: 700; }
 
     /* ── Problem hold overlay (detail view) ──────────────────────────── */
-    /* The board is object-fit:fill (stretched to the box), so percentage
-       positions from hold_map.json still land correctly on each hold. */
+    /* The board-wrap matches the image box (natural aspect), so percentage
+       positions from hold_map.json land correctly on each hold. */
     .board-wrap { position: relative; }
-    #view-detail .board-wrap { flex: 1 1 auto; min-height: 0; }
-    #view-detail .board-wrap .board-graphic { height: 100%; }
+    #view-detail .board-wrap { width: 100%; }
+    #view-detail .board-wrap .board-graphic { height: auto; }
     .hold-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
     .hold-dot {
       position: absolute;
