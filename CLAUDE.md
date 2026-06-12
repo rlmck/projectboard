@@ -48,6 +48,8 @@ Key files in the repo:
 - `ProjectBoard.png` — illustrated board image used in the detail/create views.
 - `hold_map.json` — hold id → `{x, y}` percentage position on `ProjectBoard.png`. Drives the detail-view hold overlay. See "Hold positions" below.
 - `register_holds.py` — regenerates `hold_map.json` from the original DTB hold coordinates + `hold_positions.json`.
+- `mirror_map.json` / `register_mirror.py` — hold id → mirror-partner hold id (the left/right mirror lookup; bundled fallback, live copy in `board_config.mirror_map`). Generated from Gareth's board-tested `MirrorDic.txt`. See the mirror notes below.
+- `led_map.json` / `register_leds.py` — hold id → **physical WS2801 LED strip index** (column-major serpentine: col A=LEDs 1–13, B=14–26 reversed, … S=235–247; idx 0 = phantom A0). The one physical artifact inherited from Gareth's wiring, extracted from his code and **not** used by the app — it's the wiring contract for the **rebuilt board listener** (our own SD card; only the hardware is reused). `register_leds.py` ports Gareth's exact logic and asserts it matches for all 247 cells.
 - `sw.js` / `manifest.json` — service worker + PWA manifest. **Deploy/caching:** HTML + app JS/CSS are network-first, so a fresh page load always gets the latest. To push an update to an *already-open* client (auto-reload on next focus), **bump `CACHE`** in `sw.js`. Registered with `updateViaCache:'none'` so `sw.js` is never served stale. ⚠️ Uninstalling the PWA does **not** clear its service worker/caches — a stranded device needs the browser's site-data cleared (Safari: Settings→Safari→Website Data; Chrome: Site settings→Clear & reset).
 
 ---
