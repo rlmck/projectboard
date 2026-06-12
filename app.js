@@ -783,19 +783,27 @@
 
   const holdsWithRole = role => Object.keys(createRoles).filter(h => createRoles[h] === role);
 
-  // The top row is the finish zone — tapping any of those holds sets the finish.
-  // hold numbering doesn't map cleanly to visual rows (the board is hand-set), so
-  // identify the top row by position: the 12 highest holds in hold_map.json (there
-  // is a clean vertical gap after them — y ≈ 1.6–3.3, then jumps to ≈ 7.6).
-  let topHoldsSet = null;
-  function topHolds() {
-    if (topHoldsSet) return topHoldsSet;
-    if (!HOLD_MAP) return new Set();
-    const byHeight = Object.keys(HOLD_MAP).sort((a, b) => HOLD_MAP[a].y - HOLD_MAP[b].y);
-    topHoldsSet = new Set(byHeight.slice(0, 12));
-    return topHoldsSet;
+  // The finish zone is the TOP 25% of the board by height. Any hold sitting in that
+  // band is finish-eligible — or may instead be an intermediate (e.g. a traverse
+  // along the top) — and no start holds are allowed up there. Holds below the band
+  // are start/intermediate only. The threshold is derived from the live hold map's
+  // y span (so it tracks whatever board image board_config serves) rather than a
+  // fixed hold count — hold numbering doesn't map to visual rows on this hand-set
+  // board. Computed fresh per call (cheap, and immune to the map being swapped for
+  // the live board_config one after first use).
+  function topZoneThreshold() {
+    if (!HOLD_MAP) return -Infinity;
+    let ymin = Infinity, ymax = -Infinity;
+    for (const h in HOLD_MAP) {
+      const y = HOLD_MAP[h].y;
+      if (y < ymin) ymin = y;
+      if (y > ymax) ymax = y;
+    }
+    return ymin + (ymax - ymin) * 0.25;
   }
-  function isTopHold(h) { return topHolds().has(h); }
+  function inTopZone(h) {
+    return !!(HOLD_MAP && HOLD_MAP[h]) && HOLD_MAP[h].y <= topZoneThreshold();
+  }
 
   // Draw a coloured dot for each assigned hold (only assigned ones — no faint
   // reference dots) and refresh the running count summary.
@@ -836,16 +844,20 @@
   }
 
   // Tap to cycle a hold's role:
-  //   • top-row hold → finish (red) ↔ off  (only one finish at a time)
-  //   • any other   → start (green) → hold (blue) → off, where a fresh tap starts
-  //     green while fewer than two starts exist, otherwise blue.
+  //   • top-zone hold (top 25% of the board) → hold (blue) → finish (red) → off,
+  //     with only one finish at a time and no starts allowed up there.
+  //   • any other hold → start (green) → hold (blue) → off, where a fresh tap
+  //     starts green while fewer than two starts exist, otherwise blue.
   function cycleHold(h) {
     const cur = createRoles[h];
-    if (isTopHold(h)) {
-      if (cur === 'finish') delete createRoles[h];
-      else {
+    if (inTopZone(h)) {
+      if (cur === 'finish') {
+        delete createRoles[h];
+      } else if (cur === 'int') {
         holdsWithRole('finish').forEach(x => delete createRoles[x]);   // single finish
         createRoles[h] = 'finish';
+      } else {
+        createRoles[h] = 'int';
       }
     } else if (cur === 'start') {
       createRoles[h] = 'int';
