@@ -548,7 +548,14 @@
     .cal-anchor::after { top: 50%; left: -30%; height: 2px; width: 160%; transform: translateY(-50%); }
     .cal-panel { padding: 14px 2px 8px; }
     .cal-anchors-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 13px; color: var(--text-muted); font-weight: 600; }
-    #cal-export { margin-top: 10px; }
+    /* Fit is a secondary action — soft pink. Save is the primary, solid accent. */
+    #cal-fit {
+      background: rgba(236,72,153,0.16);
+      color: var(--accent-hover);
+      border: 1px solid rgba(236,72,153,0.45);
+    }
+    #cal-fit:disabled { opacity: 0.45; cursor: not-allowed; }
+    #cal-save { margin-top: 12px; }
     .cal-help { font-size: 12px; line-height: 1.6; color: var(--text-muted); margin: 14px 0 0; }
     .cal-help b { color: var(--text); font-weight: 700; }
 

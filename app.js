@@ -1096,6 +1096,10 @@
         y: +(cy[0]*s.x + cy[1]*s.y + cy[2]).toFixed(2),
       };
     }
+    // Anchors have done their job — clear them so the board shows the clean fitted
+    // placement, not the leftover anchor markers / pre-fit dots.
+    CAL.anchors = [];
+    CAL.selected = null;
     renderCal();
     showToast('Holds fitted to anchors ✓', 'success');
   }
@@ -1183,6 +1187,10 @@
         CAL.imgFile = null;
         applyBoardImage();
       }
+      // Show the clean saved placement — drop any leftover anchors/selection.
+      CAL.anchors = [];
+      CAL.selected = null;
+      renderCal();
       btn.disabled = false; btn.textContent = prev;
       document.getElementById('cal-saved-modal').classList.add('show');
     } catch (err) {
