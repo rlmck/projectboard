@@ -541,6 +541,9 @@
     }
     .cal-dot.sel { background: rgba(250,204,21,0.92); border-color: #fff; width: 4%; z-index: 3; }
     .cal-dot.anchored { background: rgba(34,197,94,0.75); border-color: #bbf7d0; }
+    /* Mirror mode: the selected hold's current partner, and holds with no mirror. */
+    .cal-dot.partner { background: rgba(59,130,246,0.9); border-color: #bfdbfe; width: 4%; z-index: 2; }
+    .cal-dot.selfmirror { background: rgba(245,158,11,0.7); border-color: #fde68a; }
     .cal-anchor {
       position: absolute; width: 3%; aspect-ratio: 1; transform: translate(-50%, -50%);
       border-radius: 50%; border: 2px solid #4ade80; box-sizing: border-box; z-index: 2;

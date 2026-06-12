@@ -126,6 +126,7 @@
         <button class="cal-seg active" data-mode="anchor" type="button">Anchor</button>
         <button class="cal-seg" data-mode="nudge" type="button">Nudge</button>
         <button class="cal-seg" data-mode="add" type="button">Add</button>
+        <button class="cal-seg" data-mode="mirror" type="button">Mirror</button>
       </div>
       <input type="file" id="cal-file" accept="image/*" hidden />
     </div>
@@ -144,7 +145,7 @@
       </div>
       <button class="btn-block" id="cal-fit" disabled>Fit all holds to anchors</button>
       <button class="btn-block btn-primary" id="cal-save">Save board</button>
-      <p class="cal-help"><b>Anchor</b>: tap a dot, then tap where that hold really is on the image; pin 3–4 spread-out holds (corners are ideal), then <b>Fit</b> snaps them all. <b>Nudge</b>: drag any stragglers. <b>Add</b>: place a hold that's missing from the map. <b>Change image…</b> uploads a new board photo. <b>Save board</b> publishes the image + positions to everyone. Fit re-snaps from the saved map, so do nudges/adds last.</p>
+      <p class="cal-help"><b>Anchor</b>: tap a dot, then tap where that hold really is on the image; pin 3–4 spread-out holds (corners are ideal), then <b>Fit</b> snaps them all. <b>Nudge</b>: drag any stragglers. <b>Add</b>: place a hold that's missing from the map. <b>Mirror</b>: fix a wrong mirror pairing — tap a hold to see its partner, then tap the correct partner (or tap the same hold again for "no mirror"); amber dots have no mirror. <b>Change image…</b> uploads a new board photo. <b>Save board</b> publishes the image + positions + mirror pairs to everyone. Fit re-snaps from the saved map, so do nudges/adds last.</p>
     </div>
   </main>
 </section>

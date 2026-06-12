@@ -28,6 +28,7 @@
   let detailMirror = false; // detail view is showing the left/right-mirrored problem
   let BOARD_IMG = 'ProjectBoard.png';   // resolved board image URL (Supabase upload, else bundled)
   let configHasMap = false;             // true once board_config supplied a hold map (suppresses the bundled fallback)
+  let configHasMirror = false;          // true once board_config supplied a mirror map (suppresses the bundled fallback)
   const BOARD_BUCKET = 'board';         // Supabase Storage bucket holding the uploaded board image
   // The 189 real holds on the board (ground truth from the DTB layout). Used by the
   // calibrate "Add" mode to offer holds that are absent from the current map.
@@ -462,10 +463,14 @@
 
   // ── Load the mirror partner map (bundled; hold id -> mirror hold id) ─────────
   // Keyed by hold id, so it's independent of the board image / recalibration.
+  // board_config (loadBoardConfig) is the source of truth once an admin has saved
+  // an edited map; this bundled file is the first-paint / offline fallback. Don't
+  // clobber a map that already came from board_config.
   async function loadMirrorMap() {
+    if (configHasMirror) return;
     try {
       const res = await fetch('mirror_map.json', { cache: 'no-cache' });
-      if (res.ok) MIRROR_MAP = await res.json();
+      if (res.ok && !configHasMirror) MIRROR_MAP = await res.json();
     } catch (err) {
       console.warn('mirror_map.json load failed — mirror disabled', err);
     }
@@ -478,7 +483,7 @@
   async function loadBoardConfig() {
     try {
       const { data, error } = await sb
-        .from('board_config').select('hold_map, image_path, updated_at')
+        .from('board_config').select('hold_map, mirror_map, image_path, updated_at')
         .eq('wall', 'HangoutPortland').maybeSingle();
       if (error || !data) return;
       if (data.image_path) {
@@ -489,6 +494,10 @@
       if (data.hold_map && typeof data.hold_map === 'object' && Object.keys(data.hold_map).length) {
         HOLD_MAP = data.hold_map;
         configHasMap = true;
+      }
+      if (data.mirror_map && typeof data.mirror_map === 'object' && Object.keys(data.mirror_map).length) {
+        MIRROR_MAP = data.mirror_map;
+        configHasMirror = true;
       }
       refreshBoardViews();
     } catch (err) {
@@ -1015,10 +1024,11 @@
     base: null,      // immutable copy of the saved hold_map { hold: {x,y} } — the fit source
     pos: null,       // working positions (drawn + exported)
     anchors: [],     // [{ hold, x, y }] true positions the user has pinned
-    selected: null,  // hold id awaiting its anchor target (anchor mode)
-    mode: 'anchor',  // 'anchor' | 'nudge' | 'add'
+    selected: null,  // hold id awaiting its anchor target (anchor mode) / first tap (mirror mode)
+    mode: 'anchor',  // 'anchor' | 'nudge' | 'add' | 'mirror'
     drag: null,      // hold currently being dragged (nudge mode)
     imgFile: null,   // a newly-picked board image awaiting upload on Save
+    mirror: null,    // working copy of the mirror map { hold: partner } (mirror mode); self = no mirror
   };
 
   const isAdmin = () => !!(profile && profile.is_admin);
@@ -1030,6 +1040,8 @@
       CAL.base = JSON.parse(JSON.stringify(HOLD_MAP));
       CAL.pos = JSON.parse(JSON.stringify(HOLD_MAP));
     }
+    // Seed the working mirror map from whatever's live (board_config or bundled).
+    if (!CAL.mirror) CAL.mirror = MIRROR_MAP ? JSON.parse(JSON.stringify(MIRROR_MAP)) : {};
     document.querySelectorAll('#cal-mode .cal-seg').forEach(b => b.classList.toggle('active', b.dataset.mode === CAL.mode));
     document.getElementById('cal-board').classList.toggle('nudging', CAL.mode === 'nudge');
     renderCal();
@@ -1039,12 +1051,21 @@
     const layer = document.getElementById('cal-layer');
     if (!layer || !CAL.pos) return;
     const anchored = new Set(CAL.anchors.map(a => a.hold));
+    const mirroring = CAL.mode === 'mirror';
+    const selPartner = mirroring && CAL.selected ? CAL.mirror[CAL.selected] : null;
     let html = Object.keys(CAL.pos).map(h => {
       const p = CAL.pos[h];
-      const cls = h === CAL.selected ? 'sel' : (anchored.has(h) ? 'anchored' : '');
+      let cls;
+      if (mirroring) {
+        cls = h === CAL.selected ? 'sel'
+            : h === selPartner ? 'partner'
+            : (CAL.mirror[h] === h || !(h in CAL.mirror)) ? 'selfmirror' : '';
+      } else {
+        cls = h === CAL.selected ? 'sel' : (anchored.has(h) ? 'anchored' : '');
+      }
       return `<div class="cal-dot ${cls}" style="left:${p.x}%;top:${p.y}%"></div>`;
     }).join('');
-    html += CAL.anchors.map(a => `<div class="cal-anchor" style="left:${a.x}%;top:${a.y}%"></div>`).join('');
+    if (!mirroring) html += CAL.anchors.map(a => `<div class="cal-anchor" style="left:${a.x}%;top:${a.y}%"></div>`).join('');
     layer.innerHTML = html;
 
     document.getElementById('cal-anchor-count').textContent =
@@ -1057,6 +1078,17 @@
       status.textContent = miss.length
         ? `Tap where hold ${holdNum(miss[0])} (${gridName(holdNum(miss[0]))}) goes — ${miss.length} hold${miss.length === 1 ? '' : 's'} missing.`
         : 'All 189 holds are placed — none missing.';
+    }
+    else if (CAL.mode === 'mirror') {
+      const s = CAL.selected;
+      if (s) {
+        const part = CAL.mirror[s];
+        status.textContent = (!part || part === s)
+          ? `${holdNum(s)} (${gridName(holdNum(s))}) has no mirror. Tap its partner to pair it, or tap ${holdNum(s)} again to keep it unmirrored.`
+          : `${holdNum(s)} (${gridName(holdNum(s))}) ↔ ${holdNum(part)} (${gridName(holdNum(part))}). Tap a new partner to repair, or tap ${holdNum(s)} again for "no mirror".`;
+      } else {
+        status.textContent = 'Mirror mode — tap a hold to see its partner; amber dots have no mirror.';
+      }
     }
     else if (CAL.mode === 'nudge') status.textContent = 'Nudge mode — drag any dot to fine-tune.';
     else if (CAL.selected) status.textContent = `Now tap where hold ${holdNum(CAL.selected)} really is.`;
@@ -1080,6 +1112,36 @@
     CAL.base[miss[0]] = { x: CAL.pos[miss[0]].x, y: CAL.pos[miss[0]].y };
     renderCal();
     showToast(`Placed ${miss[0]} (${gridName(holdNum(miss[0]))})`, 'success');
+  }
+
+  // Mirror mode: first tap selects a hold (and shows its current partner); second
+  // tap either pairs it with another hold, sets "no mirror" (tap the same hold
+  // again), or cancels (tap empty space). Pairs are kept symmetric — repairing one
+  // hold orphans its old partner to "no mirror" so the map stays an involution.
+  function setMirrorPair(a, b) {
+    const m = CAL.mirror;
+    if (a === b) {                              // mark a as self / no mirror
+      const old = m[a];
+      if (old && old !== a) m[old] = old;
+      m[a] = a;
+      return;
+    }
+    const oa = m[a], ob = m[b];
+    if (oa && oa !== a && oa !== b) m[oa] = oa; // a's old partner -> no mirror
+    if (ob && ob !== b && ob !== a) m[ob] = ob; // b's old partner -> no mirror
+    m[a] = b; m[b] = a;
+  }
+
+  function calMirrorTap(e) {
+    const h = calNearest(e.clientX, e.clientY);
+    if (!CAL.selected) { if (h) CAL.selected = h; renderCal(); return; }
+    if (!h) { CAL.selected = null; renderCal(); return; }   // tapped away = cancel
+    const a = CAL.selected;
+    setMirrorPair(a, h);
+    CAL.selected = null;
+    renderCal();
+    showToast(a === h ? `${holdNum(a)} set to no mirror`
+                      : `${holdNum(a)} ↔ ${holdNum(h)}`, 'success');
   }
 
   // Pointer event → board-relative %, plus the board rect (for distance maths).
@@ -1228,6 +1290,8 @@
     const status = document.getElementById('cal-status');
     try {
       const row = { wall: 'HangoutPortland', hold_map: calOrderedMap(), updated_at: new Date().toISOString() };
+      // Publish the mirror map alongside positions so manual mirror fixes go live.
+      if (CAL.mirror && Object.keys(CAL.mirror).length) row.mirror_map = CAL.mirror;
 
       // Upload the new image first (fixed object name; cache-busted on load by updated_at).
       if (CAL.imgFile) {
@@ -1245,6 +1309,10 @@
       // Reflect the save locally so it's live without a reload.
       HOLD_MAP = JSON.parse(JSON.stringify(CAL.pos));
       configHasMap = true;
+      if (CAL.mirror && Object.keys(CAL.mirror).length) {
+        MIRROR_MAP = JSON.parse(JSON.stringify(CAL.mirror));
+        configHasMirror = true;
+      }
       if (CAL.imgFile) {
         BOARD_IMG = `${SUPA_URL}/storage/v1/object/public/${BOARD_BUCKET}/${row.image_path}?v=${encodeURIComponent(row.updated_at)}`;
         CAL.imgFile = null;
@@ -1467,6 +1535,7 @@
   calBoard.addEventListener('click', e => {
     if (CAL.mode === 'anchor') calAnchorTap(e);
     else if (CAL.mode === 'add') calAddTap(e);
+    else if (CAL.mode === 'mirror') calMirrorTap(e);
   });
   calBoard.addEventListener('pointerdown', calDragStart);
   calBoard.addEventListener('pointermove', calDragMove);
@@ -1569,8 +1638,7 @@
   loadProfileNames(); // id -> username map so setters show the live display name
   // Prefer the admin-saved board (image + hold map) from Supabase; fall back to the
   // bundled hold_map.json only if no saved map exists.
-  loadBoardConfig().then(loadHoldMap);
-  loadMirrorMap();    // hold -> mirror-partner map for the detail mirror toggle
+  loadBoardConfig().then(() => { loadHoldMap(); loadMirrorMap(); });
   initAuth();      // restore session, wire auth state, handle Google redirect
 
   // Splash: linger briefly, then fade out and remove from the DOM.
