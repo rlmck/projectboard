@@ -844,8 +844,11 @@
   }
 
   // Tap to cycle a hold's role:
-  //   • top-zone hold (top 25% of the board) → hold (blue) → finish (red) → off,
-  //     with only one finish at a time and no starts allowed up there.
+  //   • top-zone hold (top 25% of the board), no finish set yet → hold (blue) →
+  //     finish (red) → off. Once a finish exists, the other top holds cycle
+  //     hold (blue) → off only (so promotion to red happens just once — no
+  //     finish-stealing); the finish hold itself toggles red → off to clear it.
+  //     No starts are allowed up there.
   //   • any other hold → start (green) → hold (blue) → off, where a fresh tap
   //     starts green while fewer than two starts exist, otherwise blue.
   function cycleHold(h) {
@@ -854,8 +857,8 @@
       if (cur === 'finish') {
         delete createRoles[h];
       } else if (cur === 'int') {
-        holdsWithRole('finish').forEach(x => delete createRoles[x]);   // single finish
-        createRoles[h] = 'finish';
+        if (holdsWithRole('finish').length) delete createRoles[h];   // finish taken → blue → off
+        else createRoles[h] = 'finish';                             // no finish yet → blue → red
       } else {
         createRoles[h] = 'int';
       }
