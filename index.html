@@ -89,7 +89,7 @@
   </header>
   <main>
     <div class="board-wrap" id="create-board">
-      <img class="board-graphic" src="Gareths.png" alt="The Hangout symmetry board" />
+      <img class="board-graphic" src="ProjectBoard.png" alt="The Hangout symmetry board" />
       <div class="hold-layer" id="create-hold-layer"></div>
     </div>
 
@@ -125,6 +125,7 @@
       <div class="cal-mode" id="cal-mode">
         <button class="cal-seg active" data-mode="anchor" type="button">Anchor</button>
         <button class="cal-seg" data-mode="nudge" type="button">Nudge</button>
+        <button class="cal-seg" data-mode="add" type="button">Add</button>
       </div>
       <input type="file" id="cal-file" accept="image/*" hidden />
     </div>
@@ -132,7 +133,7 @@
     <p class="cal-status" id="cal-status"></p>
 
     <div class="board-wrap cal-board" id="cal-board">
-      <img class="board-graphic" id="cal-img" src="Gareths.png" alt="The Hangout symmetry board" />
+      <img class="board-graphic" id="cal-img" src="ProjectBoard.png" alt="The Hangout symmetry board" />
       <div class="cal-layer" id="cal-layer"></div>
     </div>
 
@@ -142,8 +143,8 @@
         <button class="cal-chip ghost" id="cal-clear-anchors" type="button">Clear anchors</button>
       </div>
       <button class="btn-block btn-primary" id="cal-fit" disabled>Fit all holds to anchors</button>
-      <button class="btn-block btn-ghost" id="cal-export">Export hold_map.json</button>
-      <p class="cal-help"><b>Anchor</b> mode: tap a dot, then tap where that hold really is on the new image. Pin 3–4 spread-out holds (corners are ideal), then <b>Fit</b> snaps all 247 at once. Switch to <b>Nudge</b> to drag any stragglers, then <b>Export</b> and commit the file. Fit re-snaps everything from the saved map, so do nudges last.</p>
+      <button class="btn-block btn-primary" id="cal-save">Save board</button>
+      <p class="cal-help"><b>Anchor</b>: tap a dot, then tap where that hold really is on the image; pin 3–4 spread-out holds (corners are ideal), then <b>Fit</b> snaps them all. <b>Nudge</b>: drag any stragglers. <b>Add</b>: place a hold that's missing from the map. <b>Change image…</b> uploads a new board photo. <b>Save board</b> publishes the image + positions to everyone. Fit re-snaps from the saved map, so do nudges/adds last.</p>
     </div>
   </main>
 </section>
@@ -254,6 +255,21 @@
       <div class="modal-actions">
         <button class="btn-block btn-ghost" id="name-cancel" hidden>Cancel</button>
         <button class="btn-block btn-primary" id="name-save">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ BOARD SAVED MODAL (admins) ═════════════════════════════════════ -->
+<div class="modal-overlay" id="cal-saved-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Board saved">
+    <div class="modal-header">
+      <div class="modal-title">Board saved ✓</div>
+    </div>
+    <div class="name-body">
+      <p class="shell-sub" style="margin:0 0 16px">The new board image and hold positions are live for everyone. Reopen the app (or pull down to refresh) to see the change — already-open phones pick it up on their next load.</p>
+      <div class="modal-actions">
+        <button class="btn-block btn-primary" id="cal-saved-ok">Done</button>
       </div>
     </div>
   </div>

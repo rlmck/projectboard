@@ -1,7 +1,8 @@
   // ── Supabase client ──────────────────────────────────────────────────────────
   const { createClient } = supabase;
+  const SUPA_URL = 'https://uqirowyfqwiceyjznosl.supabase.co';
   const sb = createClient(
-    'https://uqirowyfqwiceyjznosl.supabase.co',
+    SUPA_URL,
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA'
   );
 
@@ -22,7 +23,13 @@
   let currentView = 'list';
   let listScroll = 0;
   let currentProblem = null;
-  let HOLD_MAP = null;   // hold id -> {x,y} %, loaded from hold_map.json
+  let HOLD_MAP = null;   // hold id -> {x,y} %, from board_config (admin) or bundled hold_map.json
+  let BOARD_IMG = 'ProjectBoard.png';   // resolved board image URL (Supabase upload, else bundled)
+  let configHasMap = false;             // true once board_config supplied a hold map (suppresses the bundled fallback)
+  const BOARD_BUCKET = 'board';         // Supabase Storage bucket holding the uploaded board image
+  // The 189 real holds on the board (ground truth from the DTB layout). Used by the
+  // calibrate "Add" mode to offer holds that are absent from the current map.
+  const VALID_HOLD_IDS = [1,3,4,5,7,8,10,12,14,16,17,19,20,22,23,24,25,27,28,30,31,32,33,34,35,36,38,39,41,42,43,44,45,46,47,48,49,50,51,53,54,55,58,59,60,61,62,63,64,65,69,70,71,72,73,74,75,76,79,80,81,82,83,85,86,87,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,143,145,146,147,148,149,150,151,152,154,155,156,157,158,160,161,162,163,164,165,166,167,168,169,171,172,174,175,176,177,178,179,180,185,186,188,189,190,191,192,194,195,196,198,199,202,203,205,206,207,208,212,213,216,218,219,221,222,230,231,233,234,235,236,237,239,242,243,244,245,246];
   let session = null;    // Supabase auth session (null = guest)
   let authReady = false; // true once getSession has resolved (don't gate routes before then)
   let profile = null;    // { id, username, is_admin } for the signed-in user
@@ -90,6 +97,15 @@
   function holdNum(id) {
     const m = /^hold(\d+)$/i.exec(String(id));
     return m ? m[1] : String(id);
+  }
+
+  // Grid name for a hold number: hold1 -> A1, hold19 -> S1, hold20 -> A2, hold243 -> O13.
+  // 19 columns (A–S) × 13 rows, numbered row-major. Used to label holds in the
+  // calibrate "Add" mode so the admin knows which physical hold to place.
+  function gridName(n) {
+    n = +n;
+    if (!n || n < 1) return 'hold' + n;
+    return String.fromCharCode(65 + (n - 1) % 19) + (Math.floor((n - 1) / 19) + 1);
   }
 
   function holdChips(arr, cls) {
@@ -291,7 +307,7 @@
       </div>
 
       <div class="board-wrap">
-        <img class="board-graphic" src="Gareths.png" alt="The Hangout symmetry board" />
+        <img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" />
         ${boardOverlayHtml(p)}
       </div>
     `;
@@ -378,18 +394,58 @@
     }
   }
 
-  // ── Load hold position map (for the board overlay) ───────────────────────────
-  async function loadHoldMap() {
-    try {
-      const res = await fetch('hold_map.json', { cache: 'no-cache' });
-      if (res.ok) HOLD_MAP = await res.json();
-    } catch (err) {
-      console.warn('hold_map.json load failed — board overlay disabled', err);
-    }
-    // If we're already on a detail/create view, render now that positions exist.
+  // Re-render whatever board-bearing view is showing once positions/image change.
+  function refreshBoardViews() {
     if (currentView === 'detail') router();
     if (currentView === 'create') applyCreateRoles();
     if (currentView === 'calibrate') initCalibrate();
+  }
+
+  // Point every static board <img> (create + calibrate) at the current BOARD_IMG.
+  // The detail view's <img> is built per-render, so it reads BOARD_IMG directly.
+  function applyBoardImage() {
+    document.querySelectorAll('#create-board .board-graphic, #cal-img').forEach(img => {
+      if (img.getAttribute('src') !== BOARD_IMG) img.setAttribute('src', BOARD_IMG);
+    });
+  }
+
+  // ── Load hold position map (bundled fallback for the board overlay) ──────────
+  // board_config (loadBoardConfig) is the source of truth when an admin has saved
+  // one; this bundled file is the first-paint / offline fallback. Don't clobber a
+  // map that already came from board_config.
+  async function loadHoldMap() {
+    if (configHasMap) return;
+    try {
+      const res = await fetch('hold_map.json', { cache: 'no-cache' });
+      if (res.ok && !configHasMap) HOLD_MAP = await res.json();
+    } catch (err) {
+      console.warn('hold_map.json load failed — board overlay disabled', err);
+    }
+    refreshBoardViews();
+  }
+
+  // ── Load the admin-saved board (image + hold map) from Supabase ──────────────
+  // Overrides the bundled image/map when present. Cache-busts the image on
+  // updated_at so a re-upload to the same path is never served stale.
+  async function loadBoardConfig() {
+    try {
+      const { data, error } = await sb
+        .from('board_config').select('hold_map, image_path, updated_at')
+        .eq('wall', 'HangoutPortland').maybeSingle();
+      if (error || !data) return;
+      if (data.image_path) {
+        const ver = data.updated_at ? `?v=${encodeURIComponent(data.updated_at)}` : '';
+        BOARD_IMG = `${SUPA_URL}/storage/v1/object/public/${BOARD_BUCKET}/${data.image_path}${ver}`;
+        applyBoardImage();
+      }
+      if (data.hold_map && typeof data.hold_map === 'object' && Object.keys(data.hold_map).length) {
+        HOLD_MAP = data.hold_map;
+        configHasMap = true;
+      }
+      refreshBoardViews();
+    } catch (err) {
+      console.warn('board_config load failed — using bundled board', err);
+    }
   }
 
   // ── Load the id -> username map (so setters show the live display name) ───────
@@ -897,8 +953,9 @@
     pos: null,       // working positions (drawn + exported)
     anchors: [],     // [{ hold, x, y }] true positions the user has pinned
     selected: null,  // hold id awaiting its anchor target (anchor mode)
-    mode: 'anchor',  // 'anchor' | 'nudge'
+    mode: 'anchor',  // 'anchor' | 'nudge' | 'add'
     drag: null,      // hold currently being dragged (nudge mode)
+    imgFile: null,   // a newly-picked board image awaiting upload on Save
   };
 
   const isAdmin = () => !!(profile && profile.is_admin);
@@ -932,10 +989,34 @@
     document.getElementById('cal-fit').disabled = CAL.anchors.length < 3;
 
     const status = document.getElementById('cal-status');
-    if (CAL.mode === 'nudge') status.textContent = 'Nudge mode — drag any dot to fine-tune.';
+    if (CAL.mode === 'add') {
+      const miss = calMissingHolds();
+      status.textContent = miss.length
+        ? `Tap where hold ${holdNum(miss[0])} (${gridName(holdNum(miss[0]))}) goes — ${miss.length} hold${miss.length === 1 ? '' : 's'} missing.`
+        : 'All 189 holds are placed — none missing.';
+    }
+    else if (CAL.mode === 'nudge') status.textContent = 'Nudge mode — drag any dot to fine-tune.';
     else if (CAL.selected) status.textContent = `Now tap where hold ${holdNum(CAL.selected)} really is.`;
     else if (CAL.anchors.length < 3) status.textContent = `Tap a dot, then its true spot — ${3 - CAL.anchors.length} more to fit.`;
     else status.textContent = 'Ready to fit — or add more anchors for accuracy.';
+  }
+
+  // Real holds (ground truth) that aren't in the working map yet, lowest id first.
+  function calMissingHolds() {
+    return VALID_HOLD_IDS.map(n => 'hold' + n).filter(h => !(h in CAL.pos));
+  }
+
+  // Add mode: tap to place the next missing hold at that spot.
+  function calAddTap(e) {
+    const miss = calMissingHolds();
+    if (!miss.length) return;
+    const { x, y } = calPct(e.clientX, e.clientY);
+    CAL.pos[miss[0]] = { x: +x.toFixed(2), y: +y.toFixed(2) };
+    // A freshly-added hold has no "saved" source, so seed base too — otherwise a
+    // later Fit (which maps from base) would drop it again.
+    CAL.base[miss[0]] = { x: CAL.pos[miss[0]].x, y: CAL.pos[miss[0]].y };
+    renderCal();
+    showToast(`Placed ${miss[0]} (${gridName(holdNum(miss[0]))})`, 'success');
   }
 
   // Pointer event → board-relative %, plus the board rect (for distance maths).
@@ -1056,24 +1137,63 @@
 
   function calLoadImage(file) {
     if (!file) return;
+    CAL.imgFile = file;   // held for upload on Save
     // Dots are positioned in % of the image, so they re-land on the new framing.
     document.getElementById('cal-img').src = URL.createObjectURL(file);
+    document.getElementById('cal-status').textContent = 'New image loaded — re-anchor, then Save.';
   }
 
-  // Download the working positions as a fresh hold_map.json (hold-number ordered).
-  function calExport() {
-    if (!CAL.pos) return;
+  // Build the hold map in hold-number order (stable + readable in the DB).
+  function calOrderedMap() {
     const out = {};
     Object.keys(CAL.pos)
       .sort((a, b) => (+holdNum(a)) - (+holdNum(b)))
       .forEach(h => { out[h] = { x: +CAL.pos[h].x, y: +CAL.pos[h].y }; });
-    const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'hold_map.json';
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-    showToast('hold_map.json downloaded', 'success');
+    return out;
+  }
+
+  // Save board → publish image (if a new one was picked) + hold map to Supabase.
+  // Admin-only; the DB/storage RLS is the real gate (the button is just UX).
+  async function calSave() {
+    if (!CAL.pos) return;
+    const btn = document.getElementById('cal-save');
+    const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+    const status = document.getElementById('cal-status');
+    try {
+      const row = { wall: 'HangoutPortland', hold_map: calOrderedMap(), updated_at: new Date().toISOString() };
+
+      // Upload the new image first (fixed object name; cache-busted on load by updated_at).
+      if (CAL.imgFile) {
+        const ext = (CAL.imgFile.type === 'image/jpeg') ? 'jpg' : (CAL.imgFile.type === 'image/webp') ? 'webp' : 'png';
+        const objName = 'board.' + ext;
+        const up = await sb.storage.from(BOARD_BUCKET)
+          .upload(objName, CAL.imgFile, { upsert: true, cacheControl: '3600', contentType: CAL.imgFile.type });
+        if (up.error) throw up.error;
+        row.image_path = objName;
+      }
+
+      const { error } = await sb.from('board_config').upsert(row, { onConflict: 'wall' });
+      if (error) throw error;
+
+      // Reflect the save locally so it's live without a reload.
+      HOLD_MAP = JSON.parse(JSON.stringify(CAL.pos));
+      configHasMap = true;
+      if (CAL.imgFile) {
+        BOARD_IMG = `${SUPA_URL}/storage/v1/object/public/${BOARD_BUCKET}/${row.image_path}?v=${encodeURIComponent(row.updated_at)}`;
+        CAL.imgFile = null;
+        applyBoardImage();
+      }
+      btn.disabled = false; btn.textContent = prev;
+      document.getElementById('cal-saved-modal').classList.add('show');
+    } catch (err) {
+      btn.disabled = false; btn.textContent = prev;
+      const msg = (err && err.code === '42501')
+        ? 'You don’t have permission to save the board.'   // not an admin (RLS)
+        : (err && err.message) || 'Save failed — check connection.';
+      status.textContent = msg;
+      showToast('Save failed', 'error');
+      console.error('board save failed', err);
+    }
   }
 
   // ── Wire up events ────────────────────────────────────────────────────────────
@@ -1269,12 +1389,16 @@
   document.getElementById('cal-file').addEventListener('change', e => calLoadImage(e.target.files[0]));
   document.getElementById('cal-clear-anchors').addEventListener('click', calClearAnchors);
   document.getElementById('cal-fit').addEventListener('click', calFit);
-  document.getElementById('cal-export').addEventListener('click', calExport);
+  document.getElementById('cal-save').addEventListener('click', calSave);
+  document.getElementById('cal-saved-ok').addEventListener('click', () => document.getElementById('cal-saved-modal').classList.remove('show'));
   document.getElementById('cal-mode').addEventListener('click', e => {
     const b = e.target.closest('.cal-seg'); if (b) calSetMode(b.dataset.mode);
   });
   const calBoard = document.getElementById('cal-board');
-  calBoard.addEventListener('click', e => { if (CAL.mode === 'anchor') calAnchorTap(e); });
+  calBoard.addEventListener('click', e => {
+    if (CAL.mode === 'anchor') calAnchorTap(e);
+    else if (CAL.mode === 'add') calAddTap(e);
+  });
   calBoard.addEventListener('pointerdown', calDragStart);
   calBoard.addEventListener('pointermove', calDragMove);
   calBoard.addEventListener('pointerup', calDragEnd);
@@ -1374,7 +1498,9 @@
   router();        // show initial view (list shows its loading spinner)
   loadProblems();     // fetch, then render + re-route
   loadProfileNames(); // id -> username map so setters show the live display name
-  loadHoldMap();      // fetch hold positions for the detail board overlay
+  // Prefer the admin-saved board (image + hold map) from Supabase; fall back to the
+  // bundled hold_map.json only if no saved map exists.
+  loadBoardConfig().then(loadHoldMap);
   initAuth();      // restore session, wire auth state, handle Google redirect
 
   // Splash: linger briefly, then fade out and remove from the DOM.

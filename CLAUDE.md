@@ -24,7 +24,8 @@ The app is hosted on **GitHub Pages** from the `main` branch.
 - **iOS safe-area fix** — the header reserves the notch/status-bar area (`env(safe-area-inset-*)`).
 
 **Done (later, same build):**
-- **Recalibrate-board tool** (`#calibrate`, admins only) — swap in a new board image and re-anchor the existing holds onto it without redoing the painful 187-dot placement / ICP labelling. The hold→dot *labelling* is frozen in `hold_map.json`; only each hold's x/y % shifts when the image's framing/aspect changes. **Anchor** mode: tap a dot, tap its true spot, pin ≥3 spread-out holds, **Fit** solves a least-squares affine (saved positions → anchors) and snaps all 247 at once; **Nudge** mode drags stragglers; **Export** downloads a fresh `hold_map.json` to commit. Entry point: a "Recalibrate board" button on the profile page (admins). Purely client-side, no DB writes. Built so the wider/recoloured graphic can be calibrated in minutes on a phone.
+- **Recalibrate-board tool** (`#calibrate`, admins only) — swap in a new board image and re-anchor the existing holds onto it without redoing the painful 187-dot placement / ICP labelling. The hold→dot *labelling* is frozen; only each hold's x/y % shifts when the image's framing/aspect changes. **Anchor** mode: tap a dot, tap its true spot, pin ≥3 spread-out holds, **Fit** solves a least-squares affine (saved positions → anchors) and snaps all holds at once; **Nudge** drags stragglers; **Add** places holds missing from the map. Entry point: a "Recalibrate board" button on the profile page (admins).
+- **Phone-native board publishing** — **Change image…** uploads a new board photo straight from the phone to Supabase Storage (`board` bucket); **Save board** publishes the image + hold positions to `board_config`, live for everyone on next load (no git, no SW bump, no GitHub Pages rebuild). The app loads the board image + map from `board_config`, falling back to the bundled `ProjectBoard.png` + `hold_map.json`. Image is cache-busted on `updated_at` so a re-upload to the same object name is never stale. Admin-gated by RLS via `is_admin()`. Detail view now shows the board at its **true aspect ratio** (centred, not stretched) so a wide board reads as wide. **Two real holds were absent from the map — `hold218` (I12) and `hold243` (O13, top row); the Add mode is how they get placed back in.**
 
 **Next:** edit a problem's holds (admins); mirror-mode toggle; circuits/tags; richer logbook. (See "What is deferred".)
 
@@ -69,9 +70,14 @@ ticks         — id, user_id, problem_id, created_at   (FK problem_id → probl
 likes         — id, user_id, problem_id               (FK problem_id → problems ON DELETE CASCADE)
 sessions      — id, user_id, wall, date, problems (jsonb)
 profiles      — id (= auth.users.id), username (unique, case-insensitive), is_admin (bool default false), created_at
+board_config  — wall (pk, ='HangoutPortland'), hold_map (jsonb), image_path (text, object name in the 'board' Storage bucket), updated_at
 ```
 
-Row Level Security (RLS) is enabled on all tables.
+Row Level Security (RLS) is enabled on all tables. **Storage:** a public bucket
+`board` holds the admin-uploaded board image (public read; admin-only write via
+`is_admin()`). The app reads the live board image + hold map from `board_config`
+(falling back to the bundled `ProjectBoard.png` + `hold_map.json`), so an admin
+can recalibrate the whole board **from their phone** — no git drop. See `db/10`.
 
 ### DB scripts & policies (`db/` — kept LOCAL, gitignored, applied by hand in the Supabase SQL editor)
 
@@ -83,6 +89,7 @@ Apply in order; each is idempotent. **`db/` is not in the repo** — these live 
 - `07_problem_owner.sql` — uses the existing `problems.setter_id` as owner; hardens INSERT to `setter_id = auth.uid()` (drop policy → drop the old redundant `created_by` column → recreate policy, in that order or the drop fails).
 - `08_problems_update_admin.sql` — admin UPDATE policy on `problems` (powers grade editing).
 - `09_lock_profile_insert.sql` — **locks `profiles` INSERT to `id`+`username`** so `is_admin` can't be self-set on insert. Closes the last self-promotion path.
+- `10_board_assets.sql` — `board_config` table (per-wall `hold_map` jsonb + `image_path`) with public read / admin-only write; creates the public **`board` Storage bucket** + its object policies (public read, admin-only write). Powers phone-native board recalibration. **Run this in the SQL editor before the recalibrate "Save board" button will work.**
 
 **Admin model:** admin = `profiles.is_admin = true`, keyed by account id (independent of `username`, so renames keep admin). Promotion is **manual in the Supabase dashboard** — there is no in-app promotion UI by design. The app's admin buttons are UX only; the real gate is the RLS policies above.
 
@@ -257,6 +264,6 @@ French bouldering grades in correct difficulty order (for filter tabs and sortin
 
 ---
 
-*Last updated: 12 June 2026 — admin recalibrate-board tool (`#calibrate`: swap board image, affine-fit holds from a few anchors, export `hold_map.json`); earlier this build: create-a-problem, admin delete + grade-edit, profile name edit + tick stats, live setter names, iOS safe-area fix. DB scripts go up to `db/09`. SW at `pb-v18`. Next: full problem editing / mirror mode.*
+*Last updated: 12 June 2026 — phone-native board recalibration: admins upload a new board image to Supabase Storage + Save hold positions to `board_config` (live for everyone, no git); `#calibrate` gains Anchor/Nudge/Add modes; detail board shows true aspect; `hold218`/`hold243` were missing from the map (place via Add). DB scripts go up to `db/10` (new `board_config` table + `board` Storage bucket — run before Save works). SW at `pb-v20`. Next: full problem editing / mirror mode.*
 *Maintained by: Ross (rlmck)*
 *Fuller context in `docs/project-notes.md` (in this repo) and the Claude.ai project knowledge.*
