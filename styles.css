@@ -515,6 +515,43 @@
     .create-grades { margin-top: 0; flex-wrap: wrap; }
     #create-save { margin-top: 12px; }
 
+    /* ── Calibrate view (admin: re-map holds onto a new board image) ─── */
+    #view-calibrate main { padding-bottom: 40px; }
+    .cal-toolbar { display: flex; align-items: center; gap: 10px; padding: 12px 2px; flex-wrap: wrap; }
+    .cal-chip {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 9px; padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .cal-chip.ghost { background: transparent; color: var(--text-muted); }
+    .cal-mode { display: flex; margin-left: auto; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+    .cal-seg { background: var(--surface); color: var(--text-muted); border: none; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .cal-seg.active { background: var(--accent); color: #fff; }
+    .cal-status { font-size: 13px; color: var(--accent-hover); min-height: 18px; margin: 0 0 10px; text-align: center; font-weight: 600; }
+    .cal-board { border-radius: 10px; overflow: hidden; -webkit-tap-highlight-color: transparent; touch-action: manipulation; cursor: crosshair; }
+    .cal-board.nudging { touch-action: none; }
+    #cal-img { width: 100%; height: auto; display: block; }
+    .cal-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+    .cal-dot {
+      position: absolute; width: 2.6%; aspect-ratio: 1; transform: translate(-50%, -50%);
+      border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.85);
+      background: rgba(236,72,153,0.45); box-sizing: border-box;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.45);
+    }
+    .cal-dot.sel { background: rgba(250,204,21,0.92); border-color: #fff; width: 4%; z-index: 3; }
+    .cal-dot.anchored { background: rgba(34,197,94,0.75); border-color: #bbf7d0; }
+    .cal-anchor {
+      position: absolute; width: 3%; aspect-ratio: 1; transform: translate(-50%, -50%);
+      border-radius: 50%; border: 2px solid #4ade80; box-sizing: border-box; z-index: 2;
+    }
+    .cal-anchor::before, .cal-anchor::after { content: ''; position: absolute; background: #4ade80; }
+    .cal-anchor::before { left: 50%; top: -30%; width: 2px; height: 160%; transform: translateX(-50%); }
+    .cal-anchor::after { top: 50%; left: -30%; height: 2px; width: 160%; transform: translateY(-50%); }
+    .cal-panel { padding: 14px 2px 8px; }
+    .cal-anchors-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 13px; color: var(--text-muted); font-weight: 600; }
+    #cal-export { margin-top: 10px; }
+    .cal-help { font-size: 12px; line-height: 1.6; color: var(--text-muted); margin: 14px 0 0; }
+    .cal-help b { color: var(--text); font-weight: 700; }
+
     /* ── Problem hold overlay (detail view) ──────────────────────────── */
     /* The board is object-fit:fill (stretched to the box), so percentage
        positions from hold_map.json still land correctly on each hold. */

@@ -23,6 +23,9 @@ The app is hosted on **GitHub Pages** from the `main` branch.
 - **Live setter names** — a problem's displayed setter resolves from the owner's *current* `profiles.username` via `setter_id`, so a rename propagates to all their problems. Legacy/migrated rows (no owner) keep their text setter.
 - **iOS safe-area fix** — the header reserves the notch/status-bar area (`env(safe-area-inset-*)`).
 
+**Done (later, same build):**
+- **Recalibrate-board tool** (`#calibrate`, admins only) — swap in a new board image and re-anchor the existing holds onto it without redoing the painful 187-dot placement / ICP labelling. The hold→dot *labelling* is frozen in `hold_map.json`; only each hold's x/y % shifts when the image's framing/aspect changes. **Anchor** mode: tap a dot, tap its true spot, pin ≥3 spread-out holds, **Fit** solves a least-squares affine (saved positions → anchors) and snaps all 247 at once; **Nudge** mode drags stragglers; **Export** downloads a fresh `hold_map.json` to commit. Entry point: a "Recalibrate board" button on the profile page (admins). Purely client-side, no DB writes. Built so the wider/recoloured graphic can be calibrated in minutes on a phone.
+
 **Next:** edit a problem's holds (admins); mirror-mode toggle; circuits/tags; richer logbook. (See "What is deferred".)
 
 ---
@@ -254,6 +257,6 @@ French bouldering grades in correct difficulty order (for filter tabs and sortin
 
 ---
 
-*Last updated: 12 June 2026 — create-a-problem (tap-to-cycle, top-12 finish zone by y-position, inverted storage, `setter_id` owner); admin delete + grade-edit (RLS-gated, manual promotion); profile name edit + tick stats; live setter names; iOS safe-area fix. DB scripts now go up to `db/09`. SW at `pb-v17`. Next: full problem editing / mirror mode.*
+*Last updated: 12 June 2026 — admin recalibrate-board tool (`#calibrate`: swap board image, affine-fit holds from a few anchors, export `hold_map.json`); earlier this build: create-a-problem, admin delete + grade-edit, profile name edit + tick stats, live setter names, iOS safe-area fix. DB scripts go up to `db/09`. SW at `pb-v18`. Next: full problem editing / mirror mode.*
 *Maintained by: Ross (rlmck)*
 *Fuller context in `docs/project-notes.md` (in this repo) and the Claude.ai project knowledge.*

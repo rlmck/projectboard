@@ -148,7 +148,7 @@
     // The info modal only belongs to the detail view.
     if (name !== 'detail') closeInfo();
 
-    ['list','detail','create','auth','profile'].forEach(v => {
+    ['list','detail','create','calibrate','auth','profile'].forEach(v => {
       document.getElementById('view-' + v).classList.toggle('active', v === name);
     });
 
@@ -156,7 +156,7 @@
     document.getElementById('bottom-nav').style.display = name === 'auth' ? 'none' : 'flex';
 
     // Active nav highlight.
-    const navFor = { list: 'list', detail: 'list', create: 'list', profile: 'profile', auth: 'profile' }[name] || 'list';
+    const navFor = { list: 'list', detail: 'list', create: 'list', calibrate: 'profile', profile: 'profile', auth: 'profile' }[name] || 'list';
     document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.nav === navFor));
 
     if (name === 'list') window.scrollTo(0, listScroll);
@@ -175,6 +175,13 @@
         if (authReady && !session) { location.replace(location.pathname + '#auth'); break; }
         initCreateView();
         setView('create');
+        break;
+      case 'calibrate':
+        // Admin-only tool. Bounce non-admins once auth is known (don't kick during
+        // a cold load before the profile has resolved).
+        if (authReady && !isAdmin()) { location.replace(location.pathname + '#list'); break; }
+        initCalibrate();
+        setView('calibrate');
         break;
       case 'auth':    setAuthMode('signin'); setView('auth'); break;
       case 'profile': renderProfile(); setView('profile'); break;
@@ -382,6 +389,7 @@
     // If we're already on a detail/create view, render now that positions exist.
     if (currentView === 'detail') router();
     if (currentView === 'create') applyCreateRoles();
+    if (currentView === 'calibrate') initCalibrate();
   }
 
   // ── Load the id -> username map (so setters show the live display name) ───────
@@ -695,7 +703,8 @@
           <button class="btn-block btn-ghost" id="profile-signout">Sign out</button>
         </div>
         <div class="profile-row"><span class="k">Total ticks</span><span class="v">${total}</span></div>
-        <div class="profile-row"><span class="k">Hardest send</span><span class="v">${hardestHtml}</span></div>`;
+        <div class="profile-row"><span class="k">Hardest send</span><span class="v">${hardestHtml}</span></div>
+        ${profile.is_admin ? `<a class="btn-block btn-ghost" href="#calibrate" style="display:block;text-align:center;text-decoration:none;margin-top:18px">Recalibrate board</a>` : ''}`;
       document.getElementById('profile-signout').addEventListener('click', doSignOut);
       document.getElementById('profile-edit-name').addEventListener('click', () => openNameModal('edit'));
     } else {
@@ -875,6 +884,196 @@
     // Replace the #create history entry with the new problem's detail, so Back
     // from there returns to the list (not into the create form).
     location.replace('#detail/' + encodeURIComponent(data.id));
+  }
+
+  // ── Recalibrate board (admin tool) ───────────────────────────────────────────
+  // Swap in a new board image and re-anchor the existing hold positions onto it.
+  // The hold→dot LABELLING never changes (it's frozen in hold_map.json); only each
+  // hold's x/y % shifts when the image's framing/aspect changes. So we fit a single
+  // least-squares affine from the saved positions to a few user-placed anchors, snap
+  // every hold at once, then export a fresh hold_map.json. No Python / ICP needed.
+  const CAL = {
+    base: null,      // immutable copy of the saved hold_map { hold: {x,y} } — the fit source
+    pos: null,       // working positions (drawn + exported)
+    anchors: [],     // [{ hold, x, y }] true positions the user has pinned
+    selected: null,  // hold id awaiting its anchor target (anchor mode)
+    mode: 'anchor',  // 'anchor' | 'nudge'
+    drag: null,      // hold currently being dragged (nudge mode)
+  };
+
+  const isAdmin = () => !!(profile && profile.is_admin);
+
+  function initCalibrate() {
+    const status = document.getElementById('cal-status');
+    if (!CAL.pos) {
+      if (!HOLD_MAP) { if (status) status.textContent = 'Hold map still loading…'; return; }
+      CAL.base = JSON.parse(JSON.stringify(HOLD_MAP));
+      CAL.pos = JSON.parse(JSON.stringify(HOLD_MAP));
+    }
+    document.querySelectorAll('#cal-mode .cal-seg').forEach(b => b.classList.toggle('active', b.dataset.mode === CAL.mode));
+    document.getElementById('cal-board').classList.toggle('nudging', CAL.mode === 'nudge');
+    renderCal();
+  }
+
+  function renderCal() {
+    const layer = document.getElementById('cal-layer');
+    if (!layer || !CAL.pos) return;
+    const anchored = new Set(CAL.anchors.map(a => a.hold));
+    let html = Object.keys(CAL.pos).map(h => {
+      const p = CAL.pos[h];
+      const cls = h === CAL.selected ? 'sel' : (anchored.has(h) ? 'anchored' : '');
+      return `<div class="cal-dot ${cls}" style="left:${p.x}%;top:${p.y}%"></div>`;
+    }).join('');
+    html += CAL.anchors.map(a => `<div class="cal-anchor" style="left:${a.x}%;top:${a.y}%"></div>`).join('');
+    layer.innerHTML = html;
+
+    document.getElementById('cal-anchor-count').textContent =
+      `${CAL.anchors.length} anchor${CAL.anchors.length === 1 ? '' : 's'}`;
+    document.getElementById('cal-fit').disabled = CAL.anchors.length < 3;
+
+    const status = document.getElementById('cal-status');
+    if (CAL.mode === 'nudge') status.textContent = 'Nudge mode — drag any dot to fine-tune.';
+    else if (CAL.selected) status.textContent = `Now tap where hold ${holdNum(CAL.selected)} really is.`;
+    else if (CAL.anchors.length < 3) status.textContent = `Tap a dot, then its true spot — ${3 - CAL.anchors.length} more to fit.`;
+    else status.textContent = 'Ready to fit — or add more anchors for accuracy.';
+  }
+
+  // Pointer event → board-relative %, plus the board rect (for distance maths).
+  function calPct(clientX, clientY) {
+    const r = document.getElementById('cal-board').getBoundingClientRect();
+    return { x: (clientX - r.left) / r.width * 100, y: (clientY - r.top) / r.height * 100, r };
+  }
+
+  // Nearest working dot to a tap (pixel distance), or null if too far to count.
+  function calNearest(clientX, clientY) {
+    const { x: px, y: py, r } = calPct(clientX, clientY);
+    let best = null, bestD = Infinity;
+    for (const h in CAL.pos) {
+      const dx = (CAL.pos[h].x - px) / 100 * r.width;
+      const dy = (CAL.pos[h].y - py) / 100 * r.height;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = h; }
+    }
+    return Math.sqrt(bestD) <= r.width * 0.06 ? best : null;
+  }
+
+  // Anchor mode: first tap selects the nearest dot, second tap pins its true spot.
+  function calAnchorTap(e) {
+    const { x, y } = calPct(e.clientX, e.clientY);
+    if (!CAL.selected) {
+      const h = calNearest(e.clientX, e.clientY);
+      if (h) CAL.selected = h;
+    } else {
+      CAL.anchors = CAL.anchors.filter(a => a.hold !== CAL.selected);   // one anchor per hold
+      CAL.anchors.push({ hold: CAL.selected, x: +x.toFixed(2), y: +y.toFixed(2) });
+      CAL.selected = null;
+    }
+    renderCal();
+  }
+
+  // 3×3 linear solve (Gaussian elimination, partial pivot). Returns null if singular.
+  function solve3(M, v) {
+    const a = M.map((row, i) => [...row, v[i]]);
+    for (let c = 0; c < 3; c++) {
+      let piv = c;
+      for (let r = c + 1; r < 3; r++) if (Math.abs(a[r][c]) > Math.abs(a[piv][c])) piv = r;
+      if (Math.abs(a[piv][c]) < 1e-9) return null;
+      [a[c], a[piv]] = [a[piv], a[c]];
+      for (let r = 0; r < 3; r++) {
+        if (r === c) continue;
+        const f = a[r][c] / a[c][c];
+        for (let k = c; k < 4; k++) a[r][k] -= f * a[c][k];
+      }
+    }
+    return [a[0][3] / a[0][0], a[1][3] / a[1][1], a[2][3] / a[2][2]];
+  }
+
+  // Fit a least-squares affine (saved positions → anchors) and apply to every hold.
+  function calFit() {
+    if (CAL.anchors.length < 3) return;
+    const M = [[0,0,0],[0,0,0],[0,0,0]];
+    const bx = [0,0,0], by = [0,0,0];
+    for (const a of CAL.anchors) {
+      const s = CAL.base[a.hold];
+      if (!s) continue;
+      const row = [s.x, s.y, 1];
+      for (let i = 0; i < 3; i++) {
+        for (let j = 0; j < 3; j++) M[i][j] += row[i] * row[j];
+        bx[i] += row[i] * a.x;
+        by[i] += row[i] * a.y;
+      }
+    }
+    const cx = solve3(M, bx), cy = solve3(M, by);
+    if (!cx || !cy) {
+      document.getElementById('cal-status').textContent = 'Anchors are too close to a line — pick spread-out holds.';
+      return;
+    }
+    for (const h in CAL.pos) {
+      const s = CAL.base[h];
+      CAL.pos[h] = {
+        x: +(cx[0]*s.x + cx[1]*s.y + cx[2]).toFixed(2),
+        y: +(cy[0]*s.x + cy[1]*s.y + cy[2]).toFixed(2),
+      };
+    }
+    renderCal();
+    showToast('Holds fitted to anchors ✓', 'success');
+  }
+
+  // Nudge mode: drag the nearest dot to a new spot (pointer events = mouse + touch).
+  function calDragStart(e) {
+    if (CAL.mode !== 'nudge') return;
+    const h = calNearest(e.clientX, e.clientY);
+    if (!h) return;
+    CAL.drag = h;
+    const board = document.getElementById('cal-board');
+    if (board.setPointerCapture) board.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+  function calDragMove(e) {
+    if (!CAL.drag) return;
+    const { x, y } = calPct(e.clientX, e.clientY);
+    CAL.pos[CAL.drag] = { x: +x.toFixed(2), y: +y.toFixed(2) };
+    renderCal();
+    e.preventDefault();
+  }
+  function calDragEnd() { CAL.drag = null; }
+
+  function calSetMode(mode) {
+    CAL.mode = mode; CAL.selected = null; CAL.drag = null;
+    document.getElementById('cal-board').classList.toggle('nudging', mode === 'nudge');
+    document.querySelectorAll('#cal-mode .cal-seg').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    renderCal();
+  }
+
+  function calReset() {
+    if (!CAL.base) return;
+    CAL.pos = JSON.parse(JSON.stringify(CAL.base));
+    CAL.anchors = []; CAL.selected = null;
+    renderCal();
+    showToast('Reset to saved positions', 'success');
+  }
+  function calClearAnchors() { CAL.anchors = []; CAL.selected = null; renderCal(); }
+
+  function calLoadImage(file) {
+    if (!file) return;
+    // Dots are positioned in % of the image, so they re-land on the new framing.
+    document.getElementById('cal-img').src = URL.createObjectURL(file);
+  }
+
+  // Download the working positions as a fresh hold_map.json (hold-number ordered).
+  function calExport() {
+    if (!CAL.pos) return;
+    const out = {};
+    Object.keys(CAL.pos)
+      .sort((a, b) => (+holdNum(a)) - (+holdNum(b)))
+      .forEach(h => { out[h] = { x: +CAL.pos[h].x, y: +CAL.pos[h].y }; });
+    const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'hold_map.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    showToast('hold_map.json downloaded', 'success');
   }
 
   // ── Wire up events ────────────────────────────────────────────────────────────
@@ -1062,6 +1261,24 @@
   });
 
   document.getElementById('create-save').addEventListener('click', saveProblem);
+
+  // Calibrate (admin board recalibration)
+  document.getElementById('cal-back').addEventListener('click', goBack);
+  document.getElementById('cal-reset').addEventListener('click', calReset);
+  document.getElementById('cal-load').addEventListener('click', () => document.getElementById('cal-file').click());
+  document.getElementById('cal-file').addEventListener('change', e => calLoadImage(e.target.files[0]));
+  document.getElementById('cal-clear-anchors').addEventListener('click', calClearAnchors);
+  document.getElementById('cal-fit').addEventListener('click', calFit);
+  document.getElementById('cal-export').addEventListener('click', calExport);
+  document.getElementById('cal-mode').addEventListener('click', e => {
+    const b = e.target.closest('.cal-seg'); if (b) calSetMode(b.dataset.mode);
+  });
+  const calBoard = document.getElementById('cal-board');
+  calBoard.addEventListener('click', e => { if (CAL.mode === 'anchor') calAnchorTap(e); });
+  calBoard.addEventListener('pointerdown', calDragStart);
+  calBoard.addEventListener('pointermove', calDragMove);
+  calBoard.addEventListener('pointerup', calDragEnd);
+  calBoard.addEventListener('pointercancel', calDragEnd);
 
   // Info modal: open from header button, close via X, overlay tap, or Escape
   document.getElementById('info-btn').addEventListener('click', openInfo);
