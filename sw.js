@@ -8,7 +8,7 @@
 // cache-version bump — matching how the all-in-one index.html used to behave.
 // Bump CACHE whenever the asset list changes so old caches are cleared.
 
-const CACHE = 'pb-v23';
+const CACHE = 'pb-v24';
 const ASSETS = [
   './',
   './index.html',
@@ -17,7 +17,8 @@ const ASSETS = [
   './manifest.json',
   './icon.svg',
   './ProjectBoard.png',
-  './hold_map.json'
+  './hold_map.json',
+  './mirror_map.json'
 ];
 
 self.addEventListener('install', event => {

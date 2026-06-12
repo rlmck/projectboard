@@ -344,6 +344,8 @@
     .icon-btn.sent { border-color: var(--accent); color: var(--accent-hover); animation: flash 0.4s ease; }
     /* Ticked (sent) — the detail tick button turns green */
     #detail-tick.ticked { color: var(--start); border-color: var(--start); background: rgba(34,197,94,0.14); }
+    /* Mirror toggle lit — the board overlay is showing the mirrored problem */
+    #detail-mirror.active { color: #60a5fa; border-color: #3b82f6; background: rgba(59,130,246,0.16); }
 
     .bench-badge {
       background: rgba(245,158,11,0.16);

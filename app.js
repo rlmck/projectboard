@@ -24,6 +24,8 @@
   let listScroll = 0;
   let currentProblem = null;
   let HOLD_MAP = null;   // hold id -> {x,y} %, from board_config (admin) or bundled hold_map.json
+  let MIRROR_MAP = null; // hold id -> mirror-partner hold id (bundled mirror_map.json); self = centre/no-partner
+  let detailMirror = false; // detail view is showing the left/right-mirrored problem
   let BOARD_IMG = 'ProjectBoard.png';   // resolved board image URL (Supabase upload, else bundled)
   let configHasMap = false;             // true once board_config supplied a hold map (suppresses the bundled fallback)
   const BOARD_BUCKET = 'board';         // Supabase Storage bucket holding the uploaded board image
@@ -133,14 +135,23 @@
     return cls;
   }
 
+  // A hold's left/right mirror partner (mirror_map.json). Self for centre-line
+  // holds and the lone hold with no real partner (I12) — so mirroring leaves them
+  // in place. Falls back to the hold itself if the map hasn't loaded.
+  function mirrorHold(h) {
+    return (MIRROR_MAP && MIRROR_MAP[h]) || h;
+  }
+
   // Coloured dots positioned over the board from hold_map.json (loaded async).
-  function boardOverlayHtml(p) {
+  // When `mirror` is set, each hold is drawn at its mirror partner's position —
+  // roles are preserved (mirroring is symmetric, so starts stay starts).
+  function boardOverlayHtml(p, mirror = false) {
     const order = problemHoldOrder(p);
     if (!HOLD_MAP || !order.length) return '';
     const cls = classifyHolds(order);
     const seen = new Set();
     const dots = order.filter(h => (seen.has(h) ? false : seen.add(h))).map(h => {
-      const pos = HOLD_MAP[h];
+      const pos = HOLD_MAP[mirror ? mirrorHold(h) : h];
       if (!pos) return '';   // hold has no mapped dot (board gap) — skip
       return `<div class="hold-dot ${cls[h]}" style="left:${pos.x}%;top:${pos.y}%"></div>`;
     }).join('');
@@ -292,8 +303,11 @@
       return;
     }
 
+    // Moving to a different problem resets the mirror toggle to normal orientation.
+    if (!currentProblem || String(currentProblem.id) !== String(p.id)) detailMirror = false;
     currentProblem = p;
     updateTickButton();
+    updateMirrorButton();
 
     wrap.innerHTML = `
       <div class="detail-head-info">
@@ -308,9 +322,31 @@
 
       <div class="board-wrap">
         <img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" />
-        ${boardOverlayHtml(p)}
+        ${boardOverlayHtml(p, detailMirror)}
       </div>
     `;
+  }
+
+  // Reflect the mirror toggle's lit state on the detail header button.
+  function updateMirrorButton() {
+    const btn = document.getElementById('detail-mirror');
+    if (!btn) return;
+    btn.classList.toggle('active', detailMirror);
+    btn.setAttribute('aria-pressed', detailMirror ? 'true' : 'false');
+    btn.setAttribute('aria-label', detailMirror ? 'Mirrored — tap to show normal' : 'Mirror the problem');
+  }
+
+  // Flip the detail board between normal and left/right-mirrored. Casting while
+  // lit sends the mirror (the Pi applies the same partner table, as Gareth's did).
+  function toggleDetailMirror() {
+    if (!currentProblem) return;
+    detailMirror = !detailMirror;
+    updateMirrorButton();
+    if (currentView === 'detail') renderDetail(currentProblem.id);
+    // The only hold with no real partner is I12 — flag if this problem uses it.
+    if (detailMirror && problemHoldOrder(currentProblem).includes('hold218')) {
+      showToast('I12 has no mirror — left in place', 'success');
+    }
   }
 
   // ── Swipe between problems (detail view) ──────────────────────────────────────
@@ -422,6 +458,18 @@
       console.warn('hold_map.json load failed — board overlay disabled', err);
     }
     refreshBoardViews();
+  }
+
+  // ── Load the mirror partner map (bundled; hold id -> mirror hold id) ─────────
+  // Keyed by hold id, so it's independent of the board image / recalibration.
+  async function loadMirrorMap() {
+    try {
+      const res = await fetch('mirror_map.json', { cache: 'no-cache' });
+      if (res.ok) MIRROR_MAP = await res.json();
+    } catch (err) {
+      console.warn('mirror_map.json load failed — mirror disabled', err);
+    }
+    if (currentView === 'detail' && detailMirror) router();
   }
 
   // ── Load the admin-saved board (image + hold map) from Supabase ──────────────
@@ -1318,11 +1366,9 @@
 
   // Detail actions (live in the header; operate on the current problem)
   document.getElementById('detail-cast').addEventListener('click', e => {
-    if (currentProblem) castByName(currentProblem.name, e.currentTarget);
+    if (currentProblem) castByName(currentProblem.name, e.currentTarget, detailMirror);
   });
-  document.getElementById('detail-mirror').addEventListener('click', e => {
-    if (currentProblem) castByName(currentProblem.name, e.currentTarget, true);
-  });
+  document.getElementById('detail-mirror').addEventListener('click', toggleDetailMirror);
   document.getElementById('detail-tick').addEventListener('click', toggleTick);
   document.getElementById('detail-delete').addEventListener('click', openDeleteConfirm);
   document.getElementById('detail-edit').addEventListener('click', openGradeEdit);
@@ -1524,6 +1570,7 @@
   // Prefer the admin-saved board (image + hold map) from Supabase; fall back to the
   // bundled hold_map.json only if no saved map exists.
   loadBoardConfig().then(loadHoldMap);
+  loadMirrorMap();    // hold -> mirror-partner map for the detail mirror toggle
   initAuth();      // restore session, wire auth state, handle Google redirect
 
   // Splash: linger briefly, then fade out and remove from the DOM.
