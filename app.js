@@ -748,10 +748,18 @@
     const isSelf = String(u.id) === String(profile.id);
     const routes = Number(u.route_count) || 0;
     const sends = Number(u.tick_count) || 0;
+    // Actions. Self: nothing (can't change own role/delete self). Otherwise an
+    // admin toggle, plus delete for members only (demote an admin first).
     let action;
-    if (isSelf)       action = `<p class="user-detail-note">This is your account.</p>`;
-    else if (u.is_admin) action = `<p class="user-detail-note">Admins can’t be deleted here — remove their admin flag in Supabase first.</p>`;
-    else              action = `<button class="btn-block btn-danger" id="user-delete-btn">Delete user</button>`;
+    if (isSelf) {
+      action = `<p class="user-detail-note">This is your account.</p>`;
+    } else if (u.is_admin) {
+      action = `<button class="btn-block btn-ghost" id="user-demote-btn">Remove admin</button>
+        <p class="user-detail-note">Remove admin before deleting this account.</p>`;
+    } else {
+      action = `<button class="btn-block btn-primary" id="user-promote-btn">Make admin</button>
+        <button class="btn-block btn-danger" id="user-delete-btn">Delete user</button>`;
+    }
     el.innerHTML = `
       <div class="user-detail-head">
         <div class="user-avatar lg">${escHtml(userInitial(u.username))}</div>
@@ -763,6 +771,10 @@
       <div class="profile-row"><span class="k">Routes set</span><span class="v">${routes}</span></div>
       <div class="profile-row"><span class="k">Sends</span><span class="v">${sends}</span></div>
       <div class="user-detail-actions">${action}</div>`;
+    const promote = document.getElementById('user-promote-btn');
+    if (promote) promote.addEventListener('click', () => openAdminChange(u.id, u.username, true));
+    const demote = document.getElementById('user-demote-btn');
+    if (demote) demote.addEventListener('click', () => openAdminChange(u.id, u.username, false));
     const delBtn = document.getElementById('user-delete-btn');
     if (delBtn) delBtn.addEventListener('click', () => openUserDelete(u.id, u.username));
   }
@@ -777,6 +789,50 @@
   function adminRefreshUsers() {
     adminUsersLoaded = false;
     renderAdminUsers();
+  }
+
+  // ── Promote / demote a user (admins only; the RPC re-checks is_admin and
+  //    refuses self-changes) — see db/13_admin_promote.sql ─────────────────────
+  let pendingAdminChange = null;   // { id, name, make }
+
+  function openAdminChange(id, name, make) {
+    pendingAdminChange = { id, name, make };
+    document.getElementById('user-admin-modal-title').textContent = make ? 'Make admin?' : 'Remove admin?';
+    document.getElementById('user-admin-modal-text').innerHTML = make
+      ? `Give <b>${escHtml(name)}</b> admin rights? They’ll be able to delete and re-grade problems, recalibrate the board, and manage users.`
+      : `Remove admin rights from <b>${escHtml(name)}</b>? They’ll go back to a normal member.`;
+    document.getElementById('user-admin-error').textContent = '';
+    const confirm = document.getElementById('user-admin-confirm');
+    confirm.className = 'btn-block ' + (make ? 'btn-primary' : 'btn-danger');
+    document.getElementById('user-admin-modal').classList.add('show');
+  }
+  function closeAdminChange() {
+    document.getElementById('user-admin-modal').classList.remove('show');
+    pendingAdminChange = null;
+  }
+
+  async function doAdminChange() {
+    if (!pendingAdminChange) return;
+    const { id, make } = pendingAdminChange;
+    const errEl = document.getElementById('user-admin-error');
+    const btn = document.getElementById('user-admin-confirm');
+    errEl.textContent = '';
+    btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Saving…';
+
+    const { error } = await sb.rpc('admin_set_admin', { target: id, make_admin: make });
+    btn.disabled = false; btn.textContent = prev;
+    if (error) {
+      errEl.textContent = rpcMissing(error)
+        ? 'Not set up yet — run db/13 in Supabase.'
+        : (error.message || 'Couldn’t update — check connection.');
+      return;
+    }
+
+    const u = adminUsers.find(x => String(x.id) === String(id));
+    if (u) u.is_admin = make;
+    closeAdminChange();
+    showToast(make ? 'Promoted to admin' : 'Admin removed', 'success');
+    renderAdmin('user/' + id);   // re-render the detail with the new role + buttons
   }
 
   function openUserDelete(id, name) {
@@ -1740,6 +1796,11 @@
   document.getElementById('user-delete-modal').addEventListener('click', e => {
     if (e.target.id === 'user-delete-modal') closeUserDelete();
   });
+  document.getElementById('user-admin-cancel').addEventListener('click', closeAdminChange);
+  document.getElementById('user-admin-confirm').addEventListener('click', doAdminChange);
+  document.getElementById('user-admin-modal').addEventListener('click', e => {
+    if (e.target.id === 'user-admin-modal') closeAdminChange();
+  });
 
   // Info modal: open from header button, close via X, overlay tap, or Escape
   document.getElementById('info-btn').addEventListener('click', openInfo);
@@ -1747,7 +1808,7 @@
   document.getElementById('info-modal').addEventListener('click', e => {
     if (e.target.id === 'info-modal') closeInfo();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); } });
 
   // Auth view actions
   document.getElementById('auth-back').addEventListener('click', () => { location.hash = '#list'; });

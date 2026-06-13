@@ -806,7 +806,8 @@
     }
     .user-detail-email { color: var(--text-muted); font-size: 13px; margin-top: 4px; }
     .user-detail-actions { margin-top: 24px; }
-    .user-detail-note { color: var(--text-muted); font-size: 13px; text-align: center; line-height: 1.5; }
+    .user-detail-actions .btn-block + .btn-block { margin-top: 10px; }
+    .user-detail-note { color: var(--text-muted); font-size: 13px; text-align: center; line-height: 1.5; margin-top: 12px; }
 
     /* ── Bottom nav ──────────────────────────────────────────────────── */
     #bottom-nav {
