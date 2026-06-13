@@ -8,7 +8,7 @@
 // cache-version bump — matching how the all-in-one index.html used to behave.
 // Bump CACHE whenever the asset list changes so old caches are cleared.
 
-const CACHE = 'pb-v26';
+const CACHE = 'pb-v27';
 const ASSETS = [
   './',
   './index.html',
@@ -60,7 +60,11 @@ self.addEventListener('fetch', event => {
 
   // Network-first for the app's own JS/CSS too, so code/style changes appear on
   // the next load (no cache-version bump needed). Falls back to cache offline.
-  if (req.destination === 'script' || req.destination === 'style') {
+  // Match by file extension AS WELL AS req.destination: iOS/WebKit often leaves
+  // request.destination empty (''), which previously dropped app.js/styles.css
+  // into the stale-while-revalidate branch below and served phones a stale build
+  // (laptop/Chrome was fine because it sets destination correctly).
+  if (req.destination === 'script' || req.destination === 'style' || /\.(js|css)$/.test(url.pathname)) {
     event.respondWith(
       fetch(req)
         .then(resp => {
