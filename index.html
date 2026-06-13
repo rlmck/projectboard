@@ -184,6 +184,22 @@
   </main>
 </section>
 
+<!-- ══ ADMIN VIEW (admins — hub for board + user management) ═══════════ -->
+<section id="view-admin" class="view">
+  <header class="topbar detail-bar">
+    <button class="icon-btn" id="admin-back" aria-label="Back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
+    <div class="detail-bar-title">Admin</div>
+    <button class="icon-btn" id="admin-refresh" aria-label="Reload users">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+    </button>
+  </header>
+  <main>
+    <div id="admin-content"></div>
+  </main>
+</section>
+
 <!-- ══ BOTTOM NAV ═════════════════════════════════════════════════════ -->
 <nav id="bottom-nav">
   <a href="#list" class="nav-item" data-nav="list">
@@ -271,6 +287,23 @@
       <p class="shell-sub" style="margin:0 0 16px">The new board image and hold positions are live for everyone. Reopen the app (or pull down to refresh) to see the change — already-open phones pick it up on their next load.</p>
       <div class="modal-actions">
         <button class="btn-block btn-primary" id="cal-saved-ok">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DELETE USER CONFIRM MODAL (admins) ═════════════════════════════ -->
+<div class="modal-overlay" id="user-delete-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Delete user">
+    <div class="modal-header">
+      <div class="modal-title">Delete user?</div>
+    </div>
+    <div class="name-body">
+      <p class="shell-sub" style="margin:0 0 16px">Permanently delete <b id="user-delete-name"></b>? This removes their account and sign-in. Problems they set are kept — the setter is just cleared. This can’t be undone.</p>
+      <div class="auth-error" id="user-delete-error"></div>
+      <div class="modal-actions">
+        <button class="btn-block btn-ghost" id="user-delete-cancel">Cancel</button>
+        <button class="btn-block btn-danger" id="user-delete-confirm">Delete</button>
       </div>
     </div>
   </div>

@@ -176,7 +176,7 @@
     // The info modal only belongs to the detail view.
     if (name !== 'detail') closeInfo();
 
-    ['list','detail','create','calibrate','auth','profile'].forEach(v => {
+    ['list','detail','create','calibrate','admin','auth','profile'].forEach(v => {
       document.getElementById('view-' + v).classList.toggle('active', v === name);
     });
 
@@ -184,7 +184,7 @@
     document.getElementById('bottom-nav').style.display = name === 'auth' ? 'none' : 'flex';
 
     // Active nav highlight.
-    const navFor = { list: 'list', detail: 'list', create: 'list', calibrate: 'profile', profile: 'profile', auth: 'profile' }[name] || 'list';
+    const navFor = { list: 'list', detail: 'list', create: 'list', calibrate: 'profile', admin: 'profile', profile: 'profile', auth: 'profile' }[name] || 'list';
     document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.nav === navFor));
 
     if (name === 'list') window.scrollTo(0, listScroll);
@@ -210,6 +210,13 @@
         if (authReady && !isAdmin()) { location.replace(location.pathname + '#list'); break; }
         initCalibrate();
         setView('calibrate');
+        break;
+      case 'admin':
+        // Admin-only hub (board recalibration + user management). Bounce non-admins
+        // once auth is known (don't kick during a cold load before profile resolves).
+        if (authReady && !isAdmin()) { location.replace(location.pathname + '#list'); break; }
+        renderAdmin();
+        setView('admin');
         break;
       case 'auth':    setAuthMode('signin'); setView('auth'); break;
       case 'profile': renderProfile(); setView('profile'); break;
@@ -627,6 +634,124 @@
     showToast('Grade updated', 'success');
   }
 
+  // ── Admin hub (#admin) — board recalibration + user management ───────────────
+  // User listing/deletion can't be done with the anon key (email lives in
+  // auth.users; deleting an account needs elevated rights), so both go through
+  // SECURITY DEFINER RPCs gated on is_admin() — see db/12_admin_users.sql.
+  let adminUsers = [];                // cached rows from admin_list_users()
+  let pendingDeleteUser = null;       // { id, name } awaiting confirmation
+
+  const boardIconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8" cy="8" r="1.4"></circle><circle cx="16" cy="8" r="1.4"></circle><circle cx="8" cy="16" r="1.4"></circle><circle cx="16" cy="16" r="1.4"></circle></svg>';
+  const chevSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+  const binSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+
+  function fmtJoinDate(s) {
+    if (!s) return '—';
+    const d = new Date(s);
+    return isNaN(d) ? '—' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function renderAdmin() {
+    const el = document.getElementById('admin-content');
+    if (!el) return;
+    if (!(profile && profile.is_admin)) { el.innerHTML = ''; return; }   // route guard bounces; belt-and-braces
+    el.innerHTML = `
+      <a class="admin-card" href="#calibrate">
+        <div class="admin-card-icon">${boardIconSvg}</div>
+        <div class="admin-card-text">
+          <div class="admin-card-title">Recalibrate board</div>
+          <div class="admin-card-sub">Re-map holds onto a new board photo and publish it.</div>
+        </div>
+        <div class="admin-card-chev">${chevSvg}</div>
+      </a>
+      <div class="admin-section-title">Users</div>
+      <div id="admin-users"><div class="spinner"></div></div>`;
+    loadAdminUsers();
+  }
+
+  // Surface "the db/12 RPCs aren't deployed yet" distinctly from a real failure.
+  const rpcMissing = err =>
+    !!err && (err.code === '42883' || err.code === 'PGRST202' || /Could not find the function|does not exist/i.test(err.message || ''));
+
+  async function loadAdminUsers() {
+    const box = document.getElementById('admin-users');
+    if (!box) return;
+    box.innerHTML = `<div class="spinner"></div>`;
+    const { data, error } = await sb.rpc('admin_list_users');
+    if (!document.getElementById('admin-users')) return;   // navigated away mid-load
+    if (error) {
+      box.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>${
+        rpcMissing(error)
+          ? 'User management isn’t set up yet — run <b>db/12</b> in the Supabase SQL editor.'
+          : 'Couldn’t load users.'}</div>`;
+      console.warn('admin_list_users failed', error);
+      return;
+    }
+    adminUsers = data || [];
+    renderUserRows();
+  }
+
+  function renderUserRows() {
+    const box = document.getElementById('admin-users');
+    if (!box) return;
+    if (!adminUsers.length) { box.innerHTML = `<div class="state-msg">No users yet.</div>`; return; }
+    const meId = profile && profile.id;
+    box.innerHTML = adminUsers.map(u => {
+      const isSelf = String(u.id) === String(meId);
+      const canDelete = !isSelf && !u.is_admin;   // never offer self- or admin-deletion (RPC enforces too)
+      const n = Number(u.route_count) || 0;
+      const meta = `${escHtml(u.email || '—')} · joined ${fmtJoinDate(u.created_at)} · ${n} route${n === 1 ? '' : 's'}`;
+      const action = canDelete
+        ? `<button class="icon-btn user-del" data-id="${escAttr(u.id)}" data-name="${escAttr(u.username)}" aria-label="Delete ${escAttr(u.username)}">${binSvg}</button>`
+        : `<span class="user-locktag">${isSelf ? 'You' : 'Admin'}</span>`;
+      return `<div class="user-row">
+        <div class="user-info">
+          <div class="user-name">${escHtml(u.username)}${u.is_admin ? '<span class="user-badge">Admin</span>' : ''}</div>
+          <div class="user-sub">${meta}</div>
+        </div>
+        ${action}
+      </div>`;
+    }).join('');
+  }
+
+  function openUserDelete(id, name) {
+    pendingDeleteUser = { id, name };
+    document.getElementById('user-delete-name').textContent = name;
+    document.getElementById('user-delete-error').textContent = '';
+    document.getElementById('user-delete-modal').classList.add('show');
+  }
+  function closeUserDelete() {
+    document.getElementById('user-delete-modal').classList.remove('show');
+    pendingDeleteUser = null;
+  }
+
+  async function doDeleteUser() {
+    if (!pendingDeleteUser) return;
+    const { id } = pendingDeleteUser;
+    const errEl = document.getElementById('user-delete-error');
+    const btn = document.getElementById('user-delete-confirm');
+    errEl.textContent = '';
+    btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Deleting…';
+
+    const { error } = await sb.rpc('admin_delete_user', { target: id });
+    btn.disabled = false; btn.textContent = prev;
+    if (error) {
+      errEl.textContent = rpcMissing(error)
+        ? 'Not set up yet — run db/12 in Supabase.'
+        : (error.message || 'Delete failed — check connection.');
+      return;
+    }
+
+    adminUsers = adminUsers.filter(u => String(u.id) !== String(id));
+    closeUserDelete();
+    renderUserRows();
+    // Their problems lost the owner link (setter_id SET NULL) — refresh the live
+    // setter-name map and the list so displayed setters fall back cleanly.
+    await loadProfileNames();
+    if (loaded) renderList();
+    showToast('User deleted', 'success');
+  }
+
   // Load the signed-in user's ticks into myTicks; clear for guests. RLS limits
   // the rows to this user, so we never see anyone else's sends.
   async function loadTicks() {
@@ -817,7 +942,7 @@
         </div>
         <div class="profile-row"><span class="k">Total ticks</span><span class="v">${total}</span></div>
         <div class="profile-row"><span class="k">Hardest send</span><span class="v">${hardestHtml}</span></div>
-        ${profile.is_admin ? `<a class="btn-block btn-ghost" href="#calibrate" style="display:block;text-align:center;text-decoration:none;margin-top:18px">Recalibrate board</a>` : ''}`;
+        ${profile.is_admin ? `<a class="btn-block btn-ghost" href="#admin" style="display:block;text-align:center;text-decoration:none;margin-top:18px">Admin tools</a>` : ''}`;
       document.getElementById('profile-signout').addEventListener('click', doSignOut);
       document.getElementById('profile-edit-name').addEventListener('click', () => openNameModal('edit'));
     } else {
@@ -1542,13 +1667,26 @@
   calBoard.addEventListener('pointerup', calDragEnd);
   calBoard.addEventListener('pointercancel', calDragEnd);
 
+  // Admin hub (#admin): board recalibration link + user management
+  document.getElementById('admin-back').addEventListener('click', goBack);
+  document.getElementById('admin-refresh').addEventListener('click', loadAdminUsers);
+  document.getElementById('admin-content').addEventListener('click', e => {
+    const del = e.target.closest('.user-del');
+    if (del) openUserDelete(del.dataset.id, del.dataset.name);
+  });
+  document.getElementById('user-delete-cancel').addEventListener('click', closeUserDelete);
+  document.getElementById('user-delete-confirm').addEventListener('click', doDeleteUser);
+  document.getElementById('user-delete-modal').addEventListener('click', e => {
+    if (e.target.id === 'user-delete-modal') closeUserDelete();
+  });
+
   // Info modal: open from header button, close via X, overlay tap, or Escape
   document.getElementById('info-btn').addEventListener('click', openInfo);
   document.getElementById('info-close').addEventListener('click', closeInfo);
   document.getElementById('info-modal').addEventListener('click', e => {
     if (e.target.id === 'info-modal') closeInfo();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeInfo(); closeDeleteConfirm(); closeGradeEdit(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); } });
 
   // Auth view actions
   document.getElementById('auth-back').addEventListener('click', () => { location.hash = '#list'; });
