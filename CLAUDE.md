@@ -44,7 +44,7 @@ The app is hosted on **GitHub Pages** from the `main` branch.
 
 **GitHub:** https://github.com/rlmck/projectboard  
 **Live URL:** https://rlmck.github.io/projectboard  
-**Local path (Ross's laptop):** `C:\Users\rossl\Documents\ProjectBoard\projectboard\`
+**Local path (Ross's laptop):** `C:\Users\rossl\Documents\ProjectBoard\` (the repo root — there is no `projectboard\` subfolder; the tracked PWA files live directly here)
 
 Key files in the repo:
 - `index.html` — the PWA's markup only (~170 lines): the list/detail/create/auth/profile view shells + modals + nav. Links `styles.css` and `app.js`.
