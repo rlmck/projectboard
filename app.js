@@ -10,10 +10,15 @@
   const channel = sb.channel('board:HangoutPortland');
   channel.subscribe();
 
-  // ── Grade ordering (French bouldering) ───────────────────────────────────────
+  // ── Grade ordering (boulder problems) ────────────────────────────────────────
+  // Stored / matched lowercase (these strings are the DB values); displayed as
+  // capitalised Font grades (5b+ -> 5B+) via fontGrade(). Circuits use a separate
+  // lowercase French sport ladder (SPORT_GRADE_ORDER) and are NOT capitalised.
   const GRADE_ORDER = ['3','4a','4b','4c','5a','5b','5b+','5c','5c+','6a','6a+','6b','6b+','6c','6c+','7a','7a+','7b','7b+','7c','7c+','8a'];
-  // Unknown grades (e.g. "Project") sort to the end.
-  const gradeRank = g => { const i = GRADE_ORDER.indexOf(g); return i === -1 ? 999 : i; };
+  // Unknown grades (e.g. "Project") sort to the end. Case-insensitive for safety.
+  const gradeRank = g => { const i = GRADE_ORDER.indexOf(String(g || '').toLowerCase()); return i === -1 ? 999 : i; };
+  // Display a boulder grade as capitalised Font (display-only; the value stays lowercase).
+  const fontGrade = g => String(g || '').toUpperCase();
 
   // ── State ────────────────────────────────────────────────────────────────────
   let allProblems = [];
@@ -294,7 +299,7 @@
         <div class="problem-info">
           <div class="problem-name">${escHtml(displayName(p))}</div>
           <div class="problem-meta">
-            <span class="grade-badge">${escHtml(p.grade || '—')}</span>
+            <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
             <span class="meta-setter">${escHtml(setterName(p))}</span>
             ${starsHtml(p.stars)}
             ${isTicked(p.id) ? '<span class="tick-flag" title="Sent">✓</span>' : ''}
@@ -318,10 +323,12 @@
     container.innerHTML = `<div class="problem-list">${list.map(cardHtml).join('')}</div>`;
   }
 
-  // Shared grade-tab markup. `isActive(g)` decides the highlight; 'all' renders as "All".
-  function gradeTabButtons(grades, isActive) {
+  // Shared grade-tab markup. `isActive(g)` decides the highlight; 'all' renders as
+  // "All". `fmt` (optional) formats the LABEL only — data-grade keeps the raw value
+  // for matching. Problem tabs pass fontGrade (capitalised); circuit tabs don't.
+  function gradeTabButtons(grades, isActive, fmt) {
     return grades.map(g =>
-      `<button class="grade-tab${isActive(g) ? ' active' : ''}" data-grade="${escAttr(g)}" type="button">${g === 'all' ? 'All' : escHtml(g)}</button>`
+      `<button class="grade-tab${isActive(g) ? ' active' : ''}" data-grade="${escAttr(g)}" type="button">${g === 'all' ? 'All' : escHtml(fmt ? fmt(g) : g)}</button>`
     ).join('');
   }
 
@@ -332,7 +339,7 @@
     // otherwise visibleProblems() would filter on an absent grade and show nothing.
     [...activeGrades].forEach(g => { if (!present.includes(g)) activeGrades.delete(g); });
     document.getElementById('grade-tabs').innerHTML =
-      gradeTabButtons(['all', ...present], g => g === 'all' ? activeGrades.size === 0 : activeGrades.has(g));
+      gradeTabButtons(['all', ...present], g => g === 'all' ? activeGrades.size === 0 : activeGrades.has(g), fontGrade);
   }
 
   // ── Detail ───────────────────────────────────────────────────────────────────
@@ -367,7 +374,7 @@
       <div class="detail-head-info">
         <h1 class="detail-name">${escHtml(displayName(p))}</h1>
         <div class="detail-meta">
-          <span class="grade-badge">${escHtml(p.grade || '—')}</span>
+          <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
           <span class="meta-setter">by ${escHtml(setterName(p))}</span>
           ${starsHtml(p.stars)}
           ${p.is_benchmark ? `<span class="bench-badge">★ Benchmark</span>` : ''}
@@ -432,7 +439,7 @@
     document.getElementById('info-body').innerHTML = `
       <div class="info-row">
         <div class="info-label">Consensus grade</div>
-        <div class="info-value"><span class="grade-badge">${escHtml(p.grade || '—')}</span></div>
+        <div class="info-value"><span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span></div>
       </div>
       <div class="info-row">
         <div class="info-label">Rating</div>
@@ -648,7 +655,7 @@
   let editGrade = '';
   function buildGradeEditOptions() {
     document.getElementById('grade-edit-options').innerHTML =
-      gradeTabButtons(GRADE_ORDER, g => g === editGrade);
+      gradeTabButtons(GRADE_ORDER, g => g === editGrade, fontGrade);
   }
   function openGradeEdit() {
     if (!currentProblem || !(profile && profile.is_admin)) return;
@@ -1209,7 +1216,7 @@
       const editSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>';
       const { total, hardest } = tickStats();
       const hardestHtml = hardest
-        ? `<span class="grade-badge">${escHtml(hardest.grade)}</span> <span class="hardest-name">${escHtml(displayName(hardest))}</span>`
+        ? `<span class="grade-badge">${escHtml(fontGrade(hardest.grade))}</span> <span class="hardest-name">${escHtml(displayName(hardest))}</span>`
         : '—';
       el.innerHTML = `
         <div class="shell-card" style="margin:8px auto 18px;text-align:center">
@@ -1337,7 +1344,7 @@
 
   function buildCreateGrades() {
     document.getElementById('create-grades').innerHTML =
-      gradeTabButtons(GRADE_ORDER, g => g === createGrade);
+      gradeTabButtons(GRADE_ORDER, g => g === createGrade, fontGrade);
   }
 
   function resetCreate() {
