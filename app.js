@@ -1798,17 +1798,17 @@
         <button class="btn-block btn-primary" id="circuit-play-btn">▶ Play preview</button>
         <div class="circuit-speed">
           <span class="circuit-speed-label">Speed</span>
-          <button class="circuit-speed-btn" id="circuit-speed-down" aria-label="Slower">−</button>
+          <button class="circuit-speed-btn" id="circuit-speed-down" aria-label="Faster">−</button>
           <span class="circuit-speed-val" id="circuit-speed-val"></span>
-          <button class="circuit-speed-btn" id="circuit-speed-up" aria-label="Faster">+</button>
+          <button class="circuit-speed-btn" id="circuit-speed-up" aria-label="Slower">+</button>
         </div>
         ${comment ? `<p class="detail-comment" style="margin-top:14px">${escHtml(comment)}</p>` : ''}
         <p class="cc-hint">Preview runs a 4-hold moving window up the route${c.loops ? ', looping until you stop it' : ''}. Real casting to the board comes next.</p>
       </div>`;
 
     document.getElementById('circuit-play-btn').addEventListener('click', toggleCircuitPlay);
-    document.getElementById('circuit-speed-down').addEventListener('click', () => setPlaySpeed(playIntervalMs + 100));
-    document.getElementById('circuit-speed-up').addEventListener('click', () => setPlaySpeed(playIntervalMs - 100));
+    document.getElementById('circuit-speed-down').addEventListener('click', () => setPlaySpeed(playIntervalMs - 100));
+    document.getElementById('circuit-speed-up').addEventListener('click', () => setPlaySpeed(playIntervalMs + 100));
     updateSpeedLabel();
   }
 
