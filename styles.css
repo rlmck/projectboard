@@ -851,17 +851,27 @@
     #view-circuit-detail .board-wrap { width: 100%; max-width: 680px; margin: 0 auto; }
     #view-circuit-detail .board-graphic { width: 100%; height: auto; border-radius: 10px; }
     .circuit-play-panel { padding: 16px 2px 8px; }
-    .circuit-movecount {
-      text-align: center;
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--text);
-      margin-bottom: 12px;
-      min-height: 20px;
-    }
-    .circuit-movecount b { color: var(--accent-hover); font-size: 18px; }
-    .circuit-movecount .muted { color: var(--text-muted); font-weight: 600; font-size: 13px; }
     .cc-hint { font-size: 12px; line-height: 1.5; color: var(--text-muted); text-align: center; margin: 14px 0 0; }
+
+    /* Preview speed stepper (0.1s steps) */
+    .circuit-speed {
+      display: flex; align-items: center; justify-content: center; gap: 12px;
+      margin-top: 14px;
+    }
+    .circuit-speed-label { font-size: 13px; color: var(--text-muted); font-weight: 600; }
+    .circuit-speed-btn {
+      width: 38px; height: 38px; flex: none;
+      border-radius: 9px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--text);
+      font-size: 20px; font-weight: 700; line-height: 1; cursor: pointer;
+      touch-action: manipulation;
+    }
+    .circuit-speed-btn:active { background: var(--surface2); transform: scale(0.95); }
+    .circuit-speed-val {
+      min-width: 48px; text-align: center;
+      font-size: 16px; font-weight: 800; color: var(--accent-hover);
+      font-variant-numeric: tabular-nums;
+    }
 
     /* Circuit create — board + option rows */
     #view-circuit-create .board-graphic { width: 100%; height: auto; display: block; border-radius: 10px; }

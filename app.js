@@ -1795,29 +1795,52 @@
       </div>
 
       <div class="circuit-play-panel">
-        <div class="circuit-movecount" id="circuit-movecount">Ready</div>
         <button class="btn-block btn-primary" id="circuit-play-btn">▶ Play preview</button>
+        <div class="circuit-speed">
+          <span class="circuit-speed-label">Speed</span>
+          <button class="circuit-speed-btn" id="circuit-speed-down" aria-label="Slower">−</button>
+          <span class="circuit-speed-val" id="circuit-speed-val"></span>
+          <button class="circuit-speed-btn" id="circuit-speed-up" aria-label="Faster">+</button>
+        </div>
         ${comment ? `<p class="detail-comment" style="margin-top:14px">${escHtml(comment)}</p>` : ''}
         <p class="cc-hint">Preview runs a 4-hold moving window up the route${c.loops ? ', looping until you stop it' : ''}. Real casting to the board comes next.</p>
       </div>`;
 
     document.getElementById('circuit-play-btn').addEventListener('click', toggleCircuitPlay);
+    document.getElementById('circuit-speed-down').addEventListener('click', () => setPlaySpeed(playIntervalMs + 100));
+    document.getElementById('circuit-speed-up').addEventListener('click', () => setPlaySpeed(playIntervalMs - 100));
+    updateSpeedLabel();
   }
 
   // ── Play engine (moving 4-hold window) ──────────────────────────────────────────
-  // Same logic will drive the Phase-2 cast-screen move timing. tick = total LED
-  // advances (move count, counting across loops). The lit window is the up-to-4
-  // most-recent holds ending at the current tick; wrapping for loops.
+  // Same logic will drive the Phase-2 cast-screen move timing. The lit window is the
+  // up-to-4 most-recent holds ending at the current tick; wrapping for loops. Speed
+  // is a live preview control (0.1s steps), not stored per circuit — the agreed
+  // design sets speed at cast time, so this is the same kind of knob.
   const PLAY_WINDOW = 4;
-  const PLAY_INTERVAL_MS = 550;
+  const PLAY_MIN_MS = 200, PLAY_MAX_MS = 3000;
+  let playIntervalMs = 1000;   // default 1.0s between holds
   let playTimer = null;
+  let playDraw = null;         // the running draw fn (so a speed change can restart the timer)
+
+  function updateSpeedLabel() {
+    const el = document.getElementById('circuit-speed-val');
+    if (el) el.textContent = (playIntervalMs / 1000).toFixed(1) + 's';
+  }
+
+  // Adjust preview speed; if a play is in progress, restart the timer at the new
+  // interval (keeps the current position via the live draw closure).
+  function setPlaySpeed(ms) {
+    playIntervalMs = Math.max(PLAY_MIN_MS, Math.min(PLAY_MAX_MS, ms));
+    updateSpeedLabel();
+    if (playTimer && playDraw) { clearInterval(playTimer); playTimer = setInterval(playDraw, playIntervalMs); }
+  }
 
   function stopCircuitPlay(restore) {
     if (playTimer) { clearInterval(playTimer); playTimer = null; }
+    playDraw = null;
     const btn = document.getElementById('circuit-play-btn');
     if (btn) btn.innerHTML = '▶ Play preview';
-    const mc = document.getElementById('circuit-movecount');
-    if (mc) mc.textContent = 'Ready';
     if (restore && currentCircuit) {
       const layer = document.getElementById('circuit-play-layer');
       if (layer) layer.innerHTML = circuitStaticOverlay(currentCircuit);
@@ -1835,35 +1858,41 @@
     const L = seq.length;
     const loop = !!c.loops;
     const draw = () => {
-      // Window = the up-to-4 most-recent positions ending at `tick`.
-      const idxs = [];
+      // Window = the up-to-4 most-recent holds ending at `tick`. Each slot carries
+      // its wrapped position `p` and the colour to light it.
+      const slots = [];
       for (let d = PLAY_WINDOW - 1; d >= 0; d--) {
         const i = tick - d;
-        if (loop) { if (i >= 0) idxs.push(((i % L) + L) % L); }
-        else if (i >= 0 && i < L) idxs.push(i);
+        if (i < 0) continue;
+        if (loop) {
+          const p = ((i % L) + L) % L;
+          // A looping route has no real finish, so the finish hold reads blue; the
+          // start holds only glow green on the first lap (i < L), blue thereafter.
+          const role = (p < c.start_count && i < L) ? 'start' : 'int';
+          slots.push({ p, role });
+        } else {
+          if (i >= L) continue;
+          slots.push({ p: i, role: circuitRole(seq, c.start_count, i) });
+        }
       }
       const layer = document.getElementById('circuit-play-layer');
       if (layer) {
-        layer.innerHTML = idxs.map(p => {
-          const pos = HOLD_MAP[seq[p]];
+        layer.innerHTML = slots.map(s => {
+          const pos = HOLD_MAP[seq[s.p]];
           if (!pos) return '';
-          return `<div class="hold-dot ${circuitRole(seq, c.start_count, p)} lit" style="left:${pos.x}%;top:${pos.y}%"></div>`;
+          return `<div class="hold-dot ${s.role} lit" style="left:${pos.x}%;top:${pos.y}%"></div>`;
         }).join('');
       }
-      const mc = document.getElementById('circuit-movecount');
-      // Non-loop: the move count caps at L once the last hold has lit (the window
-      // then just slides off). Loop: it keeps climbing across laps.
-      const moveNum = loop ? tick + 1 : Math.min(tick + 1, L);
-      if (mc) mc.innerHTML = `Move <b>${moveNum}</b>${loop ? ` <span class="muted">· lap ${Math.floor(tick / L) + 1}</span>` : ` <span class="muted">/ ${L}</span>`}`;
       tick++;
       // Non-loop: stop once the window has slid off the end (route finished).
       if (!loop && tick > L - 1 + (PLAY_WINDOW - 1)) {
-        clearInterval(playTimer); playTimer = null;
+        clearInterval(playTimer); playTimer = null; playDraw = null;
         setTimeout(() => stopCircuitPlay(true), 400);
       }
     };
+    playDraw = draw;
     draw();
-    playTimer = setInterval(draw, PLAY_INTERVAL_MS);
+    playTimer = setInterval(draw, playIntervalMs);
   }
 
   // ── Delete a circuit (owner / admin; the DB enforces it via RLS) ─────────────────
