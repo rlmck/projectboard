@@ -695,22 +695,24 @@
   function renderAdminHub() {
     adminSetHeader('Admin', false);
     document.getElementById('admin-content').innerHTML = `
-      <a class="admin-card" href="#calibrate">
-        <div class="admin-card-icon">${boardIconSvg}</div>
-        <div class="admin-card-text">
-          <div class="admin-card-title">Recalibrate board</div>
-          <div class="admin-card-sub">Re-map holds onto a new board photo and publish it.</div>
-        </div>
-        <div class="admin-card-chev">${chevSvg}</div>
-      </a>
-      <a class="admin-card" href="#admin/users">
-        <div class="admin-card-icon">${usersIconSvg}</div>
-        <div class="admin-card-text">
-          <div class="admin-card-title">Users</div>
-          <div class="admin-card-sub">View accounts and manage members.</div>
-        </div>
-        <div class="admin-card-chev">${chevSvg}</div>
-      </a>`;
+      <div class="admin-hub">
+        <a class="admin-card" href="#calibrate">
+          <div class="admin-card-icon">${boardIconSvg}</div>
+          <div class="admin-card-text">
+            <div class="admin-card-title">Recalibrate board</div>
+            <div class="admin-card-sub">Re-map holds onto a new board photo and publish it.</div>
+          </div>
+          <div class="admin-card-chev">${chevSvg}</div>
+        </a>
+        <a class="admin-card" href="#admin/users">
+          <div class="admin-card-icon">${usersIconSvg}</div>
+          <div class="admin-card-text">
+            <div class="admin-card-title">Users</div>
+            <div class="admin-card-sub">View accounts and manage members.</div>
+          </div>
+          <div class="admin-card-chev">${chevSvg}</div>
+        </a>
+      </div>`;
   }
 
   async function renderAdminUsers() {

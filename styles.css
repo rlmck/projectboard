@@ -770,6 +770,10 @@
 
     /* Cards stack with a small gap (hub + user-list rows) */
     .admin-card + .admin-card { margin-top: 8px; }
+
+    /* Hub cards: grid so every card matches the tallest (equal heights) */
+    .admin-hub { display: grid; gap: 8px; grid-auto-rows: 1fr; }
+    .admin-hub .admin-card + .admin-card { margin-top: 0; }
     #admin-refresh[hidden] { display: none; }
 
     /* User-list rows reuse .admin-card; swap the square icon for a round avatar */
