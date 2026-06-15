@@ -38,6 +38,10 @@
   let profile = null;    // { id, username, is_admin } for the signed-in user
   let profileNames = {}; // account id -> current username (for live setter names)
   let myTicks = new Set(); // problem_ids the signed-in user has ticked (sent)
+  let myFaves = new Set();        // problem_ids the signed-in user has favourited (likes)
+  let myCircuitFaves = new Set(); // circuit ids the signed-in user has favourited
+  let favesOnly = false;          // list filter: show only favourited problems
+  let circuitFavesOnly = false;   // circuit list filter: only favourited circuits
   let authMode = 'signin'; // 'signin' | 'signup' for the #auth form
 
   // ── Create-a-problem state ───────────────────────────────────────────────────
@@ -64,6 +68,11 @@
   let ccGrade = '';
 
   const isTicked = id => myTicks.has(String(id));
+  const isFaved = id => myFaves.has(String(id));
+  const isCircuitFaved = id => myCircuitFaves.has(String(id));
+
+  // Outline heart (CSS fills it red via .faved). Reused on cards + detail headers.
+  const HEART_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';
 
   // ── Escape helpers ───────────────────────────────────────────────────────────
   function escHtml(s) {
@@ -262,6 +271,7 @@
   // ── List: filter + sort ──────────────────────────────────────────────────────
   function visibleProblems() {
     let arr = allProblems;
+    if (favesOnly) arr = arr.filter(p => isFaved(p.id));
     if (activeGrades.size) arr = arr.filter(p => activeGrades.has(p.grade));
     if (searchQuery) {
       const q = searchQuery;
@@ -278,6 +288,7 @@
   }
 
   function cardHtml(p) {
+    const faved = isFaved(p.id);
     return `
       <div class="problem-card" data-id="${escAttr(p.id)}">
         <div class="problem-info">
@@ -289,6 +300,7 @@
             ${isTicked(p.id) ? '<span class="tick-flag" title="Sent">✓</span>' : ''}
           </div>
         </div>
+        <button class="card-fave${faved ? ' faved' : ''}" data-fave="${escAttr(p.id)}" aria-pressed="${faved}" aria-label="${faved ? 'Remove from favourites' : 'Add to favourites'}">${HEART_SVG}</button>
       </div>`;
   }
 
@@ -298,7 +310,9 @@
     document.getElementById('count').textContent = `${list.length} problem${list.length !== 1 ? 's' : ''}`;
 
     if (list.length === 0) {
-      container.innerHTML = `<div class="state-msg"><div class="icon">🔎</div>No problems match.</div>`;
+      container.innerHTML = favesOnly
+        ? `<div class="state-msg"><div class="icon">♡</div>No favourites yet. Tap the heart on a problem to save it here.</div>`
+        : `<div class="state-msg"><div class="icon">🔎</div>No problems match.</div>`;
       return;
     }
     container.innerHTML = `<div class="problem-list">${list.map(cardHtml).join('')}</div>`;
@@ -328,6 +342,7 @@
     if (!loaded) {
       currentProblem = null;
       updateTickButton();
+      updateFaveButton();
       wrap.innerHTML = `<div class="spinner"></div>`;
       return;
     }
@@ -336,6 +351,7 @@
     if (!p) {
       currentProblem = null;
       updateTickButton();
+      updateFaveButton();
       wrap.innerHTML = `<div class="state-msg"><div class="icon">🤷</div>That problem couldn't be found.<br><a class="link" href="#list">Back to problems</a></div>`;
       return;
     }
@@ -344,6 +360,7 @@
     if (!currentProblem || String(currentProblem.id) !== String(p.id)) detailMirror = false;
     currentProblem = p;
     updateTickButton();
+    updateFaveButton();
     updateMirrorButton();
 
     wrap.innerHTML = `
@@ -619,6 +636,7 @@
 
     allProblems = allProblems.filter(x => String(x.id) !== String(p.id));
     myTicks.delete(String(p.id));
+    myFaves.delete(String(p.id));
     closeDeleteConfirm();
     buildGradeTabs();
     renderList();
@@ -948,25 +966,131 @@
     showToast(wasTicked ? 'Removed tick' : 'Ticked ✓', 'success');
   }
 
+  // ── Favourites (personal "saved" list — private to the signed-in user) ───────
+  // Problems live in the existing `likes` table; circuits in `circuit_likes`
+  // (needs db/15). Both mirror the ticks pattern: optimistic toggle, revert on
+  // failure, idempotent via the (user, item) primary key.
+
+  // db/15 not applied → circuit_likes missing (42P01/schema cache); likes has had
+  // its policy since db/01, so a problem fave failing that way is unexpected.
+  const favSetupNeeded = err => !!err && (err.code === '42501' || circuitsTableMissing(err));
+
+  function updateFaveButton() {
+    const btn = document.getElementById('detail-fave');
+    if (!btn) return;
+    const faved = !!(currentProblem && isFaved(currentProblem.id));
+    btn.classList.toggle('faved', faved);
+    btn.setAttribute('aria-pressed', faved ? 'true' : 'false');
+    btn.setAttribute('aria-label', faved ? 'Remove from favourites' : 'Add to favourites');
+  }
+
+  function updateCircuitFaveButton() {
+    const btn = document.getElementById('circuit-detail-fave');
+    if (!btn) return;
+    const faved = !!(currentCircuit && isCircuitFaved(currentCircuit.id));
+    btn.classList.toggle('faved', faved);
+    btn.setAttribute('aria-pressed', faved ? 'true' : 'false');
+    btn.setAttribute('aria-label', faved ? 'Remove from favourites' : 'Add to favourites');
+  }
+
+  // Show/hide the list filter toggles (a guest has no favourites to filter to) and
+  // sync their lit state. Detail/card hearts stay visible — tapping prompts sign-in.
+  function updateFaveControls() {
+    if (!session) { favesOnly = false; circuitFavesOnly = false; }
+    const ff = document.getElementById('fave-filter');
+    const cff = document.getElementById('circuit-fave-filter');
+    if (ff)  { ff.hidden = !session;  ff.classList.toggle('active', favesOnly); }
+    if (cff) { cff.hidden = !session; cff.classList.toggle('active', circuitFavesOnly); }
+  }
+
+  // Load both favourite sets for the signed-in user; clear for guests. RLS limits
+  // the rows to this user. A missing circuit_likes table (db/15 not applied yet)
+  // just leaves circuit favourites empty rather than breaking the load.
+  async function loadFaves() {
+    if (!session) { myFaves = new Set(); myCircuitFaves = new Set(); return; }
+    const [pf, cf] = await Promise.all([
+      sb.from('likes').select('problem_id').eq('user_id', session.user.id),
+      sb.from('circuit_likes').select('circuit_id').eq('user_id', session.user.id),
+    ]);
+    if (pf.error) console.warn('favourites load failed', pf.error);
+    else myFaves = new Set((pf.data || []).map(r => String(r.problem_id)));
+    if (cf.error) { if (!circuitsTableMissing(cf.error)) console.warn('circuit favourites load failed', cf.error); }
+    else myCircuitFaves = new Set((cf.data || []).map(r => String(r.circuit_id)));
+  }
+
+  // Toggle a problem's favourite. Optimistic, revert on failure.
+  async function toggleFave(id) {
+    if (!session) { showToast('Sign in to save favourites', 'success'); location.hash = '#auth'; return; }
+    id = String(id);
+    const was = isFaved(id);
+    if (was) myFaves.delete(id); else myFaves.add(id);
+    updateFaveButton();
+    renderList();
+
+    const res = was
+      ? await sb.from('likes').delete().eq('user_id', session.user.id).eq('problem_id', id)
+      : await sb.from('likes').insert({ user_id: session.user.id, problem_id: id });
+
+    if (res.error && res.error.code !== '23505') {
+      if (was) myFaves.add(id); else myFaves.delete(id);   // revert
+      updateFaveButton();
+      renderList();
+      showToast('Could not save — check connection', 'error');
+      return;
+    }
+    showToast(was ? 'Removed from favourites' : 'Added to favourites ♥', 'success');
+  }
+
+  // Toggle a circuit's favourite. Same shape; needs the db/15 circuit_likes table.
+  async function toggleCircuitFave(id) {
+    if (!session) { showToast('Sign in to save favourites', 'success'); location.hash = '#auth'; return; }
+    id = String(id);
+    const was = isCircuitFaved(id);
+    if (was) myCircuitFaves.delete(id); else myCircuitFaves.add(id);
+    updateCircuitFaveButton();
+    renderCircuits();
+
+    const res = was
+      ? await sb.from('circuit_likes').delete().eq('user_id', session.user.id).eq('circuit_id', id)
+      : await sb.from('circuit_likes').insert({ user_id: session.user.id, circuit_id: id });
+
+    if (res.error && res.error.code !== '23505') {
+      if (was) myCircuitFaves.add(id); else myCircuitFaves.delete(id);   // revert
+      updateCircuitFaveButton();
+      renderCircuits();
+      showToast(favSetupNeeded(res.error)
+        ? 'Favourites need setup — run db/15 in Supabase'
+        : 'Could not save — check connection', 'error');
+      return;
+    }
+    showToast(was ? 'Removed from favourites' : 'Added to favourites ♥', 'success');
+  }
+
   // ── Auth ────────────────────────────────────────────────────────────────────
   async function initAuth() {
     const { data } = await sb.auth.getSession();   // also consumes any OAuth redirect in the URL
     session = data.session || null;
     authReady = true;
-    if (session) { await loadProfile(); await loadTicks(); }
+    if (session) { await loadProfile(); await loadTicks(); await loadFaves(); }
+    updateFaveControls();
     renderProfile();
-    if (loaded) renderList();   // refresh tick flags (skip if problems still loading)
-    if (currentView === 'detail') updateTickButton();
+    if (loaded) renderList();   // refresh tick + fave flags (skip if problems still loading)
+    if (currentView === 'detail') { updateTickButton(); updateFaveButton(); }
+    if (currentView === 'circuits') renderCircuits();
+    if (currentView === 'circuit-detail') updateCircuitFaveButton();
     if (location.hash.includes('access_token')) location.replace(location.pathname + '#list');
     else router();              // re-evaluate the route now auth is known (gates #create for guests)
 
     sb.auth.onAuthStateChange(async (_event, s) => {
       session = s || null;
-      if (session) { await loadProfile(); await loadTicks(); }
-      else { profile = null; myTicks = new Set(); }
+      if (session) { await loadProfile(); await loadTicks(); await loadFaves(); }
+      else { profile = null; myTicks = new Set(); myFaves = new Set(); myCircuitFaves = new Set(); }
+      updateFaveControls();
       renderProfile();
       if (loaded) renderList();
-      if (currentView === 'detail') updateTickButton();
+      if (currentView === 'detail') { updateTickButton(); updateFaveButton(); }
+      if (currentView === 'circuits') renderCircuits();
+      if (currentView === 'circuit-detail') updateCircuitFaveButton();
     });
   }
 
@@ -1659,6 +1783,7 @@
   // ── Circuit list ───────────────────────────────────────────────────────────────
   function visibleCircuits() {
     let arr = allCircuits;
+    if (circuitFavesOnly) arr = arr.filter(c => isCircuitFaved(c.id));
     if (activeCircuitGrade) arr = arr.filter(c => c.grade === activeCircuitGrade);
     if (circuitSearch) {
       const q = circuitSearch;
@@ -1683,6 +1808,7 @@
 
   function circuitCardHtml(c) {
     const n = circuitSeq(c).length;
+    const faved = isCircuitFaved(c.id);
     return `
       <div class="problem-card" data-id="${escAttr(c.id)}">
         <div class="problem-info">
@@ -1694,6 +1820,7 @@
             ${c.loops ? '<span class="loop-badge">↻ Loop</span>' : ''}
           </div>
         </div>
+        <button class="card-fave${faved ? ' faved' : ''}" data-fave="${escAttr(c.id)}" aria-pressed="${faved}" aria-label="${faved ? 'Remove from favourites' : 'Add to favourites'}">${HEART_SVG}</button>
       </div>`;
   }
 
@@ -1714,8 +1841,10 @@
     const list = visibleCircuits();
     countEl.textContent = `${list.length} circuit${list.length !== 1 ? 's' : ''}`;
     if (!list.length) {
-      container.innerHTML = `<div class="state-msg"><div class="icon">🧗</div>${
-        allCircuits.length ? 'No circuits match.' : 'No circuits yet — tap + to set the first one.'}</div>`;
+      container.innerHTML = circuitFavesOnly
+        ? `<div class="state-msg"><div class="icon">♡</div>No favourite circuits yet. Tap the heart on a circuit to save it here.</div>`
+        : `<div class="state-msg"><div class="icon">🧗</div>${
+            allCircuits.length ? 'No circuits match.' : 'No circuits yet — tap + to set the first one.'}</div>`;
       return;
     }
     container.innerHTML = `<div class="problem-list">${list.map(circuitCardHtml).join('')}</div>`;
@@ -1749,7 +1878,9 @@
     const wrap = document.getElementById('circuit-detail-content');
     const titleEl = document.getElementById('circuit-detail-title');
     const delBtn = document.getElementById('circuit-detail-delete');
+    const faveBtn = document.getElementById('circuit-detail-fave');
     delBtn.hidden = true;
+    if (faveBtn) faveBtn.hidden = true;
 
     if (!circuitsLoaded) {
       currentCircuit = null;
@@ -1775,6 +1906,8 @@
     currentCircuit = c;
     titleEl.textContent = circuitName(c);
     delBtn.hidden = !canEditCircuit(c);
+    if (faveBtn) faveBtn.hidden = false;
+    updateCircuitFaveButton();
     const n = circuitSeq(c).length;
     const comment = String(c.comment || '').trim();
 
@@ -1922,6 +2055,7 @@
       return;
     }
     allCircuits = allCircuits.filter(x => String(x.id) !== String(c.id));
+    myCircuitFaves.delete(String(c.id));
     closeCircuitDelete();
     showToast('Circuit deleted', 'success');
     location.hash = '#circuits';
@@ -2139,10 +2273,19 @@
   // Suppress the long-press context menu on the tabs (mobile + desktop).
   gradeTabsEl.addEventListener('contextmenu', e => e.preventDefault());
 
-  // List clicks: open detail (delegated)
+  // List clicks: heart toggles favourite (without opening), card opens detail.
   document.getElementById('list-container').addEventListener('click', e => {
+    const fav = e.target.closest('.card-fave');
+    if (fav) { e.stopPropagation(); toggleFave(fav.dataset.fave); return; }
     const card = e.target.closest('.problem-card');
     if (card) location.hash = '#detail/' + encodeURIComponent(card.dataset.id);
+  });
+
+  // Problems list "favourites only" filter toggle.
+  document.getElementById('fave-filter').addEventListener('click', () => {
+    favesOnly = !favesOnly;
+    document.getElementById('fave-filter').classList.toggle('active', favesOnly);
+    renderList();
   });
 
   // Detail back
@@ -2154,6 +2297,7 @@
   });
   document.getElementById('detail-mirror').addEventListener('click', toggleDetailMirror);
   document.getElementById('detail-tick').addEventListener('click', toggleTick);
+  document.getElementById('detail-fave').addEventListener('click', () => { if (currentProblem) toggleFave(currentProblem.id); });
   document.getElementById('detail-delete').addEventListener('click', openDeleteConfirm);
   document.getElementById('detail-edit').addEventListener('click', openGradeEdit);
 
@@ -2249,8 +2393,15 @@
     renderCircuits();
   });
   document.getElementById('circuit-list-container').addEventListener('click', e => {
+    const fav = e.target.closest('.card-fave');
+    if (fav) { e.stopPropagation(); toggleCircuitFave(fav.dataset.fave); return; }
     const card = e.target.closest('.problem-card');
     if (card) location.hash = '#circuit/' + encodeURIComponent(card.dataset.id);
+  });
+  document.getElementById('circuit-fave-filter').addEventListener('click', () => {
+    circuitFavesOnly = !circuitFavesOnly;
+    document.getElementById('circuit-fave-filter').classList.toggle('active', circuitFavesOnly);
+    renderCircuits();
   });
   document.getElementById('circuit-create-btn').addEventListener('click', () => {
     location.hash = session ? '#circuit-create' : '#auth';
@@ -2258,6 +2409,7 @@
 
   // Circuit detail: back, delete, (Play wired per-render).
   document.getElementById('circuit-back').addEventListener('click', goBack);
+  document.getElementById('circuit-detail-fave').addEventListener('click', () => { if (currentCircuit) toggleCircuitFave(currentCircuit.id); });
   document.getElementById('circuit-detail-delete').addEventListener('click', openCircuitDelete);
   document.getElementById('circuit-delete-cancel').addEventListener('click', closeCircuitDelete);
   document.getElementById('circuit-delete-confirm').addEventListener('click', doDeleteCircuit);
