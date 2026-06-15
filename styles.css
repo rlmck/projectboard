@@ -813,6 +813,104 @@
     .user-detail-actions .btn-block + .btn-block { margin-top: 10px; }
     .user-detail-note { color: var(--text-muted); font-size: 13px; text-align: center; line-height: 1.5; margin-top: 12px; }
 
+    /* ── Circuits ────────────────────────────────────────────────────── */
+    /* List-card meta extras */
+    .circuit-len { color: var(--text-muted); }
+    .loop-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      background: rgba(59,130,246,0.16);
+      border: 1px solid rgba(59,130,246,0.5);
+      color: #93c5fd;
+      border-radius: 6px;
+      padding: 1px 7px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    /* Move-order numbers inside a hold dot (detail + create overlays) */
+    .seq-num {
+      position: absolute;
+      inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 800; line-height: 1;
+      color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+      pointer-events: none;
+    }
+    /* A lit hold during the Play preview — brighter, with a glow pulse */
+    .hold-dot.lit {
+      filter: brightness(1.5);
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.45), 0 0 14px 3px currentColor;
+      animation: litPulse 0.55s ease;
+    }
+    .hold-dot.lit.start  { color: #22c55e; }
+    .hold-dot.lit.int    { color: #3b82f6; }
+    .hold-dot.lit.finish { color: #ef4444; }
+    @keyframes litPulse { from { transform: translate(-50%, -50%) scale(1.35); } to { transform: translate(-50%, -50%) scale(1); } }
+
+    /* Circuit detail Play panel */
+    #view-circuit-detail .board-wrap { width: 100%; max-width: 680px; margin: 0 auto; }
+    #view-circuit-detail .board-graphic { width: 100%; height: auto; border-radius: 10px; }
+    .circuit-play-panel { padding: 16px 2px 8px; }
+    .circuit-movecount {
+      text-align: center;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 12px;
+      min-height: 20px;
+    }
+    .circuit-movecount b { color: var(--accent-hover); font-size: 18px; }
+    .circuit-movecount .muted { color: var(--text-muted); font-weight: 600; font-size: 13px; }
+    .cc-hint { font-size: 12px; line-height: 1.5; color: var(--text-muted); text-align: center; margin: 14px 0 0; }
+
+    /* Circuit create — board + option rows */
+    #view-circuit-create .board-graphic { width: 100%; height: auto; display: block; border-radius: 10px; }
+    #cc-board { cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    #cc-hold-layer { pointer-events: none; }
+    .cc-seq-summary { display: flex; gap: 8px; margin: 0 0 14px; }
+    .cc-seq-summary span {
+      flex: 1; text-align: center; font-size: 13px; font-weight: 700;
+      padding: 8px 6px; border-radius: 9px;
+      background: var(--surface); border: 1px solid var(--border);
+    }
+    .cc-seq-summary .muted { flex: 1 1 100%; color: var(--text-muted); font-weight: 600; }
+    .cc-seq-summary .c-start  { border-color: rgba(34,197,94,0.4); }
+    .cc-seq-summary .c-int    { border-color: rgba(59,130,246,0.4); }
+    .cc-seq-summary .c-finish { border-color: rgba(239,68,68,0.4); }
+
+    .cc-option-row {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+    }
+    .cc-option-label { font-size: 14px; font-weight: 600; }
+    .cc-option-label small { color: var(--text-muted); font-weight: 500; font-size: 12px; }
+
+    /* 1 / 2 segmented control */
+    .cc-seg { display: flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+    .cc-seg-btn {
+      background: var(--surface2); color: var(--text-muted); border: none;
+      padding: 8px 18px; font-size: 14px; font-weight: 700; cursor: pointer;
+      touch-action: manipulation;
+    }
+    .cc-seg-btn.active { background: var(--accent); color: #fff; }
+
+    /* Loop toggle switch */
+    .cc-toggle {
+      position: relative; width: 48px; height: 28px; flex: none;
+      border-radius: 999px; border: 1px solid var(--border);
+      background: var(--surface2); cursor: pointer; padding: 0;
+      transition: background 0.15s, border-color 0.15s;
+      touch-action: manipulation;
+    }
+    .cc-toggle.on { background: var(--accent); border-color: var(--accent); }
+    .cc-toggle-knob {
+      position: absolute; top: 2px; left: 2px;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: #fff; transition: transform 0.15s;
+    }
+    .cc-toggle.on .cc-toggle-knob { transform: translateX(20px); }
+
     /* ── Bottom nav ──────────────────────────────────────────────────── */
     #bottom-nav {
       position: fixed;

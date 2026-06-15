@@ -184,6 +184,110 @@
   </main>
 </section>
 
+<!-- ══ CIRCUITS LIST VIEW ═════════════════════════════════════════════ -->
+<section id="view-circuits" class="view">
+  <header class="topbar">
+    <div class="search-row">
+      <div class="search-wrap">
+        <input id="circuit-search" type="search" placeholder="Search circuits…" autocomplete="off" />
+      </div>
+      <span class="count-badge" id="circuit-count"></span>
+      <button class="icon-btn add-btn" id="circuit-create-btn" aria-label="Create circuit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      </button>
+    </div>
+    <div class="grade-tabs" id="circuit-grade-tabs"></div>
+  </header>
+  <main>
+    <div id="circuit-list-container">
+      <div class="spinner"></div>
+      <p class="state-msg" style="padding-top:8px">Loading circuits…</p>
+    </div>
+  </main>
+</section>
+
+<!-- ══ CIRCUIT DETAIL VIEW (with in-app Play preview) ═════════════════ -->
+<section id="view-circuit-detail" class="view">
+  <header class="topbar detail-bar">
+    <button class="icon-btn" id="circuit-back" aria-label="Back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
+    <div class="detail-bar-title" id="circuit-detail-title">Circuit</div>
+    <button class="icon-btn" id="circuit-detail-delete" aria-label="Delete circuit" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+    </button>
+  </header>
+  <main>
+    <div id="circuit-detail-content"></div>
+  </main>
+</section>
+
+<!-- ══ CIRCUIT CREATE VIEW ════════════════════════════════════════════ -->
+<section id="view-circuit-create" class="view">
+  <header class="topbar detail-bar">
+    <button class="icon-btn" id="cc-back" aria-label="Back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
+    <div class="detail-bar-title">Create circuit</div>
+    <div class="detail-actions">
+      <button class="icon-btn" id="cc-undo" aria-label="Undo last hold">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>
+      </button>
+      <button class="icon-btn" id="cc-reset" aria-label="Clear all holds">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+      </button>
+    </div>
+  </header>
+  <main>
+    <div class="board-wrap" id="cc-board">
+      <img class="board-graphic" src="ProjectBoard.png" alt="The Hangout symmetry board" />
+      <div class="hold-layer" id="cc-hold-layer"></div>
+    </div>
+
+    <div class="create-panel">
+      <p class="create-tip">Tap holds <b>in climbing order</b> — the same hold can be tapped again for a repeated move. The first holds are the <b class="c-start">start</b>, the last is the <b class="c-finish">finish</b>, the rest are <b class="c-int">moves</b>. Use ↩ to undo.</p>
+      <div class="cc-seq-summary" id="cc-seq-summary"></div>
+
+      <div class="cc-option-row">
+        <span class="cc-option-label">Start holds</span>
+        <div class="cc-seg" id="cc-start-count">
+          <button class="cc-seg-btn" data-count="1" type="button">1</button>
+          <button class="cc-seg-btn active" data-count="2" type="button">2</button>
+        </div>
+      </div>
+      <div class="cc-option-row">
+        <span class="cc-option-label">Loop <small>(top returns near the start)</small></span>
+        <button class="cc-toggle" id="cc-loop" type="button" aria-pressed="false"><span class="cc-toggle-knob"></span></button>
+      </div>
+
+      <input class="fld" id="cc-name" type="text" placeholder="Circuit name" maxlength="60" autocomplete="off" />
+
+      <div class="create-grade-label">Grade</div>
+      <div class="grade-tabs create-grades" id="cc-grades"></div>
+
+      <div class="auth-error" id="cc-error"></div>
+      <button class="btn-block btn-primary" id="cc-save">Save circuit</button>
+    </div>
+  </main>
+</section>
+
+<!-- ══ CIRCUIT DELETE CONFIRM MODAL (owner / admin) ═══════════════════ -->
+<div class="modal-overlay" id="circuit-delete-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Delete circuit">
+    <div class="modal-header">
+      <div class="modal-title">Delete circuit?</div>
+    </div>
+    <div class="name-body">
+      <p class="shell-sub" style="margin:0 0 16px">Permanently delete <b id="circuit-delete-name"></b>? This can’t be undone and removes it for everyone.</p>
+      <div class="auth-error" id="circuit-delete-error"></div>
+      <div class="modal-actions">
+        <button class="btn-block btn-ghost" id="circuit-delete-cancel">Cancel</button>
+        <button class="btn-block btn-danger" id="circuit-delete-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ══ ADMIN VIEW (admins — hub for board + user management) ═══════════ -->
 <section id="view-admin" class="view">
   <header class="topbar detail-bar">
@@ -205,6 +309,10 @@
   <a href="#list" class="nav-item" data-nav="list">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
     <span>Problems</span>
+  </a>
+  <a href="#circuits" class="nav-item" data-nav="circuits">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+    <span>Circuits</span>
   </a>
   <a href="#profile" class="nav-item" data-nav="profile">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>

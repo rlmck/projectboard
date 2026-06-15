@@ -44,6 +44,25 @@
   let createRoles = {};        // hold id -> 'start' | 'int' | 'finish'
   let createGrade = '';        // selected grade
 
+  // ── Circuits ──────────────────────────────────────────────────────────────────
+  // Sport grades (lowercase French), a different ladder from boulder problems.
+  const SPORT_GRADE_ORDER = ['4','5a','5b','5c','6a','6a+','6b','6b+','6c','6c+','7a','7a+','7b','7b+','7c','7c+','8a','8a+','8b'];
+  const sportRank = g => { const i = SPORT_GRADE_ORDER.indexOf(g); return i === -1 ? 999 : i; };
+
+  let allCircuits = [];
+  let circuitsLoaded = false;
+  let circuitsError = null;          // last load error (for the "run db/14" message)
+  let activeCircuitGrade = '';       // single-select grade filter ('' = All)
+  let circuitSearch = '';
+  let currentCircuit = null;
+
+  // Create-a-circuit state. The route is one ORDERED sequence (dups allowed);
+  // start = the first ccStartCount holds, finish = the last hold.
+  let ccSeq = [];          // ordered hold ids
+  let ccStartCount = 2;    // 1 or 2
+  let ccLoop = false;
+  let ccGrade = '';
+
   const isTicked = id => myTicks.has(String(id));
 
   // ── Escape helpers ───────────────────────────────────────────────────────────
@@ -175,8 +194,10 @@
 
     // The info modal only belongs to the detail view.
     if (name !== 'detail') closeInfo();
+    // The circuit Play preview only runs on the circuit detail view.
+    if (name !== 'circuit-detail') stopCircuitPlay(false);
 
-    ['list','detail','create','calibrate','admin','auth','profile'].forEach(v => {
+    ['list','detail','create','calibrate','admin','auth','profile','circuits','circuit-detail','circuit-create'].forEach(v => {
       document.getElementById('view-' + v).classList.toggle('active', v === name);
     });
 
@@ -184,7 +205,7 @@
     document.getElementById('bottom-nav').style.display = name === 'auth' ? 'none' : 'flex';
 
     // Active nav highlight.
-    const navFor = { list: 'list', detail: 'list', create: 'list', calibrate: 'profile', admin: 'profile', profile: 'profile', auth: 'profile' }[name] || 'list';
+    const navFor = { list: 'list', detail: 'list', create: 'list', calibrate: 'profile', admin: 'profile', profile: 'profile', auth: 'profile', circuits: 'circuits', 'circuit-detail': 'circuits', 'circuit-create': 'circuits' }[name] || 'list';
     document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.nav === navFor));
 
     if (name === 'list') window.scrollTo(0, listScroll);
@@ -217,6 +238,14 @@
         if (authReady && !isAdmin()) { location.replace(location.pathname + '#list'); break; }
         setView('admin');
         renderAdmin(param);
+        break;
+      case 'circuits': setView('circuits'); renderCircuits(); break;
+      case 'circuit':  setView('circuit-detail'); renderCircuitDetail(param); break;
+      case 'circuit-create':
+        // Login required, same pattern as #create — only bounce once auth is known.
+        if (authReady && !session) { location.replace(location.pathname + '#auth'); break; }
+        initCircuitCreate();
+        setView('circuit-create');
         break;
       case 'auth':    setAuthMode('signin'); setView('auth'); break;
       case 'profile': renderProfile(); setView('profile'); break;
@@ -443,12 +472,15 @@
     if (currentView === 'detail') router();
     if (currentView === 'create') applyCreateRoles();
     if (currentView === 'calibrate') initCalibrate();
+    if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
+    if (currentView === 'circuit-create') applyCircuitCreate();
   }
 
-  // Point every static board <img> (create + calibrate) at the current BOARD_IMG.
-  // The detail view's <img> is built per-render, so it reads BOARD_IMG directly.
+  // Point every static board <img> (create + calibrate + circuit create) at the
+  // current BOARD_IMG. The detail views' <img> is built per-render, so it reads
+  // BOARD_IMG directly.
   function applyBoardImage() {
-    document.querySelectorAll('#create-board .board-graphic, #cal-img').forEach(img => {
+    document.querySelectorAll('#create-board .board-graphic, #cc-board .board-graphic, #cal-img').forEach(img => {
       if (img.getAttribute('src') !== BOARD_IMG) img.setAttribute('src', BOARD_IMG);
     });
   }
@@ -519,6 +551,8 @@
     profileNames = Object.fromEntries((data || []).map(r => [r.id, r.username]));
     if (loaded) renderList();                       // refresh setters once names arrive
     if (currentView === 'detail') router();
+    if (currentView === 'circuits') renderCircuits();
+    else if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
   }
 
   // ── Load problems ─────────────────────────────────────────────────────────────
@@ -1583,6 +1617,411 @@
     }
   }
 
+  // ══ CIRCUITS ═══════════════════════════════════════════════════════════════════
+  // A circuit is a long sport-style route: one ordered hold sequence (duplicates
+  // allowed), 1–2 starts (the first holds), one finish (the last hold), optional
+  // loop. Phase 1 = browse / create / detail with an in-app Play preview of the
+  // moving-window animation. No real casting yet (that's Phase 2).
+
+  const circuitName = c => String((c && c.name) || '').trim() || '(unnamed)';
+  const circuitSeq  = c => (Array.isArray(c && c.hold_sequence) ? c.hold_sequence : []);
+  const canEditCircuit = c =>
+    !!(c && profile && (profile.is_admin || (session && c.setter_id === session.user.id)));
+
+  // Surface "db/14 isn't applied yet" distinctly from a real failure.
+  const circuitsTableMissing = err =>
+    !!err && (err.code === '42P01' || err.code === 'PGRST205' ||
+      /Could not find the table|relation .* does not exist|schema cache/i.test(err.message || ''));
+
+  // A sequence position's role: finish (last) wins over start (first N), else move.
+  function circuitRole(seq, startCount, pos) {
+    if (pos === seq.length - 1) return 'finish';
+    if (pos < startCount) return 'start';
+    return 'int';
+  }
+
+  async function loadCircuits() {
+    const { data, error } = await sb.from('circuits').select('*');
+    if (error) {
+      circuitsError = error;
+      console.warn('circuits load failed', error);
+      if (currentView === 'circuits') renderCircuits();
+      else if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
+      return;
+    }
+    allCircuits = data || [];
+    circuitsLoaded = true;
+    circuitsError = null;
+    if (currentView === 'circuits') renderCircuits();
+    else if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
+  }
+
+  // ── Circuit list ───────────────────────────────────────────────────────────────
+  function visibleCircuits() {
+    let arr = allCircuits;
+    if (activeCircuitGrade) arr = arr.filter(c => c.grade === activeCircuitGrade);
+    if (circuitSearch) {
+      const q = circuitSearch;
+      arr = arr.filter(c =>
+        circuitName(c).toLowerCase().includes(q) ||
+        setterName(c).toLowerCase().includes(q) ||
+        String(c.grade || '').toLowerCase().includes(q)
+      );
+    }
+    return arr.slice().sort((a, b) =>
+      sportRank(a.grade) - sportRank(b.grade) || circuitName(a).localeCompare(circuitName(b))
+    );
+  }
+
+  function buildCircuitGradeTabs() {
+    const present = [...new Set(allCircuits.map(c => c.grade).filter(Boolean))]
+      .sort((a, b) => sportRank(a) - sportRank(b) || a.localeCompare(b));
+    if (activeCircuitGrade && !present.includes(activeCircuitGrade)) activeCircuitGrade = '';
+    document.getElementById('circuit-grade-tabs').innerHTML =
+      gradeTabButtons(['all', ...present], g => g === 'all' ? !activeCircuitGrade : g === activeCircuitGrade);
+  }
+
+  function circuitCardHtml(c) {
+    const n = circuitSeq(c).length;
+    return `
+      <div class="problem-card" data-id="${escAttr(c.id)}">
+        <div class="problem-info">
+          <div class="problem-name">${escHtml(circuitName(c))}</div>
+          <div class="problem-meta">
+            <span class="grade-badge">${escHtml(c.grade || '—')}</span>
+            <span class="meta-setter">${escHtml(setterName(c))}</span>
+            <span class="circuit-len">${n} move${n === 1 ? '' : 's'}</span>
+            ${c.loops ? '<span class="loop-badge">↻ Loop</span>' : ''}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderCircuits() {
+    buildCircuitGradeTabs();
+    const container = document.getElementById('circuit-list-container');
+    const countEl = document.getElementById('circuit-count');
+    if (!circuitsLoaded) {
+      if (circuitsError) {
+        countEl.textContent = '';
+        container.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>${
+          circuitsTableMissing(circuitsError)
+            ? 'Circuits aren’t set up yet — run <b>db/14</b> in the Supabase SQL editor.'
+            : 'Failed to load circuits.'}</div>`;
+      }
+      return;
+    }
+    const list = visibleCircuits();
+    countEl.textContent = `${list.length} circuit${list.length !== 1 ? 's' : ''}`;
+    if (!list.length) {
+      container.innerHTML = `<div class="state-msg"><div class="icon">🧗</div>${
+        allCircuits.length ? 'No circuits match.' : 'No circuits yet — tap + to set the first one.'}</div>`;
+      return;
+    }
+    container.innerHTML = `<div class="problem-list">${list.map(circuitCardHtml).join('')}</div>`;
+  }
+
+  // ── Circuit detail (+ in-app Play preview) ──────────────────────────────────────
+  // Static overlay: one dot per UNIQUE hold, coloured by role, badged with its move
+  // number(s). The Play engine animates a 4-hold moving window over the sequence.
+  function circuitStaticOverlay(c) {
+    const seq = circuitSeq(c);
+    if (!HOLD_MAP || !seq.length) return '';
+    const byHold = {};   // hold -> { positions:[], role }
+    seq.forEach((h, pos) => {
+      if (!byHold[h]) byHold[h] = { positions: [], role: 'int' };
+      byHold[h].positions.push(pos);
+      const r = circuitRole(seq, c.start_count, pos);
+      // finish > start > int when a hold takes several roles across repeats.
+      if (r === 'finish' || (r === 'start' && byHold[h].role !== 'finish')) byHold[h].role = r;
+    });
+    return Object.keys(byHold).map(h => {
+      const pos = HOLD_MAP[h];
+      if (!pos) return '';
+      const o = byHold[h];
+      const label = o.positions.map(p => p + 1).join('/');
+      return `<div class="hold-dot ${o.role}" style="left:${pos.x}%;top:${pos.y}%"><span class="seq-num">${label}</span></div>`;
+    }).join('');
+  }
+
+  function renderCircuitDetail(id) {
+    stopCircuitPlay(false);
+    const wrap = document.getElementById('circuit-detail-content');
+    const titleEl = document.getElementById('circuit-detail-title');
+    const delBtn = document.getElementById('circuit-detail-delete');
+    delBtn.hidden = true;
+
+    if (!circuitsLoaded) {
+      currentCircuit = null;
+      if (circuitsError) {
+        wrap.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>${
+          circuitsTableMissing(circuitsError)
+            ? 'Circuits aren’t set up yet — run <b>db/14</b> in Supabase.'
+            : 'Couldn’t load circuits.'}<br><a class="link" href="#circuits">Back to circuits</a></div>`;
+      } else {
+        wrap.innerHTML = `<div class="spinner"></div>`;
+      }
+      return;
+    }
+
+    const c = allCircuits.find(x => String(x.id) === String(id));
+    if (!c) {
+      currentCircuit = null;
+      titleEl.textContent = 'Circuit';
+      wrap.innerHTML = `<div class="state-msg"><div class="icon">🤷</div>That circuit couldn't be found.<br><a class="link" href="#circuits">Back to circuits</a></div>`;
+      return;
+    }
+
+    currentCircuit = c;
+    titleEl.textContent = circuitName(c);
+    delBtn.hidden = !canEditCircuit(c);
+    const n = circuitSeq(c).length;
+    const comment = String(c.comment || '').trim();
+
+    wrap.innerHTML = `
+      <div class="detail-head-info">
+        <h1 class="detail-name">${escHtml(circuitName(c))}</h1>
+        <div class="detail-meta">
+          <span class="grade-badge">${escHtml(c.grade || '—')}</span>
+          <span class="meta-setter">by ${escHtml(setterName(c))}</span>
+          <span class="circuit-len">${n} move${n === 1 ? '' : 's'}</span>
+          ${c.loops ? '<span class="loop-badge">↻ Loop</span>' : ''}
+        </div>
+      </div>
+
+      <div class="board-wrap">
+        <img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" />
+        <div class="hold-layer" id="circuit-play-layer">${circuitStaticOverlay(c)}</div>
+      </div>
+
+      <div class="circuit-play-panel">
+        <div class="circuit-movecount" id="circuit-movecount">Ready</div>
+        <button class="btn-block btn-primary" id="circuit-play-btn">▶ Play preview</button>
+        ${comment ? `<p class="detail-comment" style="margin-top:14px">${escHtml(comment)}</p>` : ''}
+        <p class="cc-hint">Preview runs a 4-hold moving window up the route${c.loops ? ', looping until you stop it' : ''}. Real casting to the board comes next.</p>
+      </div>`;
+
+    document.getElementById('circuit-play-btn').addEventListener('click', toggleCircuitPlay);
+  }
+
+  // ── Play engine (moving 4-hold window) ──────────────────────────────────────────
+  // Same logic will drive the Phase-2 cast-screen move timing. tick = total LED
+  // advances (move count, counting across loops). The lit window is the up-to-4
+  // most-recent holds ending at the current tick; wrapping for loops.
+  const PLAY_WINDOW = 4;
+  const PLAY_INTERVAL_MS = 550;
+  let playTimer = null;
+
+  function stopCircuitPlay(restore) {
+    if (playTimer) { clearInterval(playTimer); playTimer = null; }
+    const btn = document.getElementById('circuit-play-btn');
+    if (btn) btn.innerHTML = '▶ Play preview';
+    const mc = document.getElementById('circuit-movecount');
+    if (mc) mc.textContent = 'Ready';
+    if (restore && currentCircuit) {
+      const layer = document.getElementById('circuit-play-layer');
+      if (layer) layer.innerHTML = circuitStaticOverlay(currentCircuit);
+    }
+  }
+
+  function toggleCircuitPlay() {
+    if (playTimer) { stopCircuitPlay(true); return; }
+    const c = currentCircuit;
+    const seq = circuitSeq(c);
+    if (!c || !HOLD_MAP || seq.length < 1) { showToast('Nothing to play', 'error'); return; }
+    const btn = document.getElementById('circuit-play-btn');
+    if (btn) btn.innerHTML = '■ Stop';
+    let tick = 0;
+    const L = seq.length;
+    const loop = !!c.loops;
+    const draw = () => {
+      // Window = the up-to-4 most-recent positions ending at `tick`.
+      const idxs = [];
+      for (let d = PLAY_WINDOW - 1; d >= 0; d--) {
+        const i = tick - d;
+        if (loop) { if (i >= 0) idxs.push(((i % L) + L) % L); }
+        else if (i >= 0 && i < L) idxs.push(i);
+      }
+      const layer = document.getElementById('circuit-play-layer');
+      if (layer) {
+        layer.innerHTML = idxs.map(p => {
+          const pos = HOLD_MAP[seq[p]];
+          if (!pos) return '';
+          return `<div class="hold-dot ${circuitRole(seq, c.start_count, p)} lit" style="left:${pos.x}%;top:${pos.y}%"></div>`;
+        }).join('');
+      }
+      const mc = document.getElementById('circuit-movecount');
+      // Non-loop: the move count caps at L once the last hold has lit (the window
+      // then just slides off). Loop: it keeps climbing across laps.
+      const moveNum = loop ? tick + 1 : Math.min(tick + 1, L);
+      if (mc) mc.innerHTML = `Move <b>${moveNum}</b>${loop ? ` <span class="muted">· lap ${Math.floor(tick / L) + 1}</span>` : ` <span class="muted">/ ${L}</span>`}`;
+      tick++;
+      // Non-loop: stop once the window has slid off the end (route finished).
+      if (!loop && tick > L - 1 + (PLAY_WINDOW - 1)) {
+        clearInterval(playTimer); playTimer = null;
+        setTimeout(() => stopCircuitPlay(true), 400);
+      }
+    };
+    draw();
+    playTimer = setInterval(draw, PLAY_INTERVAL_MS);
+  }
+
+  // ── Delete a circuit (owner / admin; the DB enforces it via RLS) ─────────────────
+  function openCircuitDelete() {
+    const c = currentCircuit;
+    if (!c || !canEditCircuit(c)) return;
+    document.getElementById('circuit-delete-name').textContent = circuitName(c);
+    document.getElementById('circuit-delete-error').textContent = '';
+    document.getElementById('circuit-delete-modal').classList.add('show');
+  }
+  function closeCircuitDelete() { document.getElementById('circuit-delete-modal').classList.remove('show'); }
+
+  async function doDeleteCircuit() {
+    const c = currentCircuit;
+    if (!c) return;
+    const errEl = document.getElementById('circuit-delete-error');
+    const btn = document.getElementById('circuit-delete-confirm');
+    errEl.textContent = '';
+    btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Deleting…';
+
+    const { error } = await sb.from('circuits').delete().eq('id', c.id);
+    btn.disabled = false; btn.textContent = prev;
+    if (error) {
+      errEl.textContent = error.code === '42501'
+        ? 'You don’t have permission to delete this circuit.'
+        : error.message;
+      return;
+    }
+    allCircuits = allCircuits.filter(x => String(x.id) !== String(c.id));
+    closeCircuitDelete();
+    showToast('Circuit deleted', 'success');
+    location.hash = '#circuits';
+  }
+
+  // ── Create a circuit ─────────────────────────────────────────────────────────────
+  // Tap holds in climbing order (repeats allowed); each tap appends to ccSeq. Dots
+  // are numbered with their move order. Start = first ccStartCount, finish = last.
+  function applyCircuitCreate() {
+    const layer = document.getElementById('cc-hold-layer');
+    if (layer) {
+      // One dot per unique hold; badge lists its move number(s).
+      const byHold = {};
+      ccSeq.forEach((h, pos) => {
+        if (!byHold[h]) byHold[h] = { positions: [], role: 'int' };
+        byHold[h].positions.push(pos);
+        const r = circuitRole(ccSeq, ccStartCount, pos);
+        if (r === 'finish' || (r === 'start' && byHold[h].role !== 'finish')) byHold[h].role = r;
+      });
+      layer.innerHTML = Object.keys(byHold).map(h => {
+        const pos = HOLD_MAP && HOLD_MAP[h];
+        if (!pos) return '';
+        const o = byHold[h];
+        return `<div class="hold-dot ${o.role}" style="left:${pos.x}%;top:${pos.y}%"><span class="seq-num">${o.positions.map(p => p + 1).join('/')}</span></div>`;
+      }).join('');
+    }
+    const sum = document.getElementById('cc-seq-summary');
+    if (sum) {
+      const n = ccSeq.length;
+      sum.innerHTML = n
+        ? `<span class="c-start">${Math.min(ccStartCount, n)} start</span>` +
+          `<span class="c-int">${Math.max(0, n - ccStartCount - (n > ccStartCount ? 1 : 0))} move${n - ccStartCount - 1 === 1 ? '' : 's'}</span>` +
+          `<span class="c-finish">${n > ccStartCount ? '1 finish' : 'no finish yet'}</span>`
+        : `<span class="muted">Tap the board to add the first hold.</span>`;
+    }
+  }
+
+  function ccNearestHold(clientX, clientY) {
+    if (!HOLD_MAP) return null;
+    const r = document.getElementById('cc-board').getBoundingClientRect();
+    const px = (clientX - r.left) / r.width * 100;
+    const py = (clientY - r.top) / r.height * 100;
+    let best = null, bestD = Infinity;
+    for (const h in HOLD_MAP) {
+      const dx = (HOLD_MAP[h].x - px) / 100 * r.width;
+      const dy = (HOLD_MAP[h].y - py) / 100 * r.height;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = h; }
+    }
+    return Math.sqrt(bestD) <= r.width * 0.06 ? best : null;
+  }
+
+  function buildCcGrades() {
+    document.getElementById('cc-grades').innerHTML =
+      gradeTabButtons(SPORT_GRADE_ORDER, g => g === ccGrade);
+  }
+  function buildCcStartCount() {
+    document.querySelectorAll('#cc-start-count .cc-seg-btn').forEach(b =>
+      b.classList.toggle('active', +b.dataset.count === ccStartCount));
+  }
+  function buildCcLoop() {
+    const btn = document.getElementById('cc-loop');
+    btn.classList.toggle('on', ccLoop);
+    btn.setAttribute('aria-pressed', ccLoop ? 'true' : 'false');
+  }
+
+  function resetCircuitCreate() {
+    ccSeq = []; ccStartCount = 2; ccLoop = false; ccGrade = '';
+    const nameEl = document.getElementById('cc-name'); if (nameEl) nameEl.value = '';
+    document.getElementById('cc-error').textContent = '';
+    buildCcGrades(); buildCcStartCount(); buildCcLoop();
+    applyCircuitCreate();
+  }
+
+  function initCircuitCreate() {
+    buildCcGrades(); buildCcStartCount(); buildCcLoop();
+    applyCircuitCreate();
+  }
+
+  async function saveCircuit() {
+    const errEl = document.getElementById('cc-error');
+    errEl.textContent = '';
+    if (!session) { location.hash = '#auth'; return; }
+
+    const name = document.getElementById('cc-name').value.trim();
+    if (!name) { errEl.textContent = 'Give your circuit a name.'; return; }
+    if (!ccGrade) { errEl.textContent = 'Pick a grade.'; return; }
+    if (ccSeq.length < ccStartCount + 1) {
+      errEl.textContent = `Add at least ${ccStartCount + 1} holds — ${ccStartCount} start${ccStartCount === 1 ? '' : 's'} and a finish.`;
+      return;
+    }
+
+    // Names must be unique (a circuit is cast by name, like a problem).
+    const lname = name.toLowerCase();
+    if (allCircuits.some(c => circuitName(c).toLowerCase() === lname)) {
+      errEl.textContent = 'That name is taken — pick another.';
+      return;
+    }
+
+    const row = {
+      name,
+      grade: ccGrade,
+      setter_id: session.user.id,
+      comment: '',
+      hold_sequence: ccSeq,       // stored in natural climbing order (no inversion)
+      start_count: ccStartCount,
+      loops: ccLoop
+    };
+
+    const btn = document.getElementById('cc-save');
+    const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+    const { data, error } = await sb.from('circuits').insert(row).select().single();
+    btn.disabled = false; btn.textContent = prev;
+    if (error) {
+      errEl.textContent =
+        circuitsTableMissing(error) ? 'Circuits aren’t set up yet — run db/14 in Supabase.'
+        : error.code === '42501' ? 'You don’t have permission to create circuits yet.'
+        : error.code === '23505' ? 'That name is taken — pick another.'
+        : error.message;
+      return;
+    }
+
+    allCircuits.push(data);
+    renderCircuits();
+    resetCircuitCreate();
+    showToast('Circuit created ✓', 'success');
+    location.replace('#circuit/' + encodeURIComponent(data.id));
+  }
+
   // ── Wire up events ────────────────────────────────────────────────────────────
   // Search
   document.getElementById('search').addEventListener('input', e => {
@@ -1767,6 +2206,60 @@
 
   document.getElementById('create-save').addEventListener('click', saveProblem);
 
+  // ── Circuits wiring ─────────────────────────────────────────────────────────
+  // List: search + single-select grade tabs + open detail + create.
+  document.getElementById('circuit-search').addEventListener('input', e => {
+    circuitSearch = e.target.value.trim().toLowerCase();
+    renderCircuits();
+  });
+  document.getElementById('circuit-grade-tabs').addEventListener('click', e => {
+    const t = e.target.closest('.grade-tab');
+    if (!t) return;
+    const g = t.dataset.grade;
+    activeCircuitGrade = (g === 'all' || g === activeCircuitGrade) ? '' : g;
+    renderCircuits();
+  });
+  document.getElementById('circuit-list-container').addEventListener('click', e => {
+    const card = e.target.closest('.problem-card');
+    if (card) location.hash = '#circuit/' + encodeURIComponent(card.dataset.id);
+  });
+  document.getElementById('circuit-create-btn').addEventListener('click', () => {
+    location.hash = session ? '#circuit-create' : '#auth';
+  });
+
+  // Circuit detail: back, delete, (Play wired per-render).
+  document.getElementById('circuit-back').addEventListener('click', goBack);
+  document.getElementById('circuit-detail-delete').addEventListener('click', openCircuitDelete);
+  document.getElementById('circuit-delete-cancel').addEventListener('click', closeCircuitDelete);
+  document.getElementById('circuit-delete-confirm').addEventListener('click', doDeleteCircuit);
+  document.getElementById('circuit-delete-modal').addEventListener('click', e => {
+    if (e.target.id === 'circuit-delete-modal') closeCircuitDelete();
+  });
+
+  // Circuit create: back, undo, reset, board taps, options, grade, save.
+  document.getElementById('cc-back').addEventListener('click', goBack);
+  document.getElementById('cc-undo').addEventListener('click', () => { ccSeq.pop(); applyCircuitCreate(); });
+  document.getElementById('cc-reset').addEventListener('click', resetCircuitCreate);
+  document.getElementById('cc-board').addEventListener('click', e => {
+    const h = ccNearestHold(e.clientX, e.clientY);
+    if (h) { ccSeq.push(h); applyCircuitCreate(); }
+  });
+  document.getElementById('cc-start-count').addEventListener('click', e => {
+    const b = e.target.closest('.cc-seg-btn');
+    if (!b) return;
+    ccStartCount = +b.dataset.count;
+    buildCcStartCount();
+    applyCircuitCreate();
+  });
+  document.getElementById('cc-loop').addEventListener('click', () => { ccLoop = !ccLoop; buildCcLoop(); });
+  document.getElementById('cc-grades').addEventListener('click', e => {
+    const t = e.target.closest('.grade-tab');
+    if (!t) return;
+    ccGrade = ccGrade === t.dataset.grade ? '' : t.dataset.grade;
+    buildCcGrades();
+  });
+  document.getElementById('cc-save').addEventListener('click', saveCircuit);
+
   // Calibrate (admin board recalibration)
   document.getElementById('cal-back').addEventListener('click', goBack);
   document.getElementById('cal-reset').addEventListener('click', calReset);
@@ -1810,7 +2303,7 @@
   document.getElementById('info-modal').addEventListener('click', e => {
     if (e.target.id === 'info-modal') closeInfo();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); } });
 
   // Auth view actions
   document.getElementById('auth-back').addEventListener('click', () => { location.hash = '#list'; });
@@ -1897,6 +2390,7 @@
   window.addEventListener('hashchange', router);
   router();        // show initial view (list shows its loading spinner)
   loadProblems();     // fetch, then render + re-route
+  loadCircuits();     // fetch circuits (Phase 1 entity)
   loadProfileNames(); // id -> username map so setters show the live display name
   // Prefer the admin-saved board (image + hold map) from Supabase; fall back to the
   // bundled hold_map.json only if no saved map exists.
