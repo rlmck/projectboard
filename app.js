@@ -12,9 +12,12 @@
 
   // ── Grade ordering (boulder problems) ────────────────────────────────────────
   // Stored / matched lowercase (these strings are the DB values); displayed as
-  // capitalised Font grades (5b+ -> 5B+) via fontGrade(). Circuits use a separate
+  // capitalised Font grades (6a -> 6A) via fontGrade(). Circuits use a separate
   // lowercase French sport ladder (SPORT_GRADE_ORDER) and are NOT capitalised.
-  const GRADE_ORDER = ['3','4a','4b','4c','5a','5b','5b+','5c','5c+','6a','6a+','6b','6b+','6c','6c+','7a','7a+','7b','7b+','7c','7c+','8a'];
+  // The low end is collapsed into two buckets: everything up to and including the
+  // old 5b+ is "5", and the old 5c/5c+ are "5+"; 6a and up are unchanged. The DB
+  // values were remapped to match (db/19_regrade_boulders.sql).
+  const GRADE_ORDER = ['5','5+','6a','6a+','6b','6b+','6c','6c+','7a','7a+','7b','7b+','7c','7c+','8a'];
   // Unknown grades (e.g. "Project") sort to the end. Case-insensitive for safety.
   const gradeRank = g => { const i = GRADE_ORDER.indexOf(String(g || '').toLowerCase()); return i === -1 ? 999 : i; };
   // Display a boulder grade as capitalised Font (display-only; the value stays lowercase).

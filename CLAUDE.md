@@ -152,7 +152,7 @@ The problems table was migrated from `test.csv` (271 rows). Key columns:
 | Column | Content |
 |---|---|
 | `name` | Problem name (e.g. "Good Bug 5b+"). **UNIQUE.** Migrated names include the grade suffix; app-created names do **not** (the app strips the trailing grade for display, so it dedupes on the *displayed* name). |
-| `grade` | French bouldering grade (e.g. "5b+", "7a") |
+| `grade` | Boulder grade, stored lowercase (e.g. "5", "5+", "6a", "7a"); see Grade ordering |
 | `setter` | Setter display-name **snapshot** at creation (text, NOT NULL, default `''`). For app-created problems the *displayed* setter comes from `setter_id` → live `profiles.username`, not this column. |
 | `setter_id` | Owner's account id (uuid → `auth.users`). Set on app-created problems; **null** on migrated rows. Drives the live setter name + the INSERT RLS check (`setter_id = auth.uid()`). |
 | `comment` | Short description / comment (note: **`comment`**, singular — not `comments`) |
@@ -242,10 +242,12 @@ Dark theme. The existing `index.html` has a good dark colour palette — keep it
 Boulder-problem grades in correct difficulty order (for filter tabs and sorting):
 
 ```
-3, 4a, 4b, 4c, 5a, 5b, 5b+, 5c, 5c+, 6a, 6a+, 6b, 6b+, 6c, 6c+, 7a, 7a+, 7b, 7b+, 7c, 7c+, 8a
+5, 5+, 6a, 6a+, 6b, 6b+, 6c, 6c+, 7a, 7a+, 7b, 7b+, 7c, 7c+, 8a
 ```
 
-**Display vs storage:** these strings are the canonical **lowercase** values — that's what's stored in `problems.grade`, what `GRADE_ORDER`/`gradeRank` match on, what filter `data-grade` carries, and what search compares. But boulder problems are **displayed as capitalised Font grades** (`5b+` → `5B+`) via `fontGrade(g)` (a display-only `toUpperCase`). Every problem grade shown to the user (list/detail/info badges, the grade filter tabs, create + edit-grade pickers, profile "Hardest send") is wrapped in `fontGrade`. **Circuits are different** — they use the separate lowercase French **sport** ladder (`SPORT_GRADE_ORDER`: `4, 5a … 8b`) and are **not** capitalised. `displayName` still strips the (lowercase) grade suffix from migrated problem names case-insensitively, so nothing changed there.
+The low end is **collapsed into two buckets**: the old `3, 4a, 4b, 4c, 5a, 5b, 5b+` all became `5`, and the old `5c, 5c+` became `5+`; `6a` and up are unchanged. The DB `problems.grade` values were remapped to match in **`db/19_regrade_boulders.sql`** (idempotent; run in the SQL editor).
+
+**Display vs storage:** these strings are the canonical **lowercase** values — that's what's stored in `problems.grade`, what `GRADE_ORDER`/`gradeRank` match on, what filter `data-grade` carries, and what search compares. But boulder problems are **displayed as capitalised Font grades** (`6a` → `6A`; `5`/`5+` pass through unchanged) via `fontGrade(g)` (a display-only `toUpperCase`). Every problem grade shown to the user (list/detail/info badges, the grade filter tabs, create + edit-grade pickers, profile "Hardest send") is wrapped in `fontGrade`. **Circuits are different** — they use the separate lowercase French **sport** ladder (`SPORT_GRADE_ORDER`: `4, 5a … 8b`) and are **not** capitalised. `displayName` still strips the (lowercase) grade suffix from problem names case-insensitively (a no-op now names are cleaned), so nothing changed there.
 
 ---
 
