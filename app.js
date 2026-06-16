@@ -676,7 +676,15 @@
     const btn = document.getElementById('grade-save');
     const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
 
-    const { error } = await sb.from('problems').update({ grade: editGrade }).eq('id', p.id);
+    // Migrated names embed the grade ("Good Bug 5b+"); displayName only strips the
+    // *current* grade. So if we change the grade without also stripping the OLD one
+    // from the stored name, the old grade suffix stops matching and reappears in the
+    // displayed name. Strip the old grade out of the name on the way through.
+    const update = { grade: editGrade };
+    const strippedName = displayName(p);   // p still has the OLD grade here
+    if (strippedName !== '(unnamed)' && strippedName !== p.name) update.name = strippedName;
+
+    const { error } = await sb.from('problems').update(update).eq('id', p.id);
     btn.disabled = false; btn.textContent = prev;
     if (error) {
       errEl.textContent = error.code === '42501'
@@ -685,6 +693,7 @@
       return;
     }
 
+    if (update.name) p.name = update.name;   // keep the in-memory row in sync
     p.grade = editGrade;                 // update in place (same object lives in allProblems)
     closeGradeEdit();
     buildGradeTabs();                    // a new grade may add/remove a filter tab
