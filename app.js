@@ -2223,7 +2223,8 @@
   }
 
   // Simple tap — meaning depends on how many grades are selected:
-  //   • single-select (0–1 active) → switch to just this grade ("All" clears).
+  //   • single-select (0–1 active) → switch to just this grade; tapping the active
+  //     grade again clears back to "All".
   //   • multi-select  (2+ active)  → toggle this grade in/out. Dropping back to
   //     one grade returns to single-select, so the next tap switches again.
   function tapGrade(g) {
@@ -2232,6 +2233,8 @@
     } else if (activeGrades.size >= 2) {        // multi-select: tap toggles
       if (activeGrades.has(g)) activeGrades.delete(g);
       else activeGrades.add(g);
+    } else if (activeGrades.has(g)) {            // tapping the active grade → All
+      activeGrades.clear();
     } else {                                     // single-select: tap switches
       activeGrades.clear();
       activeGrades.add(g);
