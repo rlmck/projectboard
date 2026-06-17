@@ -66,6 +66,7 @@
   // ── Create-a-problem state ───────────────────────────────────────────────────
   let createRoles = {};        // hold id -> 'start' | 'int' | 'finish'
   let createGrade = '';        // selected grade
+  let editingProblemId = null; // when set, the create view is editing this problem (admin) instead of creating
 
   // ── Circuits ──────────────────────────────────────────────────────────────────
   // Sport grades (lowercase French), a different ladder from boulder problems.

@@ -786,6 +786,9 @@
     /* Side-by-side modal buttons (cancel / confirm) */
     .modal-actions { display: flex; gap: 10px; }
     .modal-actions .btn-block { flex: 1; margin-top: 0; }
+    /* Edit-choice chooser: two stacked full-width options (grade vs holds). */
+    .edit-choice-actions { display: flex; flex-direction: column; gap: 10px; }
+    .edit-choice-actions .btn-block { margin-top: 0; }
     .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); margin-top: 10px; }
     .link { color: var(--accent-hover); text-decoration: none; font-weight: 600; }
 

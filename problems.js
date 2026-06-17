@@ -451,6 +451,14 @@
     location.hash = '#list';
   }
 
+  // ── Edit a problem (admins only) — chooser: grade or holds ───────────────────
+  function openEditChoice() {
+    if (!currentProblem || !(profile && profile.is_admin)) return;
+    document.getElementById('edit-choice-name').textContent = displayName(currentProblem);
+    document.getElementById('edit-choice-modal').classList.add('show');
+  }
+  function closeEditChoice() { document.getElementById('edit-choice-modal').classList.remove('show'); }
+
   // ── Edit a problem's grade (admins only; DB enforces it via RLS) ─────────────
   let editGrade = '';
   function buildGradeEditOptions() {

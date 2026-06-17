@@ -168,7 +168,10 @@
         // Only bounce guests once we actually know the auth state — otherwise a
         // cold reload/deep-link on #create would kick a signed-in user to #auth.
         if (authReady && !session) { location.replace(location.pathname + '#auth'); break; }
-        initCreateView();
+        // #create/<id> = admin "Edit holds" on an existing problem. Editing is
+        // admin-only (DB enforces it too); bounce non-admins to that problem's detail.
+        if (param && authReady && !isAdmin()) { location.replace(location.pathname + '#detail/' + encodeURIComponent(param)); break; }
+        initCreateView(param);
         setView('create');
         break;
       case 'calibrate':

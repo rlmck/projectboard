@@ -104,24 +104,82 @@
       gradeTabButtons(GRADE_ORDER, g => g === createGrade, fontGrade);
   }
 
+  function setCreateTitle(t) {
+    const el = document.getElementById('create-title');
+    if (el) el.textContent = t;
+  }
+
   function resetCreate() {
-    createRoles = {}; createGrade = '';
-    const nameEl = document.getElementById('create-name'); if (nameEl) nameEl.value = '';
+    createRoles = {}; createGrade = ''; editingProblemId = null;
+    const nameEl = document.getElementById('create-name');
+    if (nameEl) { nameEl.value = ''; nameEl.disabled = false; }
     document.getElementById('create-error').textContent = '';
+    setCreateTitle('Create problem');
     buildCreateGrades();
     applyCreateRoles();
   }
 
-  // Prepare the create view on entry.
-  function initCreateView() {
+  // Seed the create form from an existing problem so an admin can edit its holds +
+  // grade. Roles come from the canonical (un-inverted) order — problemHoldOrder +
+  // classifyHolds is the exact round-trip the renderer uses, so loading can't drift
+  // from how saveProblem re-inverts on the way out. Name is shown but LOCKED (the
+  // edit is holds + grade only; name and setter are left untouched).
+  function seedEdit(p) {
+    editingProblemId = String(p.id);
+    const order = problemHoldOrder(p);
+    const cls = classifyHolds(order);
+    createRoles = {};
+    order.forEach(h => { createRoles[h] = cls[h]; });
+    createGrade = p.grade || '';
+    const nameEl = document.getElementById('create-name');
+    if (nameEl) { nameEl.value = p.name || ''; nameEl.disabled = true; }
+    document.getElementById('create-error').textContent = '';
+    setCreateTitle('Edit problem');
+  }
+
+  // Prepare the create view on entry. With an editId (admin "Edit holds") seed from
+  // that problem the first time we land on it; re-entering the same edit (e.g. the
+  // SW-deferred reload) keeps in-progress changes. No editId = fresh create.
+  function initCreateView(editId) {
+    if (editId) {
+      if (String(editingProblemId) !== String(editId)) {
+        const p = allProblems.find(x => String(x.id) === String(editId));
+        if (!p) {   // not loaded yet (deep link / refresh) — bounce to its detail, which loads it
+          location.replace(location.pathname + '#detail/' + encodeURIComponent(editId));
+          return;
+        }
+        seedEdit(p);
+      }
+    } else if (editingProblemId) {
+      resetCreate();   // leaving an edit for a fresh create — start blank
+    }
     buildCreateGrades();
     applyCreateRoles();
+  }
+
+  // The header reset (bin) button. In edit mode it reverts to the problem's saved
+  // holds + grade (discard your edits); in create mode it clears the form.
+  function onCreateReset() {
+    if (editingProblemId) {
+      const p = allProblems.find(x => String(x.id) === String(editingProblemId));
+      if (p) { seedEdit(p); buildCreateGrades(); applyCreateRoles(); return; }
+    }
+    resetCreate();
   }
 
   async function saveProblem() {
     const errEl = document.getElementById('create-error');
     errEl.textContent = '';
     if (!session) { location.hash = '#auth'; return; }
+
+    // In edit mode we're updating this existing row (holds + grade only).
+    const editing = editingProblemId
+      ? allProblems.find(p => String(p.id) === String(editingProblemId))
+      : null;
+    if (editingProblemId && !editing) {   // lost the row (e.g. deleted elsewhere)
+      errEl.textContent = 'Couldn’t find that problem — go back and reopen it.';
+      return;
+    }
 
     const name = document.getElementById('create-name').value.trim();
     const starts = holdsWithRole('start');
@@ -135,9 +193,10 @@
     if (fins.length !== 1) { errEl.textContent = 'Add exactly one finish hold.'; return; }
 
     // Names must be unique — they're how a problem is cast (the DB also enforces a
-    // UNIQUE constraint on name). Pre-check case-insensitively against existing names.
+    // UNIQUE constraint on name). Pre-check case-insensitively, excluding the problem
+    // being edited (its own name is unchanged — the field is locked in edit mode).
     const newName = name.toLowerCase();
-    if (allProblems.some(p => String(p.name || '').trim().toLowerCase() === newName)) {
+    if (allProblems.some(p => p !== editing && String(p.name || '').trim().toLowerCase() === newName)) {
       errEl.textContent = 'That name is taken — pick another.';
       return;
     }
@@ -150,20 +209,48 @@
 
     // Store INVERTED to match the migrated rows (see CLAUDE.md / problemHoldOrder):
     //   finish_hold = D[0], intermediate_holds = D[1..n-2], start_holds = last two.
+    const holdCols = {
+      finish_hold: D[0],
+      intermediate_holds: D.slice(1, D.length - 2),
+      start_holds: D.slice(D.length - 2)
+    };
+
+    const btn = document.getElementById('create-save');
+    btn.disabled = true; btn.classList.add('casting');
+
+    if (editing) {
+      // Holds + grade only — never touch name or setter (admin edit; DB enforces
+      // admin-only UPDATE via RLS). Same invert-on-save scheme as create.
+      const update = { grade: createGrade, ...holdCols };
+      const { error } = await sb.from('problems').update(update).eq('id', editing.id);
+      btn.disabled = false; btn.classList.remove('casting');
+      if (error) {
+        errEl.textContent = error.code === '42501'
+          ? 'You don’t have permission to edit problems.'   // not an admin (RLS)
+          : error.message;
+        return;
+      }
+      Object.assign(editing, update);   // update in place (same object lives in allProblems)
+      const id = editing.id;
+      resetCreate();
+      buildGradeTabs();                 // a new grade may add/remove a filter tab
+      renderList();
+      showToast('Problem updated ✓', 'success');
+      // Replace the #create entry with the problem's (re-rendered) detail.
+      location.replace('#detail/' + encodeURIComponent(id));
+      return;
+    }
+
     const row = {
       name,
       grade: createGrade,
       setter: (profile && profile.username) || '',     // snapshot (NOT NULL); display uses setter_id
       setter_id: session.user.id,                      // owner — drives the live setter name
-      finish_hold: D[0],
-      intermediate_holds: D.slice(1, D.length - 2),
-      start_holds: D.slice(D.length - 2),
+      ...holdCols,
       feet_mode: 'any',
       is_benchmark: false
     };
 
-    const btn = document.getElementById('create-save');
-    btn.disabled = true; btn.classList.add('casting');
     const { data, error } = await sb.from('problems').insert(row).select().single();
     btn.disabled = false; btn.classList.remove('casting');
     if (error) {

@@ -58,7 +58,7 @@
       <button class="icon-btn admin-only" id="detail-delete" aria-label="Delete problem" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
       </button>
-      <button class="icon-btn admin-only" id="detail-edit" aria-label="Edit grade" hidden>
+      <button class="icon-btn admin-only" id="detail-edit" aria-label="Edit problem" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
       </button>
       <button class="icon-btn" id="detail-tick" aria-label="Tick — mark as completed">
@@ -89,7 +89,7 @@
     <button class="icon-btn" id="create-back" aria-label="Back">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
     </button>
-    <div class="detail-bar-title">Create problem</div>
+    <div class="detail-bar-title" id="create-title">Create problem</div>
     <div class="detail-actions">
       <button class="icon-btn" id="create-reset" aria-label="Clear all holds">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
@@ -384,6 +384,23 @@
       <div class="modal-actions">
         <button class="btn-block btn-ghost" id="grade-cancel">Cancel</button>
         <button class="btn-block btn-primary" id="grade-save">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ EDIT CHOICE MODAL (admins — pick grade or holds) ═══════════════ -->
+<div class="modal-overlay" id="edit-choice-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Edit problem">
+    <div class="modal-header">
+      <div class="modal-title">Edit problem</div>
+      <button class="modal-close" id="edit-choice-close" aria-label="Close">✕</button>
+    </div>
+    <div class="name-body">
+      <p class="shell-sub" style="margin:0 0 16px">What would you like to change on <b id="edit-choice-name"></b>?</p>
+      <div class="edit-choice-actions">
+        <button class="btn-block btn-primary" id="edit-choice-holds">Edit holds</button>
+        <button class="btn-block btn-ghost" id="edit-choice-grade">Edit grade</button>
       </div>
     </div>
   </div>

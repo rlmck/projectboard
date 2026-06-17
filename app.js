@@ -133,7 +133,19 @@
   document.getElementById('detail-tick').addEventListener('click', toggleTick);
   document.getElementById('detail-fave').addEventListener('click', () => { if (currentProblem) toggleFave(currentProblem.id); });
   document.getElementById('detail-delete').addEventListener('click', openDeleteConfirm);
-  document.getElementById('detail-edit').addEventListener('click', openGradeEdit);
+  document.getElementById('detail-edit').addEventListener('click', openEditChoice);
+
+  // Edit chooser modal (grade vs holds)
+  document.getElementById('edit-choice-close').addEventListener('click', closeEditChoice);
+  document.getElementById('edit-choice-modal').addEventListener('click', e => {
+    if (e.target.id === 'edit-choice-modal') closeEditChoice();
+  });
+  document.getElementById('edit-choice-grade').addEventListener('click', () => { closeEditChoice(); openGradeEdit(); });
+  document.getElementById('edit-choice-holds').addEventListener('click', () => {
+    const p = currentProblem;
+    closeEditChoice();
+    if (p) location.hash = '#create/' + encodeURIComponent(p.id);
+  });
 
   // Delete confirm modal
   document.getElementById('delete-cancel').addEventListener('click', closeDeleteConfirm);
@@ -195,7 +207,7 @@
     location.hash = session ? '#create' : '#auth';
   });
   document.getElementById('create-back').addEventListener('click', goBack);
-  document.getElementById('create-reset').addEventListener('click', resetCreate);
+  document.getElementById('create-reset').addEventListener('click', onCreateReset);
 
   // Tap the board: cycle the nearest hold's role.
   document.getElementById('create-board').addEventListener('click', e => {
