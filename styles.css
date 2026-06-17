@@ -515,10 +515,15 @@
     #create-hold-layer { pointer-events: none; }
     /* Only assigned holds get a dot, reusing the shared .start/.int/.finish colours. */
 
-    /* Create/circuit-create forms: trim the shared nav-reserve padding so a form
-       that nearly fits doesn't leave a band of empty scroll below it. */
-    #view-create main, #view-circuit-create main {
+    /* Create form: trim the shared nav-reserve padding so a form that nearly
+       fits doesn't leave a band of empty scroll below it. */
+    #view-create main {
       padding-bottom: calc(var(--nav-h) + 8px + env(safe-area-inset-bottom));
+    }
+    /* Circuit-create form is taller (it scrolls), so keep a small breathing gap
+       between the last field and the bottom nav. */
+    #view-circuit-create main {
+      padding-bottom: calc(var(--nav-h) + 20px + env(safe-area-inset-bottom));
     }
     .create-panel { padding: 12px 2px 6px; }
 
