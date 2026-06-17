@@ -7,7 +7,14 @@
   );
 
   // ── Realtime channel for casting (unchanged contract: board:HangoutPortland) ──
-  const channel = sb.channel('board:HangoutPortland');
+  // broadcast.ack makes channel.send() wait for the Realtime server to confirm
+  // receipt and resolve with the real status ('ok' | 'error' | 'timed out');
+  // without it, send() resolves 'ok' the instant it pushes, so a dropped socket
+  // (weak gym Wi-Fi) would falsely report a successful cast. The broadcast event
+  // the Pi receives is unchanged — ack is only between the app and the server.
+  const channel = sb.channel('board:HangoutPortland', {
+    config: { broadcast: { ack: true } }
+  });
   channel.subscribe();
 
   // ── Grade ordering (boulder problems) ────────────────────────────────────────
@@ -471,11 +478,15 @@
     if (mirror) payload.mirror = true;
 
     try {
-      await channel.send({
+      // send() resolves (never throws) with 'ok' | 'error' | 'timed out'. With
+      // broadcast.ack on, this reflects whether the Realtime server actually
+      // received the cast, so treat anything but 'ok' as a failure.
+      const status = await channel.send({
         type: 'broadcast',
         event: 'cast_problem',
         payload
       });
+      if (status !== 'ok') throw new Error(`broadcast ${status}`);
       btn.classList.remove('casting');
       btn.classList.add('sent');
       if (!isIcon) btn.innerHTML = 'Sent';
