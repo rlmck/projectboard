@@ -117,17 +117,15 @@
     return `<span class="stars" title="${n} star${n !== 1 ? 's' : ''}">${out}</span>`;
   }
 
-  // Name with the trailing grade stripped: "4beginnerz 5b" -> "4beginnerz".
-  // The grade is shown separately as a badge, so it's redundant in the name.
+  // The problem's display name — just the stored name, trimmed. Name and grade are
+  // independent: the grade is shown separately as a badge, so editing a climb's
+  // grade never changes its name. (Names are stored clean — the original migration
+  // stripped the embedded grade from every row, verified across all of them.)
+  // This used to re-strip the current grade off the name on every render, which
+  // wrongly coupled the two — a name ending in its own grade token, e.g.
+  // "It's a 5" at grade 5, would lose the token and display as "It's a".
   function displayName(p) {
-    let name = String(p.name || '').trim();
-    const g = String(p.grade || '').trim();
-    if (g) {
-      const re = new RegExp('\\s*' + g.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$', 'i');
-      const stripped = name.replace(re, '').trim();
-      if (stripped) name = stripped;
-    }
-    return name || '(unnamed)';
+    return String(p.name || '').trim() || '(unnamed)';
   }
 
   // The setter to show. App-created problems carry setter_id (the owner's account
@@ -690,13 +688,9 @@
     const btn = document.getElementById('grade-save');
     const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
 
-    // Migrated names embed the grade ("Good Bug 5b+"); displayName only strips the
-    // *current* grade. So if we change the grade without also stripping the OLD one
-    // from the stored name, the old grade suffix stops matching and reappears in the
-    // displayed name. Strip the old grade out of the name on the way through.
+    // Grade only — never touch the name. Name and grade are independent (see
+    // displayName); changing a climb's grade must not alter its name.
     const update = { grade: editGrade };
-    const strippedName = displayName(p);   // p still has the OLD grade here
-    if (strippedName !== '(unnamed)' && strippedName !== p.name) update.name = strippedName;
 
     const { error } = await sb.from('problems').update(update).eq('id', p.id);
     btn.disabled = false; btn.textContent = prev;
@@ -707,7 +701,6 @@
       return;
     }
 
-    if (update.name) p.name = update.name;   // keep the in-memory row in sync
     p.grade = editGrade;                 // update in place (same object lives in allProblems)
     closeGradeEdit();
     buildGradeTabs();                    // a new grade may add/remove a filter tab
@@ -1400,10 +1393,10 @@
     if (ints.length < 1) { errEl.textContent = 'Add at least one intermediate hold.'; return; }
     if (fins.length !== 1) { errEl.textContent = 'Add exactly one finish hold.'; return; }
 
-    // Names must be unique — they're how a problem is cast. Compare on the *displayed*
-    // name (grade stripped) so a new "Crimpy" can't collide with a migrated "Crimpy 6a".
-    const newDisplay = displayName({ name, grade: createGrade }).toLowerCase();
-    if (allProblems.some(p => displayName(p).toLowerCase() === newDisplay)) {
+    // Names must be unique — they're how a problem is cast (the DB also enforces a
+    // UNIQUE constraint on name). Pre-check case-insensitively against existing names.
+    const newName = name.toLowerCase();
+    if (allProblems.some(p => String(p.name || '').trim().toLowerCase() === newName)) {
       errEl.textContent = 'That name is taken — pick another.';
       return;
     }
