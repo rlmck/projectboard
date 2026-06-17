@@ -462,6 +462,61 @@
   }
   function closeInfo() { document.getElementById('info-modal').classList.remove('show'); }
 
+  // ── Cast geofence ─────────────────────────────────────────────────────────────
+  // Casting to the board is only meant to happen at the gym. We check the phone's
+  // location against a fence around The Hangout. By design this is LENIENT: a cast
+  // is only blocked when we get a fix that is *confidently* outside the fence (even
+  // the near edge of its accuracy circle is beyond the radius). Denied permission,
+  // a timeout, an imprecise fix, or no Geolocation support all ALLOW the cast — so
+  // we never falsely lock someone out indoors. Admins bypass the check entirely
+  // (so casts can be tested off-site). Browsing/creating problems is unaffected.
+  // Reusable for the Phase-2 circuit cast (call ensureCastLocation() there too).
+  const GYM_GEOFENCE = {
+    lat: 50.53,      // The Hangout, Southwell Business Park, Portland DT5
+    lng: -2.4525,
+    radiusM: 300     // generous — covers the building + immediate surrounds
+  };
+  let lastFix = null; // { lat, lng, accuracy, t } — cached so rapid casts don't re-prompt
+
+  // Great-circle distance between two lat/lng points, in metres (haversine).
+  function distanceMeters(lat1, lng1, lat2, lng2) {
+    const R = 6371000, toRad = d => d * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+  function getPosition(opts) {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) { reject(new Error('unsupported')); return; }
+      navigator.geolocation.getCurrentPosition(resolve, reject, opts);
+    });
+  }
+
+  // Resolve { ok } for whether a cast is permitted from the current location.
+  // Lenient (see GYM_GEOFENCE): admins always pass; any error/uncertainty passes;
+  // only a confidently-far fix returns { ok:false }.
+  async function ensureCastLocation() {
+    if (profile && profile.is_admin) return { ok: true };
+    let fix = (lastFix && Date.now() - lastFix.t < 60000) ? lastFix : null;
+    if (!fix) {
+      try {
+        // High accuracy off: a coarse Wi-Fi/cell fix is faster (esp. indoors) and
+        // plenty for a 300 m fence; the near-edge test below absorbs its coarseness.
+        const pos = await getPosition({ enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 });
+        fix = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy || 0, t: Date.now() };
+        lastFix = fix;
+      } catch (_) {
+        return { ok: true }; // denied / timeout / unsupported → allow
+      }
+    }
+    const dist = distanceMeters(fix.lat, fix.lng, GYM_GEOFENCE.lat, GYM_GEOFENCE.lng);
+    // Confidently far = even the nearest edge of the accuracy circle is outside.
+    if (dist - fix.accuracy > GYM_GEOFENCE.radiusM) return { ok: false, dist };
+    return { ok: true };
+  }
+
   // ── Cast a problem (broadcast contract unchanged) ─────────────────────────────
   async function castByName(name, btn, mirror = false) {
     if (!name) return;
@@ -470,6 +525,18 @@
     const prev = btn.innerHTML;
     btn.classList.add('casting');
     btn.disabled = true;
+    if (!isIcon) btn.innerHTML = 'Locating';
+
+    // Geofence gate — only blocks on a fix that's confidently away from the gym
+    // (admins bypass; missing/uncertain fixes are allowed). May briefly wait for GPS.
+    const fence = await ensureCastLocation();
+    if (!fence.ok) {
+      btn.classList.remove('casting');
+      btn.disabled = false;
+      if (!isIcon) btn.innerHTML = prev;
+      showToast('Casting only works at the gym', 'error');
+      return;
+    }
     if (!isIcon) btn.innerHTML = 'Sending';
 
     const payload = { problem_name: name };
