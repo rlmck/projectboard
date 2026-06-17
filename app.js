@@ -137,6 +137,17 @@
     return p.setter || 'unknown';
   }
 
+  // Normalise text for searching: lowercase, fold accents, then drop everything
+  // that isn't a letter or digit (spaces and punctuation included). So a query
+  // of "its" matches "It's a crimpy one", "left hand" matches "Left-Hand", etc.
+  function searchNorm(s) {
+    return String(s || '')
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(new RegExp('[\\u0300-\\u036f]', 'g'), '') // strip combining accent marks
+      .replace(/[^a-z0-9]/g, '');      // drop spaces + punctuation
+  }
+
   // Display a hold id compactly: "hold235" -> "235", otherwise raw.
   function holdNum(id) {
     const m = /^hold(\d+)$/i.exec(String(id));
@@ -286,12 +297,12 @@
     let arr = allProblems;
     if (favesOnly) arr = arr.filter(p => isFaved(p.id));
     if (activeGrades.size) arr = arr.filter(p => activeGrades.has(p.grade));
-    if (searchQuery) {
-      const q = searchQuery;
+    const q = searchNorm(searchQuery);
+    if (q) {
       arr = arr.filter(p =>
-        String(p.name || '').toLowerCase().includes(q) ||
-        setterName(p).toLowerCase().includes(q) ||
-        String(p.grade || '').toLowerCase().includes(q)
+        searchNorm(p.name).includes(q) ||
+        searchNorm(setterName(p)).includes(q) ||
+        searchNorm(p.grade).includes(q)
       );
     }
     return arr.slice().sort((a, b) =>
@@ -1875,12 +1886,12 @@
     let arr = allCircuits;
     if (circuitFavesOnly) arr = arr.filter(c => isCircuitFaved(c.id));
     if (activeCircuitGrade) arr = arr.filter(c => c.grade === activeCircuitGrade);
-    if (circuitSearch) {
-      const q = circuitSearch;
+    const q = searchNorm(circuitSearch);
+    if (q) {
       arr = arr.filter(c =>
-        circuitName(c).toLowerCase().includes(q) ||
-        setterName(c).toLowerCase().includes(q) ||
-        String(c.grade || '').toLowerCase().includes(q)
+        searchNorm(circuitName(c)).includes(q) ||
+        searchNorm(setterName(c)).includes(q) ||
+        searchNorm(c.grade).includes(q)
       );
     }
     return arr.slice().sort((a, b) =>
