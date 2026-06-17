@@ -2280,6 +2280,8 @@
   document.getElementById('search').addEventListener('input', e => {
     searchQuery = e.target.value.trim().toLowerCase();
     renderList();
+    // Jump back to the top so refined results aren't hidden below a scrolled fold.
+    window.scrollTo(0, 0);
   });
 
   // Grade tabs — simple tap selects one grade, tap-and-hold builds a multi-select.
@@ -2477,6 +2479,8 @@
   document.getElementById('circuit-search').addEventListener('input', e => {
     circuitSearch = e.target.value.trim().toLowerCase();
     renderCircuits();
+    // Jump back to the top so refined results aren't hidden below a scrolled fold.
+    window.scrollTo(0, 0);
   });
   document.getElementById('circuit-grade-tabs').addEventListener('click', e => {
     const t = e.target.closest('.grade-tab');
