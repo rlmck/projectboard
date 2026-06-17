@@ -467,6 +467,16 @@
 
 <div id="toast"></div>
 
+<!-- app.js was split into ordered classic scripts sharing one global scope.
+     ORDER MATTERS: state first (defines the shared client + state), app.js last
+     (event wiring + boot). No type="module" — these intentionally share scope. -->
+<script src="state.js"></script>
+<script src="core.js"></script>
+<script src="problems.js"></script>
+<script src="admin.js"></script>
+<script src="account.js"></script>
+<script src="authoring.js"></script>
+<script src="circuits.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
