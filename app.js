@@ -2276,12 +2276,24 @@
   }
 
   // ── Wire up events ────────────────────────────────────────────────────────────
-  // Search
-  document.getElementById('search').addEventListener('input', e => {
+  // Search — the clear "×" stays visible whenever the field has text (not just
+  // while focused, unlike the native control), and re-focuses for a fresh search.
+  const searchInput = document.getElementById('search');
+  const searchClear = document.getElementById('search-clear');
+  searchInput.addEventListener('input', e => {
     searchQuery = e.target.value.trim().toLowerCase();
+    searchClear.hidden = !e.target.value;
     renderList();
     // Jump back to the top so refined results aren't hidden below a scrolled fold.
     window.scrollTo(0, 0);
+  });
+  searchClear.addEventListener('click', () => {
+    searchInput.value = '';
+    searchQuery = '';
+    searchClear.hidden = true;
+    renderList();
+    window.scrollTo(0, 0);
+    searchInput.focus(); // pop the keyboard, ready for a fresh search
   });
 
   // Grade tabs — simple tap selects one grade, tap-and-hold builds a multi-select.
@@ -2476,11 +2488,22 @@
 
   // ── Circuits wiring ─────────────────────────────────────────────────────────
   // List: search + single-select grade tabs + open detail + create.
-  document.getElementById('circuit-search').addEventListener('input', e => {
+  const circuitSearchInput = document.getElementById('circuit-search');
+  const circuitSearchClear = document.getElementById('circuit-search-clear');
+  circuitSearchInput.addEventListener('input', e => {
     circuitSearch = e.target.value.trim().toLowerCase();
+    circuitSearchClear.hidden = !e.target.value;
     renderCircuits();
     // Jump back to the top so refined results aren't hidden below a scrolled fold.
     window.scrollTo(0, 0);
+  });
+  circuitSearchClear.addEventListener('click', () => {
+    circuitSearchInput.value = '';
+    circuitSearch = '';
+    circuitSearchClear.hidden = true;
+    renderCircuits();
+    window.scrollTo(0, 0);
+    circuitSearchInput.focus(); // pop the keyboard, ready for a fresh search
   });
   document.getElementById('circuit-grade-tabs').addEventListener('click', e => {
     const t = e.target.closest('.grade-tab');
