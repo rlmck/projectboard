@@ -2529,14 +2529,52 @@
   document.getElementById('name-cancel').addEventListener('click', closeNameModal);
   document.getElementById('name-input').addEventListener('keydown', e => { if (e.key === 'Enter') saveDisplayName(); });
 
+  // True while the user has in-progress create-form state that a hard reload
+  // would silently discard (tapped holds + typed name/grade live only in memory).
+  function hasUnsavedWork() {
+    if (currentView === 'create') {
+      if (Object.keys(createRoles).length) return true;
+      if (createGrade) return true;
+      const n = document.getElementById('create-name');
+      if (n && n.value.trim()) return true;
+    }
+    if (currentView === 'circuit-create') {
+      if (ccSeq.length) return true;
+      if (ccGrade) return true;
+      const n = document.getElementById('cc-name');
+      if (n && n.value.trim()) return true;
+    }
+    return false;
+  }
+
   // ── PWA: service worker + install (Add to Home Screen) ───────────────────────
   if ('serviceWorker' in navigator) {
-    // When a new service worker takes control, reload once to show the update.
+    // Was the page already controlled at load? If not, the first controllerchange
+    // is the initial install claim (none -> present), not an update — reloading
+    // then just causes a pointless first-run flash.
+    const hadController = !!navigator.serviceWorker.controller;
     let reloading = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
+    let pendingReload = false;
+
+    // Reload to show the update, but never yank an in-progress create form out
+    // from under the user — defer until they've left it / it's empty.
+    function applyUpdate() {
       if (reloading) return;
+      if (hasUnsavedWork()) { pendingReload = true; return; }
       reloading = true;
       window.location.reload();
+    }
+
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) return;   // first install: already on latest, nothing to reload to
+      applyUpdate();
+    });
+
+    // Take a deferred reload once the unsaved work is gone. hashchange covers
+    // in-app navigation away from the create form; the router updates currentView
+    // first, so check on the next tick.
+    window.addEventListener('hashchange', () => {
+      if (pendingReload) setTimeout(applyUpdate, 0);
     });
 
     window.addEventListener('load', () => {
@@ -2547,7 +2585,10 @@
         // Check for a new version now, and whenever the app regains focus.
         reg.update();
         document.addEventListener('visibilitychange', () => {
-          if (document.visibilityState === 'visible') reg.update();
+          if (document.visibilityState === 'visible') {
+            reg.update();
+            if (pendingReload) applyUpdate();
+          }
         });
       }).catch(err => console.warn('SW registration failed', err));
     });
