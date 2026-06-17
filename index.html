@@ -89,9 +89,14 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
     </button>
     <div class="detail-bar-title">Create problem</div>
-    <button class="icon-btn" id="create-reset" aria-label="Clear all holds">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-    </button>
+    <div class="detail-actions">
+      <button class="icon-btn" id="create-reset" aria-label="Clear all holds">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+      </button>
+      <button class="icon-btn save-icon-btn" id="create-save" aria-label="Save problem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+      </button>
+    </div>
   </header>
   <main>
     <div class="board-wrap" id="create-board">
@@ -109,7 +114,6 @@
       <div class="grade-tabs create-grades" id="create-grades"></div>
 
       <div class="auth-error" id="create-error"></div>
-      <button class="btn-block btn-primary" id="create-save">Save problem</button>
     </div>
   </main>
 </section>
@@ -250,6 +254,9 @@
       <button class="icon-btn" id="cc-reset" aria-label="Clear all holds">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
       </button>
+      <button class="icon-btn save-icon-btn" id="cc-save" aria-label="Save circuit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+      </button>
     </div>
   </header>
   <main>
@@ -280,7 +287,6 @@
       <div class="grade-tabs create-grades" id="cc-grades"></div>
 
       <div class="auth-error" id="cc-error"></div>
-      <button class="btn-block btn-primary" id="cc-save">Save circuit</button>
     </div>
   </main>
 </section>

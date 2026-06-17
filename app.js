@@ -1422,9 +1422,9 @@
     };
 
     const btn = document.getElementById('create-save');
-    const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+    btn.disabled = true; btn.classList.add('casting');
     const { data, error } = await sb.from('problems').insert(row).select().single();
-    btn.disabled = false; btn.textContent = prev;
+    btn.disabled = false; btn.classList.remove('casting');
     if (error) {
       errEl.textContent =
         error.code === '42501' ? 'You don’t have permission to create problems yet.'   // RLS INSERT policy missing
@@ -2189,9 +2189,9 @@
     };
 
     const btn = document.getElementById('cc-save');
-    const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+    btn.disabled = true; btn.classList.add('casting');
     const { data, error } = await sb.from('circuits').insert(row).select().single();
-    btn.disabled = false; btn.textContent = prev;
+    btn.disabled = false; btn.classList.remove('casting');
     if (error) {
       errEl.textContent =
         circuitsTableMissing(error) ? 'Circuits aren’t set up yet — run db/14 in Supabase.'

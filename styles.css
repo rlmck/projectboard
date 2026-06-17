@@ -540,7 +540,11 @@
       letter-spacing: 0.08em; color: var(--text-muted); margin: 14px 0 8px;
     }
     .create-grades { margin-top: 0; flex-wrap: wrap; }
-    #create-save { margin-top: 12px; }
+
+    /* Save action lives in the header (furthest right) as an accent-coloured icon. */
+    .save-icon-btn { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .save-icon-btn:active { background: var(--accent-hover); }
+    .save-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* ── Calibrate view (admin: re-map holds onto a new board image) ─── */
     #view-calibrate main { padding-bottom: 40px; }
