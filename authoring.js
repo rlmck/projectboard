@@ -231,6 +231,7 @@
         return;
       }
       Object.assign(editing, update);   // update in place (same object lives in allProblems)
+      leaderboardLoaded = false;         // edit may change grade -> base points; refetch next view
       const id = editing.id;
       resetCreate();
       buildGradeTabs();                 // a new grade may add/remove a filter tab

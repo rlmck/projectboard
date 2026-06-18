@@ -448,7 +448,10 @@
 
     allProblems = allProblems.filter(x => String(x.id) !== String(p.id));
     myTicks.delete(String(p.id));
+    myTicksNormal.delete(String(p.id));
+    myTicksMirrored.delete(String(p.id));
     myFaves.delete(String(p.id));
+    leaderboardLoaded = false;           // its ticks cascade away — refetch the board next view
     closeDeleteConfirm();
     buildGradeTabs();
     renderList();
@@ -503,6 +506,7 @@
     }
 
     p.grade = editGrade;                 // update in place (same object lives in allProblems)
+    leaderboardLoaded = false;           // base points depend on grade — refetch the board next view
     closeGradeEdit();
     buildGradeTabs();                    // a new grade may add/remove a filter tab
     renderList();
