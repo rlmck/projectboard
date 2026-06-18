@@ -5,10 +5,22 @@
   // Load the signed-in user's ticks into myTicks; clear for guests. RLS limits
   // the rows to this user, so we never see anyone else's sends.
   async function loadTicks() {
-    if (!session) { myTicks = new Set(); return; }
-    const { data, error } = await sb.from('ticks').select('problem_id').eq('user_id', session.user.id);
+    if (!session) { myTicks = new Set(); myTicksNormal = new Set(); myTicksMirrored = new Set(); return; }
+    const { data, error } = await sb.from('ticks').select('problem_id, mirrored').eq('user_id', session.user.id);
     if (error) { console.warn('ticks load failed', error); return; }
-    myTicks = new Set((data || []).map(r => String(r.problem_id)));
+    myTicks = new Set(); myTicksNormal = new Set(); myTicksMirrored = new Set();
+    (data || []).forEach(r => {
+      const id = String(r.problem_id);
+      myTicks.add(id);
+      (r.mirrored ? myTicksMirrored : myTicksNormal).add(id);
+    });
+  }
+
+  // Keep the "ticked in any orientation" union in sync after one orientation flips.
+  function recomputeAnyTick(id) {
+    id = String(id);
+    if (myTicksNormal.has(id) || myTicksMirrored.has(id)) myTicks.add(id);
+    else myTicks.delete(id);
   }
 
   // Toggle the current problem's tick. Optimistic: flip the UI first, revert on
@@ -18,26 +30,32 @@
     const p = currentProblem;
     if (!p) return;
     const id = String(p.id);
-    const wasTicked = isTicked(id);
+    // Tick the orientation currently shown in the detail view.
+    const mirrored = !!detailMirror;
+    const orientSet = mirrored ? myTicksMirrored : myTicksNormal;
+    const wasTicked = orientSet.has(id);
 
     // Optimistic UI.
-    if (wasTicked) myTicks.delete(id); else myTicks.add(id);
+    if (wasTicked) orientSet.delete(id); else orientSet.add(id);
+    recomputeAnyTick(id);
     updateTickButton();
     renderList();
 
     const res = wasTicked
-      ? await sb.from('ticks').delete().eq('user_id', session.user.id).eq('problem_id', id)
-      : await sb.from('ticks').insert({ user_id: session.user.id, problem_id: id });
+      ? await sb.from('ticks').delete().eq('user_id', session.user.id).eq('problem_id', id).eq('mirrored', mirrored)
+      : await sb.from('ticks').insert({ user_id: session.user.id, problem_id: id, mirrored });
 
     // 23505 = unique violation → the tick already exists, which is the state we
     // wanted, so treat it as success rather than rolling back.
     if (res.error && res.error.code !== '23505') {
-      if (wasTicked) myTicks.add(id); else myTicks.delete(id);   // revert
+      if (wasTicked) orientSet.add(id); else orientSet.delete(id);   // revert
+      recomputeAnyTick(id);
       updateTickButton();
       renderList();
       showToast('Could not save — check connection', 'error');
       return;
     }
+    leaderboardLoaded = false;   // points changed — refresh on next leaderboard/profile view
     showToast(wasTicked ? 'Removed tick' : 'Ticked ✓', 'success');
   }
 
@@ -159,7 +177,7 @@
     sb.auth.onAuthStateChange(async (_event, s) => {
       session = s || null;
       if (session) { await loadProfile(); await loadTicks(); await loadFaves(); }
-      else { profile = null; myTicks = new Set(); myFaves = new Set(); myCircuitFaves = new Set(); }
+      else { profile = null; myTicks = new Set(); myTicksNormal = new Set(); myTicksMirrored = new Set(); myFaves = new Set(); myCircuitFaves = new Set(); leaderboardLoaded = false; }
       updateFaveControls();
       renderProfile();
       if (loaded) renderList();
@@ -296,11 +314,17 @@
           <div class="shell-sub" style="margin-top:6px">${escHtml((session.user && session.user.email) || '')}</div>
           <button class="btn-block btn-ghost" id="profile-signout">Sign out</button>
         </div>
+        <div class="profile-row"><span class="k">Total points</span><span class="v" id="profile-points">${leaderboardLoaded ? userPoints() : '…'}</span></div>
         <div class="profile-row"><span class="k">Total ticks</span><span class="v">${total}</span></div>
         <div class="profile-row"><span class="k">Hardest send</span><span class="v">${hardestHtml}</span></div>
         ${profile.is_admin ? `<a class="btn-block btn-ghost" href="#admin" style="display:block;text-align:center;text-decoration:none;margin-top:18px">Admin tools</a>` : ''}`;
       document.getElementById('profile-signout').addEventListener('click', doSignOut);
       document.getElementById('profile-edit-name').addEventListener('click', () => openNameModal('edit'));
+      // Total points comes from the leaderboard RPC (single source of truth); fill async.
+      loadLeaderboard().then(() => {
+        const pe = document.getElementById('profile-points');
+        if (pe) pe.textContent = leaderboardError ? '—' : userPoints();
+      });
     } else {
       el.innerHTML = `
         <div class="shell-card" style="margin:8px auto 18px;text-align:center">

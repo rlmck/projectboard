@@ -326,6 +326,19 @@
   </main>
 </section>
 
+<!-- ══ LEADERBOARD VIEW ═══════════════════════════════════════════════ -->
+<section id="view-leaderboard" class="view">
+  <header class="topbar detail-bar">
+    <div class="detail-bar-title">Leaderboard</div>
+    <button class="icon-btn" id="leaderboard-refresh" aria-label="Reload leaderboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+    </button>
+  </header>
+  <main>
+    <div id="leaderboard-content"><div class="spinner"></div></div>
+  </main>
+</section>
+
 <!-- ══ BOTTOM NAV ═════════════════════════════════════════════════════ -->
 <nav id="bottom-nav">
   <a href="#list" class="nav-item" data-nav="list">
@@ -335,6 +348,10 @@
   <a href="#circuits" class="nav-item" data-nav="circuits">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
     <span>Circuits</span>
+  </a>
+  <a href="#leaderboard" class="nav-item" data-nav="leaderboard">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8"></path><path d="M12 17v4"></path><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"></path><path d="M17 5h3v2a3 3 0 0 1-3 3"></path><path d="M7 5H4v2a3 3 0 0 0 3 3"></path></svg>
+    <span>Ranks</span>
   </a>
   <a href="#profile" class="nav-item" data-nav="profile">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
@@ -494,6 +511,7 @@
 <script src="account.js"></script>
 <script src="authoring.js"></script>
 <script src="circuits.js"></script>
+<script src="leaderboard.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

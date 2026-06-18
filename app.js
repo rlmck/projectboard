@@ -337,6 +337,13 @@
     if (e.target.id === 'user-admin-modal') closeAdminChange();
   });
 
+  // Leaderboard (#leaderboard): force a refresh from the RPC.
+  document.getElementById('leaderboard-refresh').addEventListener('click', () => {
+    leaderboardLoaded = false;
+    renderLeaderboard();                                 // spinner
+    loadLeaderboard(true).then(renderLeaderboard);
+  });
+
   // Info modal: open from header button, close via X, overlay tap, or Escape
   document.getElementById('info-btn').addEventListener('click', openInfo);
   document.getElementById('info-close').addEventListener('click', closeInfo);

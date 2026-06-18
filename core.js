@@ -143,7 +143,7 @@
     // The circuit Play preview only runs on the circuit detail view.
     if (name !== 'circuit-detail') stopCircuitPlay(false);
 
-    ['list','detail','create','calibrate','admin','auth','profile','circuits','circuit-detail','circuit-create'].forEach(v => {
+    ['list','detail','create','calibrate','admin','auth','profile','circuits','circuit-detail','circuit-create','leaderboard'].forEach(v => {
       document.getElementById('view-' + v).classList.toggle('active', v === name);
     });
 
@@ -151,7 +151,7 @@
     document.getElementById('bottom-nav').style.display = name === 'auth' ? 'none' : 'flex';
 
     // Active nav highlight.
-    const navFor = { list: 'list', detail: 'list', create: 'list', calibrate: 'profile', admin: 'profile', profile: 'profile', auth: 'profile', circuits: 'circuits', 'circuit-detail': 'circuits', 'circuit-create': 'circuits' }[name] || 'list';
+    const navFor = { list: 'list', detail: 'list', create: 'list', calibrate: 'profile', admin: 'profile', profile: 'profile', auth: 'profile', circuits: 'circuits', 'circuit-detail': 'circuits', 'circuit-create': 'circuits', leaderboard: 'leaderboard' }[name] || 'list';
     document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.nav === navFor));
 
     if (name === 'list') window.scrollTo(0, listScroll);
@@ -195,6 +195,11 @@
         if (authReady && !session) { location.replace(location.pathname + '#auth'); break; }
         initCircuitCreate();
         setView('circuit-create');
+        break;
+      case 'leaderboard':
+        setView('leaderboard');
+        renderLeaderboard();                                  // spinner / cached rows
+        loadLeaderboard().then(renderLeaderboard);            // fetch, then re-render
         break;
       case 'auth':    setAuthMode('signin'); setView('auth'); break;
       case 'profile': renderProfile(); setView('profile'); break;

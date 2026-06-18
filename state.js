@@ -56,7 +56,9 @@
   let authReady = false; // true once getSession has resolved (don't gate routes before then)
   let profile = null;    // { id, username, is_admin } for the signed-in user
   let profileNames = {}; // account id -> current username (for live setter names)
-  let myTicks = new Set(); // problem_ids the signed-in user has ticked (sent)
+  let myTicks = new Set();         // problem_ids ticked in ANY orientation (the ✓ flag + "Total ticks")
+  let myTicksNormal = new Set();   // problem_ids sent in the normal orientation
+  let myTicksMirrored = new Set(); // problem_ids sent in the mirrored orientation
   let myFaves = new Set();        // problem_ids the signed-in user has favourited (likes)
   let myCircuitFaves = new Set(); // circuit ids the signed-in user has favourited
   let favesOnly = false;          // list filter: show only favourited problems
@@ -86,6 +88,11 @@
   let ccStartCount = 2;    // 1 or 2
   let ccLoop = false;
   let ccGrade = '';
+
+  // ── Leaderboard ─────────────────────────────────────────────────────────────
+  let leaderboard = [];          // [{ rank, user_id, username, points, sends }] from the leaderboard() RPC
+  let leaderboardLoaded = false;
+  let leaderboardError = null;   // last load error (for the "run db/23" message)
 
   const isTicked = id => myTicks.has(String(id));
   const isFaved = id => myFaves.has(String(id));

@@ -107,6 +107,7 @@
           <span class="meta-setter">by ${escHtml(setterName(p))}</span>
           ${starsHtml(p.stars)}
           ${p.is_benchmark ? `<span class="bench-badge">★ Benchmark</span>` : ''}
+          ${(myTicksNormal.has(String(p.id)) && myTicksMirrored.has(String(p.id))) ? `<span class="both-badge">✓ both sides</span>` : ''}
         </div>
       </div>
 
@@ -403,9 +404,13 @@
   function updateTickButton() {
     const btn = document.getElementById('detail-tick');
     if (!btn) return;
-    const ticked = currentProblem && isTicked(currentProblem.id);
+    // The tick reflects (and toggles) the orientation currently shown.
+    const set = detailMirror ? myTicksMirrored : myTicksNormal;
+    const ticked = currentProblem && set.has(String(currentProblem.id));
     btn.classList.toggle('ticked', !!ticked);
-    btn.setAttribute('aria-label', ticked ? 'Ticked — tap to remove' : 'Tick — mark as completed');
+    btn.setAttribute('aria-label', ticked
+      ? `Sent${detailMirror ? ' (mirrored)' : ''} — tap to remove`
+      : `Tick — mark ${detailMirror ? 'mirrored ' : ''}as completed`);
     updateAdminUI();
   }
 
