@@ -86,14 +86,27 @@
     btn.setAttribute('aria-label', faved ? 'Remove from favourites' : 'Add to favourites');
   }
 
-  // Show/hide the list filter toggles (a guest has no favourites to filter to) and
-  // sync their lit state. Detail/card hearts stay visible — tapping prompts sign-in.
+  // Sync the filter pills' enabled + lit state. The auth-only pills (favourites /
+  // exclude-done) render muted for a guest and reset their state; they stay clickable
+  // so a tap can show the "sign in" toast. Benchmarks/Looping are never disabled.
   function updateFaveControls() {
-    if (!session) { favesOnly = false; circuitFavesOnly = false; }
-    const ff = document.getElementById('fave-filter');
-    const cff = document.getElementById('circuit-fave-filter');
-    if (ff)  { ff.hidden = !session;  ff.classList.toggle('active', favesOnly); }
-    if (cff) { cff.hidden = !session; cff.classList.toggle('active', circuitFavesOnly); }
+    if (!session) { favesOnly = false; excludeDone = false; circuitFavesOnly = false; circuitExcludeDone = false; }
+    // [pill id, active state, needs-auth] for both lists.
+    const pills = [
+      ['pill-faves',  favesOnly,           true],
+      ['pill-bench',  benchOnly,           false],
+      ['pill-done',   excludeDone,         true],
+      ['cpill-faves', circuitFavesOnly,    true],
+      ['cpill-loop',  circuitLoopOnly,     false],
+      ['cpill-done',  circuitExcludeDone,  true],
+    ];
+    pills.forEach(([id, active, needsAuth]) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.toggle('active', active);
+      el.setAttribute('aria-pressed', active ? 'true' : 'false');
+      el.classList.toggle('disabled', needsAuth && !session);
+    });
   }
 
   // Load both favourite sets for the signed-in user; clear for guests. RLS limits

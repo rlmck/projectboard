@@ -210,6 +210,32 @@
       color: #fff;
     }
 
+    /* ── Filter pills (under the grade tabs) — 3 equal-width toggles ──── */
+    .filter-pills { display: flex; gap: 6px; margin-top: 8px; }
+    .filter-pill {
+      flex: 1 1 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 999px;
+      padding: 7px 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s, opacity 0.15s;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .filter-pill:active { transform: scale(0.96); }
+    .filter-pill.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    /* Auth-only pills for a guest: muted but still tappable (taps fire a sign-in toast). */
+    .filter-pill.disabled { opacity: 0.4; }
+
     /* ── Main content ────────────────────────────────────────────────── */
     main {
       padding: 12px 12px calc(var(--nav-h) + 24px + env(safe-area-inset-bottom));
@@ -392,13 +418,13 @@
     .icon-btn.sent { border-color: var(--accent); color: var(--accent-hover); animation: flash 0.4s ease; }
     /* Ticked (sent) — the detail tick button turns green */
     #detail-tick.ticked { color: var(--start); border-color: var(--start); background: rgba(34,197,94,0.14); }
-    /* Favourited — detail-header hearts + the list filter toggle turn red/filled */
-    #detail-fave.faved, #circuit-detail-fave.faved, .fave-filter.active {
+    /* Favourited — detail-header hearts turn red/filled */
+    #detail-fave.faved, #circuit-detail-fave.faved {
       color: #f43f5e; border-color: #f43f5e; background: rgba(244,63,94,0.14);
     }
-    #detail-fave.faved svg, #circuit-detail-fave.faved svg, .fave-filter.active svg { fill: currentColor; }
+    #detail-fave.faved svg, #circuit-detail-fave.faved svg { fill: currentColor; }
     /* .icon-btn sets display:flex, which beats the bare [hidden] UA rule — guard each. */
-    .fave-filter[hidden], #circuit-detail-fave[hidden], #circuit-detail-delete[hidden] { display: none; }
+    #circuit-detail-fave[hidden], #circuit-detail-delete[hidden] { display: none; }
     /* Mirror toggle lit — the board overlay is showing the mirrored problem */
     #detail-mirror.active { color: #60a5fa; border-color: #3b82f6; background: rgba(59,130,246,0.16); }
 

@@ -115,12 +115,22 @@
     if (card) location.hash = '#detail/' + encodeURIComponent(card.dataset.id);
   });
 
-  // Problems list "favourites only" filter toggle.
-  document.getElementById('fave-filter').addEventListener('click', () => {
-    favesOnly = !favesOnly;
-    document.getElementById('fave-filter').classList.toggle('active', favesOnly);
-    renderList();
-  });
+  // Filter pills (under the grade tabs). A pill toggles a filter state, lights up,
+  // and re-renders. Auth-only pills (favourites / exclude-done) show a non-invasive
+  // toast for guests instead of filtering (and render muted via updateFaveControls).
+  function wirePill(id, getActive, setActive, rerender, opts = {}) {
+    const el = document.getElementById(id);
+    el.addEventListener('click', () => {
+      if (opts.needsAuth && !session) { showToast(opts.guestMsg, 'success'); return; }
+      setActive(!getActive());
+      el.classList.toggle('active', getActive());
+      el.setAttribute('aria-pressed', getActive() ? 'true' : 'false');
+      rerender();
+    });
+  }
+  wirePill('pill-faves', () => favesOnly,   v => favesOnly = v,   renderList, { needsAuth: true, guestMsg: 'Sign in to filter favourites' });
+  wirePill('pill-bench', () => benchOnly,   v => benchOnly = v,   renderList);
+  wirePill('pill-done',  () => excludeDone, v => excludeDone = v, renderList, { needsAuth: true, guestMsg: 'Sign in to filter your sends' });
 
   // Detail back
   document.getElementById('back-btn').addEventListener('click', goBack);
@@ -257,11 +267,9 @@
     const card = e.target.closest('.problem-card');
     if (card) location.hash = '#circuit/' + encodeURIComponent(card.dataset.id);
   });
-  document.getElementById('circuit-fave-filter').addEventListener('click', () => {
-    circuitFavesOnly = !circuitFavesOnly;
-    document.getElementById('circuit-fave-filter').classList.toggle('active', circuitFavesOnly);
-    renderCircuits();
-  });
+  wirePill('cpill-faves', () => circuitFavesOnly,   v => circuitFavesOnly = v,   renderCircuits, { needsAuth: true, guestMsg: 'Sign in to filter favourites' });
+  wirePill('cpill-loop',  () => circuitLoopOnly,    v => circuitLoopOnly = v,    renderCircuits);
+  wirePill('cpill-done',  () => circuitExcludeDone, v => circuitExcludeDone = v, renderCircuits, { needsAuth: true, guestMsg: 'Sign in to filter your sends' });
   document.getElementById('circuit-create-btn').addEventListener('click', () => {
     location.hash = session ? '#circuit-create' : '#auth';
   });

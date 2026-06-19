@@ -62,7 +62,11 @@
   let myFaves = new Set();        // problem_ids the signed-in user has favourited (likes)
   let myCircuitFaves = new Set(); // circuit ids the signed-in user has favourited
   let favesOnly = false;          // list filter: show only favourited problems
+  let benchOnly = false;          // list filter: show only benchmark problems
+  let excludeDone = false;        // list filter: hide fully-done (both orientations sent)
   let circuitFavesOnly = false;   // circuit list filter: only favourited circuits
+  let circuitLoopOnly = false;    // circuit list filter: only looping circuits
+  let circuitExcludeDone = false; // circuit list filter: inert until Phase 2 completion logging exists
   let authMode = 'signin'; // 'signin' | 'signup' for the #auth form
 
   // ── Create-a-problem state ───────────────────────────────────────────────────
@@ -95,6 +99,8 @@
   let leaderboardError = null;   // last load error (for the "run db/23" message)
 
   const isTicked = id => myTicks.has(String(id));
+  // "Fully done" = sent in BOTH the normal and mirrored orientation (the Exclude Done filter).
+  const isFullyDone = id => myTicksNormal.has(String(id)) && myTicksMirrored.has(String(id));
   const isFaved = id => myFaves.has(String(id));
   const isCircuitFaved = id => myCircuitFaves.has(String(id));
 

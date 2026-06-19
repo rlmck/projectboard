@@ -29,6 +29,8 @@
   function visibleCircuits() {
     let arr = allCircuits;
     if (circuitFavesOnly) arr = arr.filter(c => isCircuitFaved(c.id));
+    if (circuitLoopOnly) arr = arr.filter(c => c.loops);
+    // circuitExcludeDone: no-op until Phase 2 completion logging exists
     if (activeCircuitGrade) arr = arr.filter(c => c.grade === activeCircuitGrade);
     const q = searchNorm(circuitSearch);
     if (q) {

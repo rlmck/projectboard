@@ -6,6 +6,8 @@
   function visibleProblems() {
     let arr = allProblems;
     if (favesOnly) arr = arr.filter(p => isFaved(p.id));
+    if (benchOnly) arr = arr.filter(p => p.is_benchmark);
+    if (excludeDone) arr = arr.filter(p => !isFullyDone(p.id));
     if (activeGrades.size) arr = arr.filter(p => activeGrades.has(p.grade));
     const q = searchNorm(searchQuery);
     if (q) {

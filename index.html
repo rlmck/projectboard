@@ -31,14 +31,16 @@
         <button class="search-clear" id="search-clear" type="button" aria-label="Clear search" hidden>&times;</button>
       </div>
       <span class="count-badge" id="count"></span>
-      <button class="icon-btn fave-filter" id="fave-filter" aria-label="Show only favourites" aria-pressed="false" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-      </button>
       <button class="icon-btn add-btn" id="create-btn" aria-label="Create problem">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
       </button>
     </div>
     <div class="grade-tabs" id="grade-tabs"></div>
+    <div class="filter-pills" id="filter-pills">
+      <button class="filter-pill" id="pill-faves" type="button" aria-pressed="false">Favourites</button>
+      <button class="filter-pill" id="pill-bench" type="button" aria-pressed="false">Benchmarks</button>
+      <button class="filter-pill" id="pill-done" type="button" aria-pressed="false">Exclude Done</button>
+    </div>
   </header>
   <main>
     <div id="list-container">
@@ -204,14 +206,16 @@
         <button class="search-clear" id="circuit-search-clear" type="button" aria-label="Clear search" hidden>&times;</button>
       </div>
       <span class="count-badge" id="circuit-count"></span>
-      <button class="icon-btn fave-filter" id="circuit-fave-filter" aria-label="Show only favourites" aria-pressed="false" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-      </button>
       <button class="icon-btn add-btn" id="circuit-create-btn" aria-label="Create circuit">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
       </button>
     </div>
     <div class="grade-tabs" id="circuit-grade-tabs"></div>
+    <div class="filter-pills" id="circuit-filter-pills">
+      <button class="filter-pill" id="cpill-faves" type="button" aria-pressed="false">Favourites</button>
+      <button class="filter-pill" id="cpill-loop" type="button" aria-pressed="false">Looping</button>
+      <button class="filter-pill" id="cpill-done" type="button" aria-pressed="false">Exclude Done</button>
+    </div>
   </header>
   <main>
     <div id="circuit-list-container">
