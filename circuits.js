@@ -88,10 +88,13 @@
     const list = visibleCircuits();
     countEl.textContent = `${list.length} circuit${list.length !== 1 ? 's' : ''}`;
     if (!list.length) {
-      container.innerHTML = circuitFavesOnly
+      // Show the favourites onboarding hint only when faves is the *only* active
+      // filter; otherwise keep it generic (the other filters may be the cause).
+      const otherFilters = circuitSearch || activeCircuitGrade || circuitLoopOnly || circuitExcludeDone;
+      container.innerHTML = (circuitFavesOnly && !otherFilters)
         ? `<div class="state-msg"><div class="icon">♡</div>No favourite circuits yet. Tap the heart on a circuit to save it here.</div>`
         : `<div class="state-msg"><div class="icon">🧗</div>${
-            allCircuits.length ? 'No circuits match.' : 'No circuits yet — tap + to set the first one.'}</div>`;
+            allCircuits.length ? 'None match these filters.' : 'No circuits yet — tap + to set the first one.'}</div>`;
       return;
     }
     container.innerHTML = `<div class="problem-list">${list.map(circuitCardHtml).join('')}</div>`;

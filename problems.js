@@ -46,9 +46,13 @@
     document.getElementById('count').textContent = `${list.length} problem${list.length !== 1 ? 's' : ''}`;
 
     if (list.length === 0) {
-      container.innerHTML = favesOnly
+      // Only show the favourites onboarding hint when faves is the *only* active
+      // filter — otherwise the empty result may be down to the other filters, so
+      // keep the message generic.
+      const otherFilters = searchQuery || activeGrades.size || benchOnly || excludeDone;
+      container.innerHTML = (favesOnly && !otherFilters)
         ? `<div class="state-msg"><div class="icon">♡</div>No favourites yet. Tap the heart on a problem to save it here.</div>`
-        : `<div class="state-msg"><div class="icon">🔎</div>No problems match.</div>`;
+        : `<div class="state-msg"><div class="icon">🔎</div>None match these filters.</div>`;
       return;
     }
     container.innerHTML = `<div class="problem-list">${list.map(cardHtml).join('')}</div>`;
