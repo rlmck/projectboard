@@ -424,7 +424,7 @@
     }
     #detail-fave.faved svg, #circuit-detail-fave.faved svg { fill: currentColor; }
     /* .icon-btn sets display:flex, which beats the bare [hidden] UA rule — guard each. */
-    #circuit-detail-fave[hidden], #circuit-detail-delete[hidden] { display: none; }
+    #circuit-detail-fave[hidden] { display: none; }
     /* Mirror toggle lit — the board overlay is showing the mirrored problem */
     #detail-mirror.active { color: #60a5fa; border-color: #3b82f6; background: rgba(59,130,246,0.16); }
 
@@ -925,14 +925,46 @@
     /* Admin-only header buttons hide via the hidden attribute (overrides icon-btn's flex) */
     .admin-only[hidden] { display: none; }
 
-    /* Admin delete (✕) button in the detail header — red to flag it */
-    #detail-delete { color: #f87171; border-color: rgba(239,68,68,0.5); }
-    #detail-delete:active { background: rgba(239,68,68,0.14); }
-
-    /* Admin edit-grade button — accent to flag it */
-    #detail-edit { color: var(--accent-hover); border-color: rgba(236,72,153,0.5); }
-    #detail-edit:active { background: rgba(236,72,153,0.14); }
-    #detail-edit svg { width: 17px; height: 17px; }
+    /* ── Overflow (⋮) menu — detail headers (Edit / Delete / Information) ── */
+    .menu-wrap { position: relative; flex-shrink: 0; display: flex; }
+    #circuit-menu-wrap[hidden] { display: none; }
+    .overflow-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      min-width: 188px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 14px 34px rgba(0,0,0,0.55);
+      padding: 6px;
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      animation: fade 0.14s ease;
+    }
+    .overflow-menu[hidden] { display: none; }
+    .menu-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 600;
+      text-align: left;
+      padding: 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .menu-item:active { background: var(--surface2); }
+    .menu-item[hidden] { display: none; }
+    .menu-item svg { width: 19px; height: 19px; flex-shrink: 0; }
+    .menu-item.danger { color: #f87171; }
 
     /* Grade chips inside the edit-grade modal */
     .grade-edit-options { flex-wrap: wrap; margin: 0 0 6px; }

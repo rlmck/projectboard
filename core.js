@@ -244,10 +244,17 @@
     return { route: raw.slice(0, idx), param: decodeURIComponent(raw.slice(idx + 1)) };
   }
 
+  // Close any open ⋮ overflow menu (detail / circuit-detail headers).
+  function closeOverflowMenus() {
+    document.querySelectorAll('.overflow-menu').forEach(m => { m.hidden = true; });
+    document.querySelectorAll('[aria-haspopup="true"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+  }
+
   function setView(name) {
     // Clear any active fullscreen when the view changes so we never strand the
     // board-fs classes (re-entered below if still landscape on a board view).
     exitBoardFs();
+    closeOverflowMenus();
 
     // Preserve the list's scroll position across navigation.
     if (currentView === 'list' && name !== 'list') listScroll = window.scrollY;

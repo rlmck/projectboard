@@ -127,9 +127,9 @@
     stopCircuitPlay(false);
     const wrap = document.getElementById('circuit-detail-content');
     const titleEl = document.getElementById('circuit-detail-title');
-    const delBtn = document.getElementById('circuit-detail-delete');
+    const menuWrap = document.getElementById('circuit-menu-wrap');
     const faveBtn = document.getElementById('circuit-detail-fave');
-    delBtn.hidden = true;
+    menuWrap.hidden = true;
     if (faveBtn) faveBtn.hidden = true;
 
     if (!circuitsLoaded) {
@@ -155,7 +155,7 @@
 
     currentCircuit = c;
     titleEl.textContent = circuitName(c);
-    delBtn.hidden = !canEditCircuit(c);
+    menuWrap.hidden = !canEditCircuit(c);
     if (faveBtn) faveBtn.hidden = false;
     updateCircuitFaveButton();
     const n = circuitSeq(c).length;

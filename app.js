@@ -132,6 +132,24 @@
   wirePill('pill-bench', () => benchOnly,   v => benchOnly = v,   renderList);
   wirePill('pill-done',  () => excludeDone, v => excludeDone = v, renderList, { needsAuth: true, guestMsg: 'Sign in to filter your sends' });
 
+  // Overflow (⋮) menu: the button toggles its menu (stopPropagation so the
+  // document-level tap below doesn't immediately re-close it); a tap on a menu
+  // item runs its action and then bubbles here to close. A tap anywhere else
+  // closes any open menu.
+  function wireOverflowMenu(btnId, menuId) {
+    const btn = document.getElementById(btnId);
+    const menu = document.getElementById(menuId);
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const willOpen = menu.hidden;
+      closeOverflowMenus();
+      menu.hidden = !willOpen;
+      btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
+    menu.addEventListener('click', () => closeOverflowMenus());
+  }
+  document.addEventListener('click', closeOverflowMenus);
+
   // Detail back
   document.getElementById('back-btn').addEventListener('click', goBack);
 
@@ -156,8 +174,12 @@
   document.getElementById('detail-mirror').addEventListener('click', toggleDetailMirror);
   document.getElementById('detail-tick').addEventListener('click', toggleTick);
   document.getElementById('detail-fave').addEventListener('click', () => { if (currentProblem) toggleFave(currentProblem.id); });
-  document.getElementById('detail-delete').addEventListener('click', openDeleteConfirm);
-  document.getElementById('detail-edit').addEventListener('click', openEditChoice);
+
+  // Overflow (⋮) menu — folds Edit/Delete/Information into one header button.
+  wireOverflowMenu('detail-menu-btn', 'detail-menu');
+  document.getElementById('menu-edit').addEventListener('click', openEditChoice);
+  document.getElementById('menu-delete').addEventListener('click', openDeleteConfirm);
+  document.getElementById('menu-info').addEventListener('click', openInfo);
 
   // Edit chooser modal (grade vs holds)
   document.getElementById('edit-choice-close').addEventListener('click', closeEditChoice);
@@ -291,7 +313,8 @@
   // Circuit detail: back, delete, (Play wired per-render).
   document.getElementById('circuit-back').addEventListener('click', goBack);
   document.getElementById('circuit-detail-fave').addEventListener('click', () => { if (currentCircuit) toggleCircuitFave(currentCircuit.id); });
-  document.getElementById('circuit-detail-delete').addEventListener('click', openCircuitDelete);
+  wireOverflowMenu('circuit-menu-btn', 'circuit-menu');
+  document.getElementById('circuit-menu-delete').addEventListener('click', openCircuitDelete);
   document.getElementById('circuit-delete-cancel').addEventListener('click', closeCircuitDelete);
   document.getElementById('circuit-delete-confirm').addEventListener('click', doDeleteCircuit);
   document.getElementById('circuit-delete-modal').addEventListener('click', e => {
@@ -366,13 +389,12 @@
     loadLeaderboard(true).then(renderLeaderboard);
   });
 
-  // Info modal: open from header button, close via X, overlay tap, or Escape
-  document.getElementById('info-btn').addEventListener('click', openInfo);
+  // Info modal: opened from the ⋮ menu (wired above), close via X, overlay tap, or Escape
   document.getElementById('info-close').addEventListener('click', closeInfo);
   document.getElementById('info-modal').addEventListener('click', e => {
     if (e.target.id === 'info-modal') closeInfo();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); } });
 
   // Auth view actions
   document.getElementById('auth-back').addEventListener('click', () => { location.hash = '#list'; });
