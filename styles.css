@@ -766,6 +766,13 @@
       -webkit-tap-highlight-color: transparent;
     }
     body.board-fs #board-fs-close { display: flex; }
+    /* Rotated FS keeps the OS portrait; you turn the phone anticlockwise to read
+       the board, which moves the portrait top-right corner to your top-LEFT. So
+       anchor the close button at the portrait bottom-right — that lands at your
+       top-right once turned. (Natural FS lets the OS rotate, so top-right is right.) */
+    body.board-fs-rotated #board-fs-close {
+      top: auto; bottom: calc(8px + env(safe-area-inset-bottom));
+    }
 
     /* Hide chrome + the expand button while fullscreen (!important beats the inline
        display:flex setView puts on #bottom-nav). */
@@ -781,8 +788,13 @@
        stacking context). The shadow rides the rotate transform and isn't clipped
        (the wrap is fixed, so ancestor overflow:hidden doesn't apply). */
     body.board-fs .view.active .board-wrap {
-      position: fixed; z-index: 200; margin: 0; max-width: none;
-      width: var(--fs-bw, 100vw); height: auto;
+      position: fixed; z-index: 200; height: auto;
+      /* !important beats the ID-specificity sizing the detail views set on
+         .board-wrap (#view-detail / #view-circuit-detail width:100% + max-width),
+         which would otherwise pin the wrap to the viewport width in both
+         orientations so the board never grows in landscape. */
+      width: var(--fs-bw, 100vw) !important;
+      max-width: none !important; margin: 0 !important;
       background: #000; border-radius: 0; overflow: visible;
       box-shadow: 0 0 0 100vmax #000;
     }
