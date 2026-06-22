@@ -739,6 +739,63 @@
     .hold-dot.int    { border-color: #3b82f6; background: rgba(59,130,246,0.24); }
     .hold-dot.finish { border-color: #ef4444; background: rgba(239,68,68,0.30); }
 
+    /* ── Fullscreen board mode ───────────────────────────────────────────
+       Expand button enters a rotated landscape fullscreen on any board; a touch
+       device turned to landscape auto-enters a natural (un-rotated) fullscreen on
+       the read-only detail views. The board-wrap is positioned fixed and sized in
+       JS via --fs-bw (so the %-positioned overlay, which scales with the wrap,
+       stays aligned). A full-viewport black backdrop sits behind it. */
+    .board-expand-btn {
+      position: absolute; top: 8px; right: 8px; z-index: 5;
+      width: 36px; height: 36px; border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(10,10,10,0.55); border: 1px solid rgba(255,255,255,0.25);
+      color: #fff; cursor: pointer; -webkit-tap-highlight-color: transparent;
+      -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+    }
+    .board-expand-btn svg { width: 18px; height: 18px; }
+    .board-expand-btn:active { background: rgba(10,10,10,0.8); }
+
+    #board-fs-close {
+      position: fixed; z-index: 201;
+      top: calc(8px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right));
+      width: 44px; height: 44px; border-radius: 11px;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(10,10,10,0.65); border: 1px solid rgba(255,255,255,0.3);
+      color: #fff; font-size: 22px; line-height: 1; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body.board-fs #board-fs-close { display: flex; }
+
+    /* Hide chrome + the expand button while fullscreen (!important beats the inline
+       display:flex setView puts on #bottom-nav). */
+    body.board-fs { overflow: hidden; }
+    body.board-fs #bottom-nav { display: none !important; }
+    body.board-fs .view.active .topbar { display: none !important; }
+    body.board-fs .board-expand-btn { display: none; }
+
+    /* The board-wrap is lifted above the rest of the view (z-index) and carries its
+       own viewport-filling black surround as a box-shadow — painted as part of the
+       wrap itself, so it covers the page without the cross-stacking-context trap a
+       separate backdrop would hit (the active view is position:fixed = its own
+       stacking context). The shadow rides the rotate transform and isn't clipped
+       (the wrap is fixed, so ancestor overflow:hidden doesn't apply). */
+    body.board-fs .view.active .board-wrap {
+      position: fixed; z-index: 200; margin: 0; max-width: none;
+      width: var(--fs-bw, 100vw); height: auto;
+      background: #000; border-radius: 0; overflow: visible;
+      box-shadow: 0 0 0 100vmax #000;
+    }
+    body.board-fs .view.active .board-graphic { width: 100%; height: auto; border-radius: 0; }
+    /* natural: centre in the viewport */
+    body.board-fs:not(.board-fs-rotated) .view.active .board-wrap {
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+    }
+    /* rotated: centre + 90° turn (the wide board's long edge runs down the phone) */
+    body.board-fs-rotated .view.active .board-wrap {
+      top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(90deg);
+    }
+
     .detail-section { margin-bottom: 22px; }
 
     .section-label {

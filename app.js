@@ -135,6 +135,20 @@
   // Detail back
   document.getElementById('back-btn').addEventListener('click', goBack);
 
+  // ── Fullscreen board ──────────────────────────────────────────────────────────
+  // Expand button (on any board) → rotated landscape fullscreen. Capture phase +
+  // stopPropagation so a tap on the button over an interactive board (create /
+  // circuit-create / calibrate) doesn't also cycle/append a hold or, in calibrate
+  // nudge mode, start dragging a corner hold via the board's pointerdown handler.
+  ['pointerdown', 'click'].forEach(type => {
+    document.addEventListener(type, e => {
+      if (!e.target.closest('.board-expand-btn')) return;
+      e.stopPropagation();
+      if (type === 'click') { e.preventDefault(); enterBoardFs('rotated'); }
+    }, true);
+  });
+  document.getElementById('board-fs-close').addEventListener('click', exitBoardFs);
+
   // Detail actions (live in the header; operate on the current problem)
   document.getElementById('detail-cast').addEventListener('click', e => {
     if (currentProblem) castByName(currentProblem.name, e.currentTarget, detailMirror);

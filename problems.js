@@ -120,6 +120,7 @@
       <div class="board-wrap">
         <img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" />
         ${boardOverlayHtml(p, detailMirror)}
+        ${boardExpandBtn()}
       </div>
     `;
   }

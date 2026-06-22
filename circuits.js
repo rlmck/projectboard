@@ -175,6 +175,7 @@
       <div class="board-wrap">
         <img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" />
         <div class="hold-layer" id="circuit-play-layer">${circuitStaticOverlay(c)}</div>
+        ${boardExpandBtn()}
       </div>
 
       <div class="circuit-play-panel">
@@ -345,17 +346,15 @@
 
   function ccNearestHold(clientX, clientY) {
     if (!HOLD_MAP) return null;
-    const r = document.getElementById('cc-board').getBoundingClientRect();
-    const px = (clientX - r.left) / r.width * 100;
-    const py = (clientY - r.top) / r.height * 100;
+    const { x: px, y: py, w, h: bh } = boardPct(document.getElementById('cc-board'), clientX, clientY);
     let best = null, bestD = Infinity;
     for (const h in HOLD_MAP) {
-      const dx = (HOLD_MAP[h].x - px) / 100 * r.width;
-      const dy = (HOLD_MAP[h].y - py) / 100 * r.height;
+      const dx = (HOLD_MAP[h].x - px) / 100 * w;
+      const dy = (HOLD_MAP[h].y - py) / 100 * bh;
       const d = dx * dx + dy * dy;
       if (d < bestD) { bestD = d; best = h; }
     }
-    return Math.sqrt(bestD) <= r.width * 0.06 ? best : null;
+    return Math.sqrt(bestD) <= w * 0.06 ? best : null;
   }
 
   function buildCcGrades() {

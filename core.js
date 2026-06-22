@@ -124,6 +124,116 @@
     return `<div class="hold-layer">${dots}</div>`;
   }
 
+  // Map a pointer's client coords to board-relative percentages. Accounts for the
+  // rotated fullscreen mode, where the board-wrap is CSS-rotated 90° about its
+  // centre — its getBoundingClientRect is then the axis-aligned bounding box, not
+  // the element's own frame, which would break the naive (clientX - r.left)/r.width
+  // maths. We use the rect *centre* (rotation-invariant) plus offsetWidth/Height
+  // (the layout box, unaffected by transforms) and invert the rotation. Returns
+  // { x, y } percentages plus w/h = the board's own pixel size (for distance
+  // thresholds). When NOT rotated this is identical to the old inline maths.
+  function boardPct(boardEl, clientX, clientY) {
+    const r = boardEl.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const w = boardEl.offsetWidth, h = boardEl.offsetHeight;
+    let dx = clientX - cx, dy = clientY - cy;
+    if (document.body.classList.contains('board-fs-rotated')) {
+      [dx, dy] = [dy, -dx];                       // inverse of a 90° CW rotation
+    }
+    return { x: (dx + w / 2) / w * 100, y: (dy + h / 2) / h * 100, w, h };
+  }
+
+  // Floating "expand to fullscreen" button drawn over a board. Used by the inline
+  // detail/circuit-detail render templates; the static create/circuit-create/
+  // calibrate boards carry the same markup in index.html.
+  function boardExpandBtn() {
+    return '<button class="board-expand-btn" type="button" aria-label="Fullscreen board">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline>' +
+      '<line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg></button>';
+  }
+
+  // ── Fullscreen board mode ──────────────────────────────────────────────────────
+  // Two ways in: the expand button enters a CSS-rotated landscape fullscreen on any
+  // board view; turning a touch device to landscape auto-enters a natural (un-rotated)
+  // fullscreen on the read-only detail views (create/calibrate are excluded — a
+  // fullscreen board would cover their form + save controls). Both hide the header +
+  // bottom nav. The board-wrap is positioned fixed and sized via the --fs-bw CSS var
+  // (computed here), and its %-positioned overlay scales with it, so dots stay aligned.
+  const AUTO_FS_VIEWS = new Set(['detail', 'circuit-detail']);
+  let fsMode = null;            // null | 'natural' | 'rotated'
+  let fsAspect = 1;             // board width / height (intrinsic)
+  let wakeLock = null;
+  const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+  const landscapeMQ = window.matchMedia('(orientation: landscape)');
+
+  function activeBoardWrap() {
+    const v = document.getElementById('view-' + currentView);
+    return v ? v.querySelector('.board-wrap') : null;
+  }
+
+  // Size the fullscreen board so its long edge fits the viewport, preserving aspect.
+  // Natural fills width×height; rotated fits the board's width down the phone's long
+  // axis (the whole point of rotating a wide board on a portrait phone).
+  function sizeBoardFs() {
+    if (!fsMode) return;
+    const wrap = activeBoardWrap();
+    const img = wrap && wrap.querySelector('.board-graphic');
+    if (img && img.naturalWidth && img.naturalHeight) fsAspect = img.naturalWidth / img.naturalHeight;
+    const vw = window.innerWidth, vh = window.innerHeight, a = fsAspect || 1;
+    const bw = fsMode === 'rotated' ? Math.min(vh, vw * a) : Math.min(vw, vh * a);
+    document.body.style.setProperty('--fs-bw', bw + 'px');
+  }
+
+  async function acquireWakeLock() {
+    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); }
+    catch (e) { /* unsupported or refused — non-fatal */ }
+  }
+  function releaseWakeLock() {
+    if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+  }
+
+  function enterBoardFs(mode) {
+    const wrap = activeBoardWrap();
+    if (!wrap || fsMode) return;
+    const r = wrap.getBoundingClientRect();
+    const img = wrap.querySelector('.board-graphic');
+    fsAspect = (img && img.naturalWidth) ? img.naturalWidth / img.naturalHeight
+             : (r.width && r.height ? r.width / r.height : 1);
+    if (img && !img.naturalWidth) img.addEventListener('load', sizeBoardFs, { once: true });
+    fsMode = mode;
+    document.body.classList.add('board-fs');
+    if (mode === 'rotated') document.body.classList.add('board-fs-rotated');
+    sizeBoardFs();
+    acquireWakeLock();
+  }
+
+  function exitBoardFs() {
+    if (!fsMode) return;
+    fsMode = null;
+    document.body.classList.remove('board-fs', 'board-fs-rotated');
+    document.body.style.removeProperty('--fs-bw');
+    releaseWakeLock();
+  }
+
+  // Turning a touch device to landscape on a detail view auto-enters natural FS;
+  // returning to portrait exits it. A user-invoked rotated FS is left alone.
+  function onOrientationChange() {
+    if (landscapeMQ.matches) {
+      if (!fsMode && isTouchDevice && AUTO_FS_VIEWS.has(currentView)) enterBoardFs('natural');
+      else if (fsMode) sizeBoardFs();
+    } else {
+      if (fsMode === 'natural') exitBoardFs();
+      else if (fsMode) sizeBoardFs();
+    }
+  }
+  landscapeMQ.addEventListener('change', onOrientationChange);
+  window.addEventListener('resize', sizeBoardFs);
+  // Re-acquire the wake lock when the tab returns to the foreground (the OS drops it).
+  document.addEventListener('visibilitychange', () => {
+    if (fsMode && document.visibilityState === 'visible' && !wakeLock) acquireWakeLock();
+  });
+
   // ── Routing ──────────────────────────────────────────────────────────────────
   function parseHash() {
     const raw = location.hash.replace(/^#/, '') || 'list';
@@ -135,6 +245,10 @@
   }
 
   function setView(name) {
+    // Clear any active fullscreen when the view changes so we never strand the
+    // board-fs classes (re-entered below if still landscape on a board view).
+    exitBoardFs();
+
     // Preserve the list's scroll position across navigation.
     if (currentView === 'list' && name !== 'list') listScroll = window.scrollY;
 
@@ -158,6 +272,10 @@
     else window.scrollTo(0, 0);
 
     currentView = name;
+
+    // Auto-enter natural fullscreen if a touch device is already landscape on a
+    // read-only board view (e.g. navigating/swiping while held sideways).
+    if (isTouchDevice && landscapeMQ.matches && AUTO_FS_VIEWS.has(name)) enterBoardFs('natural');
   }
 
   function router() {
@@ -209,6 +327,8 @@
   }
 
   function goBack() {
+    // In fullscreen, Back closes the fullscreen first rather than leaving the view.
+    if (fsMode) { exitBoardFs(); return; }
     if (history.length > 1) history.back();
     else location.hash = '#list';
   }

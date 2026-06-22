@@ -57,17 +57,15 @@
   // Returns null if the tap is too far from any hold to count.
   function nearestHold(clientX, clientY) {
     if (!HOLD_MAP) return null;
-    const r = document.getElementById('create-board').getBoundingClientRect();
-    const px = (clientX - r.left) / r.width * 100;
-    const py = (clientY - r.top) / r.height * 100;
+    const { x: px, y: py, w, h: bh } = boardPct(document.getElementById('create-board'), clientX, clientY);
     let best = null, bestD = Infinity;
     for (const h in HOLD_MAP) {
-      const dx = (HOLD_MAP[h].x - px) / 100 * r.width;
-      const dy = (HOLD_MAP[h].y - py) / 100 * r.height;
+      const dx = (HOLD_MAP[h].x - px) / 100 * w;
+      const dy = (HOLD_MAP[h].y - py) / 100 * bh;
       const d = dx * dx + dy * dy;
       if (d < bestD) { bestD = d; best = h; }
     }
-    return Math.sqrt(bestD) <= r.width * 0.06 ? best : null;   // ~half a hold spacing
+    return Math.sqrt(bestD) <= w * 0.06 ? best : null;   // ~half a hold spacing
   }
 
   // Tap to cycle a hold's role:
@@ -402,23 +400,22 @@
                       : `${holdNum(a)} ↔ ${holdNum(h)}`, 'success');
   }
 
-  // Pointer event → board-relative %, plus the board rect (for distance maths).
+  // Pointer event → board-relative % (+ board pixel size), rotation-aware.
   function calPct(clientX, clientY) {
-    const r = document.getElementById('cal-board').getBoundingClientRect();
-    return { x: (clientX - r.left) / r.width * 100, y: (clientY - r.top) / r.height * 100, r };
+    return boardPct(document.getElementById('cal-board'), clientX, clientY);
   }
 
   // Nearest working dot to a tap (pixel distance), or null if too far to count.
   function calNearest(clientX, clientY) {
-    const { x: px, y: py, r } = calPct(clientX, clientY);
+    const { x: px, y: py, w, h: bh } = calPct(clientX, clientY);
     let best = null, bestD = Infinity;
-    for (const h in CAL.pos) {
-      const dx = (CAL.pos[h].x - px) / 100 * r.width;
-      const dy = (CAL.pos[h].y - py) / 100 * r.height;
+    for (const hh in CAL.pos) {
+      const dx = (CAL.pos[hh].x - px) / 100 * w;
+      const dy = (CAL.pos[hh].y - py) / 100 * bh;
       const d = dx * dx + dy * dy;
-      if (d < bestD) { bestD = d; best = h; }
+      if (d < bestD) { bestD = d; best = hh; }
     }
-    return Math.sqrt(bestD) <= r.width * 0.06 ? best : null;
+    return Math.sqrt(bestD) <= w * 0.06 ? best : null;
   }
 
   // Anchor mode: first tap selects the nearest dot, second tap pins its true spot.

@@ -105,6 +105,9 @@
     <div class="board-wrap" id="create-board">
       <img class="board-graphic" src="ProjectBoard.png" alt="The Hangout symmetry board" />
       <div class="hold-layer" id="create-hold-layer"></div>
+      <button class="board-expand-btn" type="button" aria-label="Fullscreen board">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+      </button>
     </div>
 
     <div class="create-panel">
@@ -149,6 +152,9 @@
     <div class="board-wrap cal-board" id="cal-board">
       <img class="board-graphic" id="cal-img" src="ProjectBoard.png" alt="The Hangout symmetry board" />
       <div class="cal-layer" id="cal-layer"></div>
+      <button class="board-expand-btn" type="button" aria-label="Fullscreen board">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+      </button>
     </div>
 
     <div class="cal-panel">
@@ -269,6 +275,9 @@
     <div class="board-wrap" id="cc-board">
       <img class="board-graphic" src="ProjectBoard.png" alt="The Hangout symmetry board" />
       <div class="hold-layer" id="cc-hold-layer"></div>
+      <button class="board-expand-btn" type="button" aria-label="Fullscreen board">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+      </button>
     </div>
 
     <div class="create-panel">
@@ -502,6 +511,9 @@
     <button class="install-btn dismiss" id="install-dismiss">Not now</button>
   </div>
 </div>
+
+<!-- Fullscreen board close button (shown only while a board is fullscreen) -->
+<button id="board-fs-close" type="button" aria-label="Exit fullscreen">✕</button>
 
 <div id="toast"></div>
 
