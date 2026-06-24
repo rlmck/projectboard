@@ -186,9 +186,8 @@
   // them by index and light each hold by fading IN both its hole (board un-dims) and
   // its outline. With every hole hidden the dim covers the whole board. Document order
   // is the climbing sequence: leading `.hs.start` outlines are the starts.
-  function animateBoardReveal(wrapEl) {
-    if (!wrapEl || !window.gsap) return;
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  function animateBoardReveal(wrapEl, opts = {}) {
+    if (!wrapEl || !window.gsap || prefersReducedMotion()) return;
     const svg = wrapEl.querySelector('.hold-shape-layer');
     if (!svg) return;                              // fallback dot overlay / no shapes
     const dimRect = svg.querySelector('rect[mask]');
@@ -204,9 +203,11 @@
     const restUnits = units.filter(u => !u.outline.classList.contains('start'));
     const reveal = startUnits.length ? startUnits : units.slice(0, 1);
 
-    const FADE = 0.25;              // how long each hold takes to fade up
-    const REVEAL_START_HOLD = 1.0;  // starts stay alone this long before the sequence
-    const REVEAL_STEP = 0.5;        // gap between each subsequent hold
+    // Timing — defaults are the dramatic detail-view reveal; the board feed passes
+    // a snappier preset so flicking through problems stays quick.
+    const FADE = opts.fade != null ? opts.fade : 0.25;              // each hold's fade-up
+    const REVEAL_START_HOLD = opts.startHold != null ? opts.startHold : 1.0;  // starts hold alone this long
+    const REVEAL_STEP = opts.step != null ? opts.step : 0.5;        // gap between subsequent holds
 
     // Pre-state (synchronous, pre-paint): whole board dimmed, every hole + outline
     // hidden, so nothing flashes and no unrevealed hold is visible.
@@ -231,42 +232,6 @@
     return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   }
 
-  // Catalogue entrance choreography (problem/circuit list tiles). The first
-  // viewport's worth of cards animate in immediately with a stagger (so nothing
-  // flashes blank), and the rest reveal as they scroll into view via an
-  // IntersectionObserver — cheap across hundreds of items, and it re-runs on every
-  // filter/search so the grid re-choreographs. No-ops (cards stay fully visible)
-  // without GSAP or under reduced motion. Call right after the list innerHTML is set.
-  function staggerRevealCards(containerEl) {
-    if (!containerEl || !window.gsap || prefersReducedMotion()) return;
-    const cards = Array.from(containerEl.querySelectorAll('.problem-card'));
-    if (!cards.length) return;
-
-    gsap.set(cards, { opacity: 0, y: 22, scale: 0.96 });
-    const reveal = (el, delay = 0) =>
-      gsap.to(el, { opacity: 1, y: 0, scale: 1, duration: 0.5, delay, ease: 'power3.out', overwrite: true });
-
-    // First batch: reveal now with a stagger (covers the opening viewport, no flash).
-    const FIRST = 12;
-    gsap.to(cards.slice(0, FIRST), {
-      opacity: 1, y: 0, scale: 1, duration: 0.5, ease: 'power3.out',
-      stagger: { each: 0.045, from: 'start' }, overwrite: true
-    });
-
-    // The rest: reveal as they enter the viewport.
-    const rest = cards.slice(FIRST);
-    if (!rest.length) return;
-    if (typeof IntersectionObserver === 'undefined') { rest.forEach(el => reveal(el)); return; }
-    const io = new IntersectionObserver((entries, obs) => {
-      let i = 0;
-      entries.forEach(entry => {
-        if (!entry.isIntersecting) return;
-        obs.unobserve(entry.target);
-        reveal(entry.target, Math.min(i++, 6) * 0.04);   // gentle stagger within a batch
-      });
-    }, { rootMargin: '0px 0px -6% 0px', threshold: 0.01 });
-    rest.forEach(el => io.observe(el));
-  }
 
   // Map a pointer's client coords to board-relative percentages. Accounts for the
   // rotated fullscreen mode, where the board-wrap is CSS-rotated 90° about its

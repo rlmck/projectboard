@@ -30,22 +30,30 @@
     return (c === '5' || c === '6' || c === '7' || c === '8') ? c : 'x';
   }
 
-  // Catalogue tile. Keeps the .problem-card[data-id] + .card-fave[data-fave] hooks
-  // the list click/fave wiring (app.js) relies on; everything else is the new look.
-  function cardHtml(p) {
+  // One full-screen panel in the immersive board feed. Keeps the
+  // .problem-card[data-id] + .card-fave[data-fave] hooks the list click/fave wiring
+  // (app.js) relies on. The board is built lazily (data-built) as the panel nears
+  // focus, so only a handful of boards are ever live in the DOM.
+  function deckPanelHtml(p) {
     const faved = isFaved(p.id);
     const ticked = isTicked(p.id);
     const showStars = Number(p.stars) > 0;
     return `
-      <div class="problem-card cat-card grade-band-${gradeBand(p.grade)}" data-id="${escAttr(p.id)}">
-        <button class="card-fave${faved ? ' faved' : ''}" data-fave="${escAttr(p.id)}" aria-pressed="${faved}" aria-label="${faved ? 'Remove from favourites' : 'Add to favourites'}">${HEART_SVG}</button>
-        <div class="cat-grade">${escHtml(fontGrade(p.grade) || '—')}</div>
-        <div class="cat-name">${escHtml(displayName(p))}</div>
-        <div class="cat-meta">
-          <span class="meta-setter">${escHtml(setterName(p))}</span>
-          ${showStars ? starsHtml(p.stars) : ''}
-          ${p.is_benchmark ? '<span class="cat-bench" title="Benchmark">★</span>' : ''}
-          ${ticked ? '<span class="tick-flag" title="Sent">✓</span>' : ''}
+      <div class="problem-card deck-panel grade-band-${gradeBand(p.grade)}" data-id="${escAttr(p.id)}" data-built="0">
+        <div class="deck-top">
+          <div class="deck-grade">${escHtml(fontGrade(p.grade) || '—')}</div>
+          <div class="deck-name">${escHtml(displayName(p))}</div>
+          <div class="deck-sub">
+            <span class="meta-setter">by ${escHtml(setterName(p))}</span>
+            ${showStars ? starsHtml(p.stars) : ''}
+            ${p.is_benchmark ? '<span class="cat-bench" title="Benchmark">★</span>' : ''}
+            ${ticked ? '<span class="tick-flag" title="Sent">✓</span>' : ''}
+          </div>
+        </div>
+        <div class="board-wrap"></div>
+        <div class="deck-actions">
+          <button class="card-fave${faved ? ' faved' : ''}" data-fave="${escAttr(p.id)}" aria-pressed="${faved}" aria-label="${faved ? 'Remove from favourites' : 'Add to favourites'}">${HEART_SVG}</button>
+          <span class="deck-hint">Tap to open</span>
         </div>
       </div>`;
   }
@@ -65,8 +73,75 @@
         : `<div class="state-msg"><div class="icon">🔎</div>None match these filters.</div>`;
       return;
     }
-    container.innerHTML = `<div class="catalogue">${list.map(cardHtml).join('')}</div>`;
-    staggerRevealCards(container);
+    container.innerHTML = list.map(deckPanelHtml).join('');
+    initDeck(container);
+  }
+
+  // ── Immersive board feed controller ──────────────────────────────────────────
+  // Per render, two IntersectionObservers (root = the #list-container scroller):
+  //   • buildIO  — builds each panel's board within a ~1.5-screen window and tears
+  //                down the rest, so only a few boards are ever live (cheap at 270).
+  //   • focusIO  — the centred panel (≥60% visible) plays its light-up reveal and
+  //                slides its caption in; leaving resets it so it replays next time.
+  // Re-init on every render (filter/search); previous observers are disconnected.
+  const FEED_REVEAL = { startHold: 0.2, step: 0.06, fade: 0.28 };   // snappier than the detail reveal
+
+  function deckProblem(panel) {
+    return allProblems.find(x => String(x.id) === String(panel.dataset.id));
+  }
+  function buildPanelBoard(panel) {
+    if (panel.dataset.built === '1') return;
+    const p = deckProblem(panel);
+    const wrap = panel.querySelector('.board-wrap');
+    if (!p || !wrap) return;
+    wrap.innerHTML = `<img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="" />`
+      + (boardShapeOverlayHtml(p, { dim: true }) || boardOverlayHtml(p) || '');
+    panel.dataset.built = '1';
+  }
+  function teardownPanelBoard(panel) {
+    if (panel.dataset.built !== '1' || panel.dataset.focused === '1') return;
+    const wrap = panel.querySelector('.board-wrap');
+    if (wrap) wrap.innerHTML = '';
+    panel.dataset.built = '0';
+  }
+  function focusDeckPanel(panel) {
+    if (panel.dataset.focused === '1') return;
+    panel.dataset.focused = '1';
+    buildPanelBoard(panel);
+    const wrap = panel.querySelector('.board-wrap');
+    const animate = window.gsap && !prefersReducedMotion();
+    if (wrap && animate) {
+      gsap.fromTo(wrap, { scale: 0.9, opacity: 0.5 }, { scale: 1, opacity: 1, duration: 0.5, ease: 'power3.out' });
+    }
+    animateBoardReveal(wrap, FEED_REVEAL);
+    if (animate) {
+      gsap.from(panel.querySelectorAll('.deck-top > *, .deck-actions'),
+        { y: 16, opacity: 0, duration: 0.45, stagger: 0.06, ease: 'power3.out' });
+    }
+  }
+  function blurDeckPanel(panel) {
+    panel.dataset.focused = '0';
+  }
+  function initDeck(scroller) {
+    const panels = Array.from(scroller.querySelectorAll('.deck-panel'));
+    if (!panels.length) return;
+    (scroller._deckIOs || []).forEach(io => io.disconnect());
+    if (typeof IntersectionObserver === 'undefined') { panels.forEach(buildPanelBoard); return; }
+
+    const buildIO = new IntersectionObserver(entries => {
+      entries.forEach(e => e.isIntersecting ? buildPanelBoard(e.target) : teardownPanelBoard(e.target));
+    }, { root: scroller, rootMargin: '150% 0px', threshold: 0 });
+
+    const focusIO = new IntersectionObserver(entries => {
+      entries.forEach(e => e.intersectionRatio >= 0.6 ? focusDeckPanel(e.target) : blurDeckPanel(e.target));
+    }, { root: scroller, threshold: [0, 0.6, 0.95] });
+
+    panels.forEach(p => { buildIO.observe(p); focusIO.observe(p); });
+    scroller._deckIOs = [buildIO, focusIO];
+
+    // Build + focus the opening panel up front (IO fires async — avoids a first blank).
+    buildPanelBoard(panels[0]);
+    requestAnimationFrame(() => focusDeckPanel(panels[0]));
   }
 
   // Shared grade-tab markup. `isActive(g)` decides the highlight; 'all' renders as

@@ -329,98 +329,94 @@
     .card-fave.faved { color: #f43f5e; }
     .card-fave.faved svg { fill: currentColor; }
 
-    /* ── Catalogue (problems list only — scoped to #list-container so the
-          circuit list + leaderboard keep the plain row layout) ──────────── */
-    #list-container .catalogue {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
-    }
+    /* ── Immersive board feed (problems list only) ───────────────────────
+       A vertical scroll-snap "reels" browser: each problem is a full-screen
+       panel showing the board with its holds lighting up as it snaps into
+       focus. Scoped to #list-container so the circuit list + leaderboard keep
+       the plain row layout. */
 
-    /* Grade colour bands — leading digit of the grade drives --band. */
-    .grade-band-5 { --band: #14b8a6; }   /* teal  */
-    .grade-band-6 { --band: #3b82f6; }   /* blue  */
+    /* Grade colour bands — the leading digit of the grade drives --band. */
+    .grade-band-5 { --band: #14b8a6; }   /* teal   */
+    .grade-band-6 { --band: #3b82f6; }   /* blue   */
     .grade-band-7 { --band: #a855f7; }   /* violet */
-    .grade-band-8 { --band: #f43f5e; }   /* red   */
-    .grade-band-x { --band: #9a9a9a; }   /* other */
+    .grade-band-8 { --band: #f43f5e; }   /* red    */
+    .grade-band-x { --band: #9a9a9a; }   /* other  */
 
-    #list-container .problem-card {
+    /* The list view fills the space above the bottom nav; the feed scrolls inside. */
+    #view-list.active {
+      display: flex;
+      flex-direction: column;
+      height: calc(100dvh - var(--nav-h) - env(safe-area-inset-bottom));
+    }
+    #view-list > main {
+      flex: 1; min-height: 0;
+      max-width: none; margin: 0; padding: 0;
+      overflow: hidden;
+    }
+    #list-container {
+      height: 100%;
+      overflow-y: auto;
+      scroll-snap-type: y mandatory;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    #list-container::-webkit-scrollbar { display: none; }
+
+    #list-container .deck-panel {
       --band: #9a9a9a;
       position: relative;
+      height: 100%;
+      scroll-snap-align: center;
+      scroll-snap-stop: always;
       flex-direction: column;
-      align-items: stretch;
-      justify-content: flex-start;
-      gap: 0;
-      min-height: 140px;
-      padding: 15px 15px 13px;
-      border-radius: 16px;
-      background: var(--surface);                                            /* fallback */
-      background: linear-gradient(165deg, color-mix(in srgb, var(--band) 16%, var(--surface)), var(--surface) 62%);
-      border: 1px solid var(--border);
-      border-color: color-mix(in srgb, var(--band) 34%, var(--border));
-      overflow: hidden;
-      will-change: transform, opacity;
-      transition: transform 0.12s ease, border-color 0.15s;
-    }
-    /* Soft corner glow in the grade colour. */
-    #list-container .problem-card::after {
-      content: '';
-      position: absolute;
-      top: -45%; right: -32%;
-      width: 130px; height: 130px;
-      background: radial-gradient(circle, color-mix(in srgb, var(--band) 42%, transparent), transparent 70%);
-      opacity: 0.55;
-      pointer-events: none;
-    }
-    #list-container .problem-card:active { transform: scale(0.97); }
-
-    #list-container .cat-grade {
-      font-size: 28px;
-      font-weight: 800;
-      line-height: 1;
-      letter-spacing: 0.01em;
-      color: var(--band);
-      text-shadow: 0 0 18px color-mix(in srgb, var(--band) 40%, transparent);
-      margin-bottom: 9px;
-    }
-    #list-container .cat-name {
-      font-size: 15px;
-      font-weight: 600;
-      line-height: 1.25;
-      color: var(--text);
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      margin-bottom: auto;            /* push meta to the bottom of the tile */
-    }
-    #list-container .cat-meta {
-      display: flex;
-      flex-wrap: wrap;
       align-items: center;
-      gap: 5px 8px;
-      margin-top: 9px;
-      font-size: 11.5px;
-      color: var(--text-muted);
-    }
-    #list-container .cat-meta .meta-setter {
-      min-width: 0;
-      max-width: 100%;
+      justify-content: center;
+      gap: 14px;
+      padding: 12px 16px 16px;
       overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      background:
+        radial-gradient(120% 70% at 50% 40%, color-mix(in srgb, var(--band) 18%, transparent), transparent 72%),
+        var(--bg);
+    }
+
+    #list-container .deck-top { text-align: center; max-width: 100%; }
+    #list-container .deck-grade {
+      font-size: clamp(34px, 11vw, 52px);
+      font-weight: 800; line-height: 1;
+      color: var(--band);
+      text-shadow: 0 0 32px color-mix(in srgb, var(--band) 55%, transparent);
+    }
+    #list-container .deck-name {
+      font-size: clamp(17px, 5vw, 23px);
+      font-weight: 700; line-height: 1.2; margin-top: 8px;
+      word-break: break-word;
+    }
+    #list-container .deck-sub {
+      display: flex; justify-content: center; flex-wrap: wrap;
+      align-items: center; gap: 8px; margin-top: 8px;
+      font-size: 13px; color: var(--text-muted);
     }
     #list-container .cat-bench { color: var(--gold); font-size: 12px; line-height: 1; }
 
-    /* Heart floats in the tile's top-right corner. */
-    #list-container .card-fave {
-      position: absolute;
-      top: 6px; right: 6px;
-      width: 38px; height: 38px;
-      border-radius: 10px;
-      z-index: 2;
+    #list-container .deck-panel .board-wrap {
+      width: 100%; max-width: 520px; margin: 0 auto;
+      min-height: 20vh;
+      border-radius: 12px; overflow: hidden;
+      box-shadow: 0 12px 44px rgba(0,0,0,0.55);
     }
-    #list-container .card-fave svg { width: 20px; height: 20px; }
+    #list-container .deck-panel .board-graphic { width: 100%; height: auto; display: block; }
+
+    #list-container .deck-actions {
+      display: flex; align-items: center; justify-content: center; gap: 16px;
+    }
+    #list-container .deck-actions .card-fave {
+      position: static; width: 46px; height: 46px;
+      background: var(--surface); border: 1px solid var(--border);
+    }
+    #list-container .deck-hint {
+      font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--text-muted); opacity: 0.7;
+    }
 
     /* ── Cast button (card) ──────────────────────────────────────────── */
     .cast-btn {
