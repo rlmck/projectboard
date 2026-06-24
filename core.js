@@ -171,6 +171,33 @@
     return holdShapeLayerHtml(classifyHolds(order), opts);
   }
 
+  // GSAP "light-up" reveal for the detail board: the dim mask fades in while the
+  // holds fade in, grouped start -> intermediate -> finish. Pure presentation —
+  // degrades to the instant render (current behaviour) when GSAP is unavailable
+  // or the user prefers reduced motion. Call right after the board-wrap's
+  // innerHTML is set (same task, before paint) so nothing flashes fully-lit first.
+  function animateBoardReveal(wrapEl) {
+    if (!wrapEl || !window.gsap) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const svg = wrapEl.querySelector('.hold-shape-layer');
+    if (!svg) return;                              // fallback dot overlay / no shapes
+    const dimRect = svg.querySelector('rect[mask]');
+    const holds = svg.querySelectorAll('.hs');
+    if (!holds.length) return;
+    // Hide everything synchronously (pre-paint) to avoid a fully-lit flash.
+    gsap.set(holds, { opacity: 0 });
+    if (dimRect) gsap.set(dimRect, { opacity: 0 });
+    const tl = gsap.timeline();
+    if (dimRect) tl.to(dimRect, { opacity: 0.62, duration: 0.3, ease: 'power2.out' });
+    ['start', 'int', 'finish'].forEach((role, i) => {
+      const group = svg.querySelectorAll('.hs.' + role);
+      if (group.length) {
+        tl.to(group, { opacity: 1, duration: 0.3, stagger: 0.04, ease: 'power2.out' },
+          i === 0 ? '-=0.15' : '-=0.1');           // overlap the role groups slightly
+      }
+    });
+  }
+
   // Map a pointer's client coords to board-relative percentages. Accounts for the
   // rotated fullscreen mode, where the board-wrap is CSS-rotated 90° about its
   // centre — its getBoundingClientRect is then the axis-aligned bounding box, not

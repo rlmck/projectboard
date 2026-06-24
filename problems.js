@@ -123,6 +123,9 @@
         ${boardExpandBtn()}
       </div>
     `;
+
+    // GSAP: animate the dim + holds "lighting up" (no-ops without GSAP / reduced motion).
+    animateBoardReveal(wrap.querySelector('.board-wrap'));
   }
 
   // Reflect the mirror toggle's lit state on the detail header button.
