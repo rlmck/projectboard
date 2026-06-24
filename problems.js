@@ -30,16 +30,24 @@
     return (c === '5' || c === '6' || c === '7' || c === '8') ? c : 'x';
   }
 
-  // One full-screen panel in the immersive board feed. Keeps the
-  // .problem-card[data-id] + .card-fave[data-fave] hooks the list click/fave wiring
-  // (app.js) relies on. The board is built lazily (data-built) as the panel nears
-  // focus, so only a handful of boards are ever live in the DOM.
+  // Is this problem ticked in a specific orientation? (myTicks is the any-orientation
+  // union; the per-orientation sets back the feed/detail tick buttons.)
+  function tickedOrient(id, mirrored) {
+    return (mirrored ? myTicksMirrored : myTicksNormal).has(String(id));
+  }
+
+  // One full-screen panel in the immersive board feed. Carries the full per-card
+  // action bar (tick · favourite · mirror · cast · info) so browsing IS viewing —
+  // the same actions you have on the detail screen, acting on this problem. The
+  // board is built lazily (data-built) as the panel nears focus; data-mirror tracks
+  // its orientation. The actions use .deck-act[data-act][data-id] (app.js dispatch).
   function deckPanelHtml(p) {
+    const id = escAttr(p.id);
     const faved = isFaved(p.id);
-    const ticked = isTicked(p.id);
+    const ticked = tickedOrient(p.id, false);
     const showStars = Number(p.stars) > 0;
     return `
-      <div class="problem-card deck-panel grade-band-${gradeBand(p.grade)}" data-id="${escAttr(p.id)}" data-built="0">
+      <div class="problem-card deck-panel grade-band-${gradeBand(p.grade)}" data-id="${id}" data-built="0" data-mirror="0">
         <div class="deck-top">
           <div class="deck-grade">${escHtml(fontGrade(p.grade) || '—')}</div>
           <div class="deck-name">${escHtml(displayName(p))}</div>
@@ -47,21 +55,63 @@
             <span class="meta-setter">by ${escHtml(setterName(p))}</span>
             ${showStars ? starsHtml(p.stars) : ''}
             ${p.is_benchmark ? '<span class="cat-bench" title="Benchmark">★</span>' : ''}
-            ${ticked ? '<span class="tick-flag" title="Sent">✓</span>' : ''}
           </div>
         </div>
         <div class="board-wrap"></div>
         <div class="deck-actions">
-          <button class="card-fave${faved ? ' faved' : ''}" data-fave="${escAttr(p.id)}" aria-pressed="${faved}" aria-label="${faved ? 'Remove from favourites' : 'Add to favourites'}">${HEART_SVG}</button>
-          <span class="deck-hint">Tap to open</span>
+          <button class="deck-act${ticked ? ' on' : ''}" data-act="tick" data-id="${id}" aria-label="Tick">${TICK_SVG}</button>
+          <button class="deck-act fave-act${faved ? ' faved' : ''}" data-act="fave" data-id="${id}" aria-label="Favourite">${HEART_SVG}</button>
+          <button class="deck-act" data-act="mirror" data-id="${id}" aria-label="Mirror">${MIRROR_SVG}</button>
+          <button class="deck-act cast-icon-btn" data-act="cast" data-id="${id}" aria-label="Cast to board">${CAST_SVG}</button>
+          <button class="deck-act" data-act="info" data-id="${id}" aria-label="Information">${INFO_SVG}</button>
         </div>
       </div>`;
+  }
+
+  // Plain list row (the classic "List View"). Keeps the .problem-card[data-id] +
+  // .card-fave[data-fave] hooks the list click/fave wiring (app.js) relies on.
+  function listRowHtml(p) {
+    const faved = isFaved(p.id);
+    return `
+      <div class="problem-card" data-id="${escAttr(p.id)}">
+        <div class="problem-info">
+          <div class="problem-name">${escHtml(displayName(p))}</div>
+          <div class="problem-meta">
+            <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
+            <span class="meta-setter">${escHtml(setterName(p))}</span>
+            ${starsHtml(p.stars)}
+            ${isTicked(p.id) ? '<span class="tick-flag" title="Sent">✓</span>' : ''}
+          </div>
+        </div>
+        <button class="card-fave${faved ? ' faved' : ''}" data-fave="${escAttr(p.id)}" aria-pressed="${faved}" aria-label="${faved ? 'Remove from favourites' : 'Add to favourites'}">${HEART_SVG}</button>
+      </div>`;
+  }
+
+  // Fisher–Yates shuffle (returns the same array, shuffled). Feed mode renders a
+  // shuffled order so "every swipe is a shuffle".
+  function shuffleArr(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  // Reflect the current mode on #view-list (CSS) + the #view-toggle button.
+  function applyListMode() {
+    document.getElementById('view-list').classList.toggle('feed-on', feedMode);
+    const btn = document.getElementById('view-toggle');
+    if (!btn) return;
+    btn.classList.toggle('is-shuffle', !feedMode);
+    btn.innerHTML = feedMode ? 'List View' : SHUFFLE_SVG;
+    btn.setAttribute('aria-label', feedMode ? 'Switch to list view' : 'Shuffle cards');
   }
 
   function renderList() {
     const container = document.getElementById('list-container');
     const list = visibleProblems();
     document.getElementById('count').textContent = `${list.length} problem${list.length !== 1 ? 's' : ''}`;
+    applyListMode();
 
     if (list.length === 0) {
       // Only show the favourites onboarding hint when faves is the *only* active
@@ -73,8 +123,72 @@
         : `<div class="state-msg"><div class="icon">🔎</div>None match these filters.</div>`;
       return;
     }
-    container.innerHTML = list.map(deckPanelHtml).join('');
-    initDeck(container);
+    if (feedMode) {
+      container.innerHTML = shuffleArr(list.slice()).map(deckPanelHtml).join('');
+      initDeck(container);
+    } else {
+      container.innerHTML = `<div class="problem-list">${list.map(listRowHtml).join('')}</div>`;
+    }
+  }
+
+  // A state-only refresh (after a tick/fave) — avoid rebuilding the feed (which
+  // would reshuffle + lose your place). If the visible set changed (e.g. Exclude
+  // Done hid the just-ticked climb), rebuild; otherwise just update card states.
+  function refreshLists() {
+    const container = document.getElementById('list-container');
+    if (!container) return;
+    if (!feedMode) { renderList(); return; }
+    const rendered = Array.from(container.querySelectorAll('.deck-panel')).map(p => p.dataset.id);
+    const visIds = visibleProblems().map(p => String(p.id));
+    const same = rendered.length === visIds.length && visIds.every(id => rendered.includes(id));
+    if (!same) { renderList(); return; }
+    container.querySelectorAll('.deck-panel').forEach(panel => {
+      const id = panel.dataset.id;
+      const tickBtn = panel.querySelector('[data-act="tick"]');
+      if (tickBtn) tickBtn.classList.toggle('on', tickedOrient(id, panel.dataset.mirror === '1'));
+      const faveBtn = panel.querySelector('[data-act="fave"]');
+      if (faveBtn) faveBtn.classList.toggle('faved', isFaved(id));
+    });
+  }
+
+  // Per-card action dispatch (called from the #list-container click handler in
+  // app.js). Each action operates on THIS card's problem + orientation, reusing the
+  // same logic as the detail view.
+  function handleFeedAction(actEl) {
+    const id = actEl.dataset.id;
+    const p = allProblems.find(x => String(x.id) === String(id));
+    if (!p) return;
+    const panel = actEl.closest('.deck-panel');
+    const mirrored = panel && panel.dataset.mirror === '1';
+    currentProblem = p;        // so info (and any currentProblem-based action) targets this card
+    switch (actEl.dataset.act) {
+      case 'fave':   toggleFave(id); break;
+      case 'tick':   tickProblem(p, !!mirrored); break;     // refreshLists() updates the button
+      case 'cast':   castByName(p.name, actEl, !!mirrored); break;
+      case 'mirror': feedToggleMirror(panel, actEl); break;
+      case 'info':   openInfo(); break;
+    }
+  }
+
+  // Flip one feed card between normal and mirrored: rebuild just that card's board
+  // overlay and replay its reveal; the tick button follows the shown orientation.
+  function feedToggleMirror(panel, actEl) {
+    if (!panel) return;
+    const mir = panel.dataset.mirror !== '1';
+    panel.dataset.mirror = mir ? '1' : '0';
+    actEl.classList.toggle('on', mir);
+    const p = allProblems.find(x => String(x.id) === String(panel.dataset.id));
+    const wrap = panel.querySelector('.board-wrap');
+    if (p && wrap) {
+      wrap.innerHTML = `<img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="" />`
+        + (boardShapeOverlayHtml(p, { mirror: mir, dim: true }) || boardOverlayHtml(p, mir) || '');
+      animateBoardReveal(wrap, FEED_REVEAL);
+    }
+    const tickBtn = panel.querySelector('[data-act="tick"]');
+    if (tickBtn) tickBtn.classList.toggle('on', tickedOrient(panel.dataset.id, mir));
+    if (mir && p && problemHoldOrder(p).includes('hold218')) {
+      showToast('I12 has no mirror — left in place', 'success');
+    }
   }
 
   // ── Immersive board feed controller ──────────────────────────────────────────
@@ -94,8 +208,9 @@
     const p = deckProblem(panel);
     const wrap = panel.querySelector('.board-wrap');
     if (!p || !wrap) return;
+    const mir = panel.dataset.mirror === '1';
     wrap.innerHTML = `<img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="" />`
-      + (boardShapeOverlayHtml(p, { dim: true }) || boardOverlayHtml(p) || '');
+      + (boardShapeOverlayHtml(p, { mirror: mir, dim: true }) || boardOverlayHtml(p, mir) || '');
     panel.dataset.built = '1';
   }
   function teardownPanelBoard(panel) {
@@ -130,7 +245,7 @@
 
     const buildIO = new IntersectionObserver(entries => {
       entries.forEach(e => e.isIntersecting ? buildPanelBoard(e.target) : teardownPanelBoard(e.target));
-    }, { root: scroller, rootMargin: '150% 0px', threshold: 0 });
+    }, { root: scroller, rootMargin: '0px 150%', threshold: 0 });   // horizontal window: pre-build side neighbours
 
     const focusIO = new IntersectionObserver(entries => {
       entries.forEach(e => e.intersectionRatio >= 0.6 ? focusDeckPanel(e.target) : blurDeckPanel(e.target));
@@ -153,14 +268,52 @@
     ).join('');
   }
 
+  // Grade filter = a dual-thumb RANGE slider over the grades present in the data.
+  // It writes the classic `activeGrades` Set (full range = empty = "All"), so
+  // visibleProblems() and everything downstream is unchanged. Wired in app.js.
   function buildGradeTabs() {
     const present = [...new Set(allProblems.map(p => p.grade).filter(Boolean))]
       .sort((a, b) => gradeRank(a) - gradeRank(b) || a.localeCompare(b));
-    // Drop any active filter whose grade no longer exists (last problem deleted/regraded),
-    // otherwise visibleProblems() would filter on an absent grade and show nothing.
     [...activeGrades].forEach(g => { if (!present.includes(g)) activeGrades.delete(g); });
-    document.getElementById('grade-tabs').innerHTML =
-      gradeTabButtons(['all', ...present], g => g === 'all' ? activeGrades.size === 0 : activeGrades.has(g), fontGrade);
+    gradePresent = present;
+    const el = document.getElementById('grade-tabs');
+    const n = present.length;
+    if (n <= 1) { el.innerHTML = ''; activeGrades.clear(); return; }   // nothing to range over
+
+    // Seed the thumbs from any existing range (else full span).
+    let lo = 0, hi = n - 1;
+    if (activeGrades.size) {
+      const idxs = present.map((g, i) => activeGrades.has(g) ? i : -1).filter(i => i >= 0);
+      if (idxs.length) { lo = Math.min(...idxs); hi = Math.max(...idxs); }
+    }
+    el.innerHTML = `
+      <div class="grade-slider">
+        <div class="gs-label"><span id="gs-low"></span><span class="gs-dash">–</span><span id="gs-high"></span></div>
+        <div class="gs-track">
+          <div class="gs-rail"></div>
+          <div class="gs-fill" id="gs-fill"></div>
+          <input type="range" id="gs-min" min="0" max="${n - 1}" value="${lo}" step="1" aria-label="Lowest grade">
+          <input type="range" id="gs-max" min="0" max="${n - 1}" value="${hi}" step="1" aria-label="Highest grade">
+        </div>
+      </div>`;
+    updateGradeSliderUi();
+  }
+
+  // Sync the slider's fill + labels and rewrite activeGrades from the two thumbs.
+  function updateGradeSliderUi() {
+    const present = gradePresent, n = present.length;
+    const minEl = document.getElementById('gs-min'), maxEl = document.getElementById('gs-max');
+    if (!minEl || !maxEl || n <= 1) return;
+    let lo = +minEl.value, hi = +maxEl.value;
+    if (lo > hi) [lo, hi] = [hi, lo];          // thumbs can cross — use the span
+    const max = n - 1;
+    document.getElementById('gs-low').textContent = fontGrade(present[lo]);
+    document.getElementById('gs-high').textContent = fontGrade(present[hi]);
+    const fill = document.getElementById('gs-fill');
+    fill.style.left = (lo / max * 100) + '%';
+    fill.style.right = ((max - hi) / max * 100) + '%';
+    activeGrades.clear();
+    if (!(lo === 0 && hi === max)) for (let i = lo; i <= hi; i++) activeGrades.add(present[i]);
   }
 
   // ── Detail ───────────────────────────────────────────────────────────────────
