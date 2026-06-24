@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hold-shape tracer — ProjectBoard</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: #0b0d10; color: #e7e9ec; }
+  header { position: sticky; top: 0; z-index: 10; background: #11151a; border-bottom: 1px solid #222a33;
+           padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  header .grow { flex: 1 1 auto; }
+  button, select { background: #1b212a; color: #e7e9ec; border: 1px solid #2c3742;
+           border-radius: 7px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
+  button:hover { background: #232b36; }
+  button.primary { background: #2563eb; border-color: #2563eb; }
+  button.warn { background: #7f1d1d; border-color: #991b1b; }
+  .pill { background: #1b212a; border: 1px solid #2c3742; border-radius: 999px; padding: 4px 10px; font-size: 12px; }
+  .hint { color: #93a1b0; font-size: 12px; }
+  #stage { padding: 12px; }
+  #frame { position: relative; display: inline-block; outline: 1px solid #2c3742; }
+  #frame img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
+  #ov { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
+  .guide { fill: rgba(255,255,255,0.10); stroke: rgba(255,255,255,0.35); stroke-width: 0.15; }
+  .guide.done { fill: rgba(34,197,94,0.18); stroke: rgba(34,197,94,0.55); }
+  .guide.cur  { fill: rgba(245,200,66,0.30); stroke: #f5c842; stroke-width: 0.4; }
+  .saved-poly { fill: rgba(59,130,246,0.10); stroke: rgba(59,130,246,0.5); stroke-width: 0.3; vector-effect: non-scaling-stroke; }
+  .cur-poly { fill: rgba(245,200,66,0.18); stroke: #f5c842; stroke-width: 0.45; vector-effect: non-scaling-stroke; }
+  .cur-pt { fill: #f5c842; }
+  kbd { background: #222a33; border: 1px solid #344; border-radius: 4px; padding: 0 5px; font-size: 11px; }
+</style>
+</head>
+<body>
+<header>
+  <button id="prev">◀ Prev (p)</button>
+  <button id="next">Next (n) ▶</button>
+  <button id="nextTodo">Next untraced</button>
+  <button id="undo">Undo pt (z)</button>
+  <button id="clear" class="warn">Clear hold (c)</button>
+  <span class="grow"></span>
+  <span class="pill" id="curLabel">—</span>
+  <span class="pill" id="progress">0 / 0</span>
+  <label class="hint">zoom <input id="zoom" type="range" min="1" max="4" step="0.25" value="1" /></label>
+  <button id="importBtn">Import…</button>
+  <button id="export" class="primary">Export hold_shapes.json</button>
+  <input id="importFile" type="file" accept="application/json" hidden />
+</header>
+
+<div id="stage">
+  <p class="hint" style="margin:0 0 8px">
+    Click around a hold's edge to drop outline points (need ≥3). Guide dots: faint = untraced,
+    green = traced, <b style="color:#f5c842">yellow = current</b>. Keys: <kbd>n</kbd>/<kbd>p</kbd> hold,
+    <kbd>z</kbd> undo point, <kbd>c</kbd> clear hold. Positions come from <code>hold_map.json</code> and are never changed.
+  </p>
+  <div id="frame">
+    <img id="board" src="ProjectBoard.png" alt="board" />
+    <svg id="ov" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+  </div>
+</div>
+
+<script>
+(async function () {
+  const ov = document.getElementById('ov');
+  const frame = document.getElementById('frame');
+  let holdMap = {};
+  let holds = [];          // ['hold1', ...] numeric order
+  let shapes = {};         // holdId -> [[x,y], ...]
+  let cur = 0;
+
+  function holdNum(h) { return parseInt(String(h).replace(/[^0-9]/g, ''), 10) || 0; }
+
+  try {
+    holdMap = await (await fetch('hold_map.json', { cache: 'no-cache' })).json();
+  } catch (e) { alert('Could not load hold_map.json (run this from the repo root via a local server).'); }
+  holds = Object.keys(holdMap).sort((a, b) => holdNum(a) - holdNum(b));
+
+  // Try to load any committed shapes so a partial trace is resumable.
+  try {
+    const r = await fetch('hold_shapes.json', { cache: 'no-cache' });
+    if (r.ok) { const j = await r.json(); if (j && typeof j === 'object') shapes = j; }
+  } catch (e) { /* none yet */ }
+
+  function curHold() { return holds[cur]; }
+  function tracedCount() { return holds.filter(h => (shapes[h] || []).length >= 3).length; }
+
+  function render() {
+    const h = curHold();
+    let s = '';
+    // guide dots for every hold
+    holds.forEach(g => {
+      const p = holdMap[g];
+      const cls = g === h ? 'cur' : ((shapes[g] || []).length >= 3 ? 'done' : '');
+      s += `<circle class="guide ${cls}" cx="${p.x}" cy="${p.y}" r="${g === h ? 1.4 : 0.9}" />`;
+    });
+    // already-saved polygons (faint), except the current one
+    holds.forEach(g => {
+      if (g === h) return;
+      const pts = shapes[g]; if (!pts || pts.length < 2) return;
+      s += `<polygon class="saved-poly" points="${pts.map(p => p[0] + ',' + p[1]).join(' ')}" />`;
+    });
+    // current hold polygon + vertices
+    const pts = shapes[h] || [];
+    if (pts.length >= 2) s += `<polygon class="cur-poly" points="${pts.map(p => p[0] + ',' + p[1]).join(' ')}" />`;
+    pts.forEach(p => { s += `<circle class="cur-pt" cx="${p[0]}" cy="${p[1]}" r="0.6" />`; });
+    ov.innerHTML = s;
+
+    document.getElementById('curLabel').textContent = `${h}  (${holdNum(h)})  ·  ${pts.length} pts`;
+    document.getElementById('progress').textContent = `${tracedCount()} / ${holds.length} traced`;
+  }
+
+  function go(delta) { cur = (cur + delta + holds.length) % holds.length; render(); }
+  function nextTodo() {
+    for (let i = 1; i <= holds.length; i++) {
+      const idx = (cur + i) % holds.length;
+      if ((shapes[holds[idx]] || []).length < 3) { cur = idx; render(); return; }
+    }
+    alert('All holds have ≥3 points 🎉');
+  }
+
+  ov.addEventListener('click', (e) => {
+    const r = ov.getBoundingClientRect();
+    const x = +(((e.clientX - r.left) / r.width) * 100).toFixed(2);
+    const y = +(((e.clientY - r.top) / r.height) * 100).toFixed(2);
+    (shapes[curHold()] = shapes[curHold()] || []).push([x, y]);
+    render();
+  });
+
+  document.getElementById('prev').onclick = () => go(-1);
+  document.getElementById('next').onclick = () => go(1);
+  document.getElementById('nextTodo').onclick = nextTodo;
+  document.getElementById('undo').onclick = () => { (shapes[curHold()] || []).pop(); render(); };
+  document.getElementById('clear').onclick = () => { delete shapes[curHold()]; render(); };
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === 'n' || e.key === 'Enter') { go(1); e.preventDefault(); }
+    else if (e.key === 'p') go(-1);
+    else if (e.key === 'z' || e.key === 'Backspace') { (shapes[curHold()] || []).pop(); render(); e.preventDefault(); }
+    else if (e.key === 'c') { delete shapes[curHold()]; render(); }
+  });
+
+  document.getElementById('zoom').oninput = (e) => {
+    // base width = natural image width capped at viewport; scale by zoom
+    const base = Math.min(document.getElementById('board').naturalWidth || 900, window.innerWidth - 24);
+    frame.style.width = (base * parseFloat(e.target.value)) + 'px';
+  };
+
+  document.getElementById('export').onclick = () => {
+    // drop empty / <3-point holds so the file only holds usable polygons
+    const out = {};
+    Object.keys(shapes).forEach(h => { if ((shapes[h] || []).length >= 3) out[h] = shapes[h]; });
+    const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'hold_shapes.json'; a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  document.getElementById('importBtn').onclick = () => document.getElementById('importFile').click();
+  document.getElementById('importFile').onchange = (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => { try { shapes = JSON.parse(rd.result) || {}; render(); } catch (err) { alert('Bad JSON'); } };
+    rd.readAsText(f);
+  };
+
+  render();
+})();
+</script>
+</body>
+</html>

@@ -37,7 +37,10 @@
   function applyCreateRoles() {
     const layer = document.getElementById('create-hold-layer');
     if (layer) {
-      layer.innerHTML = Object.keys(createRoles).map(h => {
+      // Shaped outlines (no dim — the board must stay fully visible/tappable while
+      // building a route); falls back to circles when shapes aren't usable.
+      const svg = holdShapeLayerHtml(createRoles, { mirror: false, dim: false });
+      layer.innerHTML = (svg != null) ? svg : Object.keys(createRoles).map(h => {
         const pos = HOLD_MAP && HOLD_MAP[h];
         if (!pos) return '';
         return `<div class="hold-dot ${createRoles[h]}" style="left:${pos.x}%;top:${pos.y}%"></div>`;

@@ -119,7 +119,7 @@
 
       <div class="board-wrap">
         <img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" />
-        ${boardOverlayHtml(p, detailMirror)}
+        ${boardShapeOverlayHtml(p, { mirror: detailMirror, dim: true }) || boardOverlayHtml(p, detailMirror)}
         ${boardExpandBtn()}
       </div>
     `;
@@ -328,6 +328,20 @@
       if (res.ok && !configHasMap) HOLD_MAP = await res.json();
     } catch (err) {
       console.warn('hold_map.json load failed — board overlay disabled', err);
+    }
+    refreshBoardViews();
+  }
+
+  // ── Load hold outline shapes (bundled; hold id -> [[x,y],…] % polygon) ───────
+  // Tied to the bundled ProjectBoard.png illustration, so bundled-only (no
+  // board_config). Drives the problem detail/create shape overlay; absent or empty
+  // → the overlay falls back to circles.
+  async function loadHoldShapes() {
+    try {
+      const res = await fetch('hold_shapes.json', { cache: 'no-cache' });
+      if (res.ok) HOLD_SHAPES = await res.json();
+    } catch (err) {
+      console.warn('hold_shapes.json load failed — shape overlay disabled', err);
     }
     refreshBoardViews();
   }

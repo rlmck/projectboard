@@ -527,6 +527,7 @@
   // Prefer the admin-saved board (image + hold map) from Supabase; fall back to the
   // bundled hold_map.json only if no saved map exists.
   loadBoardConfig().then(() => { loadHoldMap(); loadMirrorMap(); });
+  loadHoldShapes(); // bundled hold outlines for the problem shape overlay
   initAuth();      // restore session, wire auth state, handle Google redirect
 
   // Splash: linger briefly, then fade out and remove from the DOM.

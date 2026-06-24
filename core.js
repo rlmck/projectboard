@@ -124,6 +124,53 @@
     return `<div class="hold-layer">${dots}</div>`;
   }
 
+  // ── Hold-shape overlay (problems only — circuits keep the .hold-dot path) ────
+  // Draws each used hold as its *real traced outline* (hold_shapes.json) instead
+  // of a circle, and on the detail view dims the rest of the board so only the
+  // used holds stay bright. Returns null when shapes can't be used so callers
+  // fall back to boardOverlayHtml(): no shapes loaded, or a custom board photo is
+  // in use (shapes are traced against the bundled illustration only).
+  let hsMaskSeq = 0;
+  function shapesUsable() {
+    return !!(HOLD_SHAPES && Object.keys(HOLD_SHAPES).length && HOLD_MAP && BOARD_IMG === 'ProjectBoard.png');
+  }
+
+  // roles: { holdId -> 'start' | 'int' | 'finish' }. `mirror` pulls each hold's
+  // position AND shape from its mirror partner (roles preserved). `dim` adds the
+  // darken-the-rest mask (detail view); create/edit passes dim:false so the whole
+  // board stays visible. A used hold with no traced polygon falls back to a dot.
+  function holdShapeLayerHtml(roles, { mirror = false, dim = false } = {}) {
+    if (!shapesUsable()) return null;
+    const maskId = 'hsmask-' + (++hsMaskSeq);
+    const holes = [], outlines = [], dots = [];
+    Object.keys(roles).forEach(h => {
+      const key = mirror ? mirrorHold(h) : h;
+      const pts = HOLD_SHAPES[key];
+      const pos = HOLD_MAP[key];
+      const role = roles[h];
+      if (pts && pts.length >= 3) {
+        const s = pts.map(p => p[0] + ',' + p[1]).join(' ');
+        holes.push(`<polygon points="${s}" fill="#000"/>`);
+        outlines.push(`<polygon points="${s}" class="hs ${role}"/>`);
+      } else if (pos) {                       // no traced shape yet — show a dot
+        holes.push(`<circle cx="${pos.x}" cy="${pos.y}" r="2.3" fill="#000"/>`);
+        outlines.push(`<circle cx="${pos.x}" cy="${pos.y}" r="2.3" class="hs ${role}"/>`);
+      }
+    });
+    const dimRect = dim
+      ? `<mask id="${maskId}" maskUnits="userSpaceOnUse"><rect width="100" height="100" fill="#fff"/>${holes.join('')}</mask>`
+        + `<rect width="100" height="100" fill="#000" opacity="0.62" mask="url(#${maskId})"/>`
+      : '';
+    return `<svg class="hold-shape-layer" viewBox="0 0 100 100" preserveAspectRatio="none">${dimRect}${outlines.join('')}</svg>`;
+  }
+
+  // Problem-detail entry point: derive roles from the (un-inverted) hold order.
+  function boardShapeOverlayHtml(p, opts = {}) {
+    const order = problemHoldOrder(p);
+    if (!order.length) return null;
+    return holdShapeLayerHtml(classifyHolds(order), opts);
+  }
+
   // Map a pointer's client coords to board-relative percentages. Accounts for the
   // rotated fullscreen mode, where the board-wrap is CSS-rotated 90° about its
   // centre — its getBoundingClientRect is then the axis-aligned bounding box, not
