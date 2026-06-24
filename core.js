@@ -225,6 +225,49 @@
     restUnits.forEach((u, k) => light(u, REVEAL_START_HOLD + k * REVEAL_STEP));
   }
 
+  // True when the user asked the OS to minimise motion — every GSAP flourish
+  // checks this and bails to the plain, instant render.
+  function prefersReducedMotion() {
+    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+
+  // Catalogue entrance choreography (problem/circuit list tiles). The first
+  // viewport's worth of cards animate in immediately with a stagger (so nothing
+  // flashes blank), and the rest reveal as they scroll into view via an
+  // IntersectionObserver — cheap across hundreds of items, and it re-runs on every
+  // filter/search so the grid re-choreographs. No-ops (cards stay fully visible)
+  // without GSAP or under reduced motion. Call right after the list innerHTML is set.
+  function staggerRevealCards(containerEl) {
+    if (!containerEl || !window.gsap || prefersReducedMotion()) return;
+    const cards = Array.from(containerEl.querySelectorAll('.problem-card'));
+    if (!cards.length) return;
+
+    gsap.set(cards, { opacity: 0, y: 22, scale: 0.96 });
+    const reveal = (el, delay = 0) =>
+      gsap.to(el, { opacity: 1, y: 0, scale: 1, duration: 0.5, delay, ease: 'power3.out', overwrite: true });
+
+    // First batch: reveal now with a stagger (covers the opening viewport, no flash).
+    const FIRST = 12;
+    gsap.to(cards.slice(0, FIRST), {
+      opacity: 1, y: 0, scale: 1, duration: 0.5, ease: 'power3.out',
+      stagger: { each: 0.045, from: 'start' }, overwrite: true
+    });
+
+    // The rest: reveal as they enter the viewport.
+    const rest = cards.slice(FIRST);
+    if (!rest.length) return;
+    if (typeof IntersectionObserver === 'undefined') { rest.forEach(el => reveal(el)); return; }
+    const io = new IntersectionObserver((entries, obs) => {
+      let i = 0;
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        obs.unobserve(entry.target);
+        reveal(entry.target, Math.min(i++, 6) * 0.04);   // gentle stagger within a batch
+      });
+    }, { rootMargin: '0px 0px -6% 0px', threshold: 0.01 });
+    rest.forEach(el => io.observe(el));
+  }
+
   // Map a pointer's client coords to board-relative percentages. Accounts for the
   // rotated fullscreen mode, where the board-wrap is CSS-rotated 90° about its
   // centre — its getBoundingClientRect is then the axis-aligned bounding box, not

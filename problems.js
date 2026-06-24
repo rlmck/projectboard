@@ -23,20 +23,30 @@
     );
   }
 
+  // Grade -> colour band for the catalogue tiles ('5'/'6'/'7'/'8' by the leading
+  // digit; 'x' for anything else, e.g. Project/ungraded). Drives the --band CSS var.
+  function gradeBand(g) {
+    const c = String(g || '').trim()[0];
+    return (c === '5' || c === '6' || c === '7' || c === '8') ? c : 'x';
+  }
+
+  // Catalogue tile. Keeps the .problem-card[data-id] + .card-fave[data-fave] hooks
+  // the list click/fave wiring (app.js) relies on; everything else is the new look.
   function cardHtml(p) {
     const faved = isFaved(p.id);
+    const ticked = isTicked(p.id);
+    const showStars = Number(p.stars) > 0;
     return `
-      <div class="problem-card" data-id="${escAttr(p.id)}">
-        <div class="problem-info">
-          <div class="problem-name">${escHtml(displayName(p))}</div>
-          <div class="problem-meta">
-            <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
-            <span class="meta-setter">${escHtml(setterName(p))}</span>
-            ${starsHtml(p.stars)}
-            ${isTicked(p.id) ? '<span class="tick-flag" title="Sent">✓</span>' : ''}
-          </div>
-        </div>
+      <div class="problem-card cat-card grade-band-${gradeBand(p.grade)}" data-id="${escAttr(p.id)}">
         <button class="card-fave${faved ? ' faved' : ''}" data-fave="${escAttr(p.id)}" aria-pressed="${faved}" aria-label="${faved ? 'Remove from favourites' : 'Add to favourites'}">${HEART_SVG}</button>
+        <div class="cat-grade">${escHtml(fontGrade(p.grade) || '—')}</div>
+        <div class="cat-name">${escHtml(displayName(p))}</div>
+        <div class="cat-meta">
+          <span class="meta-setter">${escHtml(setterName(p))}</span>
+          ${showStars ? starsHtml(p.stars) : ''}
+          ${p.is_benchmark ? '<span class="cat-bench" title="Benchmark">★</span>' : ''}
+          ${ticked ? '<span class="tick-flag" title="Sent">✓</span>' : ''}
+        </div>
       </div>`;
   }
 
@@ -55,7 +65,8 @@
         : `<div class="state-msg"><div class="icon">🔎</div>None match these filters.</div>`;
       return;
     }
-    container.innerHTML = `<div class="problem-list">${list.map(cardHtml).join('')}</div>`;
+    container.innerHTML = `<div class="catalogue">${list.map(cardHtml).join('')}</div>`;
+    staggerRevealCards(container);
   }
 
   // Shared grade-tab markup. `isActive(g)` decides the highlight; 'all' renders as
