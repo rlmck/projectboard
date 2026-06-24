@@ -171,30 +171,47 @@
     return holdShapeLayerHtml(classifyHolds(order), opts);
   }
 
-  // GSAP "light-up" reveal for the detail board: the dim mask fades in while the
-  // holds fade in, grouped start -> intermediate -> finish. Pure presentation —
-  // degrades to the instant render (current behaviour) when GSAP is unavailable
-  // or the user prefers reduced motion. Call right after the board-wrap's
-  // innerHTML is set (same task, before paint) so nothing flashes fully-lit first.
+  // GSAP "light-up" reveal for the detail board. The dim mask fades in, the start
+  // hold(s) light first and hold for REVEAL_START_HOLD (1s), then each remaining
+  // hold lights up one at a time every REVEAL_STEP (0.75s) — in climbing order
+  // (intermediates -> finish) — and every hold STAYS lit until the whole board is
+  // up. Pure presentation: degrades to the instant render (current behaviour) when
+  // GSAP is unavailable or the user prefers reduced motion. Call right after the
+  // board-wrap's innerHTML is set (same task, before paint) so nothing flashes
+  // fully-lit first.
+  //
+  // The SVG outlines are emitted in problemHoldOrder()/classifyHolds() order, so
+  // their document order IS the climbing sequence: the leading `.hs.start` elements
+  // are the starts, and the rest follow in order up to the finish.
   function animateBoardReveal(wrapEl) {
     if (!wrapEl || !window.gsap) return;
     if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const svg = wrapEl.querySelector('.hold-shape-layer');
     if (!svg) return;                              // fallback dot overlay / no shapes
     const dimRect = svg.querySelector('rect[mask]');
-    const holds = svg.querySelectorAll('.hs');
+    const holds = Array.from(svg.querySelectorAll('.hs'));
     if (!holds.length) return;
+
+    const startEls = holds.filter(el => el.classList.contains('start'));
+    const restEls = holds.filter(el => !el.classList.contains('start'));   // intermediates then finish, in order
+
+    const FADE = 0.25;          // how long each hold takes to fade up
+    const REVEAL_START_HOLD = 1.0;  // starts stay alone this long before the sequence
+    const REVEAL_STEP = 0.75;       // gap between each subsequent hold
+
     // Hide everything synchronously (pre-paint) to avoid a fully-lit flash.
     gsap.set(holds, { opacity: 0 });
     if (dimRect) gsap.set(dimRect, { opacity: 0 });
+
     const tl = gsap.timeline();
-    if (dimRect) tl.to(dimRect, { opacity: 0.62, duration: 0.3, ease: 'power2.out' });
-    ['start', 'int', 'finish'].forEach((role, i) => {
-      const group = svg.querySelectorAll('.hs.' + role);
-      if (group.length) {
-        tl.to(group, { opacity: 1, duration: 0.3, stagger: 0.04, ease: 'power2.out' },
-          i === 0 ? '-=0.15' : '-=0.1');           // overlap the role groups slightly
-      }
+    // t=0: dim in + the start hold(s) light together.
+    if (dimRect) tl.to(dimRect, { opacity: 0.62, duration: 0.4, ease: 'power2.out' }, 0);
+    tl.to(startEls.length ? startEls : holds.slice(0, 1),
+      { opacity: 1, duration: FADE, ease: 'power2.out' }, 0);
+    // Then each remaining hold lights in sequence, staying on.
+    restEls.forEach((el, k) => {
+      tl.to(el, { opacity: 1, duration: FADE, ease: 'power2.out' },
+        REVEAL_START_HOLD + k * REVEAL_STEP);
     });
   }
 

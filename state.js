@@ -46,6 +46,7 @@
   let HOLD_SHAPES = null; // hold id -> [[x,y],…] % polygon, bundled hold_shapes.json (problem overlay only)
   let MIRROR_MAP = null; // hold id -> mirror-partner hold id (bundled mirror_map.json); self = centre/no-partner
   let detailMirror = false; // detail view is showing the left/right-mirrored problem
+  let suppressDetailReveal = false; // one-shot: skip the GSAP light-up reveal for the next detail render (set when mirroring back to normal)
   let BOARD_IMG = 'ProjectBoard.png';   // resolved board image URL (Supabase upload, else bundled)
   let configHasMap = false;             // true once board_config supplied a hold map (suppresses the bundled fallback)
   let configHasMirror = false;          // true once board_config supplied a mirror map (suppresses the bundled fallback)

@@ -124,8 +124,12 @@
       </div>
     `;
 
-    // GSAP: animate the dim + holds "lighting up" (no-ops without GSAP / reduced motion).
-    animateBoardReveal(wrap.querySelector('.board-wrap'));
+    // GSAP "light-up" reveal (no-ops without GSAP / reduced motion). Skipped once
+    // when mirroring back to normal — see toggleDetailMirror. The flag is a one-shot,
+    // so leaving and re-entering the detail view animates again.
+    const skipReveal = suppressDetailReveal;
+    suppressDetailReveal = false;
+    if (!skipReveal) animateBoardReveal(wrap.querySelector('.board-wrap'));
   }
 
   // Reflect the mirror toggle's lit state on the detail header button.
@@ -143,6 +147,8 @@
     if (!currentProblem) return;
     detailMirror = !detailMirror;
     updateMirrorButton();
+    // Mirroring ON re-animates the reveal; mirroring back to normal does not.
+    suppressDetailReveal = !detailMirror;
     if (currentView === 'detail') renderDetail(currentProblem.id);
     // The only hold with no real partner is I12 — flag if this problem uses it.
     if (detailMirror && problemHoldOrder(currentProblem).includes('hold218')) {
