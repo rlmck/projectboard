@@ -128,11 +128,11 @@
   // Draws each used hold as its *real traced outline* (hold_shapes.json) instead
   // of a circle, and on the detail view dims the rest of the board so only the
   // used holds stay bright. Returns null when shapes can't be used so callers
-  // fall back to boardOverlayHtml(): no shapes loaded, or a custom board photo is
-  // in use (shapes are traced against the bundled illustration only).
+  // fall back to boardOverlayHtml(): no shapes loaded, or no hold map. Shapes are
+  // traced (via trace_holds.html) against the live board image + hold_map.
   let hsMaskSeq = 0;
   function shapesUsable() {
-    return !!(HOLD_SHAPES && Object.keys(HOLD_SHAPES).length && HOLD_MAP && BOARD_IMG === 'ProjectBoard.png');
+    return !!(HOLD_SHAPES && Object.keys(HOLD_SHAPES).length && HOLD_MAP);
   }
 
   // roles: { holdId -> 'start' | 'int' | 'finish' }. `mirror` pulls each hold's

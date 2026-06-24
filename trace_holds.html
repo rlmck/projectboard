@@ -39,6 +39,7 @@
   <button id="undo">Undo pt (z)</button>
   <button id="clear" class="warn">Clear hold (c)</button>
   <span class="grow"></span>
+  <span class="pill" id="imgLabel">loading…</span>
   <span class="pill" id="curLabel">—</span>
   <span class="pill" id="progress">0 / 0</span>
   <label class="hint">zoom <input id="zoom" type="range" min="1" max="4" step="0.25" value="1" /></label>
@@ -63,16 +64,42 @@
 (async function () {
   const ov = document.getElementById('ov');
   const frame = document.getElementById('frame');
-  let holdMap = {};
+  // Public Supabase creds (anon key is a public key — safe to embed).
+  const SUPA_URL = 'https://uqirowyfqwiceyjznosl.supabase.co';
+  const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA';
+  const BUCKET = 'board';
+
+  let holdMap = null;
+  let imgSrc = 'ProjectBoard.png';   // fallback only
+  let imgLabel = 'bundled ProjectBoard.png (fallback)';
   let holds = [];          // ['hold1', ...] numeric order
   let shapes = {};         // holdId -> [[x,y], ...]
   let cur = 0;
 
   function holdNum(h) { return parseInt(String(h).replace(/[^0-9]/g, ''), 10) || 0; }
 
+  // Use the SAME board image + hold map the live app shows (board_config), so the
+  // traced outlines line up with what users see. Fall back to the bundled files.
   try {
-    holdMap = await (await fetch('hold_map.json', { cache: 'no-cache' })).json();
-  } catch (e) { alert('Could not load hold_map.json (run this from the repo root via a local server).'); }
+    const r = await fetch(`${SUPA_URL}/rest/v1/board_config?wall=eq.HangoutPortland&select=image_path,updated_at,hold_map`,
+      { headers: { apikey: ANON, Authorization: 'Bearer ' + ANON } });
+    const row = (await r.json())[0];
+    if (row) {
+      if (row.image_path) {
+        const ver = row.updated_at ? `?v=${encodeURIComponent(row.updated_at)}` : '';
+        imgSrc = `${SUPA_URL}/storage/v1/object/public/${BUCKET}/${row.image_path}${ver}`;
+        imgLabel = 'live board_config: ' + row.image_path;
+      }
+      if (row.hold_map && Object.keys(row.hold_map).length) holdMap = row.hold_map;
+    }
+  } catch (e) { /* offline / no config — fall back below */ }
+
+  if (!holdMap) {
+    try { holdMap = await (await fetch('hold_map.json', { cache: 'no-cache' })).json(); imgLabel += ' + bundled hold_map.json'; }
+    catch (e) { alert('Could not load a hold map (need internet for board_config, or run from the repo root).'); holdMap = {}; }
+  }
+  document.getElementById('board').src = imgSrc;
+  const il = document.getElementById('imgLabel'); if (il) il.textContent = imgLabel;
   holds = Object.keys(holdMap).sort((a, b) => holdNum(a) - holdNum(b));
 
   // Try to load any committed shapes so a partial trace is resumable.
