@@ -23,29 +23,92 @@
     searchInput.focus(); // pop the keyboard, ready for a fresh search
   });
 
-  // Grade RANGE slider (dual-thumb) — dragging either thumb rewrites activeGrades
-  // and re-renders. The slider is rebuilt by buildGradeTabs() whenever the data
-  // changes, so wire it by delegation on the container.
+  // Grade tabs — simple tap selects one grade, tap-and-hold builds a multi-select.
   const gradeTabsEl = document.getElementById('grade-tabs');
-  gradeTabsEl.addEventListener('input', e => {
-    if (e.target.id !== 'gs-min' && e.target.id !== 'gs-max') return;
-    updateGradeSliderUi();
+
+  // Re-render the tabs + list, preserving the strip's horizontal scroll.
+  function refreshGradeFilter() {
+    const scroll = gradeTabsEl.scrollLeft;
+    buildGradeTabs();
+    gradeTabsEl.scrollLeft = scroll;
     renderList();
+  }
+
+  // Simple tap — meaning depends on how many grades are selected:
+  //   • single-select (0–1 active) → switch to just this grade; tapping the active
+  //     grade again clears back to "All".
+  //   • multi-select  (2+ active)  → toggle this grade in/out. Dropping back to
+  //     one grade returns to single-select, so the next tap switches again.
+  function tapGrade(g) {
+    if (g === 'all') {
+      activeGrades.clear();
+    } else if (activeGrades.size >= 2) {        // multi-select: tap toggles
+      if (activeGrades.has(g)) activeGrades.delete(g);
+      else activeGrades.add(g);
+    } else if (activeGrades.has(g)) {            // tapping the active grade → All
+      activeGrades.clear();
+    } else {                                     // single-select: tap switches
+      activeGrades.clear();
+      activeGrades.add(g);
+    }
+    refreshGradeFilter();
+  }
+
+  // Tap-and-hold: the way to grow a selection — adds this grade (entering
+  // multi-select from a single grade). On an already-selected grade it removes
+  // it, unless it's the only one left (then keep it). "All" just clears.
+  function toggleGrade(g) {
+    if (g === 'all') activeGrades.clear();
+    else if (activeGrades.has(g)) { if (activeGrades.size > 1) activeGrades.delete(g); }
+    else activeGrades.add(g);
+    refreshGradeFilter();
+  }
+
+  let holdTimer = null, holdStartX = 0, holdStartY = 0, suppressTabClick = false;
+  const HOLD_MS = 450;
+
+  gradeTabsEl.addEventListener('touchstart', e => {
+    const tab = e.target.closest('.grade-tab');
+    if (!tab || e.touches.length !== 1) return;
+    suppressTabClick = false;
+    holdStartX = e.touches[0].clientX;
+    holdStartY = e.touches[0].clientY;
+    const g = tab.dataset.grade;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      suppressTabClick = true;                 // swallow the click that follows touchend
+      if (navigator.vibrate) navigator.vibrate(15);
+      toggleGrade(g);
+    }, HOLD_MS);
+  }, { passive: true });
+
+  // A drag means the user is scrolling the strip, not holding — cancel the hold.
+  gradeTabsEl.addEventListener('touchmove', e => {
+    if (!holdTimer) return;
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - holdStartX) > 10 || Math.abs(t.clientY - holdStartY) > 10) {
+      clearTimeout(holdTimer); holdTimer = null;
+    }
+  }, { passive: true });
+
+  const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
+  gradeTabsEl.addEventListener('touchend', cancelHold, { passive: true });
+  gradeTabsEl.addEventListener('touchcancel', cancelHold, { passive: true });
+
+  // Click handles the simple tap (mouse + touch). Skipped right after a hold fired.
+  gradeTabsEl.addEventListener('click', e => {
+    const tab = e.target.closest('.grade-tab');
+    if (!tab) return;
+    if (suppressTabClick) { suppressTabClick = false; return; }
+    tapGrade(tab.dataset.grade);
   });
 
-  // View toggle: immersive card feed  ⇄  plain list. From the feed it reads
-  // "List View"; from the list it's a shuffle icon that returns to the feed (and
-  // re-shuffles). Each entry into the feed re-randomises the order.
-  document.getElementById('view-toggle').addEventListener('click', () => {
-    feedMode = !feedMode;
-    renderList();
-  });
+  // Suppress the long-press context menu on the tabs (mobile + desktop).
+  gradeTabsEl.addEventListener('contextmenu', e => e.preventDefault());
 
-  // List clicks: a per-card feed action (tick/fave/mirror/cast/info) runs in place;
-  // a heart on a plain list row toggles favourite; otherwise the card opens detail.
+  // List clicks: heart toggles favourite (without opening), card opens detail.
   document.getElementById('list-container').addEventListener('click', e => {
-    const act = e.target.closest('.deck-act');
-    if (act) { e.stopPropagation(); handleFeedAction(act); return; }
     const fav = e.target.closest('.card-fave');
     if (fav) { e.stopPropagation(); toggleFave(fav.dataset.fave); return; }
     const card = e.target.closest('.problem-card');

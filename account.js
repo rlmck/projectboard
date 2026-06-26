@@ -25,19 +25,13 @@
 
   // Toggle the current problem's tick. Optimistic: flip the UI first, revert on
   // failure. The unique(user_id, problem_id) constraint keeps it idempotent.
-  // Detail-view tick: the orientation currently shown there.
   async function toggleTick() {
-    return tickProblem(currentProblem, !!detailMirror);
-  }
-
-  // Toggle a specific problem's tick in a specific orientation. Shared by the detail
-  // header (toggleTick) and the per-card feed action. Optimistic: flip the UI first,
-  // revert on failure. The unique(user_id, problem_id, mirrored) constraint keeps it
-  // idempotent.
-  async function tickProblem(p, mirrored) {
     if (!session) { showToast('Sign in to track ticks', 'success'); location.hash = '#auth'; return; }
+    const p = currentProblem;
     if (!p) return;
     const id = String(p.id);
+    // Tick the orientation currently shown in the detail view.
+    const mirrored = !!detailMirror;
     const orientSet = mirrored ? myTicksMirrored : myTicksNormal;
     const wasTicked = orientSet.has(id);
 
@@ -45,7 +39,7 @@
     if (wasTicked) orientSet.delete(id); else orientSet.add(id);
     recomputeAnyTick(id);
     updateTickButton();
-    refreshLists();
+    renderList();
 
     const res = wasTicked
       ? await sb.from('ticks').delete().eq('user_id', session.user.id).eq('problem_id', id).eq('mirrored', mirrored)
@@ -57,7 +51,7 @@
       if (wasTicked) orientSet.add(id); else orientSet.delete(id);   // revert
       recomputeAnyTick(id);
       updateTickButton();
-      refreshLists();
+      renderList();
       showToast('Could not save — check connection', 'error');
       return;
     }
@@ -137,7 +131,7 @@
     const was = isFaved(id);
     if (was) myFaves.delete(id); else myFaves.add(id);
     updateFaveButton();
-    refreshLists();
+    renderList();
 
     const res = was
       ? await sb.from('likes').delete().eq('user_id', session.user.id).eq('problem_id', id)
@@ -146,7 +140,7 @@
     if (res.error && res.error.code !== '23505') {
       if (was) myFaves.add(id); else myFaves.delete(id);   // revert
       updateFaveButton();
-      refreshLists();
+      renderList();
       showToast('Could not save — check connection', 'error');
       return;
     }

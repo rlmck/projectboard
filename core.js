@@ -171,68 +171,6 @@
     return holdShapeLayerHtml(classifyHolds(order), opts);
   }
 
-  // GSAP "light-up" reveal for the detail board. The WHOLE board starts dimmed —
-  // unrevealed holds are hidden, so the route is a surprise. The start hold(s) light
-  // first and hold for REVEAL_START_HOLD (1s), then each remaining hold lights up one
-  // at a time every REVEAL_STEP (0.5s) — in climbing order (intermediates -> finish) —
-  // and every hold STAYS lit until the whole board is up. Pure presentation: degrades
-  // to the instant render (current behaviour) when GSAP is unavailable or the user
-  // prefers reduced motion. Call right after the board-wrap's innerHTML is set (same
-  // task, before paint) so nothing flashes fully-lit first.
-  //
-  // To hide unrevealed holds we animate the DIM MASK's holes, not just the outlines:
-  // holdShapeLayerHtml builds, per hold and in the same order, a black "hole" in the
-  // mask (where the board shows through bright) AND a coloured outline. So we pair
-  // them by index and light each hold by fading IN both its hole (board un-dims) and
-  // its outline. With every hole hidden the dim covers the whole board. Document order
-  // is the climbing sequence: leading `.hs.start` outlines are the starts.
-  function animateBoardReveal(wrapEl, opts = {}) {
-    if (!wrapEl || !window.gsap || prefersReducedMotion()) return;
-    const svg = wrapEl.querySelector('.hold-shape-layer');
-    if (!svg) return;                              // fallback dot overlay / no shapes
-    const dimRect = svg.querySelector('rect[mask]');
-    const maskEl = svg.querySelector('mask');
-    const outlineEls = Array.from(svg.querySelectorAll('.hs'));
-    const holeEls = maskEl ? Array.from(maskEl.querySelectorAll('polygon, circle')) : [];
-    if (!outlineEls.length) return;
-
-    // Pair each hold's outline with its mask hole (same build order); partition into
-    // the leading start hold(s) and the rest (intermediates then finish, in order).
-    const units = outlineEls.map((outline, i) => ({ outline, hole: holeEls[i] || null }));
-    const startUnits = units.filter(u => u.outline.classList.contains('start'));
-    const restUnits = units.filter(u => !u.outline.classList.contains('start'));
-    const reveal = startUnits.length ? startUnits : units.slice(0, 1);
-
-    // Timing — defaults are the dramatic detail-view reveal; the board feed passes
-    // a snappier preset so flicking through problems stays quick.
-    const FADE = opts.fade != null ? opts.fade : 0.25;              // each hold's fade-up
-    const REVEAL_START_HOLD = opts.startHold != null ? opts.startHold : 1.0;  // starts hold alone this long
-    const REVEAL_STEP = opts.step != null ? opts.step : 0.5;        // gap between subsequent holds
-
-    // Pre-state (synchronous, pre-paint): whole board dimmed, every hole + outline
-    // hidden, so nothing flashes and no unrevealed hold is visible.
-    gsap.set(outlineEls, { opacity: 0 });
-    if (holeEls.length) gsap.set(holeEls, { opacity: 0 });
-    if (dimRect) gsap.set(dimRect, { opacity: 0.62 });   // dim ON from frame 0
-
-    const tl = gsap.timeline();
-    const light = (u, at) => {
-      if (u.hole) tl.to(u.hole, { opacity: 1, duration: FADE, ease: 'power2.out' }, at);
-      tl.to(u.outline, { opacity: 1, duration: FADE, ease: 'power2.out' }, at);
-    };
-    // t=0: the start hold(s) light together.
-    reveal.forEach(u => light(u, 0));
-    // Then each remaining hold lights in sequence, staying on.
-    restUnits.forEach((u, k) => light(u, REVEAL_START_HOLD + k * REVEAL_STEP));
-  }
-
-  // True when the user asked the OS to minimise motion — every GSAP flourish
-  // checks this and bails to the plain, instant render.
-  function prefersReducedMotion() {
-    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  }
-
-
   // Map a pointer's client coords to board-relative percentages. Accounts for the
   // rotated fullscreen mode, where the board-wrap is CSS-rotated 90° about its
   // centre — its getBoundingClientRect is then the axis-aligned bounding box, not

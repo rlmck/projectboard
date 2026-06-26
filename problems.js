@@ -23,54 +23,7 @@
     );
   }
 
-  // Grade -> colour band for the catalogue tiles ('5'/'6'/'7'/'8' by the leading
-  // digit; 'x' for anything else, e.g. Project/ungraded). Drives the --band CSS var.
-  function gradeBand(g) {
-    const c = String(g || '').trim()[0];
-    return (c === '5' || c === '6' || c === '7' || c === '8') ? c : 'x';
-  }
-
-  // Is this problem ticked in a specific orientation? (myTicks is the any-orientation
-  // union; the per-orientation sets back the feed/detail tick buttons.)
-  function tickedOrient(id, mirrored) {
-    return (mirrored ? myTicksMirrored : myTicksNormal).has(String(id));
-  }
-
-  // One full-screen panel in the immersive board feed. Carries the full per-card
-  // action bar (tick · favourite · mirror · cast · info) so browsing IS viewing —
-  // the same actions you have on the detail screen, acting on this problem. The
-  // board is built lazily (data-built) as the panel nears focus; data-mirror tracks
-  // its orientation. The actions use .deck-act[data-act][data-id] (app.js dispatch).
-  function deckPanelHtml(p) {
-    const id = escAttr(p.id);
-    const faved = isFaved(p.id);
-    const ticked = tickedOrient(p.id, false);
-    const showStars = Number(p.stars) > 0;
-    return `
-      <div class="problem-card deck-panel grade-band-${gradeBand(p.grade)}" data-id="${id}" data-built="0" data-mirror="0">
-        <div class="deck-top">
-          <div class="deck-grade">${escHtml(fontGrade(p.grade) || '—')}</div>
-          <div class="deck-name">${escHtml(displayName(p))}</div>
-          <div class="deck-sub">
-            <span class="meta-setter">by ${escHtml(setterName(p))}</span>
-            ${showStars ? starsHtml(p.stars) : ''}
-            ${p.is_benchmark ? '<span class="cat-bench" title="Benchmark">★</span>' : ''}
-          </div>
-        </div>
-        <div class="board-wrap"></div>
-        <div class="deck-actions">
-          <button class="deck-act${ticked ? ' on' : ''}" data-act="tick" data-id="${id}" aria-label="Tick">${TICK_SVG}</button>
-          <button class="deck-act fave-act${faved ? ' faved' : ''}" data-act="fave" data-id="${id}" aria-label="Favourite">${HEART_SVG}</button>
-          <button class="deck-act" data-act="mirror" data-id="${id}" aria-label="Mirror">${MIRROR_SVG}</button>
-          <button class="deck-act cast-icon-btn" data-act="cast" data-id="${id}" aria-label="Cast to board">${CAST_SVG}</button>
-          <button class="deck-act" data-act="info" data-id="${id}" aria-label="Information">${INFO_SVG}</button>
-        </div>
-      </div>`;
-  }
-
-  // Plain list row (the classic "List View"). Keeps the .problem-card[data-id] +
-  // .card-fave[data-fave] hooks the list click/fave wiring (app.js) relies on.
-  function listRowHtml(p) {
+  function cardHtml(p) {
     const faved = isFaved(p.id);
     return `
       <div class="problem-card" data-id="${escAttr(p.id)}">
@@ -87,32 +40,10 @@
       </div>`;
   }
 
-  // Fisher–Yates shuffle (returns the same array, shuffled). Feed mode renders a
-  // shuffled order so "every swipe is a shuffle".
-  function shuffleArr(a) {
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  }
-
-  // Reflect the current mode on #view-list (CSS) + the #view-toggle button. The
-  // toggle is an .icon-btn (consistent with the + create button): a list icon in
-  // feed mode (tap → plain list), a shuffle icon in list mode (tap → shuffled feed).
-  function applyListMode() {
-    document.getElementById('view-list').classList.toggle('feed-on', feedMode);
-    const btn = document.getElementById('view-toggle');
-    if (!btn) return;
-    btn.innerHTML = feedMode ? LIST_SVG : SHUFFLE_SVG;
-    btn.setAttribute('aria-label', feedMode ? 'Switch to list view' : 'Shuffle cards');
-  }
-
   function renderList() {
     const container = document.getElementById('list-container');
     const list = visibleProblems();
     document.getElementById('count').textContent = `${list.length} problem${list.length !== 1 ? 's' : ''}`;
-    applyListMode();
 
     if (list.length === 0) {
       // Only show the favourites onboarding hint when faves is the *only* active
@@ -124,140 +55,7 @@
         : `<div class="state-msg"><div class="icon">🔎</div>None match these filters.</div>`;
       return;
     }
-    if (feedMode) {
-      container.innerHTML = shuffleArr(list.slice()).map(deckPanelHtml).join('');
-      initDeck(container);
-    } else {
-      container.innerHTML = `<div class="problem-list">${list.map(listRowHtml).join('')}</div>`;
-    }
-  }
-
-  // A state-only refresh (after a tick/fave) — avoid rebuilding the feed (which
-  // would reshuffle + lose your place). If the visible set changed (e.g. Exclude
-  // Done hid the just-ticked climb), rebuild; otherwise just update card states.
-  function refreshLists() {
-    const container = document.getElementById('list-container');
-    if (!container) return;
-    if (!feedMode) { renderList(); return; }
-    const rendered = Array.from(container.querySelectorAll('.deck-panel')).map(p => p.dataset.id);
-    const visIds = visibleProblems().map(p => String(p.id));
-    const same = rendered.length === visIds.length && visIds.every(id => rendered.includes(id));
-    if (!same) { renderList(); return; }
-    container.querySelectorAll('.deck-panel').forEach(panel => {
-      const id = panel.dataset.id;
-      const tickBtn = panel.querySelector('[data-act="tick"]');
-      if (tickBtn) tickBtn.classList.toggle('on', tickedOrient(id, panel.dataset.mirror === '1'));
-      const faveBtn = panel.querySelector('[data-act="fave"]');
-      if (faveBtn) faveBtn.classList.toggle('faved', isFaved(id));
-    });
-  }
-
-  // Per-card action dispatch (called from the #list-container click handler in
-  // app.js). Each action operates on THIS card's problem + orientation, reusing the
-  // same logic as the detail view.
-  function handleFeedAction(actEl) {
-    const id = actEl.dataset.id;
-    const p = allProblems.find(x => String(x.id) === String(id));
-    if (!p) return;
-    const panel = actEl.closest('.deck-panel');
-    const mirrored = panel && panel.dataset.mirror === '1';
-    currentProblem = p;        // so info (and any currentProblem-based action) targets this card
-    switch (actEl.dataset.act) {
-      case 'fave':   toggleFave(id); break;
-      case 'tick':   tickProblem(p, !!mirrored); break;     // refreshLists() updates the button
-      case 'cast':   castByName(p.name, actEl, !!mirrored); break;
-      case 'mirror': feedToggleMirror(panel, actEl); break;
-      case 'info':   openInfo(); break;
-    }
-  }
-
-  // Flip one feed card between normal and mirrored: rebuild just that card's board
-  // overlay and replay its reveal; the tick button follows the shown orientation.
-  function feedToggleMirror(panel, actEl) {
-    if (!panel) return;
-    const mir = panel.dataset.mirror !== '1';
-    panel.dataset.mirror = mir ? '1' : '0';
-    actEl.classList.toggle('on', mir);
-    const p = allProblems.find(x => String(x.id) === String(panel.dataset.id));
-    const wrap = panel.querySelector('.board-wrap');
-    if (p && wrap) {
-      wrap.innerHTML = `<img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="" />`
-        + (boardShapeOverlayHtml(p, { mirror: mir, dim: true }) || boardOverlayHtml(p, mir) || '');
-      animateBoardReveal(wrap, FEED_REVEAL);
-    }
-    const tickBtn = panel.querySelector('[data-act="tick"]');
-    if (tickBtn) tickBtn.classList.toggle('on', tickedOrient(panel.dataset.id, mir));
-    if (mir && p && problemHoldOrder(p).includes('hold218')) {
-      showToast('I12 has no mirror — left in place', 'success');
-    }
-  }
-
-  // ── Immersive board feed controller ──────────────────────────────────────────
-  // Per render, two IntersectionObservers (root = the #list-container scroller):
-  //   • buildIO  — builds each panel's board within a ~1.5-screen window and tears
-  //                down the rest, so only a few boards are ever live (cheap at 270).
-  //   • focusIO  — the centred panel (≥60% visible) plays its light-up reveal and
-  //                slides its caption in; leaving resets it so it replays next time.
-  // Re-init on every render (filter/search); previous observers are disconnected.
-  const FEED_REVEAL = { startHold: 0.2, step: 0.06, fade: 0.28 };   // snappier than the detail reveal
-
-  function deckProblem(panel) {
-    return allProblems.find(x => String(x.id) === String(panel.dataset.id));
-  }
-  function buildPanelBoard(panel) {
-    if (panel.dataset.built === '1') return;
-    const p = deckProblem(panel);
-    const wrap = panel.querySelector('.board-wrap');
-    if (!p || !wrap) return;
-    const mir = panel.dataset.mirror === '1';
-    wrap.innerHTML = `<img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="" />`
-      + (boardShapeOverlayHtml(p, { mirror: mir, dim: true }) || boardOverlayHtml(p, mir) || '');
-    panel.dataset.built = '1';
-  }
-  function teardownPanelBoard(panel) {
-    if (panel.dataset.built !== '1' || panel.dataset.focused === '1') return;
-    const wrap = panel.querySelector('.board-wrap');
-    if (wrap) wrap.innerHTML = '';
-    panel.dataset.built = '0';
-  }
-  function focusDeckPanel(panel) {
-    if (panel.dataset.focused === '1') return;
-    panel.dataset.focused = '1';
-    buildPanelBoard(panel);
-    const wrap = panel.querySelector('.board-wrap');
-    const animate = window.gsap && !prefersReducedMotion();
-    if (wrap && animate) {
-      gsap.fromTo(wrap, { scale: 0.9, opacity: 0.5 }, { scale: 1, opacity: 1, duration: 0.5, ease: 'power3.out' });
-    }
-    animateBoardReveal(wrap, FEED_REVEAL);
-    if (animate) {
-      gsap.from(panel.querySelectorAll('.deck-top > *, .deck-actions'),
-        { y: 16, opacity: 0, duration: 0.45, stagger: 0.06, ease: 'power3.out' });
-    }
-  }
-  function blurDeckPanel(panel) {
-    panel.dataset.focused = '0';
-  }
-  function initDeck(scroller) {
-    const panels = Array.from(scroller.querySelectorAll('.deck-panel'));
-    if (!panels.length) return;
-    (scroller._deckIOs || []).forEach(io => io.disconnect());
-    if (typeof IntersectionObserver === 'undefined') { panels.forEach(buildPanelBoard); return; }
-
-    const buildIO = new IntersectionObserver(entries => {
-      entries.forEach(e => e.isIntersecting ? buildPanelBoard(e.target) : teardownPanelBoard(e.target));
-    }, { root: scroller, rootMargin: '0px 150%', threshold: 0 });   // horizontal window: pre-build side neighbours
-
-    const focusIO = new IntersectionObserver(entries => {
-      entries.forEach(e => e.intersectionRatio >= 0.6 ? focusDeckPanel(e.target) : blurDeckPanel(e.target));
-    }, { root: scroller, threshold: [0, 0.6, 0.95] });
-
-    panels.forEach(p => { buildIO.observe(p); focusIO.observe(p); });
-    scroller._deckIOs = [buildIO, focusIO];
-
-    // Build + focus the opening panel up front (IO fires async — avoids a first blank).
-    buildPanelBoard(panels[0]);
-    requestAnimationFrame(() => focusDeckPanel(panels[0]));
+    container.innerHTML = `<div class="problem-list">${list.map(cardHtml).join('')}</div>`;
   }
 
   // Shared grade-tab markup. `isActive(g)` decides the highlight; 'all' renders as
@@ -269,55 +67,14 @@
     ).join('');
   }
 
-  // Grade filter = a dual-thumb RANGE slider over the grades present in the data.
-  // It writes the classic `activeGrades` Set (full range = empty = "All"), so
-  // visibleProblems() and everything downstream is unchanged. Wired in app.js.
   function buildGradeTabs() {
-    // Only real ladder grades (gradeRank < 999) — excludes "Project"/ungraded so the
-    // slider tops out at the highest actual grade present.
     const present = [...new Set(allProblems.map(p => p.grade).filter(Boolean))]
-      .filter(g => gradeRank(g) !== 999)
       .sort((a, b) => gradeRank(a) - gradeRank(b) || a.localeCompare(b));
+    // Drop any active filter whose grade no longer exists (last problem deleted/regraded),
+    // otherwise visibleProblems() would filter on an absent grade and show nothing.
     [...activeGrades].forEach(g => { if (!present.includes(g)) activeGrades.delete(g); });
-    gradePresent = present;
-    const el = document.getElementById('grade-tabs');
-    const n = present.length;
-    if (n <= 1) { el.innerHTML = ''; activeGrades.clear(); return; }   // nothing to range over
-
-    // Seed the thumbs from any existing range (else full span).
-    let lo = 0, hi = n - 1;
-    if (activeGrades.size) {
-      const idxs = present.map((g, i) => activeGrades.has(g) ? i : -1).filter(i => i >= 0);
-      if (idxs.length) { lo = Math.min(...idxs); hi = Math.max(...idxs); }
-    }
-    el.innerHTML = `
-      <div class="grade-slider">
-        <div class="gs-label"><span id="gs-low"></span><span class="gs-dash">–</span><span id="gs-high"></span></div>
-        <div class="gs-track">
-          <div class="gs-rail"></div>
-          <div class="gs-fill" id="gs-fill"></div>
-          <input type="range" id="gs-min" min="0" max="${n - 1}" value="${lo}" step="1" aria-label="Lowest grade">
-          <input type="range" id="gs-max" min="0" max="${n - 1}" value="${hi}" step="1" aria-label="Highest grade">
-        </div>
-      </div>`;
-    updateGradeSliderUi();
-  }
-
-  // Sync the slider's fill + labels and rewrite activeGrades from the two thumbs.
-  function updateGradeSliderUi() {
-    const present = gradePresent, n = present.length;
-    const minEl = document.getElementById('gs-min'), maxEl = document.getElementById('gs-max');
-    if (!minEl || !maxEl || n <= 1) return;
-    let lo = +minEl.value, hi = +maxEl.value;
-    if (lo > hi) [lo, hi] = [hi, lo];          // thumbs can cross — use the span
-    const max = n - 1;
-    document.getElementById('gs-low').textContent = fontGrade(present[lo]);
-    document.getElementById('gs-high').textContent = fontGrade(present[hi]);
-    const fill = document.getElementById('gs-fill');
-    fill.style.left = (lo / max * 100) + '%';
-    fill.style.right = ((max - hi) / max * 100) + '%';
-    activeGrades.clear();
-    if (!(lo === 0 && hi === max)) for (let i = lo; i <= hi; i++) activeGrades.add(present[i]);
+    document.getElementById('grade-tabs').innerHTML =
+      gradeTabButtons(['all', ...present], g => g === 'all' ? activeGrades.size === 0 : activeGrades.has(g), fontGrade);
   }
 
   // ── Detail ───────────────────────────────────────────────────────────────────
@@ -366,13 +123,6 @@
         ${boardExpandBtn()}
       </div>
     `;
-
-    // GSAP "light-up" reveal (no-ops without GSAP / reduced motion). Skipped once
-    // when mirroring back to normal — see toggleDetailMirror. The flag is a one-shot,
-    // so leaving and re-entering the detail view animates again.
-    const skipReveal = suppressDetailReveal;
-    suppressDetailReveal = false;
-    if (!skipReveal) animateBoardReveal(wrap.querySelector('.board-wrap'));
   }
 
   // Reflect the mirror toggle's lit state on the detail header button.
@@ -390,8 +140,6 @@
     if (!currentProblem) return;
     detailMirror = !detailMirror;
     updateMirrorButton();
-    // Mirroring ON re-animates the reveal; mirroring back to normal does not.
-    suppressDetailReveal = !detailMirror;
     if (currentView === 'detail') renderDetail(currentProblem.id);
     // The only hold with no real partner is I12 — flag if this problem uses it.
     if (detailMirror && problemHoldOrder(currentProblem).includes('hold218')) {
