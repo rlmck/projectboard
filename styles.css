@@ -430,54 +430,44 @@
     #view-list.feed-on .deck-act.casting { opacity: 0.55; }
     #view-list.feed-on .deck-act.sent { color: var(--start); border-color: var(--start); }
 
-    /* ── Grade range slider ──────────────────────────────────────────── */
-    .grade-slider { padding: 2px 6px 0; }
+    /* ── Grade range slider ──────────────────────────────────────────────
+       Spans the full width of the filter row; muted tones to match the pills. */
+    .grade-slider { flex: 1 1 100%; width: 100%; min-width: 0; padding: 2px 2px 0; }
     .gs-label {
       display: flex; align-items: center; justify-content: center; gap: 8px;
-      font-size: 13px; font-weight: 700; color: var(--text);
-      margin-bottom: 8px; letter-spacing: 0.02em;
+      font-size: 13px; font-weight: 600; color: var(--text-muted);
+      margin-bottom: 9px; letter-spacing: 0.02em;
     }
-    .gs-label .gs-dash { color: var(--text-muted); }
-    .gs-track { position: relative; height: 26px; }
+    .gs-label span:not(.gs-dash) { color: var(--text); }
+    .gs-track { position: relative; width: 100%; height: 24px; }
     .gs-rail, .gs-fill {
       position: absolute; top: 50%; transform: translateY(-50%);
-      height: 5px; border-radius: 3px;
+      height: 4px; border-radius: 3px;
     }
     .gs-rail { left: 0; right: 0; background: var(--surface2); }
-    .gs-fill { background: var(--accent); }
+    /* Muted accent fill — same hue as an active pill but dialled back so a full-width
+       bar doesn't glare. */
+    .gs-fill { background: rgba(236,72,153,0.45); }
     /* Two overlaid range inputs; only the thumbs receive pointer events so both
        are draggable (the tracks are transparent and pass clicks through). */
     .gs-track input[type="range"] {
       position: absolute; top: 0; left: 0;
-      width: 100%; height: 26px; margin: 0;
+      width: 100%; height: 24px; margin: 0;
       -webkit-appearance: none; appearance: none;
       background: transparent; pointer-events: none;
     }
     .gs-track input[type="range"]::-webkit-slider-thumb {
       -webkit-appearance: none; appearance: none;
-      width: 22px; height: 22px; border-radius: 50%;
-      background: var(--accent-hover); border: 2px solid #fff;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+      width: 18px; height: 18px; border-radius: 50%;
+      background: var(--surface); border: 2px solid var(--accent);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.5);
       cursor: pointer; pointer-events: auto;
     }
     .gs-track input[type="range"]::-moz-range-thumb {
-      width: 22px; height: 22px; border-radius: 50%;
-      background: var(--accent-hover); border: 2px solid #fff;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: var(--surface); border: 2px solid var(--accent);
       cursor: pointer; pointer-events: auto;
     }
-
-    /* ── View-toggle button (List View / shuffle) ────────────────────── */
-    .view-toggle-btn {
-      flex-shrink: 0;
-      background: var(--surface2); color: var(--text);
-      border: 1px solid var(--border); border-radius: 9px;
-      font-size: 13px; font-weight: 700; padding: 8px 12px;
-      cursor: pointer; -webkit-tap-highlight-color: transparent;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .view-toggle-btn:active { background: var(--surface); }
-    .view-toggle-btn.is-shuffle { width: 40px; height: 38px; padding: 0; }
-    .view-toggle-btn.is-shuffle svg { width: 20px; height: 20px; }
 
     /* ── Cast button (card) ──────────────────────────────────────────── */
     .cast-btn {

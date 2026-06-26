@@ -97,13 +97,14 @@
     return a;
   }
 
-  // Reflect the current mode on #view-list (CSS) + the #view-toggle button.
+  // Reflect the current mode on #view-list (CSS) + the #view-toggle button. The
+  // toggle is an .icon-btn (consistent with the + create button): a list icon in
+  // feed mode (tap → plain list), a shuffle icon in list mode (tap → shuffled feed).
   function applyListMode() {
     document.getElementById('view-list').classList.toggle('feed-on', feedMode);
     const btn = document.getElementById('view-toggle');
     if (!btn) return;
-    btn.classList.toggle('is-shuffle', !feedMode);
-    btn.innerHTML = feedMode ? 'List View' : SHUFFLE_SVG;
+    btn.innerHTML = feedMode ? LIST_SVG : SHUFFLE_SVG;
     btn.setAttribute('aria-label', feedMode ? 'Switch to list view' : 'Shuffle cards');
   }
 
@@ -272,7 +273,10 @@
   // It writes the classic `activeGrades` Set (full range = empty = "All"), so
   // visibleProblems() and everything downstream is unchanged. Wired in app.js.
   function buildGradeTabs() {
+    // Only real ladder grades (gradeRank < 999) — excludes "Project"/ungraded so the
+    // slider tops out at the highest actual grade present.
     const present = [...new Set(allProblems.map(p => p.grade).filter(Boolean))]
+      .filter(g => gradeRank(g) !== 999)
       .sort((a, b) => gradeRank(a) - gradeRank(b) || a.localeCompare(b));
     [...activeGrades].forEach(g => { if (!present.includes(g)) activeGrades.delete(g); });
     gradePresent = present;
