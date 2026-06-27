@@ -333,9 +333,10 @@
   }
 
   // ── Load hold outline shapes (bundled; hold id -> [[x,y],…] % polygon) ───────
-  // Tied to the bundled ProjectBoard.png illustration, so bundled-only (no
-  // board_config). Drives the problem detail/create shape overlay; absent or empty
-  // → the overlay falls back to circles.
+  // Shipped as a bundled file, but its % coords are traced against the LIVE board
+  // image + map (board_config), which is what the detail/create views render — so
+  // re-run register_shapes.py (or re-trace) after any board recalibration. Drives
+  // the shape overlay; absent or empty → the overlay falls back to circles.
   async function loadHoldShapes() {
     try {
       const res = await fetch('hold_shapes.json', { cache: 'no-cache' });
