@@ -748,13 +748,13 @@
        stretched viewBox units — 1% of the board, and different in x and y. */
     .hold-shape-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
     .hs-lines { filter: drop-shadow(0 0 1px rgba(0,0,0,0.85)); }
-    .hs { fill: none; stroke-width: 0.8px; vector-effect: non-scaling-stroke; }
+    .hs { fill: none; stroke-width: 1.6px; vector-effect: non-scaling-stroke; }
     .hs.start  { stroke: #22c55e; }
     .hs.int    { stroke: #3b82f6; }
     .hs.finish { stroke: #ef4444; }
 
     /* Create/edit has no dim to supply contrast, so an assigned hold gets the same
-       translucent fill and chunky edge the .hold-dot used to give it — a 0.8px
+       translucent fill and chunky edge the .hold-dot used to give it — a thin
        hairline is not enough tap feedback on a bright board photo in a gym. */
     #view-create .hs        { stroke-width: 2.4px; }
     #view-create .hs.start  { fill: rgba(34,197,94,0.28); }
