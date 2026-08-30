@@ -128,21 +128,40 @@
   // Draws each used hold as its *real traced outline* (hold_shapes.json) instead
   // of a circle, and on the detail view dims the rest of the board so only the
   // used holds stay bright. Returns null when shapes can't be used so callers
-  // fall back to boardOverlayHtml(): no shapes loaded, or no hold map. Shapes are
-  // traced (via trace_holds.html) against the live board image + hold_map.
+  // fall back to boardOverlayHtml().
+  //
+  // Shapes are traced (register_shapes.py / trace_holds.html) against ONE specific
+  // board — the LIVE board_config image + hold map — and hold_shapes.json records
+  // that board's updated_at in __meta.board_updated_at. They only fit that board,
+  // so the overlay stays off unless board_config supplied the map AND its version
+  // still matches the traced one. That covers the offline/bundled fallback (the
+  // bundled ProjectBoard.png has different framing) and an admin recalibrating the
+  // board — which bumps updated_at and drops everyone back to the always-correct
+  // dot overlay until the shapes are re-traced and re-committed.
   let hsMaskSeq = 0;
   function shapesUsable() {
-    return !!(HOLD_SHAPES && Object.keys(HOLD_SHAPES).length && HOLD_MAP);
+    if (!HOLD_SHAPES || !HOLD_MAP || !configHasMap) return false;
+    const meta = HOLD_SHAPES.__meta;
+    if (!meta || !meta.board_updated_at) return false;
+    if (meta.board_updated_at !== boardConfigVersion) return false;
+    return Object.keys(HOLD_SHAPES).length > 1;      // more than just __meta
   }
 
   // roles: { holdId -> 'start' | 'int' | 'finish' }. `mirror` pulls each hold's
   // position AND shape from its mirror partner (roles preserved). `dim` adds the
   // darken-the-rest mask (detail view); create/edit passes dim:false so the whole
   // board stays visible. A used hold with no traced polygon falls back to a dot.
+  // The mask lives in its OWN svg so the outline svg can carry a plain CSS
+  // drop-shadow: a CSS filter on an svg *child* resolves its lengths in the
+  // stretched viewBox units, but on the outermost svg it resolves in CSS pixels.
   function holdShapeLayerHtml(roles, { mirror = false, dim = false } = {}) {
     if (!shapesUsable()) return null;
     const maskId = 'hsmask-' + (++hsMaskSeq);
-    const holes = [], outlines = [], dots = [];
+    // viewBox is 0..100 on both axes with preserveAspectRatio:none, so a <circle>
+    // would paint as an ellipse. Scale ry by the board aspect (w/h) to get a dot
+    // that is round on screen, matching the .hold-dot it stands in for.
+    const rx = 2.3, ry = +(rx * (boardAspect || 1)).toFixed(2);
+    const holes = [], outlines = [];
     Object.keys(roles).forEach(h => {
       const key = mirror ? mirrorHold(h) : h;
       const pts = HOLD_SHAPES[key];
@@ -153,15 +172,18 @@
         holes.push(`<polygon points="${s}" fill="#000"/>`);
         outlines.push(`<polygon points="${s}" class="hs ${role}"/>`);
       } else if (pos) {                       // no traced shape yet — show a dot
-        holes.push(`<circle cx="${pos.x}" cy="${pos.y}" r="2.3" fill="#000"/>`);
-        outlines.push(`<circle cx="${pos.x}" cy="${pos.y}" r="2.3" class="hs ${role}"/>`);
+        const e = `cx="${pos.x}" cy="${pos.y}" rx="${rx}" ry="${ry}"`;
+        holes.push(`<ellipse ${e} fill="#000"/>`);
+        outlines.push(`<ellipse ${e} class="hs ${role}"/>`);
       }
     });
-    const dimRect = dim
-      ? `<mask id="${maskId}" maskUnits="userSpaceOnUse"><rect width="100" height="100" fill="#fff"/>${holes.join('')}</mask>`
-        + `<rect width="100" height="100" fill="#000" opacity="0.62" mask="url(#${maskId})"/>`
+    const dimSvg = dim
+      ? `<svg class="hold-shape-layer hs-dim" viewBox="0 0 100 100" preserveAspectRatio="none">`
+        + `<mask id="${maskId}" maskUnits="userSpaceOnUse"><rect width="100" height="100" fill="#fff"/>${holes.join('')}</mask>`
+        + `<rect width="100" height="100" fill="#000" opacity="0.62" mask="url(#${maskId})"/></svg>`
       : '';
-    return `<svg class="hold-shape-layer" viewBox="0 0 100 100" preserveAspectRatio="none">${dimRect}${outlines.join('')}</svg>`;
+    return dimSvg
+      + `<svg class="hold-shape-layer hs-lines" viewBox="0 0 100 100" preserveAspectRatio="none">${outlines.join('')}</svg>`;
   }
 
   // Problem-detail entry point: derive roles from the (un-inverted) hold order.

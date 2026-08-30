@@ -742,13 +742,24 @@
     /* Hold-shape overlay (problems only): real traced outlines + dim-the-rest.
        viewBox is 0..100 in both axes with preserveAspectRatio:none, so points map
        to the board exactly like the % dots; non-scaling-stroke keeps outline width
-       constant despite the non-uniform stretch. */
+       constant despite the non-uniform stretch. The dim mask and the outlines are
+       two stacked svgs so the halo below can be a CSS filter on the OUTERMOST svg
+       (resolved in CSS px). On an svg *child* the same 1px would resolve in the
+       stretched viewBox units — 1% of the board, and different in x and y. */
     .hold-shape-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
-    .hs { fill: none; stroke-width: 0.8px; vector-effect: non-scaling-stroke;
-          filter: drop-shadow(0 0 1px rgba(0,0,0,0.85)); }
+    .hs-lines { filter: drop-shadow(0 0 1px rgba(0,0,0,0.85)); }
+    .hs { fill: none; stroke-width: 0.8px; vector-effect: non-scaling-stroke; }
     .hs.start  { stroke: #22c55e; }
     .hs.int    { stroke: #3b82f6; }
     .hs.finish { stroke: #ef4444; }
+
+    /* Create/edit has no dim to supply contrast, so an assigned hold gets the same
+       translucent fill and chunky edge the .hold-dot used to give it — a 0.8px
+       hairline is not enough tap feedback on a bright board photo in a gym. */
+    #view-create .hs        { stroke-width: 2.4px; }
+    #view-create .hs.start  { fill: rgba(34,197,94,0.28); }
+    #view-create .hs.int    { fill: rgba(59,130,246,0.24); }
+    #view-create .hs.finish { fill: rgba(239,68,68,0.30); }
 
     /* ── Fullscreen board mode ───────────────────────────────────────────
        Expand button enters a rotated landscape fullscreen on any board; a touch

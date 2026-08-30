@@ -38,7 +38,8 @@
     const layer = document.getElementById('create-hold-layer');
     if (layer) {
       // Shaped outlines (no dim — the board must stay fully visible/tappable while
-      // building a route); falls back to circles when shapes aren't usable.
+      // building a route, so #view-create .hs adds a translucent role-coloured fill
+      // and a thicker stroke); falls back to dots when shapes aren't usable.
       const svg = holdShapeLayerHtml(createRoles, { mirror: false, dim: false });
       layer.innerHTML = (svg != null) ? svg : Object.keys(createRoles).map(h => {
         const pos = HOLD_MAP && HOLD_MAP[h];
@@ -567,6 +568,11 @@
       // Reflect the save locally so it's live without a reload.
       HOLD_MAP = JSON.parse(JSON.stringify(CAL.pos));
       configHasMap = true;
+      // The traced hold outlines belong to the board we just replaced, so bumping
+      // the version retires them: shapesUsable() now fails and every client falls
+      // back to the (always-correct) dot overlay until hold_shapes.json is
+      // re-traced against this board and committed. See the cal-saved modal.
+      boardConfigVersion = row.updated_at;
       if (CAL.mirror && Object.keys(CAL.mirror).length) {
         MIRROR_MAP = JSON.parse(JSON.stringify(CAL.mirror));
         configHasMirror = true;

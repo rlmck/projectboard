@@ -92,7 +92,7 @@
     + '<circle cx="15" cy="15" r="1.6" fill="#f5c842"/></svg>';
 
   let holdMap = null, imgSrc = 'ProjectBoard.png', imgLabel = 'bundled (fallback)';
-  let holds = [], shapes = {}, cur = 0;
+  let holds = [], shapes = {}, cur = 0, meta = null;
 
   const holdNum = h => parseInt(String(h).replace(/[^0-9]/g, ''), 10) || 0;
   const curHold = () => holds[cur];
@@ -120,17 +120,45 @@
   } catch (e) { /* offline — fall back */ }
   if (!holdMap) {
     try { holdMap = await (await fetch('hold_map.json', { cache: 'no-cache' })).json(); imgLabel += ' + bundled map'; }
-    catch (e) { alert('Could not load a hold map.'); holdMap = {}; }
+    catch (e) { holdMap = null; }
   }
   board.src = imgSrc;
   $('imgLabel').textContent = imgLabel;
-  holds = Object.keys(holdMap).sort((a, b) => holdNum(a) - holdNum(b));
-
-  // resume: localStorage first, else any committed hold_shapes.json
-  try { const ls = JSON.parse(localStorage.getItem(LS_SHAPES) || 'null'); if (ls && typeof ls === 'object') shapes = ls; } catch (e) {}
-  if (!Object.keys(shapes).length) {
-    try { const r = await fetch('hold_shapes.json', { cache: 'no-cache' }); if (r.ok) { const j = await r.json(); if (j && typeof j === 'object') shapes = j; } } catch (e) {}
+  holds = holdMap ? Object.keys(holdMap).sort((a, b) => holdNum(a) - holdNum(b)) : [];
+  // Without a map there is no hold to point the crosshair at, and render() would
+  // throw on holdMap[undefined].x — stop here rather than leaving a dead page.
+  if (!holds.length) {
+    $('curLabel').textContent = 'no hold map';
+    alert('Could not load a hold map (offline, or opened via file://). Serve this page over http and reload.');
+    return;
   }
+
+  // Resume from localStorage, but ALWAYS read the committed hold_shapes.json too:
+  // register_shapes.py regenerates that file, and silently preferring a stale
+  // browser copy means hand-fixing superseded outlines and exporting them back
+  // over the auto-trace. When they differ, let the operator pick.
+  let lsShapes = null, fileShapes = null;
+  try { const ls = JSON.parse(localStorage.getItem(LS_SHAPES) || 'null'); if (ls && typeof ls === 'object') lsShapes = ls; } catch (e) {}
+  try { const r = await fetch('hold_shapes.json', { cache: 'no-cache' }); if (r.ok) { const j = await r.json(); if (j && typeof j === 'object') fileShapes = j; } } catch (e) {}
+  let shapeSrc = 'browser';
+  if (lsShapes && Object.keys(lsShapes).length) {
+    shapes = lsShapes;
+    if (fileShapes && JSON.stringify(fileShapes) !== JSON.stringify(lsShapes)) {
+      const msg = 'hold_shapes.json on disk differs from the progress saved in this browser.'
+        + String.fromCharCode(10, 10)
+        + 'OK = load the file (discards unexported browser edits)'
+        + String.fromCharCode(10)
+        + 'Cancel = keep the browser copy';
+      if (confirm(msg)) {
+        shapes = fileShapes; shapeSrc = 'file';
+      } else { shapeSrc = 'browser (file differs!)'; }
+    }
+  } else if (fileShapes) {
+    shapes = fileShapes; shapeSrc = 'file';
+  }
+  meta = shapes.__meta || (fileShapes && fileShapes.__meta) || null;
+  delete shapes.__meta;                       // kept aside; re-attached on export
+  $('imgLabel').textContent = imgLabel + ' · shapes: ' + shapeSrc;
   cur = Math.min(holds.length - 1, Math.max(0, parseInt(localStorage.getItem(LS_CUR) || '0', 10) || 0));
 
   // jump dropdown
@@ -200,6 +228,9 @@
 
   $('export').onclick = () => {
     const out = {};
+    // __meta.board_updated_at tells the app which board these were traced against;
+    // drop it and the app disables the shape overlay entirely.
+    if (meta) out.__meta = meta;
     Object.keys(shapes).forEach(h => { if ((shapes[h] || []).length >= 3) out[h] = shapes[h]; });
     const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -210,7 +241,13 @@
   $('importFile').onchange = e => {
     const f = e.target.files[0]; if (!f) return;
     const rd = new FileReader();
-    rd.onload = () => { try { shapes = JSON.parse(rd.result) || {}; render(false); } catch (err) { alert('Bad JSON'); } };
+    rd.onload = () => {
+      try {
+        shapes = JSON.parse(rd.result) || {};
+        if (shapes.__meta) { meta = shapes.__meta; delete shapes.__meta; }
+        render(false);
+      } catch (err) { alert('Bad JSON'); }
+    };
     rd.readAsText(f);
   };
   $('reset').onclick = () => {

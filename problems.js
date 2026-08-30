@@ -315,6 +315,19 @@
     document.querySelectorAll('#create-board .board-graphic, #cc-board .board-graphic, #cal-img').forEach(img => {
       if (img.getAttribute('src') !== BOARD_IMG) img.setAttribute('src', BOARD_IMG);
     });
+    measureBoardAspect();
+  }
+
+  // Cache the board image's natural aspect (w/h). The shape overlay's svg is
+  // stretched (viewBox 0..100 both axes), so it needs the aspect to draw a dot
+  // that is round on screen. Re-render once it's known / changes.
+  function measureBoardAspect() {
+    const im = new Image();
+    im.onload = () => {
+      const a = im.naturalWidth / im.naturalHeight;
+      if (a > 0 && Math.abs(a - boardAspect) > 0.001) { boardAspect = a; refreshBoardViews(); }
+    };
+    im.src = BOARD_IMG;
   }
 
   // ── Load hold position map (bundled fallback for the board overlay) ──────────
@@ -335,8 +348,10 @@
   // ── Load hold outline shapes (bundled; hold id -> [[x,y],…] % polygon) ───────
   // Shipped as a bundled file, but its % coords are traced against the LIVE board
   // image + map (board_config), which is what the detail/create views render — so
-  // re-run register_shapes.py (or re-trace) after any board recalibration. Drives
-  // the shape overlay; absent or empty → the overlay falls back to circles.
+  // re-run register_shapes.py (or re-trace) after any board recalibration and
+  // commit the new file. The board version it was traced against is recorded in
+  // __meta.board_updated_at; shapesUsable() refuses to draw over any other board,
+  // so a stale or missing file just falls back to the dot overlay.
   async function loadHoldShapes() {
     try {
       const res = await fetch('hold_shapes.json', { cache: 'no-cache' });
@@ -372,6 +387,7 @@
         .from('board_config').select('hold_map, mirror_map, image_path, updated_at')
         .eq('wall', 'HangoutPortland').maybeSingle();
       if (error || !data) return;
+      boardConfigVersion = data.updated_at || null;   // the board version hold_shapes.json must match
       if (data.image_path) {
         const ver = data.updated_at ? `?v=${encodeURIComponent(data.updated_at)}` : '';
         BOARD_IMG = `${SUPA_URL}/storage/v1/object/public/${BOARD_BUCKET}/${data.image_path}${ver}`;

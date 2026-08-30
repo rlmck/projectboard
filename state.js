@@ -49,6 +49,8 @@
   let BOARD_IMG = 'ProjectBoard.png';   // resolved board image URL (Supabase upload, else bundled)
   let configHasMap = false;             // true once board_config supplied a hold map (suppresses the bundled fallback)
   let configHasMirror = false;          // true once board_config supplied a mirror map (suppresses the bundled fallback)
+  let boardConfigVersion = null;        // board_config.updated_at — the board the live map/image belong to
+  let boardAspect = 0;                  // board image naturalWidth/naturalHeight (0 = not measured yet)
   const BOARD_BUCKET = 'board';         // Supabase Storage bucket holding the uploaded board image
   // The 189 real holds on the board (ground truth from the DTB layout). Used by the
   // calibrate "Add" mode to offer holds that are absent from the current map.

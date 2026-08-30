@@ -1,14 +1,17 @@
 // Project Board — service worker
 // Strategy:
-//   * HTML / navigations + app JS/CSS -> network-first  (always get the latest app, fall back to cache offline)
+//   * HTML / navigations + app JS/CSS/JSON -> network-first  (always get the latest app, fall back to cache offline)
 //   * other same-origin (icons/image) -> stale-while-revalidate (fast, refreshes in the background)
 //   * Supabase + CDN                   -> never intercepted (straight to network)
 //
-// JS/CSS are network-first so a code change shows up on the next load without a
-// cache-version bump — matching how the all-in-one index.html used to behave.
+// JS/CSS/JSON are network-first so a code OR bundled-data change (hold_map,
+// hold_shapes, mirror_map) shows up on the next load without a cache-version bump
+// — matching how the all-in-one index.html used to behave. Data files used to fall
+// into stale-while-revalidate below, so a data-only deploy served every installed
+// client the previous file for a whole load.
 // Bump CACHE whenever the asset list changes so old caches are cleared.
 
-const CACHE = 'pb-v68';
+const CACHE = 'pb-v69';
 const ASSETS = [
   './',
   './index.html',
@@ -67,13 +70,14 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Network-first for the app's own JS/CSS too, so code/style changes appear on
-  // the next load (no cache-version bump needed). Falls back to cache offline.
+  // Network-first for the app's own JS/CSS and its bundled JSON data too, so code,
+  // style and hold-map/shape changes appear on the next load (no cache-version bump
+  // needed). Falls back to cache offline.
   // Match by file extension AS WELL AS req.destination: iOS/WebKit often leaves
   // request.destination empty (''), which previously dropped app.js/styles.css
   // into the stale-while-revalidate branch below and served phones a stale build
   // (laptop/Chrome was fine because it sets destination correctly).
-  if (req.destination === 'script' || req.destination === 'style' || /\.(js|css)$/.test(url.pathname)) {
+  if (req.destination === 'script' || req.destination === 'style' || /\.(js|css|json)$/.test(url.pathname)) {
     event.respondWith(
       fetch(req)
         .then(resp => {
