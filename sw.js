@@ -11,7 +11,7 @@
 // client the previous file for a whole load.
 // Bump CACHE whenever the asset list changes so old caches are cleared.
 
-const CACHE = 'pb-v70';
+const CACHE = 'pb-v71';
 const ASSETS = [
   './',
   './index.html',
