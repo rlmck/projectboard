@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+#
+# Build the deployable asset directory for Cloudflare Workers (static assets).
+#
+#   bash build.sh      ->  ./public
+#
+# public/ is the ONLY thing Cloudflare serves, and it is built from an explicit
+# allowlist. Anything not named below never reaches the internet — so CLAUDE.md,
+# README.md, review_output.md, the register_*.py tools, db/, pi/, docs/ and the
+# reference material stay private without relying on an ignore rule.
+#
+# Adding a deployable file? Add it here AND to sw.js's ASSETS.
+# A file listed here but missing on disk is a hard error: the build stops rather
+# than silently shipping an incomplete app.
+
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+OUT=public
+
+FILES=(
+  # markup
+  index.html
+  trace_holds.html
+
+  # styles
+  styles.css
+
+  # app logic — ordered classic scripts (see CLAUDE.md "Key files")
+  state.js
+  core.js
+  problems.js
+  admin.js
+  account.js
+  authoring.js
+  circuits.js
+  leaderboard.js
+  app.js
+
+  # service worker (registered by app.js; /sw.js is no-cache in _headers)
+  sw.js
+
+  # PWA shell
+  manifest.json
+  icon.svg
+
+  # bundled board data (fallbacks; live copies come from board_config)
+  hold_map.json
+  mirror_map.json
+  hold_shapes.json
+
+  # board graphic
+  ProjectBoard.png
+
+  # Cloudflare static-asset config
+  _headers
+  _redirects
+)
+
+rm -rf "$OUT"
+mkdir "$OUT"
+
+missing=()
+for f in "${FILES[@]}"; do
+  [[ -f "$f" ]] || missing+=("$f")
+done
+
+if (( ${#missing[@]} )); then
+  echo "build.sh: ERROR — allowlisted file(s) not found in $(pwd):" >&2
+  printf '  %s\n' "${missing[@]}" >&2
+  exit 1
+fi
+
+for f in "${FILES[@]}"; do
+  cp "$f" "$OUT/$f"
+done
+
+echo "build.sh: copied ${#FILES[@]} files into $OUT/"
