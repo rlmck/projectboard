@@ -1,6 +1,6 @@
 # Public rollout: custom domain, Cloudflare Workers, QR → install flow
 
-**Status (10 Sep 2026):** Parts A and B are complete and **live on `main`** (merged `5271860`, production verified). Part C: the `legacy` branch is built, tested and pushed (`5e6b338`). **Remaining: flip GitHub Pages to `legacy`, then the C2 follow-ups** (remove github.io from Supabase, print the poster, swap your own icons). Until the flip, github.io still serves `main`, i.e. the new app on the old origin.
+**Status (10 Sep 2026):** Parts A and B are complete and **live on `main`** (merged `5271860`, production verified). Part C is **cut over**: GitHub Pages now serves the `legacy` branch (`5e6b338`) at the old address, verified end to end on the live sites. **Remaining (Ross):** check Google sign-in on symmetryboard.co.uk, remove github.io from Supabase's redirect URLs, print the poster, and swap your own icons (C2 steps 3–5).
 **Live:** https://symmetryboard.co.uk
 **Staging:** https://dev-projectboard.rosslewismckechnie.workers.dev (stable per-branch preview; see Hosting below)
 
@@ -154,7 +154,7 @@ Build settings in the dashboard: build command `bash build.sh`, deploy command `
 ## Part C: Moving existing users off github.io
 The old URL **keeps being served by GitHub Pages permanently**, but from an orphan **`legacy` branch** that contains only a "moved" site. `main` no longer feeds GitHub Pages; it feeds Cloudflare only.
 
-**C1. `legacy` branch** — ✅ BUILT, TESTED AND PUSHED (`5e6b338`, orphan). GitHub Pages is **not** switched to it yet.
+**C1. `legacy` branch** — ✅ BUILT, TESTED, PUSHED (`5e6b338`, orphan) and **LIVE**: GitHub Pages serves it since 10 Sep 2026 (see C2).
 - **What shipped / deviations from the spec below:** `index.html`, `404.html` (byte-identical copy), tombstone `sw.js`, `.nojekyll`, plus a `README.md` saying never to delete the branch. The icon is **inlined** in the page rather than shipped as `icon.svg`, because `404.html` is served at arbitrary depths, where a relative `icon.svg` would 404.
   - The `<meta refresh>` fallback sits inside `<noscript>`, so it only fires without JavaScript. A bare meta refresh would also fire inside the old installed app and do exactly the cross-origin jump the standalone path must avoid.
   - Old-path mapping strips `/projectboard/`, folds `index.html` into `/`, keeps the `#hash`, drops any old query string, and appends `?src=moved`. The site root `/projectboard/` is a constant in the page, so it needs updating if the repo is ever renamed.
@@ -184,7 +184,8 @@ The old URL **keeps being served by GitHub Pages permanently**, but from an orph
 
 **C2. Cutover order** (after staging is signed off):
 1. ✅ Merge `dev` → `main` (fast-forward to `5271860`, 10 Sep 2026). Cloudflare deployed it; production is verified (`pb-v73`, `/privacy`, `/scan`, private files 404, `no-cache` headers, no redirect in the SW cache, manifest installable). ⬜ Check Google sign-in on symmetryboard.co.uk.
-2. ✅ Push the `legacy` branch. ⬜ **Then switch Settings → Pages → Source to `legacy` / root** (or `gh api -X PUT repos/rlmck/projectboard/pages -f "source[branch]=legacy" -f "source[path]=/"`). Don't dawdle: until Pages is flipped, `main` still feeds github.io, so the *new* app (welcome screen, manifest and all) is being served on the old origin.
+2. ✅ Push the `legacy` branch. ✅ **Pages Source switched to `legacy` / root** (10 Sep 2026, via `gh api -X PUT repos/rlmck/projectboard/pages -f "source[branch]=legacy" -f "source[path]=/"`). ⚠️ **Gotcha:** changing the source through the API does **not** start a build, and github.io kept serving the last `main` build for 10+ minutes. A build had to be requested explicitly with `gh api -X POST repos/rlmck/projectboard/pages/builds`, after which the `legacy` build deployed in ~30 s.
+   - **Verified on the live sites:** `rlmck.github.io/projectboard/` and unknown paths show "Project Board has moved", `sw.js` is the tombstone, and the old app files (`app.js`, `manifest.json`, `CLAUDE.md`) 404. An old deep link in a mobile tab (`/projectboard/#detail/<id>`) lands on `symmetryboard.co.uk/#detail/<id>` with the "has moved here" welcome over that problem, and `?src` is already stripped. The old address opened as an installed app shows the moved screen with no manifest link, and the tombstone is active with only `pb-moved-v1` cached. Pages sends `max-age=600`, so any cached copy of the old page is gone within ~10 min.
 3. Check the old URL (see Verification). Then remove github.io from Supabase's redirect list and print the poster.
 4. Swap your own icons the same way everyone else will: open the old app, see the moved screen, install the new one, delete the old one.
 5. Optional: tell regulars directly (gym WhatsApp/socials: "new address, reinstall once"). The moved screen handles anyone who misses it.

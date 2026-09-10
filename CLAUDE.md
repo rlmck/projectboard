@@ -7,7 +7,7 @@
 
 A PWA (Progressive Web App) to replace the Digital Training Boards (DTB) system at The Hangout climbing gym, Portland (near Weymouth, UK). The gym has a wooden symmetry board with 247 LED-lit holds. Users browse problems (climbing routes), cast them to the board (which lights up the holds via a Raspberry Pi), and tick them off when completed.
 
-The app is live at **https://symmetryboard.co.uk**, served by **Cloudflare Workers (static assets)** from the `main` branch. **Staging** is the `dev` branch, auto-deployed to **https://dev-projectboard.rosslewismckechnie.workers.dev**. The old `rlmck.github.io/projectboard` address is kept alive for good: at cutover it becomes a "we've moved" redirect (see "Hosting & deploy").
+The app is live at **https://symmetryboard.co.uk**, served by **Cloudflare Workers (static assets)** from the `main` branch. **Staging** is the `dev` branch, auto-deployed to **https://dev-projectboard.rosslewismckechnie.workers.dev**. The old `rlmck.github.io/projectboard` address is kept alive for good as a "we've moved" redirect, served from the `legacy` branch (see "Hosting & deploy").
 **There are real users now, so every change goes through staging:** work on `dev` → push → test on the staging URL on a real phone → merge `dev` → `main` only when Ross approves. Don't commit feature work straight to `main`.
 
 > **`docs/rollout-plan.md` is the source of truth for hosting, the rollout and the install flow.** If it and this file disagree about any of those, trust the plan.
@@ -109,7 +109,7 @@ The app is live at **https://symmetryboard.co.uk**, served by **Cloudflare Worke
 - **Tools:** `register_shapes.py` (watershed auto-trace; every distance derived from the median hold spacing, so any board-photo resolution works; **merges by default**, `--overwrite` to discard hand edits) and `trace_holds.html` (manual repair; warns when its `localStorage` copy differs from the committed file, and carries `__meta` through Export).
 - `sw.js` serves bundled **`.json` network-first** too, so a data-only deploy no longer costs one stale load. SW `pb-v69`.
 
-**Done (10 Sept 2026, live on `main`) — Public rollout: custom domain, install flow, privacy, QR.** Full detail, deviations and verification are in `docs/rollout-plan.md`. The orphan **`legacy`** branch ("we've moved" page + tombstone SW for github.io) is built, tested and pushed. **The GitHub Pages source has not been switched to it yet**, so until Ross flips it, github.io still serves `main`.
+**Done (10 Sept 2026, live on `main`) — Public rollout: custom domain, install flow, privacy, QR.** Full detail, deviations and verification are in `docs/rollout-plan.md`. **Cut over the same day:** GitHub Pages now serves the orphan **`legacy`** branch ("we've moved" page + tombstone SW) at the old github.io address, verified on the live sites.
 - **Hosting (B1, already on `main`):** Cloudflare Workers static assets. `build.sh` builds `public/` from an explicit allowlist; `_headers`; `_redirects` (`/scan` → `/?src=qr`).
 - **Icons + manifest (B2):** `make_icons.py` → `icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `apple-touch-icon.png` (iOS ignores SVG touch icons and would use a page screenshot). The manifest gained `id`, separate `any`/`maskable` icons, and two `narrow` screenshots for Android's richer install sheet. The head gained a meta description and Open Graph tags.
 - **Welcome / install screen (B3):** a full-screen `#welcome` overlay, shown on mobile browsers only, on a first visit or with `?src=qr` / `?src=moved`. `installContext()` in `app.js` picks the story:
@@ -131,7 +131,7 @@ The app is live at **https://symmetryboard.co.uk**, served by **Cloudflare Worke
 **GitHub:** https://github.com/rlmck/projectboard  
 **Live URL:** https://symmetryboard.co.uk (production = `main`)  
 **Staging URL:** https://dev-projectboard.rosslewismckechnie.workers.dev (= `dev`)  
-**Old URL:** https://rlmck.github.io/projectboard — **until cutover** GitHub Pages still serves it from `main`; at cutover (rollout plan Part C2: Settings → Pages → Source = `legacy` / root) it switches to the orphan **`legacy`** branch (already pushed), a permanent "we've moved" redirect, **not** the app  
+**Old URL:** https://rlmck.github.io/projectboard — served by GitHub Pages from the orphan **`legacy`** branch (since 10 Sep 2026): a permanent "we've moved" redirect, **not** the app. `main` no longer feeds GitHub Pages.  
 **Local path (Ross's laptop):** `C:\Users\rossl\Documents\ProjectBoard\` (the repo root — there is no `projectboard\` subfolder; the tracked PWA files live directly here)
 
 Key files in the repo:
@@ -175,7 +175,7 @@ Full history and reasoning: `docs/rollout-plan.md`. The essentials:
 - **`_headers`:** `no-cache` on `/sw.js` and `/`, plus site-wide `nosniff`, `strict-origin-when-cross-origin` and `Permissions-Policy: geolocation=(self)` (the cast geofence needs it). **`_redirects`:** `/scan  /?src=qr  302`.
 - **`.gitattributes`** pins `build.sh`, `_headers` and `_redirects` to LF, so Git Bash can run `build.sh` from a Windows clone.
 - **Staging shares the live Supabase DB.** Problems, ticks and casts made on staging are real, and admins bypass the geofence there. Delete test data, and don't cast by accident. Google sign-in on staging needs the staging URL in Supabase → Auth → redirect URLs.
-- **The old github.io URL is served from the `legacy` branch after cutover** (rollout plan Part C): an orphan branch holding only a "we've moved" page plus a tombstone `sw.js` that wipes old `pb-v*` caches. **Never delete the `legacy` branch or disable GitHub Pages, and the repo stays public** (free Pages needs a public repo). Until cutover, `main` still feeds github.io too.
+- **The old github.io URL is served from the `legacy` branch** (since 10 Sep 2026; rollout plan Part C): an orphan branch holding only a "we've moved" page plus a tombstone `sw.js` that wipes old `pb-v*` caches. **Never delete the `legacy` branch or disable GitHub Pages, and the repo stays public** (free Pages needs a public repo). `main` no longer feeds GitHub Pages. If you ever change `legacy`, push it and, if github.io doesn't update, request a build with `gh api -X POST repos/rlmck/projectboard/pages/builds` (a source change via the API didn't trigger one).
 - **Manifest screenshots are hand-captured.** `screenshot-list.png` and `screenshot-detail.png` are static images, so they don't update with the app. **Regenerate them whenever the list or detail view changes materially**, or Android's install sheet shows a stale app. How they were made: a local build, headless Chrome with CDP mobile emulation at 412×915 CSS px and DPR 2 (so 824×1830), as a guest, with the install banner suppressed (`pb-install-dismissed`), then 256-colour quantized with Pillow. The detail shot is *Cool Curve*. Keep the `sizes` in `manifest.json` matching, and keep both shots the same size.
 
 ---
