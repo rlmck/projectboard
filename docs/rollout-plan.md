@@ -1,6 +1,6 @@
 # Public rollout: custom domain, Cloudflare Workers, QR → install flow
 
-**Status:** Part A and B1 are complete. B2–B5 are done on `dev` (awaiting staging check + merge). B6 is outstanding.
+**Status:** Part A and B1 are complete. B2–B6 are done on `dev`, awaiting real-device checks on staging and then the merge. Part C (the `legacy` branch and cutover) is not started.
 **Live:** https://symmetryboard.co.uk
 **Staging:** https://dev-projectboard.rosslewismckechnie.workers.dev (stable per-branch preview; see Hosting below)
 
@@ -140,7 +140,8 @@ Build settings in the dashboard: build command `bash build.sh`, deploy command `
 - Printing: 6–8 cm QR, matte lamination (gloss glares under gym lights), mount at chest height beside the board.
 - `print/` stays out of the `build.sh` allowlist.
 
-**B6. Docs** (`dev`)
+**B6. Docs** (`dev`) — ✅ DONE on `dev`
+- **What shipped:** `CLAUDE.md` intro rewritten (live/staging URLs, real users, go through staging, and this plan as the hosting source of truth). The Repository block now lists the live, staging and old URLs, noting that github.io still serves `main` until cutover. A new **"Hosting & deploy"** section covers Workers static assets, branch previews, the `build.sh` allowlist, the three-places rule and its screenshot exception, Cloudflare's `.html` → extensionless redirects, `_headers`/`_redirects`, the LF pinning, the shared live DB, the `legacy` branch (never delete; repo stays public), and the hand-captured screenshots with how to regenerate them. Key files gained the hosting config, icons + `make_icons.py`, screenshots, `privacy.html`, `print/` + `make_qr.py` and this plan; the `sw.js` entry now describes shell/page caching. There's a Build-status entry for the rollout, and working rule 2 was rewritten (dev → staging → merge on approval). While there I fixed two stale bits: the script count is nine (`leaderboard.js` was missing from the list and from rule 9), and `docs/project-notes.md` is local-only, not "in this repo".
 - [CLAUDE.md](CLAUDE.md):
   - Live URL `https://symmetryboard.co.uk`; staging `https://dev-projectboard.rosslewismckechnie.workers.dev`.
   - Rewrite working rule 2: work on `dev` → push → test on the branch preview → merge to `main` only when approved.
