@@ -191,10 +191,15 @@
   async function initAuth() {
     const oauthError = takeOAuthError();
     if (oauthError) showToast('Sign-in failed: ' + oauthError, 'error');
+    // A password-reset email link lands here signed in, with type=recovery in the
+    // hash. Read it before getSession() consumes the hash (supabase-js reads the URL
+    // asynchronously, after this synchronous boot code).
+    const recovering = new URLSearchParams(location.hash.replace(/^#/, '')).get('type') === 'recovery';
     const { data } = await sb.auth.getSession();   // also consumes any OAuth redirect in the URL
     session = data.session || null;
     authReady = true;
     if (session) { await loadProfile(); await loadTicks(); await loadFaves(); }
+    if (recovering && session) openPasswordModal();
     updateFaveControls();
     renderProfile();
     if (loaded) renderList();   // refresh tick + fave flags (skip if problems still loading)
@@ -204,8 +209,9 @@
     if (location.hash.includes('access_token')) location.replace(location.pathname + '#list');
     else router();              // re-evaluate the route now auth is known (gates #create for guests)
 
-    sb.auth.onAuthStateChange(async (_event, s) => {
+    sb.auth.onAuthStateChange(async (event, s) => {
       session = s || null;
+      if (event === 'PASSWORD_RECOVERY') openPasswordModal();   // recovery that lands after boot
       if (session) { await loadProfile(); await loadTicks(); await loadFaves(); }
       else { profile = null; myTicks = new Set(); myTicksNormal = new Set(); myTicksMirrored = new Set(); myFaves = new Set(); myCircuitFaves = new Set(); leaderboardLoaded = false; }
       updateFaveControls();
@@ -242,8 +248,10 @@
     if (!email || !password) { errEl.textContent = 'Enter your email and password.'; return; }
     const btn = document.getElementById('auth-submit');
     const prev = btn.textContent; btn.disabled = true; btn.textContent = '…';
+    // emailRedirectTo: once email confirmation is on, the confirm link returns to
+    // THIS app (staging or production) instead of Supabase's Site URL.
     const res = authMode === 'signup'
-      ? await sb.auth.signUp({ email, password })
+      ? await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } })
       : await sb.auth.signInWithPassword({ email, password });
     btn.disabled = false; btn.textContent = prev;
     if (res.error) { errEl.textContent = res.error.message; return; }
@@ -252,6 +260,49 @@
       return;
     }
     location.hash = '#list';   // onAuthStateChange handles profile + display-name prompt
+  }
+
+  // ── Password reset ───────────────────────────────────────────────────────────
+  // Supabase's built-in mailer only delivers to project team members, so the
+  // "Forgot password?" link stays hidden until custom SMTP is live (see "Email
+  // setup" in docs/codebase-overview.md). Flip this to true as the last step.
+  // The recovery half (the "Set a new password" modal) is always on.
+  const PASSWORD_RESET_ENABLED = false;
+
+  async function authForgot() {
+    const email = document.getElementById('auth-email').value.trim();
+    const errEl = document.getElementById('auth-error');
+    errEl.textContent = '';
+    if (!email) { errEl.textContent = 'Enter your email above, then tap Forgot password.'; return; }
+    const link = document.getElementById('auth-forgot-link');
+    if (link.dataset.busy) return;
+    link.dataset.busy = '1';
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+    delete link.dataset.busy;
+    if (error) { errEl.textContent = error.message; return; }
+    // Same message whether or not the account exists (Supabase doesn't say either).
+    showToast('If there’s an account for that email, a reset link is on its way', 'success');
+  }
+
+  function openPasswordModal() {
+    document.getElementById('password-input').value = '';
+    document.getElementById('password-error').textContent = '';
+    document.getElementById('password-modal').classList.add('show');
+    setTimeout(() => document.getElementById('password-input').focus(), 50);
+  }
+  function closePasswordModal() { document.getElementById('password-modal').classList.remove('show'); }
+
+  async function savePassword() {
+    const errEl = document.getElementById('password-error');
+    const password = document.getElementById('password-input').value;
+    if (password.length < 6) { errEl.textContent = 'Use at least 6 characters.'; return; }
+    if (!session) { errEl.textContent = 'That reset link has expired. Request a new one.'; return; }
+    const btn = document.getElementById('password-save'); btn.disabled = true;
+    const { error } = await sb.auth.updateUser({ password });
+    btn.disabled = false;
+    if (error) { errEl.textContent = error.message; return; }
+    closePasswordModal();
+    showToast('Password updated', 'success');
   }
 
   async function authGoogle() {
@@ -272,6 +323,7 @@
     document.getElementById('auth-title').textContent = signup ? 'Create account' : 'Sign in';
     document.getElementById('auth-submit').textContent = signup ? 'Create account' : 'Sign in';
     document.getElementById('auth-password').setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
+    document.getElementById('auth-forgot').hidden = signup || !PASSWORD_RESET_ENABLED;
     document.getElementById('auth-toggle-text').textContent = signup ? 'Already have an account?' : 'New here?';
     document.getElementById('auth-toggle-link').textContent = signup ? 'Sign in' : 'Create an account';
     const e = document.getElementById('auth-error'); if (e) e.textContent = '';

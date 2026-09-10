@@ -1,6 +1,13 @@
 # Public rollout: custom domain, Cloudflare Workers, QR → install flow
 
-**Status (10 Sep 2026):** Parts A and B are complete and **live on `main`** (merged `5271860`, production verified). Part C is **cut over**: GitHub Pages now serves the `legacy` branch (`5e6b338`) at the old address, verified end to end on the live sites. **Remaining (Ross):** check Google sign-in on symmetryboard.co.uk, remove github.io from Supabase's redirect URLs, print the poster, and swap your own icons (C2 steps 3–5).
+**Status (10 Sep 2026):** Parts A and B are complete and **live on `main`** (merged `5271860`, production verified). Part C is **cut over**: GitHub Pages now serves the `legacy` branch (`5e6b338`) at the old address, verified end to end on the live sites. **Remaining (Ross):**
+- turn on Cloudflare **Always Use HTTPS** (plain `http://` still serves the site);
+- print the poster;
+- swap your own icons (C2 steps 4–5);
+- set up email sending (see `docs/codebase-overview.md` section 12, "Email setup");
+- if not already done, check Google sign-in on symmetryboard.co.uk itself, including from an iPhone home-screen install.
+
+The `www` redirect and removing github.io from Supabase were done on 10 Sep 2026.
 **Live:** https://symmetryboard.co.uk
 **Staging:** https://dev-projectboard.rosslewismckechnie.workers.dev (stable per-branch preview; see Hosting below)
 
@@ -43,12 +50,13 @@ Build settings in the dashboard: build command `bash build.sh`, deploy command `
 ## Part A: dashboard work — ✅ DONE
 1. ✅ Domain `symmetryboard.co.uk` bought at Cloudflare Registrar.
 2. ✅ Cloudflare Worker `projectboard` created, git-connected to `rlmck/projectboard`, production branch `main`, custom domain live.
-   - ⬜ **Outstanding:** `www.symmetryboard.co.uk` redirect rule to the apex.
+   - ✅ `www.symmetryboard.co.uk` → apex redirect (10 Sep 2026; verified: 301 to `https://symmetryboard.co.uk/`).
+   - ⬜ **SSL/TLS → Edge Certificates → Always Use HTTPS.** `http://symmetryboard.co.uk/` currently answers 200 over plain HTTP instead of redirecting. `_headers` now sends HSTS, but HSTS only takes effect once a browser has seen HTTPS.
    - ✅ Web Analytics (cookieless, injected automatically, no consent banner needed) — turned on.
    - ✅ Email Routing `hello@symmetryboard.co.uk` → Gmail — set up and tested (10 Sep 2026). The privacy page and Google branding both reference this address.
 3. ✅ **Supabase → Auth → URL Configuration**: Site URL `https://symmetryboard.co.uk`; redirect URL `https://symmetryboard.co.uk/**` added; github.io entry retained.
    - ✅ Staging redirect URL added (10 Sep 2026): `https://dev-projectboard.rosslewismckechnie.workers.dev/**` (or the `*-projectboard…` wildcard). Without it, Google sign-in on staging bounces to production.
-   - ⬜ **At cutover:** remove the github.io entry, but only once the "moved" page is live (Part C).
+   - ✅ The github.io entry was removed after cutover (10 Sep 2026).
 4. ✅ **Google Cloud → Google Auth Platform**: branding set (app name "Project Board", support email, home page, privacy policy URL, authorised domain); app published out of Testing.
    - Note: the privacy policy URL 404s until B4 ships.
    - Optional: brand verification via Search Console so the consent screen shows "Project Board" rather than `uqirowyfqwiceyjznosl.supabase.co`.
@@ -214,9 +222,9 @@ The old URL **keeps being served by GitHub Pages permanently**, but from an orph
 - ⚠️ Staging shares the **live Supabase DB**, and you are an admin, so the geofence doesn't apply. Test problems and casts made on staging are real. Delete test data and don't cast unintentionally.
 
 ## Open decisions
-- **`trace_holds.html` on the public host.** It is currently in the `build.sh` allowlist, so it ships and is reachable by URL guess — the same as it was on github.io, so not a regression, but newly explicit. Options: leave it, drop it from the allowlist and run it locally, or gate it behind the app's existing admin check.
+- ✅ **`trace_holds.html` on the public host:** resolved on 10 Sep 2026. It was dropped from the `build.sh` allowlist and is run locally (`python -m http.server` in the repo root). The `build.sh` allowlist is now 28 files: `trace_holds.html` out, the vendored `supabase-js-2.116.0.js` in.
 
 ## Pre-launch gaps (not part of this plan; separate tasks)
-- **No "forgot password" flow.** Supabase's built-in email only delivers to project team members, so public password resets need a custom SMTP (e.g. Resend) on symmetryboard.co.uk.
+- **"Forgot password" and email confirmation:** the app side is built (10 Sep 2026) but switched off until custom SMTP is live. Supabase's built-in email only delivers to project team members. Setup steps: `docs/codebase-overview.md` section 12, "Email setup".
 - The **geofence centre** is still unverified on-site.
 - The manifest's `"orientation": "portrait"` locks the installed Android app to portrait, which stops the landscape auto-fullscreen on detail views from ever triggering there.

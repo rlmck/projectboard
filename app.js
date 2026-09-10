@@ -394,7 +394,7 @@
   document.getElementById('info-modal').addEventListener('click', e => {
     if (e.target.id === 'info-modal') closeInfo();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closePasswordModal(); } });
 
   // Auth view actions
   document.getElementById('auth-back').addEventListener('click', () => { location.hash = '#list'; });
@@ -402,6 +402,12 @@
   document.getElementById('auth-submit').addEventListener('click', authEmail);
   document.getElementById('auth-password').addEventListener('keydown', e => { if (e.key === 'Enter') authEmail(); });
   document.getElementById('auth-toggle-link').addEventListener('click', () => setAuthMode(authMode === 'signup' ? 'signin' : 'signup'));
+  const forgotLink = document.getElementById('auth-forgot-link');
+  forgotLink.addEventListener('click', authForgot);
+  forgotLink.addEventListener('keydown', e => { if (e.key === 'Enter') authForgot(); });
+  document.getElementById('password-save').addEventListener('click', savePassword);
+  document.getElementById('password-cancel').addEventListener('click', closePasswordModal);
+  document.getElementById('password-input').addEventListener('keydown', e => { if (e.key === 'Enter') savePassword(); });
   document.getElementById('name-save').addEventListener('click', saveDisplayName);
   document.getElementById('name-cancel').addEventListener('click', closeNameModal);
   document.getElementById('name-input').addEventListener('keydown', e => { if (e.key === 'Enter') saveDisplayName(); });

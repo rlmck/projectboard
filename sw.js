@@ -2,7 +2,8 @@
 // Strategy:
 //   * HTML / navigations + app JS/CSS/JSON -> network-first  (always get the latest app, fall back to cache offline)
 //   * other same-origin (icons/image) -> stale-while-revalidate (fast, refreshes in the background)
-//   * Supabase + CDN                   -> never intercepted (straight to network)
+//   * Supabase + Cloudflare analytics  -> never intercepted (straight to network)
+//     (supabase-js itself is vendored same-origin, so it's precached like app code)
 //
 // JS/CSS/JSON are network-first so a code OR bundled-data change (hold_map,
 // hold_shapes, mirror_map) shows up on the next load without a cache-version bump
@@ -11,7 +12,7 @@
 // client the previous file for a whole load.
 // Bump CACHE whenever the asset list changes so old caches are cleared.
 
-const CACHE = 'pb-v74';
+const CACHE = 'pb-v75';
 // The app shell is precached as './' only (Cloudflare 307s /index.html -> /; the
 // navigate branch below keeps the shell under './'). precache() makes any other
 // redirected entry, such as privacy.html, safe to serve offline.
@@ -19,6 +20,7 @@ const ASSETS = [
   './',
   './privacy.html',
   './styles.css',
+  './supabase-js-2.116.0.js',
   './state.js',
   './core.js',
   './problems.js',
@@ -75,13 +77,13 @@ self.addEventListener('fetch', event => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Only handle same-origin GETs. Supabase + CDN go straight to the network.
+  // Only handle same-origin GETs. Supabase + Cloudflare analytics go straight to the network.
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
 
   // Pages: network-first, so a new deploy shows up on the next load.
   // Only a navigation to the app shell itself (the scope root or index.html, with
   // any query such as ?src=qr or OAuth params) refreshes the cached shell at './'.
-  // Every other page (privacy.html, trace_holds.html) is cached under its OWN URL
+  // Every other page (privacy.html) is cached under its OWN URL
   // and falls back to its own copy — so opening one can never overwrite the shell
   // and make an offline launch show the wrong page.
   if (req.mode === 'navigate' || req.destination === 'document') {

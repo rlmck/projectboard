@@ -20,13 +20,15 @@ cd "$(dirname "$0")"
 OUT=public
 
 FILES=(
-  # markup
+  # markup (trace_holds.html is a dev tool: run it locally, it's not deployed)
   index.html
   privacy.html
-  trace_holds.html
 
   # styles
   styles.css
+
+  # vendored, pinned supabase-js (loaded before state.js)
+  supabase-js-2.116.0.js
 
   # app logic — ordered classic scripts (see CLAUDE.md "Key files")
   state.js

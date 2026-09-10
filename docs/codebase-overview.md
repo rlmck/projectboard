@@ -56,7 +56,8 @@ Tracked at the repo root (there's no `frontend/` folder, whatever the stale loca
 | `state.js` … `app.js` | The nine app scripts (section 4) | yes |
 | `sw.js`, `manifest.json` | Service worker, PWA manifest | yes |
 | `privacy.html` | Static privacy page; keep its claims true | yes |
-| `trace_holds.html` | Dev tool for hand-tracing hold outlines | yes, but shouldn't be (see security notes) |
+| `supabase-js-2.116.0.js` | **Vendored, pinned** `supabase-js` (npm `dist/umd/supabase.js`, verified against the registry hash). Loaded before `state.js`; defines the global `supabase` | yes (and precached) |
+| `trace_holds.html` | Dev tool for hand-tracing hold outlines; run it locally (section 11) | no (removed from the deploy on 10 Sep 2026) |
 | `ProjectBoard.png` | Bundled **fallback** board image (2.1 MB; the live image is in Supabase Storage) | yes |
 | `hold_map.json` | Fallback hold → `{x,y}` % map (188 holds; lacks `hold218`) | yes |
 | `mirror_map.json` | Fallback hold → mirror-partner map | yes |
@@ -81,7 +82,14 @@ Local only (gitignored), on Ross's laptop:
 ## 4. Front end
 
 ### 4.1 Nine classic scripts, one global scope
-Load order, set in `index.html`: **`state` → `core` → `problems` → `admin` → `account` → `authoring` → `circuits` → `leaderboard` → `app`**.
+Load order, set in `index.html`: **`state` → `core` → `problems` → `admin` → `account` → `authoring` → `circuits` → `leaderboard` → `app`**, after the vendored `supabase-js-2.116.0.js`.
+
+**Upgrading `supabase-js`:**
+1. Download the new version's `package/dist/umd/supabase.js` from the npm tarball, and check the tarball against the registry's `dist.integrity`.
+2. Save it as `supabase-js-<version>.js` with the licence header.
+3. Update the three places, bump `CACHE`, and test on staging.
+
+Never go back to a floating CDN URL: the CSP also blocks it.
 
 These are plain `<script>` tags, not ES modules. There's no build step and no framework, and every top-level `let`/`const`/`function` is visible to every file. Consequences:
 - **A name may be declared only once across all nine files.** Check with `cat state.js core.js … app.js > all.js && node --check all.js`.
@@ -293,7 +301,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 **Supabase Auth config** (dashboard):
 - Site URL `https://symmetryboard.co.uk`.
-- Redirect URLs: `https://symmetryboard.co.uk/**`, the staging URL, and (still, to be removed) github.io.
+- Redirect URLs: `https://symmetryboard.co.uk/**` and the staging URL. github.io was removed on 10 Sep 2026.
 
 **Google Auth Platform:** app name "Project Board", published. Brand verification is optional.
 
@@ -302,10 +310,10 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 | Request | Strategy |
 |---|---|
 | Navigation to `/` or `/index.html` (any query) | network-first; a plain same-origin 200 is cached **under `./`**; offline → the cached `./` |
-| Other pages (`privacy.html`, `trace_holds.html`) | network-first, cached under their own URL; offline, `/privacy` also tries `privacy.html` |
+| Other pages (`privacy.html`) | network-first, cached under their own URL; offline, `/privacy` also tries `privacy.html` |
 | JS, CSS, JSON (matched by extension too, because WebKit leaves `destination` empty) | network-first, falling back to the cache |
 | Everything else same-origin (icons, `ProjectBoard.png`, manifest) | stale-while-revalidate |
-| Cross-origin (Supabase, jsDelivr, Cloudflare analytics) | not intercepted |
+| Cross-origin (Supabase, Cloudflare analytics) | not intercepted |
 
 - **Precache:** the `ASSETS` list goes through `precache()`, which re-wraps any redirected response as a plain copy. Cloudflare 307s every `*.html` to its extensionless form, and **a cached redirect can't answer a navigation.** Only plain same-origin 200s are ever cached. The shell is **never** cached under `./index.html`.
 - **Updates:**
@@ -314,7 +322,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
   - The reload is **deferred** while a create form has unsaved work (`hasUnsavedWork()`), and skipped on first install.
   - Bump `CACHE` whenever `ASSETS` or the fetch logic changes.
   - Registration uses `updateViaCache:'none'`, and `reg.update()` runs on load and on focus. `_headers` sets `/sw.js` and `/` to `no-cache`.
-- **What works offline:** only the shell. `supabase-js` comes from jsDelivr and isn't cached, and no problem data is cached. **Today an offline launch sticks on the splash screen.** Treat the precache as a speed-up, not an offline mode.
+- **What works offline:** only the shell. Since `pb-v75`, `supabase-js` is vendored and precached, so an offline launch boots past the splash. But no problem data is cached, so the list can't load. Treat the precache as a speed-up, not an offline mode.
 - **Stranded devices:** uninstalling the PWA doesn't clear its worker or caches. The fix is clearing site data (iOS: Settings → Safari → Advanced → Website Data; Chrome: Site settings → Clear & reset).
 - **Test SW changes against a mock that reproduces Cloudflare's `.html` redirects**, then probe staging. Plain `python -m http.server` hides the redirect bugs.
 
@@ -322,8 +330,8 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 | Service | What's configured | Notes |
 |---|---|---|
-| Cloudflare | Worker `projectboard` (git-connected, build `bash build.sh`, deploy `npx wrangler deploy`, non-production branch builds on); custom domain `symmetryboard.co.uk`; Registrar; Web Analytics (cookieless, auto-injected); Email Routing `hello@symmetryboard.co.uk` → Ross's Gmail | ⬜ `www` → apex redirect still outstanding |
-| Supabase | Project `uqirowyfqwiceyjznosl` (London): DB, Auth (Google + email, confirmation off, built-in SMTP), Storage `board`, Realtime | ⬜ remove the github.io redirect URL |
+| Cloudflare | Worker `projectboard` (git-connected, build `bash build.sh`, deploy `npx wrangler deploy`, non-production branch builds on); custom domain `symmetryboard.co.uk`; Registrar; Web Analytics (cookieless, auto-injected, so the CSP must allow its beacon); Email Routing `hello@symmetryboard.co.uk` → Ross's Gmail; `www` → apex redirect (done 10 Sep 2026) | ⬜ **turn on SSL/TLS → Edge Certificates → Always Use HTTPS**: `http://symmetryboard.co.uk` still serves the site over plain HTTP (no service worker, no geolocation) |
+| Supabase | Project `uqirowyfqwiceyjznosl` (London): DB, Auth (Google + email, confirmation off, built-in SMTP), Storage `board`, Realtime | ⬜ custom SMTP + "Confirm email" (section 12, Email setup) |
 | Google Cloud | Google Auth Platform OAuth client (used by Supabase), branding "Project Board", privacy URL, published | ⬜ check sign-in on production, including from an iPhone home-screen install |
 | GitHub | Public repo `rlmck/projectboard`; Pages source = `legacy` / root | never delete `legacy`, never make the repo private, **never rename the repo** |
 
@@ -338,7 +346,14 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 4. **The three-places rule:** a new deployable file goes in the `build.sh` allowlist **and** `sw.js` `ASSETS` **and** is referenced from `index.html` (or another shipped page).
    - Exception: `screenshot-*.png` are build-only.
    - A new PNG also needs a `.gitignore` `!` exception.
-5. **`_headers`:** `no-cache` on `/sw.js` and `/`; site-wide `nosniff`, `Referrer-Policy` and `Permissions-Policy: geolocation=(self)`, which the geofence needs.
+5. **`_headers`:**
+   - `no-cache` on `/sw.js` and `/`.
+   - Site-wide: `nosniff`, `Referrer-Policy`, `Permissions-Policy: geolocation=(self)` (the geofence needs it), `X-Frame-Options: DENY`, HSTS (1 year), and a **Content-Security-Policy**.
+   - The CSP allows scripts only from the site itself plus Cloudflare's analytics beacon, and network connections only to Supabase (https + wss) and the analytics endpoint.
+   - It keeps `'unsafe-inline'` for styles only, because the overlays use `style="left/top"`. Images may come from the site, Supabase Storage and `blob:` (calibrate's preview).
+   - There are **no inline scripts or inline event handlers anywhere; keep it that way.**
+   - **Any new third-party origin (CDN, font, API) must be added to the CSP, or it's silently blocked.**
+   - Checked on 10 Sep 2026 by driving every view in headless Chrome with the policy enforced: zero violations.
 6. **`_redirects`:** `/scan  /?src=qr  302`. The printed QR encodes `/scan`, so change its destination here, **never by reprinting**. Paths are case-sensitive.
 7. **`.gitattributes`** pins `build.sh`, `_headers` and `_redirects` to LF, so Git Bash can run `build.sh` from a Windows clone.
 8. **Manifest screenshots are hand-captured.** Regenerate them when the list or detail view changes materially: 412×915 at DPR 2, as a guest, with the banner suppressed, 256-colour quantized (see CLAUDE.md).
@@ -368,7 +383,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 | `register_holds.py` | Original DTB coordinates + Ross's dots → `hold_map.json` (ICP fit) | `reference/` (local) |
 | `register_mirror.py` | Gareth's `MirrorDic.txt` → `mirror_map.json` (repairs one 4-hold knot) | `reference/` |
 | `register_shapes.py` | Auto-traces hold outlines from the **live** board → `hold_shapes.json`; merges by default, `--overwrite` to replace | network; run after every recalibration |
-| `trace_holds.html` | Manual outline tracing/repair (autosaves to localStorage; Import/Export) | serve over http |
+| `trace_holds.html` | Manual outline tracing/repair (autosaves to localStorage; Import/Export). **Not deployed**: run `python -m http.server 8000` in the repo root and open `http://localhost:8000/trace_holds.html` | a local http server |
 | `register_leds.py` | Gareth's wiring → `led_map.json` (asserts all 247 cells) | n/a |
 | `make_icons.py` | `icon.svg` geometry → 4 PNG icons (Pillow). **The geometry is duplicated by hand**: keep it in step with `icon.svg` | Pillow |
 | `make_qr.py` | `https://symmetryboard.co.uk/scan` → `print/qr-scan.svg` (level Q) | segno |
@@ -378,7 +393,26 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 ## 12. Known gaps (product, not bugs)
 
-- **No forgot-password flow.** Supabase's built-in email only delivers to project team members, so public password resets need custom SMTP (e.g. Resend) on the domain. Until then, a user who forgets their password has to email Ross.
+- **Password reset and email confirmation are waiting on email setup.** Supabase's built-in mailer only delivers to project team members. The app side is built:
+  - a "Forgot password?" link on sign-in, hidden while `PASSWORD_RESET_ENABLED = false` in `account.js`;
+  - the "Set a new password" modal a reset link opens (always on);
+  - `emailRedirectTo` on sign-up, so a confirmation link returns to the right site.
+
+  Until the steps below are done, a user who forgets their password has to email Ross.
+
+  **Email setup** (Ross does steps 1–4 and 6 in the dashboards; the code steps are 5 and 7):
+  1. **Resend** (resend.com, free tier: 3,000 emails/month): add the domain `symmetryboard.co.uk`, region **EU (Ireland)**. Let Resend configure Cloudflare DNS automatically, or add the records it lists: DKIM on `resend._domainkey`, SPF + MX on the `send` subdomain. They don't touch the apex MX that Email Routing uses. Wait for "Verified".
+  2. **Resend → API Keys:** create a key with *sending access* for that domain only.
+  3. **Supabase → Authentication → Emails → SMTP Settings → enable custom SMTP:**
+     - sender `noreply@symmetryboard.co.uk`, name `Project Board`;
+     - host `smtp.resend.com`, port `465`;
+     - username `resend`, password = the API key.
+  4. **Supabase → Authentication → Emails → Templates:** brand the "Reset password" and "Confirm signup" emails (subject and body say Project Board).
+  5. **Code:** set `PASSWORD_RESET_ENABLED = true`, add Resend (EU) to the processors in `privacy.html`, bump `CACHE`. Then on staging, request a reset for a non-team address and complete it.
+  6. **Supabase → Authentication → Sign In / Providers → Email → turn on "Confirm email".** Existing accounts are already marked confirmed.
+  7. Merge to `main`, and update this section.
+
+  Dashboard menu names drift; the settings themselves are standard.
 - **The geofence centre is unverified on-site.** If it's off by more than about 300 m plus typical accuracy, members standing at the wall get "Casting only works at the gym". Admins would never notice, because they bypass the gate. Verify it with a non-admin phone at the board.
 - **`manifest.json` has `"orientation": "portrait"`.** On Android installs this locks portrait, so the landscape auto-fullscreen on detail views never fires there; the expand button still works. iOS ignores the manifest orientation.
 - **Circuits Phase 2 isn't built:** casting, countdown, `circuit_logs`, and wiring up the circuits "Exclude Done" pill. Phase 3 (circuit leaderboards) isn't built either.
@@ -390,7 +424,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 Security findings are **not** listed here; they're in `docs/security-findings.md` (local). This list folds in the still-open items from the 2 July 2026 review, which it supersedes.
 
-**Fixed on 10 Sep 2026** (DB changes live; app changes on `dev`, SW `pb-v74`):
+**Fixed on 10 Sep 2026.** `supabase-js` is vendored and pinned (it no longer loads from a CDN), a CSP and security headers were added, `trace_holds.html` is off the deploy, and the missing favicon is fixed (all SW `pb-v75`). Earlier the same day (DB changes live, SW `pb-v74`):
 - the admin "Sends" stat always read 0;
 - OAuth errors were dropped silently;
 - the sign-up name clash and the email-prefix names;
@@ -400,8 +434,7 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 
 **High**
 - **The admin user list is cached for the whole session**, and the reload button is hidden on the user-detail screen. So Routes set and Sends, now correct server-side, can still be stale until you go back to the list and reload.
-- **The app sticks on the splash screen when `supabase-js` can't load** (offline, or jsDelivr unreachable). It's loaded as a floating `@2` with no integrity hash, so untested library releases also reach users. Fix: vendor a pinned UMD build as a local file (three-places rule), which also gets it precached.
-- **The same splash hang happens if `localStorage` access throws.** It's read unguarded at the top level of `app.js`, before boot. Some Android webviews have storage turned off, and so do browsers set to block site data.
+- **The app sticks on the splash screen if `localStorage` access throws.** It's read unguarded at the top level of `app.js`, before boot. Some Android webviews have storage turned off, and so do browsers set to block site data. The `supabase-js`-from-a-CDN version of this hang was fixed on 10 Sep 2026 by vendoring the library.
 - **Network-first fetches have no timeout.** On weak gym Wi-Fi (connected, barely working), loads hang instead of falling back to the cache. Race each fetch against about 3 s.
 
 **Medium**
@@ -435,7 +468,7 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
   - The "run db/NN in Supabase" messages will never fire now that every script is applied.
   - 8 of the 9 script headers omit `leaderboard.js` from the stated load order.
   - The bundled `hold_map.json` lacks `hold218`.
-- **Missing site polish:** no custom 404 page; the `www` redirect is outstanding.
+- **Missing site polish:** no custom 404 page.
 - **Duplication worth consolidating before the next board feature:**
   - three nearest-hold functions (`nearestHold`, `ccNearestHold`, `calNearest`);
   - two copies of the circuit "by hold" overlay builder;

@@ -23,9 +23,9 @@
   <meta property="og:image:alt" content="Project Board app icon" />
   <meta name="twitter:card" content="summary" />
   <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <!-- iOS ignores SVG touch icons (it uses a page screenshot instead), so this must be a PNG. -->
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -264,6 +264,8 @@
       <div class="auth-divider"><span>or</span></div>
       <input class="fld" id="auth-email" type="email" placeholder="Email" autocomplete="email" />
       <input class="fld" id="auth-password" type="password" placeholder="Password" autocomplete="current-password" />
+      <!-- Shown in sign-in mode only, and only once PASSWORD_RESET_ENABLED is on (account.js) -->
+      <div class="auth-forgot" id="auth-forgot" hidden><a id="auth-forgot-link" role="button" tabindex="0">Forgot password?</a></div>
       <div class="auth-error" id="auth-error"></div>
       <button class="btn-block btn-primary" id="auth-submit">Sign in</button>
       <div class="auth-toggle"><span id="auth-toggle-text">New here?</span> <a id="auth-toggle-link">Create an account</a></div>
@@ -543,6 +545,24 @@
   </div>
 </div>
 
+<!-- ══ NEW PASSWORD MODAL (after following a password-reset email link) ═ -->
+<div class="modal-overlay" id="password-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Set a new password">
+    <div class="modal-header">
+      <div class="modal-title">Set a new password</div>
+    </div>
+    <div class="name-body">
+      <p class="shell-sub" style="margin:0 0 12px">You followed a password-reset link, so you're signed in. Choose a new password for next time.</p>
+      <input class="fld" id="password-input" type="password" placeholder="New password" autocomplete="new-password" />
+      <div class="auth-error" id="password-error"></div>
+      <div class="modal-actions">
+        <button class="btn-block btn-ghost" id="password-cancel">Later</button>
+        <button class="btn-block btn-primary" id="password-save">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ══ BOARD SAVED MODAL (admins) ═════════════════════════════════════ -->
 <div class="modal-overlay" id="cal-saved-modal">
   <div class="modal" role="dialog" aria-modal="true" aria-label="Board saved">
@@ -609,7 +629,10 @@
 
 <!-- app.js was split into ordered classic scripts sharing one global scope.
      ORDER MATTERS: state first (defines the shared client + state), app.js last
-     (event wiring + boot). No type="module" — these intentionally share scope. -->
+     (event wiring + boot). No type="module" — these intentionally share scope.
+     supabase-js is a vendored, pinned copy (served same-origin and precached, so
+     the app no longer depends on a CDN or picks up untested releases). -->
+<script src="supabase-js-2.116.0.js"></script>
 <script src="state.js"></script>
 <script src="core.js"></script>
 <script src="problems.js"></script>
