@@ -1,6 +1,6 @@
 # Public rollout: custom domain, Cloudflare Workers, QR → install flow
 
-**Status:** Part A and B1 are complete. B2–B6 are done on `dev`, awaiting real-device checks on staging and then the merge. Part C (the `legacy` branch and cutover) is not started.
+**Status (10 Sep 2026):** Parts A and B are complete and **live on `main`** (merged `5271860`, production verified). Part C: the `legacy` branch is built, tested and pushed (`5e6b338`). **Remaining: flip GitHub Pages to `legacy`, then the C2 follow-ups** (remove github.io from Supabase, print the poster, swap your own icons). Until the flip, github.io still serves `main`, i.e. the new app on the old origin.
 **Live:** https://symmetryboard.co.uk
 **Staging:** https://dev-projectboard.rosslewismckechnie.workers.dev (stable per-branch preview; see Hosting below)
 
@@ -45,9 +45,9 @@ Build settings in the dashboard: build command `bash build.sh`, deploy command `
 2. ✅ Cloudflare Worker `projectboard` created, git-connected to `rlmck/projectboard`, production branch `main`, custom domain live.
    - ⬜ **Outstanding:** `www.symmetryboard.co.uk` redirect rule to the apex.
    - ✅ Web Analytics (cookieless, injected automatically, no consent banner needed) — turned on.
-   - ⬜ **Outstanding, needed before B4:** Email Routing `hello@symmetryboard.co.uk` → Gmail. The privacy page and Google branding both reference this address.
+   - ✅ Email Routing `hello@symmetryboard.co.uk` → Gmail — set up and tested (10 Sep 2026). The privacy page and Google branding both reference this address.
 3. ✅ **Supabase → Auth → URL Configuration**: Site URL `https://symmetryboard.co.uk`; redirect URL `https://symmetryboard.co.uk/**` added; github.io entry retained.
-   - ⬜ **Before testing B2–B5 on staging:** add `https://dev-projectboard.rosslewismckechnie.workers.dev/**`, or `https://*-projectboard.rosslewismckechnie.workers.dev/**` to cover all branch previews. Without this, Google sign-in on staging bounces to production.
+   - ✅ Staging redirect URL added (10 Sep 2026): `https://dev-projectboard.rosslewismckechnie.workers.dev/**` (or the `*-projectboard…` wildcard). Without it, Google sign-in on staging bounces to production.
    - ⬜ **At cutover:** remove the github.io entry, but only once the "moved" page is live (Part C).
 4. ✅ **Google Cloud → Google Auth Platform**: branding set (app name "Project Board", support email, home page, privacy policy URL, authorised domain); app published out of Testing.
    - Note: the privacy policy URL 404s until B4 ships.
@@ -154,7 +154,18 @@ Build settings in the dashboard: build command `bash build.sh`, deploy command `
 ## Part C: Moving existing users off github.io
 The old URL **keeps being served by GitHub Pages permanently**, but from an orphan **`legacy` branch** that contains only a "moved" site. `main` no longer feeds GitHub Pages; it feeds Cloudflare only.
 
-**C1. `legacy` branch** (`git switch --orphan legacy`). It contains `index.html`, `404.html` (a copy of index.html), `sw.js`, `icon.svg` and `.nojekyll`, and **no `manifest.json` link**, so nobody can install the old origin again. The page behaves differently depending on how it's opened:
+**C1. `legacy` branch** — ✅ BUILT, TESTED AND PUSHED (`5e6b338`, orphan). GitHub Pages is **not** switched to it yet.
+- **What shipped / deviations from the spec below:** `index.html`, `404.html` (byte-identical copy), tombstone `sw.js`, `.nojekyll`, plus a `README.md` saying never to delete the branch. The icon is **inlined** in the page rather than shipped as `icon.svg`, because `404.html` is served at arbitrary depths, where a relative `icon.svg` would 404.
+  - The `<meta refresh>` fallback sits inside `<noscript>`, so it only fires without JavaScript. A bare meta refresh would also fire inside the old installed app and do exactly the cross-origin jump the standalone path must avoid.
+  - Old-path mapping strips `/projectboard/`, folds `index.html` into `/`, keeps the `#hash`, drops any old query string, and appends `?src=moved`. The site root `/projectboard/` is a constant in the page, so it needs updating if the repo is ever renamed.
+  - The page registers the tombstone worker only in standalone. Browser tabs redirect immediately; the browser's own update check on navigation still upgrades any old worker there.
+  - The tombstone's cache is `pb-moved-v1` (deliberately not `pb-v…`), and activate deletes **only** `pb-v*` caches, because CacheStorage is shared across the whole `rlmck.github.io` origin.
+- **Tested locally** against a mock GitHub Pages project site (`/projectboard/`, `404.html` fallback, `/projectboard` → 301), with **today's production github.io app (`3325c51`, `pb-v71`) installed** as the "legacy user":
+  - Browser tab: `/projectboard/` → `https://symmetryboard.co.uk/?src=moved`. `#detail/abc-123` is kept. `index.html` → `/`, `privacy.html` → `/privacy.html`, and deep 404 paths map across. `?code=x` is dropped. `/projectboard` with no slash also works.
+  - Old installed app, first launch after the flip: the moved screen shows with no old app code, the tombstone is active, `pb-v71` is deleted, and only `pb-moved-v1` remains. The second launch is the same. **Offline** launches, including deep links, show the moved screen.
+  - Old app **open** during the flip: on focus, `reg.update()` installs the tombstone, `controllerchange` fires, and the old app reloads itself onto the moved screen.
+  - Standalone, fresh: the right steps appear for iOS and Android, there's no manifest link, and the tombstone is registered.
+- Original spec (`git switch --orphan legacy`): It contains `index.html`, `404.html` (a copy of index.html), `sw.js`, `icon.svg` and `.nojekyll`, and **no `manifest.json` link**, so nobody can install the old origin again. The page behaves differently depending on how it's opened:
 - **In a normal browser tab** (old bookmark or shared link): immediate `location.replace('https://symmetryboard.co.uk' + path + '?src=moved' + hash)`, where `path` is the old path with the `/projectboard` prefix stripped. The hash is kept, so a shared `#detail/<id>` deep link still lands on the same problem. There's also a `<meta refresh>` + canonical fallback, and `404.html` does the same, so `/projectboard/privacy.html` and similar paths also map across.
 - **Inside the old installed app** (`display-mode: standalone` / `navigator.standalone`): **no auto-redirect.** From a standalone PWA, a cross-origin jump opens in an in-app browser sheet that can't install. Instead it shows a clear **"Project Board has moved"** screen:
   - The new address, shown large, with a **Copy link** button and an **Open** link (`target=_blank`).
@@ -172,8 +183,8 @@ The old URL **keeps being served by GitHub Pages permanently**, but from an orph
 - GitHub Pages sends `max-age=600`, so everyone has switched within about 10 minutes of the swap.
 
 **C2. Cutover order** (after staging is signed off):
-1. Merge `dev` → `main`. Cloudflare deploys to symmetryboard.co.uk. Check Google sign-in works there.
-2. Push the `legacy` branch, then switch **Settings → Pages → Source** to `legacy` / root. Don't dawdle between steps 1 and 2: until Pages is flipped, `main` still feeds github.io, so the new welcome screen would briefly appear on the old origin.
+1. ✅ Merge `dev` → `main` (fast-forward to `5271860`, 10 Sep 2026). Cloudflare deployed it; production is verified (`pb-v73`, `/privacy`, `/scan`, private files 404, `no-cache` headers, no redirect in the SW cache, manifest installable). ⬜ Check Google sign-in on symmetryboard.co.uk.
+2. ✅ Push the `legacy` branch. ⬜ **Then switch Settings → Pages → Source to `legacy` / root** (or `gh api -X PUT repos/rlmck/projectboard/pages -f "source[branch]=legacy" -f "source[path]=/"`). Don't dawdle: until Pages is flipped, `main` still feeds github.io, so the *new* app (welcome screen, manifest and all) is being served on the old origin.
 3. Check the old URL (see Verification). Then remove github.io from Supabase's redirect list and print the poster.
 4. Swap your own icons the same way everyone else will: open the old app, see the moved screen, install the new one, delete the old one.
 5. Optional: tell regulars directly (gym WhatsApp/socials: "new address, reinstall once"). The moved screen handles anyone who misses it.
@@ -184,6 +195,7 @@ The old URL **keeps being served by GitHub Pages permanently**, but from an orph
 - If you later want the app repo private: rename it (e.g. `projectboard-app`) and create a new tiny public `rlmck/projectboard` repo holding just the `legacy` content, since the github.io path follows the repo name. Only do this after checking Cloudflare still builds from the renamed repo.
 
 ## Verification
+- **Done so far (10 Sep 2026):** Ross added the staging Supabase redirect, checked the Android install sheet shows the screenshots, set up and tested `hello@symmetryboard.co.uk`, and tested the QR on screen (not yet printed). Ross accepted skipping the other real-device checks. Everything else below was checked in headless Chrome against local mocks and the live staging/production URLs, as recorded in each phase above.
 - **Staging:** on `dev-projectboard.rosslewismckechnie.workers.dev`:
   - Android Chrome shows the Install button and the rich sheet with screenshots; the installed icon is correct.
   - iPhone Safari: follow the on-screen steps and check the home-screen icon is the PNG, not a screenshot, and it opens standalone at `/` with no `?src`.

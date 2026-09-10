@@ -109,7 +109,7 @@ The app is live at **https://symmetryboard.co.uk**, served by **Cloudflare Worke
 - **Tools:** `register_shapes.py` (watershed auto-trace; every distance derived from the median hold spacing, so any board-photo resolution works; **merges by default**, `--overwrite` to discard hand edits) and `trace_holds.html` (manual repair; warns when its `localStorage` copy differs from the committed file, and carries `__meta` through Export).
 - `sw.js` serves bundled **`.json` network-first** too, so a data-only deploy no longer costs one stale load. SW `pb-v69`.
 
-**Done (Sept 2026, on `dev`, awaiting merge) — Public rollout: custom domain, install flow, privacy, QR.** Full detail, deviations and verification are in `docs/rollout-plan.md`.
+**Done (10 Sept 2026, live on `main`) — Public rollout: custom domain, install flow, privacy, QR.** Full detail, deviations and verification are in `docs/rollout-plan.md`. The orphan **`legacy`** branch ("we've moved" page + tombstone SW for github.io) is built, tested and pushed. **The GitHub Pages source has not been switched to it yet**, so until Ross flips it, github.io still serves `main`.
 - **Hosting (B1, already on `main`):** Cloudflare Workers static assets. `build.sh` builds `public/` from an explicit allowlist; `_headers`; `_redirects` (`/scan` → `/?src=qr`).
 - **Icons + manifest (B2):** `make_icons.py` → `icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `apple-touch-icon.png` (iOS ignores SVG touch icons and would use a page screenshot). The manifest gained `id`, separate `any`/`maskable` icons, and two `narrow` screenshots for Android's richer install sheet. The head gained a meta description and Open Graph tags.
 - **Welcome / install screen (B3):** a full-screen `#welcome` overlay, shown on mobile browsers only, on a first visit or with `?src=qr` / `?src=moved`. `installContext()` in `app.js` picks the story:
@@ -131,7 +131,7 @@ The app is live at **https://symmetryboard.co.uk**, served by **Cloudflare Worke
 **GitHub:** https://github.com/rlmck/projectboard  
 **Live URL:** https://symmetryboard.co.uk (production = `main`)  
 **Staging URL:** https://dev-projectboard.rosslewismckechnie.workers.dev (= `dev`)  
-**Old URL:** https://rlmck.github.io/projectboard — **until cutover** GitHub Pages still serves it from `main`; at cutover (rollout plan Part C) it switches to the orphan **`legacy`** branch, a permanent "we've moved" redirect, **not** the app  
+**Old URL:** https://rlmck.github.io/projectboard — **until cutover** GitHub Pages still serves it from `main`; at cutover (rollout plan Part C2: Settings → Pages → Source = `legacy` / root) it switches to the orphan **`legacy`** branch (already pushed), a permanent "we've moved" redirect, **not** the app  
 **Local path (Ross's laptop):** `C:\Users\rossl\Documents\ProjectBoard\` (the repo root — there is no `projectboard\` subfolder; the tracked PWA files live directly here)
 
 Key files in the repo:
