@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Project Board poster (A5)</title>
+  <!--
+    The A5 poster beside the symmetry board. Open this file in Chrome/Edge and
+    print to PDF: paper size A5, margins None, "Background graphics" ON, scale 100%.
+    The QR (qr-scan.svg, from make_qr.py) must stay 6–8 cm wide — it's 7 cm here.
+    Print on matte stock or laminate matte (gloss glares under the gym lights) and
+    mount at chest height beside the board. Not deployed: print/ isn't in build.sh.
+  -->
+  <style>
+    @page { size: A5 portrait; margin: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      color: #0a0a0a;
+      background: #8a8a8a;
+    }
+
+    .sheet {
+      width: 148mm;
+      height: 210mm;
+      margin: 10mm auto;
+      padding: 13mm 12mm 11mm;
+      background: #fff;
+      box-shadow: 0 4mm 12mm rgba(0,0,0,0.35);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    .brand { display: flex; align-items: center; gap: 3.5mm; }
+    .brand svg { width: 14mm; height: 14mm; display: block; }
+    .brand .name { font-size: 8.2mm; font-weight: 800; letter-spacing: 0.1mm; }
+    .brand .name span { color: #ec4899; }
+    .where { margin-top: 1.6mm; font-size: 3.6mm; color: #555; letter-spacing: 0.2mm; }
+
+    h1 { margin-top: 9mm; font-size: 9.6mm; font-weight: 800; line-height: 1.12; }
+    .free { margin-top: 2.2mm; font-size: 4.8mm; font-weight: 600; color: #ec4899; }
+
+    .qr { margin-top: 7mm; width: 70mm; height: 70mm; display: block; }
+
+    .url { margin-top: 5mm; font-size: 3.8mm; color: #555; }
+    .url b { display: block; margin-top: 0.8mm; font-size: 6.2mm; font-weight: 800; color: #0a0a0a; letter-spacing: 0.15mm; }
+
+    .hints {
+      margin-top: auto;
+      width: 100%;
+      border-top: 0.35mm solid #e5e5e5;
+      padding-top: 4.5mm;
+      font-size: 3.7mm;
+      line-height: 1.55;
+      color: #333;
+    }
+    .hints b { color: #0a0a0a; }
+
+    /* Screen-only helper, never printed */
+    .howto {
+      max-width: 148mm;
+      margin: 0 auto 10mm;
+      padding: 0 2mm;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #fff;
+    }
+
+    @media print {
+      body { background: none; }
+      .sheet { margin: 0; box-shadow: none; }
+      .howto { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="sheet">
+    <div class="brand">
+      <!-- icon.svg, inlined so the poster has no other dependencies -->
+      <svg viewBox="0 0 512 512" aria-hidden="true">
+        <rect width="512" height="512" rx="104" fill="#0a0a0a"/>
+        <path d="M132 168 L256 356 L380 168" fill="none" stroke="#ec4899" stroke-width="56" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle cx="256" cy="132" r="26" fill="#ec4899"/>
+      </svg>
+      <div class="name">Project<span> Board</span></div>
+    </div>
+    <p class="where">The Hangout’s symmetry board</p>
+
+    <h1>Scan to get Project Board</h1>
+    <p class="free">Free for iPhone &amp; Android</p>
+
+    <img class="qr" src="qr-scan.svg" alt="QR code linking to symmetryboard.co.uk" />
+
+    <p class="url">or go to <b>symmetryboard.co.uk</b></p>
+
+    <p class="hints">
+      <b>iPhone:</b> open it in Safari, then tap Share → Add to Home Screen<br />
+      <b>Android:</b> open it in Chrome, then tap Install app
+    </p>
+  </main>
+
+  <p class="howto">Print from Chrome or Edge: paper <b>A5</b>, margins <b>None</b>, <b>Background graphics</b> on, scale 100%. The QR prints 7 cm wide.</p>
+</body>
+</html>

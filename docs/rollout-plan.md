@@ -1,6 +1,6 @@
 # Public rollout: custom domain, Cloudflare Workers, QR → install flow
 
-**Status:** Part A and B1 are complete. B2–B4 are done on `dev` (awaiting staging check + merge). B5 onwards is outstanding.
+**Status:** Part A and B1 are complete. B2–B5 are done on `dev` (awaiting staging check + merge). B6 is outstanding.
 **Live:** https://symmetryboard.co.uk
 **Staging:** https://dev-projectboard.rosslewismckechnie.workers.dev (stable per-branch preview; see Hosting below)
 
@@ -130,7 +130,11 @@ Build settings in the dashboard: build command `bash build.sh`, deploy command `
 - [sw.js](sw.js) navigate branch: write to the `./index.html` cache **only** when the path is the scope root or `index.html`. Other navigations go network-first with `caches.match(req)` as the fallback.
 - **Bump `CACHE` again in B4: `pb-v72` → `pb-v73`.** B2's bump to `pb-v72` doesn't cover B4. B4 changes the ASSETS list (adds `privacy.html`) and the fetch logic, so installed clients need a new cache version to pick it up.
 
-**B5. QR code + poster** (`dev`, not deployed)
+**B5. QR code + poster** (`dev`, not deployed) — ✅ DONE on `dev`
+- **What shipped:**
+  - `make_qr.py` → `print/qr-scan.svg`: QR version 3, error level Q, 37×37 modules including the 4-module quiet zone, black on white, no fixed size (the poster sizes it). At 7 cm wide each module is ~1.9 mm. Needs `pip install segno`.
+  - `print/poster.html`: A5 portrait, white, print-first (`@page` A5, zero margins, `print-color-adjust: exact`). It has the brand mark + "The Hangout's symmetry board", the headline "Scan to get Project Board", "Free for iPhone & Android", the QR at **7 cm**, "or go to **symmetryboard.co.uk**" (the root, which is friendlier to type than `/scan`, and a first visit shows the welcome anyway), and the two-line iPhone/Android hint. Printing instructions show on screen only. Print from Chrome/Edge: A5, margins None, Background graphics on, 100%.
+  - Verified: Chrome prints it to exactly one A5 page. OpenCV decodes the QR from a raster of the rendered poster as exactly `https://symmetryboard.co.uk/scan`, still at ~72 px wide and blurred. Production `/scan` → 302 `/?src=qr`. The real-world check is still pending (both phone camera apps, ~1 m, gym lighting).
 - `make_qr.py` (`segno`) → `print/qr-scan.svg` for `https://symmetryboard.co.uk/scan`: error-correction level Q, 4-module quiet zone, black on white (inverted/dark QRs fail on some scanners).
 - `print/poster.html`: an A5 poster with a big QR, "Scan to get Project Board: free for iPhone & Android", the short URL as text for people who'd rather type it, and a two-line iOS/Android hint. Print to PDF from the browser.
 - Printing: 6–8 cm QR, matte lamination (gloss glares under gym lights), mount at chest height beside the board.
