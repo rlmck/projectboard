@@ -9,8 +9,22 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Project Board" />
   <title>Project Board — The Hangout</title>
+  <meta name="description" content="The Hangout's symmetry board: browse problems, light them up on the wall, tick your sends." />
+  <!-- Link previews (WhatsApp, iMessage, socials). OG needs absolute URLs, so these
+       always point at production — on the dev preview they show the live icon. -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Project Board" />
+  <meta property="og:title" content="Project Board — The Hangout" />
+  <meta property="og:description" content="The Hangout's symmetry board: browse problems, light them up on the wall, tick your sends." />
+  <meta property="og:url" content="https://symmetryboard.co.uk/" />
+  <meta property="og:image" content="https://symmetryboard.co.uk/icon-maskable-512.png" />
+  <meta property="og:image:width" content="512" />
+  <meta property="og:image:height" content="512" />
+  <meta property="og:image:alt" content="Project Board app icon" />
+  <meta name="twitter:card" content="summary" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="apple-touch-icon" href="icon.svg" />
+  <!-- iOS ignores SVG touch icons (it uses a page screenshot instead), so this must be a PNG. -->
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="styles.css" />
 </head>

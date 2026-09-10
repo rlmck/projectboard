@@ -11,7 +11,7 @@
 // client the previous file for a whole load.
 // Bump CACHE whenever the asset list changes so old caches are cleared.
 
-const CACHE = 'pb-v71';
+const CACHE = 'pb-v72';
 const ASSETS = [
   './',
   './index.html',
@@ -27,6 +27,10 @@ const ASSETS = [
   './app.js',
   './manifest.json',
   './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable-512.png',
+  './apple-touch-icon.png',
   './ProjectBoard.png',
   './hold_map.json',
   './hold_shapes.json',
