@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <meta name="robots" content="noindex" />
+  <title>Project Board has moved</title>
+  <link rel="canonical" href="https://symmetryboard.co.uk/" />
+  <!--
+    The OLD address (rlmck.github.io/projectboard), served forever from the orphan
+    `legacy` branch. Deliberately NO manifest link, so the old origin can never be
+    installed again. 404.html is an exact copy, so every old path lands here too.
+
+    In a normal browser tab: jump straight to the same page on the new domain.
+    Inside the old installed app (standalone): DON'T redirect. A cross-origin jump
+    from a standalone PWA opens an in-app browser sheet that can't install, so show
+    the "moved" screen instead, and register the tombstone sw.js so the old app's
+    caches are wiped and even offline launches show this screen.
+  -->
+  <noscript><meta http-equiv="refresh" content="0; url=https://symmetryboard.co.uk/?src=moved" /></noscript>
+  <script>
+    (function () {
+      var NEW_ORIGIN = 'https://symmetryboard.co.uk';
+      var BASE = '/projectboard/';   // the github.io path = the repo name; update if the repo is renamed
+
+      var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+                       window.navigator.standalone === true;
+      window.__pbStandalone = standalone;
+
+      if (!standalone) {
+        // /projectboard/privacy.html -> /privacy.html; /projectboard/ -> /. The hash
+        // is kept, so a shared #detail/<id> deep link lands on the same problem.
+        var path = location.pathname.indexOf(BASE) === 0 ? '/' + location.pathname.slice(BASE.length)
+                 : location.pathname === BASE.slice(0, -1) ? '/' : location.pathname;
+        path = path.replace(/(^|\/)index\.html$/, '$1');
+        location.replace(NEW_ORIGIN + path + '?src=moved' + location.hash);
+        return;
+      }
+
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register(BASE + 'sw.js', { scope: BASE, updateViaCache: 'none' })
+          .then(function (reg) { reg.update(); })
+          .catch(function () {});
+      }
+    })();
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #f5f5f5;
+      min-height: 100dvh;
+      display: flex;
+      padding: calc(env(safe-area-inset-top) + 32px) 24px calc(env(safe-area-inset-bottom) + 28px);
+      -webkit-tap-highlight-color: transparent;
+    }
+    main { margin: auto; width: 100%; max-width: 380px; text-align: center; }
+    .icon { width: 76px; height: 76px; display: block; margin: 0 auto 18px; }
+    h1 { font-size: 25px; font-weight: 800; line-height: 1.2; }
+    h1 span { color: #ec4899; }
+    .lead { margin: 10px 0 22px; font-size: 15px; line-height: 1.5; color: #9a9a9a; }
+    .addr {
+      background: #161616;
+      border: 1px solid #ec4899;
+      border-radius: 14px;
+      padding: 16px 14px;
+    }
+    .addr .url { font-size: 22px; font-weight: 800; letter-spacing: 0.2px; word-break: break-all; user-select: all; -webkit-user-select: all; }
+    .addr .row { display: flex; gap: 10px; margin-top: 14px; }
+    .btn {
+      flex: 1;
+      display: block;
+      border: none;
+      border-radius: 10px;
+      padding: 13px;
+      font: inherit;
+      font-size: 15px;
+      font-weight: 700;
+      text-decoration: none;
+      text-align: center;
+      cursor: pointer;
+    }
+    .btn.primary { background: #ec4899; color: #fff; }
+    .btn.ghost { background: #202020; color: #f5f5f5; border: 1px solid #2c2c2c; }
+    h2 { margin: 26px 0 10px; font-size: 15px; font-weight: 800; text-align: left; }
+    ol { list-style: none; counter-reset: s; display: flex; flex-direction: column; gap: 8px; text-align: left; }
+    li {
+      counter-increment: s;
+      display: flex; gap: 12px; align-items: center;
+      background: #161616; border: 1px solid #2c2c2c; border-radius: 12px;
+      padding: 11px 13px; font-size: 14.5px; line-height: 1.45;
+    }
+    li::before {
+      content: counter(s); flex-shrink: 0;
+      width: 24px; height: 24px; border-radius: 50%;
+      background: rgba(236,72,153,0.16); border: 1px solid rgba(236,72,153,0.4); color: #f9a8d4;
+      font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center;
+    }
+    li b { color: #fff; }
+    .safe { margin-top: 22px; font-size: 14px; line-height: 1.5; color: #9a9a9a; }
+    .safe b { color: #f5f5f5; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <!-- icon.svg, inlined so this page needs nothing else from the old site -->
+  <svg class="icon" viewBox="0 0 512 512" aria-hidden="true">
+    <rect width="512" height="512" rx="104" fill="#161616"/>
+    <path d="M132 168 L256 356 L380 168" fill="none" stroke="#ec4899" stroke-width="56" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="256" cy="132" r="26" fill="#ec4899"/>
+  </svg>
+  <h1>Project Board<span> has moved</span></h1>
+  <p class="lead">This old version of the app has been retired. Project Board now lives at a new address:</p>
+
+  <div class="addr">
+    <div class="url" id="url">symmetryboard.co.uk</div>
+    <div class="row">
+      <button class="btn ghost" id="copy" type="button">Copy link</button>
+      <a class="btn primary" href="https://symmetryboard.co.uk/?src=moved" target="_blank" rel="noopener">Open</a>
+    </div>
+  </div>
+
+  <div id="steps-ios" hidden>
+    <h2>Get the new app on your iPhone</h2>
+    <ol>
+      <li><span>Open <b>Safari</b> and go to <b>symmetryboard.co.uk</b></span></li>
+      <li><span>Tap <b>Share</b>, then <b>Add to Home Screen</b></span></li>
+      <li><span>Press and hold this old icon, then tap <b>Delete</b> (or Remove App)</span></li>
+    </ol>
+  </div>
+
+  <div id="steps-android" hidden>
+    <h2>Get the new app on your phone</h2>
+    <ol>
+      <li><span>Open <b>Chrome</b> and go to <b>symmetryboard.co.uk</b></span></li>
+      <li><span>Tap <b>Install app</b> (or ⋮ → Install app)</span></li>
+      <li><span>Long-press this old icon, then tap <b>Uninstall</b></span></li>
+    </ol>
+  </div>
+
+  <p class="safe">Your <b>account, ticks and favourites are safe</b>. They carry over to the new app; just sign in again there.</p>
+</main>
+
+<script>
+  (function () {
+    var ua = navigator.userAgent;
+    var ios = /iphone|ipad|ipod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+    var android = /android/i.test(ua);
+    // Unknown platform (e.g. a desktop install): show both.
+    document.getElementById('steps-ios').hidden = android && !ios;
+    document.getElementById('steps-android').hidden = ios;
+
+    var btn = document.getElementById('copy');
+    btn.addEventListener('click', function () {
+      var url = 'https://symmetryboard.co.uk';
+      function done(ok) {
+        btn.textContent = ok ? 'Copied ✓' : 'Long-press to copy';
+        setTimeout(function () { btn.textContent = 'Copy link'; }, 2000);
+      }
+      function fallback() {
+        // Select the address so a long-press → Copy works even if copying is blocked.
+        var range = document.createRange();
+        range.selectNodeContents(document.getElementById('url'));
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) {}
+        done(ok);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(function () { done(true); }, fallback);
+      } else {
+        fallback();
+      }
+    });
+  })();
+</script>
+</body>
+</html>
