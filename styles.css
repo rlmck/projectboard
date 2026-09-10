@@ -1308,3 +1308,107 @@
     }
     .install-btn.add { background: var(--accent); color: #fff; }
     .install-btn.dismiss { background: var(--surface2); color: var(--text-muted); }
+
+    /* ── Welcome / install overlay (QR landing screen) ───────────────────
+       Full-screen, above every view, modal and toast but below #splash (1000),
+       so the splash fades to reveal it. Scrolls on its own if a small phone
+       can't fit it; overscroll-behavior keeps the page underneath still. */
+    #welcome {
+      position: fixed;
+      inset: 0;
+      z-index: 900;
+      display: none;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      background: var(--bg);
+      padding: calc(env(safe-area-inset-top) + 32px) 24px calc(env(safe-area-inset-bottom) + 24px);
+      transition: opacity 0.3s ease;
+    }
+    #welcome.show { display: flex; }
+    #welcome.leaving { opacity: 0; pointer-events: none; }
+    /* margin:auto centres vertically when there's room and still lets it scroll when there isn't */
+    .welcome-inner {
+      margin: auto;
+      width: 100%;
+      max-width: 360px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+    .welcome-icon { width: 88px; height: 88px; border-radius: 20px; margin-bottom: 18px; }
+    .welcome-title { font-size: 26px; font-weight: 800; letter-spacing: 0.3px; line-height: 1.2; }
+    .welcome-title span { color: var(--accent); }
+    .welcome-pitch { font-size: 15px; line-height: 1.5; color: var(--text-muted); margin: 10px 0 28px; }
+    .welcome-panel { width: 100%; }
+    .welcome-install { padding: 16px; font-size: 16px; }
+    .welcome-note { font-size: 14px; line-height: 1.5; color: var(--text-muted); }
+    .welcome-note b { color: var(--text); }
+    .welcome-note + .welcome-steps { margin-top: 12px; }
+    .welcome-steps {
+      list-style: none;
+      counter-reset: step;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      text-align: left;
+    }
+    .welcome-steps[hidden] { display: none; }   /* display:flex above would beat the bare [hidden] rule */
+    .welcome-steps li {
+      counter-increment: step;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      font-size: 15px;
+      line-height: 1.45;
+    }
+    .welcome-steps li::before {
+      content: counter(step);
+      flex-shrink: 0;
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: rgba(236,72,153,0.16);
+      border: 1px solid rgba(236,72,153,0.4);
+      color: #f9a8d4;
+      font-size: 13px;
+      font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+    }
+    /* iOS system blue, so the glyph matches the button they're looking for */
+    .welcome-glyph { width: 20px; height: 20px; vertical-align: -4px; color: #0a84ff; }
+    .welcome-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 8px 8px 14px;
+    }
+    .welcome-url {
+      flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      text-align: left;
+      font-size: 14px;
+      color: var(--text);
+      user-select: all; -webkit-user-select: all;
+    }
+    .welcome-done { font-size: 20px; font-weight: 800; color: #4ade80; margin-bottom: 6px; }
+    .welcome-continue {
+      margin-top: 28px;
+      background: none;
+      border: none;
+      padding: 12px;
+      color: var(--text-muted);
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }

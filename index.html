@@ -36,6 +36,60 @@
   <div class="splash-name">Project<span> Board</span></div>
 </div>
 
+<!-- ══ WELCOME / INSTALL OVERLAY ══════════════════════════════════════
+     The QR landing screen. Mobile browsers only (never standalone or desktop),
+     on a first visit or when arriving via ?src=qr / ?src=moved. An overlay, not a
+     routed view: the app boots underneath and the splash fades to reveal this.
+     app.js picks exactly one .welcome-panel to show. -->
+<div id="welcome" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+  <div class="welcome-inner">
+    <img class="welcome-icon" src="icon.svg" alt="" />
+    <h1 class="welcome-title" id="welcome-title">Project<span> Board</span></h1>
+    <p class="welcome-pitch" id="welcome-pitch">The Hangout's symmetry board: browse problems, light them up, tick your sends.</p>
+    <p class="welcome-pitch" id="welcome-moved" hidden>Install it from this page, then delete the old icon from your home screen. Your account, ticks and favourites are safe — just sign in again.</p>
+
+    <!-- Android: the browser's own install prompt, with a manual fallback -->
+    <div class="welcome-panel" data-panel="android" hidden>
+      <button class="btn-block btn-primary welcome-install" id="welcome-install" type="button" hidden>Install app</button>
+      <p class="welcome-note" id="welcome-wait">Getting the app ready…</p>
+      <ol class="welcome-steps" id="welcome-android-steps" hidden>
+        <li><span>Tap <b>⋮</b> in your browser's toolbar</span></li>
+        <li><span>Choose <b>Install app</b> or <b>Add to Home screen</b></span></li>
+      </ol>
+    </div>
+
+    <!-- iOS: there's no install prompt, so walk through the share sheet -->
+    <div class="welcome-panel" data-panel="ios" hidden>
+      <ol class="welcome-steps">
+        <li><span>Tap <b>Share</b>
+          <svg class="welcome-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 9H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-2"></path><polyline points="8 5 12 1 16 5"></polyline><line x1="12" y1="1" x2="12" y2="14"></line></svg>
+          — or <b>⋯</b>, then Share</span></li>
+        <li><span>Tap <b>Add to Home Screen</b>
+          <svg class="welcome-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"></rect><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+          (scroll down if you can't see it)</span></li>
+        <li><span>Tap <b>Add</b></span></li>
+      </ol>
+    </div>
+
+    <!-- In-app browsers (Instagram, Facebook, Snapchat…) can't install anything -->
+    <div class="welcome-panel" data-panel="in-app" hidden>
+      <p class="welcome-note">This in-app browser can't install apps. Tap <b>⋯</b> and choose <b>Open in <span id="welcome-browser">browser</span></b>, or copy the link and paste it there.</p>
+      <div class="welcome-link">
+        <span class="welcome-url" id="welcome-url"></span>
+        <button class="install-btn add" id="welcome-copy" type="button">Copy link</button>
+      </div>
+    </div>
+
+    <!-- Shown after the appinstalled event -->
+    <div class="welcome-panel" data-panel="installed" hidden>
+      <p class="welcome-done">Installed ✓</p>
+      <p class="welcome-note">Open Project Board from your home screen.</p>
+    </div>
+
+    <button class="welcome-continue" id="welcome-continue" type="button">Continue in browser</button>
+  </div>
+</div>
+
 <!-- ══ LIST VIEW ══════════════════════════════════════════════════════ -->
 <section id="view-list" class="view active">
   <header class="topbar">

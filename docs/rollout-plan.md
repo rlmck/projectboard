@@ -1,6 +1,6 @@
 # Public rollout: custom domain, Cloudflare Workers, QR → install flow
 
-**Status:** Part A and B1 are complete. B2 is done on `dev` (awaiting staging check + merge). B3 onwards is outstanding.
+**Status:** Part A and B1 are complete. B2 and B3 are done on `dev` (awaiting staging check + merge). B4 onwards is outstanding.
 **Live:** https://symmetryboard.co.uk
 **Staging:** https://dev-projectboard.rosslewismckechnie.workers.dev (stable per-branch preview; see Hosting below)
 
@@ -87,7 +87,16 @@ Build settings in the dashboard: build command `bash build.sh`, deploy command `
 - `index.html` head: PNG `apple-touch-icon`, `<meta name="description">`, and basic Open Graph tags so a shared link previews nicely.
 - Add all new PNGs to the `build.sh` allowlist and `sw.js` ASSETS (the screenshots went in `build.sh` only; see above).
 
-**B3. Welcome / install screen** (`dev`, the core of the "landing page")
+**B3. Welcome / install screen** (`dev`, the core of the "landing page") — ✅ DONE on `dev`
+- **What shipped / deviations from the spec below:**
+  - The **Privacy link is added in B4**, together with `privacy.html`, so B3 never ships a link that 404s.
+  - Context names in code: `standalone`, `in-app`, `ios`, `android-prompt`, `desktop` (`installContext()` in `app.js`). iPadOS (Mac UA + touch) counts as `ios`.
+  - The small banner now keys off the same context. Its iOS instructions no longer appear inside Instagram/Facebook webviews, which used to match the old `isIOS()` but can't install. Desktop banner behaviour is unchanged: it still appears when Chrome fires `beforeinstallprompt`.
+  - Android panel: shows **Install app** once `beforeinstallprompt` arrives, "Getting the app ready…" while waiting, and the manual ⋮ steps after ~3s or after the prompt is dismissed (a captured prompt can only be used once). If the prompt arrives late, the panel upgrades back to the button.
+  - In-app panel: **Copy link** tries the async clipboard API, then falls back to `execCommand('copy')`; failing both, it leaves the URL selected for a long-press copy. It reports inline ("Copied ✓"), because the toast sits under the overlay.
+  - `appinstalled` also sets `pb-welcome-seen`, so the welcome doesn't come back in the browser tab after installing.
+  - Stacking: `#welcome` is `z-index: 900`, above modals (300) and toast (200) but below `#splash` (1000). Scroll-contained on short phones.
+  - Tested in headless Chrome across 12 scenarios, checking what's actually rendered: Android with and without a prompt, iOS, iOS already seen, iOS seen but `?src=qr`, Instagram, an Android `; wv)` webview, the `?src=moved` deep link, OAuth params preserved (`?src=qr&code=…#list` → `?code=…#list`), desktop (no welcome), and repeat visits (banner instead). Real-device checks are still pending (see Verification).
 - Markup: a new full-screen `#welcome` overlay in [index.html](index.html), next to `#splash`. It shows the icon, "Project Board", and a one-line pitch ("The Hangout's symmetry board: browse problems, light them up, tick your sends"), then platform-specific content, then a "Continue in browser" link and a small Privacy link. Styles go in [styles.css](styles.css), matching the existing dark palette and `#install-banner` look.
 - Logic: refactor the install block in [app.js:474-519](app.js:474) so the banner and welcome share one `deferredPrompt` and a `promptInstall()` function. Add `installContext()`, which returns one of:
   - `standalone`: never shown.
@@ -124,6 +133,7 @@ Build settings in the dashboard: build command `bash build.sh`, deploy command `
   - Key files: the `build.sh` allowlist and the three-places rule, `wrangler.jsonc`, `_headers`, `_redirects`, `privacy.html`, icons, `print/`.
   - Add a hosting section: Cloudflare Workers with static assets; **`legacy` branch = permanent github.io redirect; never delete it; repo stays public**.
   - Replace the "not yet public, no users" line: there are real users now, so changes go through staging.
+  - **Manifest screenshots are hand-captured.** `screenshot-list.png` and `screenshot-detail.png` are static images from B2, so they don't update themselves: regenerate them whenever the list or detail view changes materially, or Android's install sheet will show a stale app. Record how they were made (412×915 CSS px at DPR 2, CDP mobile emulation, guest, install banner suppressed, 256-colour quantized) and that they're `build.sh`-only, not in `sw.js`.
 
 ## Part C: Moving existing users off github.io
 The old URL **keeps being served by GitHub Pages permanently**, but from an orphan **`legacy` branch** that contains only a "moved" site. `main` no longer feeds GitHub Pages; it feeds Cloudflare only.

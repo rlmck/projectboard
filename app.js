@@ -471,33 +471,98 @@
     });
   }
 
-  const DISMISS_KEY = 'pb-install-dismissed';
+  // ── Install: welcome overlay + small banner ───────────────────────────────────
+  // Two surfaces share one captured beforeinstallprompt (deferredPrompt) and one
+  // promptInstall(). #welcome is the full-screen QR landing screen: mobile only,
+  // on a first visit or when arriving via ?src=qr / ?src=moved. #install-banner
+  // is the gentle reminder on later loads — never on a load where the welcome showed.
+  const DISMISS_KEY = 'pb-install-dismissed';   // banner "Not now"
+  const WELCOME_KEY = 'pb-welcome-seen';        // welcome "Continue in browser" (not the banner key)
   const installBanner = document.getElementById('install-banner');
   const installAdd = document.getElementById('install-add');
+  const welcome = document.getElementById('welcome');
   let deferredPrompt = null;
 
   const isStandalone = () =>
     window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
   const dismissed = () => localStorage.getItem(DISMISS_KEY) === '1';
+
+  // Which install story applies to this device:
+  //   'standalone'     — already running as the installed app
+  //   'in-app'         — Instagram/Facebook/Snapchat webview or an Android `; wv)` webview; can't install
+  //   'ios'            — Safari, or Chrome/Edge on iOS 16.4+: all install via the share sheet
+  //   'android-prompt' — Android browser; Chrome fires beforeinstallprompt
+  //   'desktop'        — everything else; the welcome never shows (laptop admin work stays untouched)
+  function installContext() {
+    if (isStandalone()) return 'standalone';
+    const ua = navigator.userAgent;
+    // iPadOS reports a Mac UA; a touch screen gives it away.
+    const ios = /iphone|ipad|ipod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+    const android = /android/i.test(ua);
+    if ((ios || android) && (/Instagram|FBAN|FBAV|FB_IAB|Snapchat/i.test(ua) || (android && /; wv\)/.test(ua)))) return 'in-app';
+    if (ios) return 'ios';
+    if (android) return 'android-prompt';
+    return 'desktop';
+  }
+  const installCtx = installContext();
+
+  // ?src=qr (the printed QR, via /scan) or ?src=moved (the old github.io link).
+  // Read it, then remove ONLY that param — anything Supabase put in the URL must
+  // survive — so the address iOS saves on Add to Home Screen is the clean one.
+  const urlParams = new URLSearchParams(location.search);
+  const arrivedFrom = urlParams.get('src');
+  if (urlParams.has('src')) {
+    urlParams.delete('src');
+    const qs = urlParams.toString();
+    history.replaceState(history.state, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
+  }
+
+  const welcomeShown = (installCtx === 'android-prompt' || installCtx === 'ios' || installCtx === 'in-app') &&
+    (arrivedFrom === 'qr' || arrivedFrom === 'moved' || localStorage.getItem(WELCOME_KEY) !== '1');
+  let androidPromptLate = false;   // true once ~3s pass with no beforeinstallprompt
 
   function showInstallBanner() { installBanner.classList.add('show'); }
   function hideInstallBanner() { installBanner.classList.remove('show'); }
+
+  // Show the browser's install prompt. Resolves 'accepted' | 'dismissed', or null
+  // when there's no prompt to show. A captured prompt can only be used once.
+  async function promptInstall() {
+    if (!deferredPrompt) return null;
+    const captured = deferredPrompt;
+    deferredPrompt = null;
+    captured.prompt();
+    const { outcome } = await captured.userChoice;
+    hideInstallBanner();
+    return outcome;
+  }
+
+  function showWelcomePanel(name) {
+    welcome.querySelectorAll('.welcome-panel').forEach(p => { p.hidden = p.dataset.panel !== name; });
+  }
+
+  // Android panel: the Install button once there's a prompt; "Getting ready…" while
+  // we wait; manual ⋮ steps if the prompt is late or was dismissed (it can re-fire later).
+  function renderWelcomeAndroid() {
+    const hasPrompt = !!deferredPrompt;
+    document.getElementById('welcome-install').hidden = !hasPrompt;
+    document.getElementById('welcome-wait').hidden = hasPrompt || androidPromptLate;
+    document.getElementById('welcome-android-steps').hidden = hasPrompt || !androidPromptLate;
+  }
+
+  function closeWelcome() {
+    welcome.classList.add('leaving');
+    setTimeout(() => welcome.classList.remove('show', 'leaving'), 300);
+  }
 
   // Chrome / Android / desktop: capture the native prompt and offer our own UI.
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
     deferredPrompt = e;
+    if (welcomeShown) { if (installCtx === 'android-prompt') renderWelcomeAndroid(); return; }
     if (!isStandalone() && !dismissed()) showInstallBanner();
   });
 
-  installAdd.addEventListener('click', async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    await deferredPrompt.userChoice;
-    deferredPrompt = null;
-    hideInstallBanner();
-  });
+  installAdd.addEventListener('click', promptInstall);
 
   document.getElementById('install-dismiss').addEventListener('click', () => {
     localStorage.setItem(DISMISS_KEY, '1');
@@ -508,10 +573,67 @@
     deferredPrompt = null;
     hideInstallBanner();
     localStorage.setItem(DISMISS_KEY, '1');
+    localStorage.setItem(WELCOME_KEY, '1');
+    if (welcome.classList.contains('show')) showWelcomePanel('installed');
   });
 
-  // iOS Safari never fires beforeinstallprompt — show manual instructions instead.
-  if (isIOS() && !isStandalone() && !dismissed()) {
+  if (welcomeShown) {
+    if (arrivedFrom === 'moved') {
+      document.getElementById('welcome-title').innerHTML = 'Project Board<span> has moved here</span>';
+      document.getElementById('welcome-pitch').hidden = true;
+      document.getElementById('welcome-moved').hidden = false;
+    }
+    if (installCtx === 'android-prompt') {
+      showWelcomePanel('android');
+      renderWelcomeAndroid();
+      setTimeout(() => { androidPromptLate = true; renderWelcomeAndroid(); }, 3000);
+    } else if (installCtx === 'in-app') {
+      document.getElementById('welcome-browser').textContent = /android/i.test(navigator.userAgent) ? 'Chrome' : 'Safari';
+      document.getElementById('welcome-url').textContent = location.origin + location.pathname;
+      showWelcomePanel('in-app');
+    } else {
+      showWelcomePanel('ios');
+    }
+    welcome.classList.add('show');   // under the splash, which fades to reveal it
+  }
+
+  document.getElementById('welcome-install').addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    const outcome = await promptInstall();
+    if (outcome === 'accepted') { btn.textContent = 'Installing…'; return; }   // appinstalled swaps the panel
+    btn.disabled = false;
+    androidPromptLate = true;   // dismissed: the prompt is spent, so fall back to the ⋮ steps
+    renderWelcomeAndroid();
+  });
+
+  document.getElementById('welcome-copy').addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    const urlEl = document.getElementById('welcome-url');
+    let ok = false;
+    try { await navigator.clipboard.writeText(urlEl.textContent); ok = true; } catch (err) {}
+    if (!ok) {
+      // Some in-app webviews block the async clipboard API: select the text and
+      // try the old copy command. If that fails too, the selection stays so they
+      // can long-press → Copy.
+      const range = document.createRange();
+      range.selectNodeContents(urlEl);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      try { ok = document.execCommand('copy'); } catch (err) {}
+    }
+    btn.textContent = ok ? 'Copied ✓' : 'Long-press to copy';
+    setTimeout(() => { btn.textContent = 'Copy link'; }, 2000);
+  });
+
+  document.getElementById('welcome-continue').addEventListener('click', () => {
+    localStorage.setItem(WELCOME_KEY, '1');
+    closeWelcome();
+  });
+
+  // iOS never fires beforeinstallprompt — the banner carries manual instructions instead.
+  if (!welcomeShown && installCtx === 'ios' && !dismissed()) {
     document.getElementById('install-msg').innerHTML =
       '<b>Install this app:</b> tap the Share icon, then “Add to Home Screen”.';
     installAdd.style.display = 'none';
