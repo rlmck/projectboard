@@ -124,6 +124,20 @@ The app is live at **https://symmetryboard.co.uk**, served by **Cloudflare Worke
 - **Privacy + SW fix (B4):** `privacy.html` (data controller Ross McKechnie, `hello@symmetryboard.co.uk`), linked from the welcome screen and a static profile footer. `sw.js` keeps the app shell under `./`, refreshed only by a scope-root / `index.html` navigation. Other pages are cached under their own URL, and only plain same-origin 200s are cached. SW `pb-v73`.
 - **QR + poster (B5):** `make_qr.py` → `print/qr-scan.svg` (encodes `/scan`, error level Q); `print/poster.html` (A5, 7 cm QR). Not deployed.
 
+**Done (10 Sep 2026) — Codebase review + security fixes.** Full review in `docs/codebase-overview.md` (committed) and `docs/security-findings.md` (**local only, never commit**). DB changes are **applied live** and were tested in a transaction first (27 checks covering guest, two members and an admin, then rolled back before the real commit):
+- **db/12, step 2 only, re-run:** `admin_list_users()` now returns `tick_count`, so the admin "Sends" stat is real. Step 1 was **not** re-run: it would have switched `circuits.setter_id` to CASCADE. It's now fixed in the local file.
+- **db/24 hardening:**
+  - `anon` is read-only on every table.
+  - TRUNCATE/TRIGGER/REFERENCES/MAINTAIN are revoked from the API roles, including default privileges for future tables.
+  - Guests can no longer read `profiles.is_admin`.
+  - `board_state` is dropped (nothing used it).
+- **db/25 problem owner rules:** a problem's **owner can delete it only while nobody else has ticked it** (their own ticks don't count); admins can always delete. A trigger stops non-admins setting `is_benchmark`, `stars` or the `setter` snapshot. The app now shows **Delete** in the ⋮ menu to owners, checks `problem_has_other_ticks()` first, and reports a delete that RLS silently blocked.
+- **db/26 sign-up:** new profiles get a placeholder name (`climber-xxxxxxxx`) instead of the email prefix, which used to block sign-ups on a name clash and publish part of the email. The app shows the mandatory "choose a display name" prompt whenever the name is a placeholder or the profile is missing. The field starts empty.
+- **Google sign-in errors are now shown** instead of silently dropped.
+- **Decided, not changed:** guests can still cast, and the geofence stays.
+
+SW `pb-v74`.
+
 **Next:** Circuits **Phase 2** — cast screen (5s countdown + beeps, caster speed in 0.1s steps, loop toggle, big STOP) + `cast_circuit`/`stop` broadcast + write `circuit_logs`; update the Pi listener. **Wiring Phase 2 completion logging will also activate the circuits "Exclude Done" pill** (currently inert). Then the rest of problem editing — **name/setter** (holds + grade now done); Phase 3 circuit PBs/leaderboards. (See "What is deferred".) Remaining review items to triage: S3 (Back can exit the app), S4 (auth bootstraps twice), S5–S7 + Minors.
 
 ---
@@ -156,7 +170,7 @@ Key files in the repo:
 - `mirror_map.json` / `register_mirror.py` — hold id → mirror-partner hold id (the left/right mirror lookup; bundled fallback, live copy in `board_config.mirror_map`). Generated from Gareth's board-tested `MirrorDic.txt`. See the mirror notes below.
 - `hold_shapes.json` / `register_shapes.py` / `trace_holds.html` — hold id → `[[x, y], …]` polygon (% of the board image): each hold's **real traced outline**, drawn instead of a circle on the problem detail + create views (`holdShapeLayerHtml` in `core.js`). ⚠️ **These are traced against the LIVE board** (`board_config`'s `board.jpg` + `hold_map`), not the bundled `ProjectBoard.png`, so they only fit that one board. The board's `board_config.updated_at` is recorded in the file's `__meta.board_updated_at`, and `shapesUsable()` refuses to draw the outlines unless the live board still matches — so the bundled/offline fallback **and any board recalibration** cleanly drop back to the plain dot overlay instead of misplacing every hold. **After a recalibration, re-run `register_shapes.py` and commit the new `hold_shapes.json`** to get the shapes back. `register_shapes.py` auto-detects the outlines (marker-controlled watershed; all distances scale off the hold spacing, so any image resolution works) and **merges by default — it keeps existing outlines, since they may have been hand-repaired**; pass `--overwrite` to replace them. `trace_holds.html` is the manual tracer/repair tool (loads the live board, autosaves to `localStorage`, Import/Export JSON).
 - `led_map.json` / `register_leds.py` — hold id → **physical WS2801 LED strip index** (column-major serpentine: col A=LEDs 1–13, B=14–26 reversed, … S=235–247; idx 0 = phantom A0). The one physical artifact inherited from Gareth's wiring, extracted from his code and **not** used by the app — it's the wiring contract for the **rebuilt board listener** (our own SD card; only the hardware is reused). `register_leds.py` ports Gareth's exact logic and asserts it matches for all 247 cells.
-- `sw.js` / `manifest.json` — service worker + PWA manifest. **Deploy/caching:** HTML + app JS/CSS **+ the bundled `.json` data** are network-first, so a fresh page load always gets the latest (the JSON files used to be stale-while-revalidate, so a data-only deploy served one stale load). To push an update to an *already-open* client (auto-reload on next focus), **bump `CACHE`** in `sw.js` (currently `pb-v73`). **Bump it again whenever the ASSETS list or the caching logic changes.** Registered with `updateViaCache:'none'` so `sw.js` is never served stale. **Pages:** the app shell is cached **only under `./`**, refreshed only by a navigation to the scope root or `index.html`. Other pages (`privacy.html`, `trace_holds.html`) are cached under their own URL, so opening one can never replace the shell. Only plain same-origin 200s are cached, never a redirect (see the Cloudflare HTML-handling note in "Hosting & deploy"). Precaching goes through `precache()`, not `cache.addAll`, because it re-wraps any redirected response (e.g. `privacy.html` → `/privacy`) as a plain copy. Offline, an extensionless page such as `/privacy` falls back to its `.html` copy. ⚠️ Uninstalling the PWA does **not** clear its service worker/caches — a stranded device needs the browser's site-data cleared (Safari: Settings→Safari→Website Data; Chrome: Site settings→Clear & reset).
+- `sw.js` / `manifest.json` — service worker + PWA manifest. **Deploy/caching:** HTML + app JS/CSS **+ the bundled `.json` data** are network-first, so a fresh page load always gets the latest (the JSON files used to be stale-while-revalidate, so a data-only deploy served one stale load). To push an update to an *already-open* client (auto-reload on next focus), **bump `CACHE`** in `sw.js` (currently `pb-v74`). **Bump it again whenever the ASSETS list or the caching logic changes.** Registered with `updateViaCache:'none'` so `sw.js` is never served stale. **Pages:** the app shell is cached **only under `./`**, refreshed only by a navigation to the scope root or `index.html`. Other pages (`privacy.html`, `trace_holds.html`) are cached under their own URL, so opening one can never replace the shell. Only plain same-origin 200s are cached, never a redirect (see the Cloudflare HTML-handling note in "Hosting & deploy"). Precaching goes through `precache()`, not `cache.addAll`, because it re-wraps any redirected response (e.g. `privacy.html` → `/privacy`) as a plain copy. Offline, an extensionless page such as `/privacy` falls back to its `.html` copy. ⚠️ Uninstalling the PWA does **not** clear its service worker/caches — a stranded device needs the browser's site-data cleared (Safari: Settings→Safari→Website Data; Chrome: Site settings→Clear & reset).
 - `build.sh` / `wrangler.jsonc` / `_headers` / `_redirects` / `.gitattributes` — the Cloudflare hosting config. **`build.sh` is the deploy allowlist**: see "Hosting & deploy" and the **three-places rule** before adding any file.
 - `icon.svg`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `apple-touch-icon.png` / `make_icons.py` — the app icons. The PNGs are **generated** by `make_icons.py` (Pillow), which redraws the `icon.svg` geometry. If the icon design changes, change both `icon.svg` and `make_icons.py`, then re-run it. `.gitignore` ignores `*.png`, so every committed PNG needs a `!` exception (these already have them).
 - `screenshot-list.png` / `screenshot-detail.png` — the manifest's install-sheet screenshots. **Hand-captured**; see "Hosting & deploy" for when and how to regenerate them.
@@ -200,8 +214,7 @@ problems      — id, name (UNIQUE, not null), grade, setter (text not null defa
                 finish_hold (text), feet_mode, is_benchmark
 holds         — hold_id (pk), grid_name, pixel_x, pixel_y, on_wall (bool)
                 — TABLE IS EMPTY/UNUSED: the PWA reads positions from hold_map.json / board_config, never this table. Vestigial.
-board_state   — id (pk, ='HangoutPortland'), current_problem_name, current_problem_id (uuid → problems ON DELETE SET NULL),
-                cast_by, is_mirrored (bool), cast_at (timestamptz)
+(board_state   — DROPPED in db/24, 10 Sep 2026: nothing read or wrote it.)
 ticks         — id, user_id, problem_id, mirrored (bool default false), attempts (int), notes, grade_vote, stars, ticked_at
                 — UNIQUE (user_id, problem_id, mirrored) since db/23; FK problem_id → problems ON DELETE CASCADE. `mirrored` records which orientation was sent (a user can hold one normal + one mirrored tick per problem); the both-orientations leaderboard bonus reads it. grade_vote/stars are unused-by-app (latent community voting).
 likes         — user_id, problem_id, created_at  (PK (user_id, problem_id); FKs ON DELETE CASCADE)
@@ -210,6 +223,8 @@ circuit_likes — user_id, circuit_id, created_at  (PK (user_id, circuit_id); FK
                 — favourites store for circuits; own-rows RLS. Needs db/15.
 sessions      — id, user_id (→ auth.users CASCADE), started_at, ended_at, notes   (TABLE EMPTY/UNUSED so far)
 profiles      — id (= auth.users.id), username (unique, case-insensitive), is_admin (bool default false), created_at
+                — created at sign-up by the trigger on_auth_user_created → handle_new_user() with a placeholder
+                  username 'climber-xxxxxxxx' (db/26); the app then makes the user choose a real name.
 board_config  — wall (pk, ='HangoutPortland'), hold_map (jsonb), mirror_map (jsonb, hold→partner; self=no mirror), image_path (text, object name in the 'board' Storage bucket), updated_at
 circuits      — id, name (UNIQUE, not null), grade (sport, lowercase), setter_id (uuid → auth.users, ON DELETE SET NULL),
                 comment, hold_sequence (text[], ordered, DUPLICATES ALLOWED — climbing order, NOT inverted),
@@ -243,6 +258,17 @@ Apply in order; each is idempotent. **`db/` is not in the repo** — these live 
 - `21_dedupe_policies.sql` — **database-review hygiene (17 Jun, APPLIED).** Drops duplicate PERMISSIVE policies left by superseded scripts so there's exactly one per (table, command): `problems` INSERT/DELETE/UPDATE and `profiles` SELECT/UPDATE. Kept policies are the supersets, so access is unchanged; removes the "multiple permissive policies" perf lint.
 - `22_drop_dead_indexes.sql` — **database-review cleanup (17 Jun, APPLIED).** Drops `problems_is_benchmark_idx` (0 scans; boolean over ~266 rows) and `problems_setter_idx` (text setter snapshot, superseded by `problems_setter_id_idx`). Live pg_stat confirmed both unused.
 - `23_tick_mirror_and_leaderboard.sql` — **the Points & Leaderboard feature (APPLIED 18 Jun, verified live).** (1) adds `ticks.mirrored` (bool, default false — existing rows become normal sends); (2) swaps the `ticks` unique key from `(user_id, problem_id)` to `(user_id, problem_id, mirrored)` so both orientations can coexist (drops the old constraint by whatever name it had, then adds `ticks_user_problem_mirror_key`; idempotent); (3) creates the public `leaderboard()` RPC (SECURITY DEFINER, granted to `anon` + `authenticated`) returning `rank, user_id, username, points, sends` all-time. **The RPC is the single source of truth for the scoring formula** (`base = gradeIndex×10`; `+50%` of base if `is_benchmark`; `+50%` of base once if a problem was sent in both orientations — base counted once per problem). The app shows a "run db/23" message if the RPC is missing.
+- `24_harden_grants.sql` — **10 Sep review hardening (APPLIED):**
+  - `anon` is read-only on every public table.
+  - TRUNCATE/TRIGGER/REFERENCES/MAINTAIN are revoked from `anon`/`authenticated`, including default privileges for future tables created by `postgres`.
+  - `anon` can SELECT only `profiles(id, username, created_at)`, not `is_admin`.
+  - `board_state` is dropped.
+- `25_problem_owner_rules.sql` — **(APPLIED):**
+  - `problem_has_other_ticks(pid)`: a SECURITY DEFINER helper, needed because ticks RLS hides other users' rows.
+  - DELETE policy `problems_delete_admin_or_unticked_owner`.
+  - Trigger `problems_guard_curation`, SECURITY INVOKER, so the SQL editor and service role aren't restricted. For non-admin API callers it pins `is_benchmark`, `stars` and `setter`.
+- `26_signup_placeholder_name.sql` — **(APPLIED):** `handle_new_user()` inserts the placeholder username `climber-` + 8 hex chars of the id, with `on conflict do nothing`, so a profile clash can never block a sign-up. Keep the pattern in sync with `PLACEHOLDER_NAME` in `account.js`.
+- ⚠️ **Read db/12 before re-running it.** On 10 Sep only its step 2 (`admin_list_users` with `tick_count`) was re-applied. Step 1 rebuilds every foreign key that points at user accounts. Before that date it would have set `circuits.setter_id` to CASCADE; the local file is fixed now.
 - `12_admin_users.sql` — powers the **#admin Users** section. Sets `problems.setter_id` FK to **`ON DELETE SET NULL`** (keep routes, clear owner) and the user-owned FKs (profiles/ticks/likes/sessions → auth.users) to **`ON DELETE CASCADE`**; adds the SECURITY DEFINER RPCs **`admin_list_users()`** (profiles ⨝ auth.users email + route count, `is_admin()`-gated) and **`admin_delete_user(target uuid)`** (refuses deleting yourself or another admin). **Run this before the Users list/delete works** — the app shows a "run db/12" message until then.
 
 **Admin model:** admin = `profiles.is_admin = true`, keyed by account id (independent of `username`, so renames keep admin). Promotion can be done **two ways**: flip `is_admin` directly in the Supabase dashboard, or use the **in-app "Make admin" / "Remove admin"** buttons on `#admin/user/<id>`. The in-app path goes through `admin_set_admin(target, make_admin)` (db/13) — a SECURITY DEFINER RPC that **only an existing admin can call** and that **refuses changing your own flag**, so the "no self-promotion" property holds (a non-admin can't grant it to anyone, including themselves) and an admin can't self-demote to zero admins. The direct-UPDATE column locks from db/06/db/09 are unchanged; promotion only happens through that one gated RPC. The app's admin buttons are otherwise UX only; the real gate is the RLS policies above.
@@ -373,9 +399,10 @@ The low end is **collapsed into two buckets**: the old `3, 4a, 4b, 4c, 5a, 5b, 5
 
 - Browsing problems and casting: **no login required**
 - Ticking **and creating** a problem: **requires login** — any signed-in user can create
-- **Deleting** a problem and **editing its grade**: **admins only** (`profiles.is_admin`), enforced in Postgres (RLS + `is_admin()`), not just the UI.
+- **Deleting** a problem: **admins**, or the problem's **owner while nobody else has ticked it** (the owner's own ticks don't count). Enforced in Postgres by the db/25 policy + `problem_has_other_ticks()`, not just the UI.
+- **Editing** a problem (grade, holds): the app offers it to **admins only**. RLS also lets an owner update their own problem through the API, but a trigger (db/25) stops non-admins changing `is_benchmark`, `stars` or the `setter` snapshot.
 - Sign-in methods: **Google OAuth** and **email + password** (Supabase Auth). Email confirmation is **off** for now.
-- On first sign-in (either method) the user picks a **display name** (defaults to the email prefix), stored in `profiles.username`. Display names are **unique** (case-insensitive) and **editable later** from the profile page. Profile is created via a modal in `index.html`; RLS policies + unique index live in `db/04_auth_policies.sql`.
+- On first sign-in (either method) the user must pick a **display name**, stored in `profiles.username`. The profile row itself is created by the sign-up trigger with a placeholder name (`climber-xxxxxxxx`, db/26). The app treats a placeholder, or a missing profile, as "no name yet" and shows the mandatory name modal (it starts empty, not pre-filled with the email prefix). Display names are **unique** (case-insensitive) and **editable later** from the profile page. RLS policies + unique index are in `db/04_auth_policies.sql`.
 - **No self-promotion:** users can only INSERT/UPDATE their own `id`+`username` on `profiles` (column grants in `db/06` + `db/09`); `is_admin` is never writable directly via the API. It's set either in the Supabase dashboard or by an **existing admin** through the gated `admin_set_admin()` RPC (db/13), which refuses self-changes — so there's still no path for a user to promote themselves.
 
 ---
@@ -406,6 +433,8 @@ The low end is **collapsed into two buckets**: the old `3, 4a, 4b, 4c, 5a, 5b, 5
 ---
 
 ## Session 1 task (first time CC opens this project)
+
+> **Historical: done long ago. Ignore it.** Its step 9 ("push to `main`") contradicts working rule 2.
 
 1. Confirm you are on the `main` branch
 2. Read `index.html` in full

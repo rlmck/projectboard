@@ -452,16 +452,31 @@
     updateAdminUI();
   }
 
-  // Every .admin-only control appears only for admins, on a real problem.
+  // Every .admin-only control appears only for admins, on a real problem. Delete
+  // also appears for the problem's owner (see openDeleteConfirm for their limit).
   function updateAdminUI() {
     const show = !!(profile && profile.is_admin && currentProblem);
     document.querySelectorAll('.admin-only').forEach(btn => { btn.hidden = !show; });
+    const del = document.getElementById('menu-delete');
+    if (del) del.hidden = !(currentProblem && (isAdmin() || isOwnProblem(currentProblem)));
   }
 
-  // ── Delete a problem (admins only; the DB enforces it via RLS) ───────────────
-  function openDeleteConfirm() {
-    if (!currentProblem || !(profile && profile.is_admin)) return;
-    document.getElementById('delete-name').textContent = displayName(currentProblem);
+  const isOwnProblem = p => !!(session && p && p.setter_id && p.setter_id === session.user.id);
+
+  // ── Delete a problem ─────────────────────────────────────────────────────────
+  // Admins can delete any problem. An owner can delete their own only while nobody
+  // else has ticked it (their own ticks don't count) — db/25 enforces this in RLS,
+  // so this check is just so the owner gets a clear message instead of a dead end.
+  async function openDeleteConfirm() {
+    const p = currentProblem;
+    if (!p || !(isAdmin() || isOwnProblem(p))) return;
+    if (!isAdmin()) {
+      const { data, error } = await sb.rpc('problem_has_other_ticks', { pid: p.id });
+      if (error) { showToast('Couldn’t check that — try again', 'error'); return; }
+      if (data) { showToast('Someone else has ticked this, so only an admin can delete it', 'error'); return; }
+      if (currentProblem !== p) return;   // swiped away while checking
+    }
+    document.getElementById('delete-name').textContent = displayName(p);
     document.getElementById('delete-error').textContent = '';
     document.getElementById('delete-modal').classList.add('show');
   }
@@ -475,12 +490,20 @@
     errEl.textContent = '';
     btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Deleting…';
 
-    const { error } = await sb.from('problems').delete().eq('id', p.id);
+    // .select() so we can tell a real delete from one RLS silently filtered out
+    // (a blocked delete returns no error, just zero rows).
+    const { data, error } = await sb.from('problems').delete().eq('id', p.id).select('id');
     btn.disabled = false; btn.textContent = prev;
     if (error) {
       errEl.textContent = error.code === '42501'
-        ? 'You don’t have permission to delete problems.'   // not an admin (RLS)
+        ? 'You don’t have permission to delete this problem.'
         : error.message;
+      return;
+    }
+    if (!data || !data.length) {
+      errEl.textContent = isAdmin()
+        ? 'Couldn’t delete it — it may already have been removed.'
+        : 'Someone else has ticked this, so only an admin can delete it now.';
       return;
     }
 

@@ -71,7 +71,7 @@ Tracked at the repo root (there's no `frontend/` folder, whatever the stale loca
 | `CLAUDE.md`, `docs/rollout-plan.md`, `docs/codebase-overview.md` | Docs | no |
 
 Local only (gitignored), on Ross's laptop:
-- `db/`: numbered SQL scripts 01–23, applied by hand in the Supabase SQL editor, plus `db/.env` holding the direct-Postgres URL and the service key. **Never print or commit that file.**
+- `db/`: numbered SQL scripts 01–26, applied by hand in the Supabase SQL editor, plus `db/.env` holding the direct-Postgres URL and the service key. **Never print or commit that file.**
 - `pi/`: the board listener, its systemd unit, and a smoke test.
 - `docs/*`: project notes, hardware notes, and `security-findings.md`.
 - `reference/`, `reverse-engineering/`: Gareth's original DTB code and the analysis of it.
@@ -124,7 +124,7 @@ Hash routing; `router()` switches on `parseHash()` (`route/param`).
 | Hash | View | Notes |
 |---|---|---|
 | `#list` (default) | problem list | grade tabs (tap = single, hold = multi-select), search, 3 filter pills |
-| `#detail/<id>` | problem detail | board overlay, tick/fave/mirror/cast, ⋮ menu (Edit/Delete admin, Information all); swipe = next/prev in the filtered deck, via `replaceState` |
+| `#detail/<id>` | problem detail | board overlay, tick/fave/mirror/cast, ⋮ menu (Edit: admin; Delete: admin or the problem's owner; Information: everyone); swipe = next/prev in the filtered deck, via `replaceState` |
 | `#create` / `#create/<id>` | create / admin edit-holds | guests bounced to `#auth`; non-admins bounced off `/<id>` |
 | `#calibrate` | recalibrate board | admin |
 | `#admin`, `#admin/users`, `#admin/user/<id>` | admin hub drill-down | admin |
@@ -201,7 +201,7 @@ Positions are **percentages of the image**, so the overlay scales with it. The r
    - When the listener is rebuilt, feed it the **live** mirror map (`board_config.mirror_map`), not Gareth's raw `MirrorDic.txt`.
    - As of June 2026 the software was verified up to the data leg, and the physical LED output was being debugged as a hardware fault. Check `docs/project-notes.md` for the current state.
 
-`board_state` exists in the DB but **nothing reads or writes it** (last touched May 2026).
+Nothing records casts in the database: the old `board_state` table was never used and was dropped in db/24. **Casting is open to guests by design** (decided 10 Sep 2026), with the geofence kept as the gate.
 
 ### 4.8 Fullscreen board
 - **Implementation:** CSS pseudo-fullscreen, because iOS has no element Fullscreen API. Body classes `board-fs`/`board-fs-rotated` switch it on. The active `.board-wrap` becomes `position:fixed`, sized by the JS-computed `--fs-bw` variable, and the backdrop is a giant `box-shadow`.
@@ -221,36 +221,38 @@ Positions are **percentages of the image**, so the overlay scales with it. The r
 
 ## 5. Data model (live, 10 Sep 2026)
 
-RLS is **enabled on every public table**. Grants are the broad Supabase defaults, and RLS does the gating.
+RLS is **enabled on every public table**, and it does the row-level gating. Since db/24 (10 Sep 2026), `anon` is read-only on every table, and TRUNCATE/TRIGGER/REFERENCES/MAINTAIN are revoked from the API roles. That includes the default privileges for tables `postgres` creates later, so a new table's grants won't match the old ones: grant what it needs explicitly.
 
 | Table | Purpose | Key facts |
 |---|---|---|
-| `problems` | boulder problems | `name` UNIQUE; holds stored inverted; `setter_id` → auth.users **ON DELETE SET NULL** (routes outlive accounts); `setter` text snapshot; `is_benchmark`, `stars`, `comment`, `feet_mode` (always `any`) |
+| `problems` | boulder problems | `name` UNIQUE; holds stored inverted; `setter_id` → auth.users **ON DELETE SET NULL** (routes outlive accounts); `setter` text snapshot; `is_benchmark`, `stars` (both admin-curated, guarded by trigger), `comment`, `feet_mode` (always `any`) |
 | `ticks` | sends | UNIQUE `(user_id, problem_id, mirrored)`; cascades from both user and problem; `attempts/notes/grade_vote/stars` unused |
 | `likes` | problem favourites | PK `(user_id, problem_id)`; own rows only |
 | `circuits` | circuits | `name` UNIQUE; `hold_sequence text[]` in natural order; `start_count`, `loops`; `setter_id` SET NULL |
 | `circuit_likes` | circuit favourites | own rows only |
 | `circuit_logs` | Phase-2 completion logs | own insert/select; empty |
-| `profiles` | public identity | `id` = auth.users.id (CASCADE); `username` unique (also case-insensitively); `is_admin` |
+| `profiles` | public identity | `id` = auth.users.id (CASCADE); `username` unique (also case-insensitively); `is_admin` (guests can't read it) |
 | `board_config` | the live board | one row, `wall='HangoutPortland'`: `hold_map`, `mirror_map`, `image_path`, `updated_at`; public read, admin write |
-| `board_state` | vestigial | unused |
-| `holds`, `sessions` | vestigial | empty |
+| `holds`, `sessions` | vestigial | empty (`board_state` was dropped in db/24) |
 
 **Policies in short:**
 - Public read on `problems`, `circuits`, `profiles`, `board_config`.
 - Own-rows-only on `ticks`, `likes`, `circuit_likes`, `sessions`.
 - Insert-as-yourself (`setter_id = auth.uid()`) on `problems` and `circuits`.
 - Owner-or-admin update/delete on `circuits`.
-- `problems` update/delete is RLS-gated: **read `docs/security-findings.md` before relying on the details.**
-- `profiles`: users can INSERT only `id`+`username` and UPDATE only `username`, via column grants. **`is_admin` can't be written through the API.**
+- `problems` DELETE (db/25): **an admin, or the owner while nobody else has ticked it**. The owner's own ticks don't count.
+- `problems` UPDATE: owner or admin. The app only offers editing to admins. The trigger `problems_guard_curation` (db/25) pins `is_benchmark`, `stars` and the `setter` snapshot for non-admin API callers, on INSERT as well. It's SECURITY INVOKER and keys off `current_user in ('anon','authenticated')`, so the SQL editor and service role are never restricted.
+- `profiles`: users can INSERT only `id`+`username` and UPDATE only `username`, via column grants. **`is_admin` can't be written through the API.** Guests can SELECT only `id, username, created_at`.
 
 **Functions** (all `SECURITY DEFINER`, all with `search_path = public` pinned):
 - `is_admin()`
-- `admin_list_users()`: returns `id, username, email, is_admin, created_at, route_count`. **There's no `tick_count` column**, so the admin "Sends" stat always reads 0.
+- `admin_list_users()`: returns `id, username, email, is_admin, created_at, route_count, tick_count`. `tick_count` was missing until db/12 step 2 was re-applied on 10 Sep 2026.
+- `problem_has_other_ticks(pid)`: signed-in users only. It has to be SECURITY DEFINER because ticks RLS hides other users' rows. The db/25 delete policy uses it, and so does the app before it offers Delete to an owner.
 - `admin_delete_user(target)`: refuses yourself and other admins.
 - `admin_set_admin(target, make_admin)`: refuses changing your own flag.
 - `leaderboard()`: granted to `anon`.
 - `handle_new_user()`: the sign-up trigger (section 6).
+- `problems_guard_curation()`: a trigger function; this one is *not* a definer function.
 
 The admin functions re-check `is_admin()` internally, so client-side `.admin-only` hiding is UX only.
 
@@ -267,14 +269,16 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 - **Google OAuth.** `signInWithOAuth({provider:'google', options:{redirectTo: location.origin + location.pathname}})`.
   - supabase-js v2's default **implicit** flow returns tokens in the URL hash.
   - `initAuth()` calls `getSession()` to consume them, then `location.replace('#list')`.
-  - `parseHash()` never routes to an `access_token`/`error=` hash. **An OAuth error is currently dropped silently**: the user lands on the list, still signed out, with no message.
+  - `parseHash()` never routes to an `access_token`/`error=` hash.
+  - A failed sign-in comes back with `error`/`error_description` in the hash (or the query string). `takeOAuthError()` in `account.js` strips it and shows "Sign-in failed: …". It used to be dropped silently.
 - **Email + password.** Email confirmation is **off**, and there's **no forgot-password flow** (section 12).
 
 **Profile creation:**
-- A Postgres trigger on `auth.users` (`on_auth_user_created` → `handle_new_user()`) inserts the `profiles` row at sign-up, with username = the email prefix.
-- So `loadProfile()` normally finds a row, and the app's "Choose a display name" modal only appears if that insert never happened.
+- A Postgres trigger on `auth.users` (`on_auth_user_created` → `handle_new_user()`, db/26) inserts the `profiles` row at sign-up. The username is a placeholder: `climber-` + the first 8 hex characters of the user id. The insert is `on conflict do nothing`, so a clash can never block a sign-up; it just leaves the user with no profile.
+- `loadProfile()` → `needsDisplayName()` treats **a placeholder name or a missing profile** as "no name chosen". Either way it opens the **mandatory** name modal: no Cancel, no Escape, and the field starts empty. `saveDisplayName()` then UPDATEs the placeholder row, or INSERTs if there was none, and refuses names that look like placeholders.
+- The placeholder pattern is duplicated in `PLACEHOLDER_NAME` in `account.js` and in db/26. **Keep the two in sync.**
+- Before 10 Sep 2026 the trigger used the email prefix. That blocked sign-up whenever two prefixes matched, and made part of the email address the user's public name. Two existing accounts still carry names from that era; they're left as they are.
 - Users rename themselves from Profile.
-- ⚠️ This trigger has known problems: see `docs/security-findings.md`. **CLAUDE.md is wrong on this point**: it says profiles are created through the modal.
 
 **Session state:**
 - `session`, `profile`, `authReady` (in `state.js`).
@@ -293,7 +297,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 **Google Auth Platform:** app name "Project Board", published. Brand verification is optional.
 
-## 7. Service worker and caching (`sw.js`, `CACHE = 'pb-v73'`)
+## 7. Service worker and caching (`sw.js`, `CACHE = 'pb-v74'`)
 
 | Request | Strategy |
 |---|---|
@@ -386,12 +390,19 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 Security findings are **not** listed here; they're in `docs/security-findings.md` (local). This list folds in the still-open items from the 2 July 2026 review, which it supersedes.
 
+**Fixed on 10 Sep 2026** (DB changes live; app changes on `dev`, SW `pb-v74`):
+- the admin "Sends" stat always read 0;
+- OAuth errors were dropped silently;
+- the sign-up name clash and the email-prefix names;
+- an owner could delete a problem others had ticked, or self-mark it as a benchmark;
+- a problem delete blocked by RLS reported success;
+- the first-run name modal had no autofocus.
+
 **High**
-- **The admin "Sends" stat is always 0.** The live `admin_list_users()` has no `tick_count` column (the revised db/12 was never re-applied). The client also caches the user list for the whole session and hides the reload button on the detail screen.
+- **The admin user list is cached for the whole session**, and the reload button is hidden on the user-detail screen. So Routes set and Sends, now correct server-side, can still be stale until you go back to the list and reload.
 - **The app sticks on the splash screen when `supabase-js` can't load** (offline, or jsDelivr unreachable). It's loaded as a floating `@2` with no integrity hash, so untested library releases also reach users. Fix: vendor a pinned UMD build as a local file (three-places rule), which also gets it precached.
 - **The same splash hang happens if `localStorage` access throws.** It's read unguarded at the top level of `app.js`, before boot. Some Android webviews have storage turned off, and so do browsers set to block site data.
 - **Network-first fetches have no timeout.** On weak gym Wi-Fi (connected, barely working), loads hang instead of falling back to the cache. Race each fetch against about 3 s.
-- **OAuth errors are dropped silently** (section 6).
 
 **Medium**
 - **Auth runs its setup twice at startup** (`initAuth`, then `INITIAL_SESSION`), again on every hourly `TOKEN_REFRESHED`, and awaits inside `onAuthStateChange`, which Supabase warns can deadlock. Filter the events and defer the work with `setTimeout(…, 0)`.
@@ -401,7 +412,7 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 - **Calibrate seeds from whatever map is loaded.** If `board_config` failed and the fallback loaded, **Save board** publishes bundled-era positions over the live board.
 - **The cast button** stays `disabled`/`.sent` for 2 s even after you swipe to the next problem. Worse, the name is captured at tap time, so a swipe during the up-to-6 s location wait casts the *previous* problem.
 - **A deploy reload can wipe calibrate work.** `hasUnsavedWork()` covers the create forms but not calibrate: anchors, nudges, mirror edits and a picked image are all lost.
-- **Writes blocked by RLS "succeed".** A blocked `delete()`/`update()` returns no error, just 0 rows, so the UI reports success. It matters for an admin demoted mid-session. Add `.select()` and check the row count.
+- **Writes blocked by RLS "succeed".** A blocked `delete()`/`update()` returns no error, just 0 rows, so the UI reports success. Problem delete now checks this. Grade edit, edit-holds and circuit delete still don't, which matters for an admin demoted mid-session. Add `.select()` and check the row count.
 - **Deleting a user doesn't refresh the leaderboard.** `doDeleteUser` never sets `leaderboardLoaded = false`, and the cached admin user list (with emails) survives sign-out.
 - **`router()` side effects when data arrives** (section 4.3).
 
@@ -409,7 +420,6 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 - **UI polish:**
   - The toast (z-index 200) renders behind modals (300).
   - Escape doesn't close the edit-choice or board-saved modals.
-  - The first-run name modal doesn't autofocus.
   - Circuit grade tabs lose their scroll position on every keystroke.
 - **Races:**
   - A fast double tap on tick or fave can leave the UI out of step with the DB; there's no in-flight lock.
@@ -488,11 +498,9 @@ The domain `symmetryboard.co.uk` doesn't contain the brand, so **a name change d
 
 ## 16. Where CLAUDE.md is stale (as of 10 Sep 2026)
 
-- **Profile creation:** CLAUDE.md says "profile is created via a modal". It's actually a DB trigger (section 6).
-- **The `problems` UPDATE/DELETE model:** it doesn't match the live policies; see `docs/security-findings.md`.
-- **db/12 `tick_count`:** it says "re-run it". It was never re-run.
-- **Problems graded `Project`:** it says 4; there are 2.
-- **"Session 1 task":** obsolete, and its step 9 ("commit and push to `main`") contradicts working rule 2. Ignore it.
+The auth rules, schema block, DB script list and "Session 1 task" were corrected on 10 Sep 2026, alongside db/24–26. Still stale:
+- **Problems graded `Project`:** the database-review note says 4; there are 2.
+- **"Re-run db/12"** (in the admin-hub build note): don't re-run it whole. Only step 2 is safe; see the DB script list.
 - **The Navigation and "Pages / views" sections:** they list 2 tabs and 4 views. There are 4 tabs (Problems · Circuits · Ranks · Profile) and 11 views.
 - **The ES-modules line** ("`app.js` can be broken into ES modules … ask first"): superseded by working rule 9.
 - **The local `README.md`** (gitignored) still describes a `frontend/` folder and GitHub Pages deploys.

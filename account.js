@@ -173,7 +173,24 @@
   }
 
   // ── Auth ────────────────────────────────────────────────────────────────────
+  // A failed OAuth sign-in comes back with error params in the hash (implicit flow)
+  // or the query string. Show the reason once and strip them, rather than dropping
+  // the user on the list, still signed out, with no idea why.
+  function takeOAuthError() {
+    const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
+    const query = new URLSearchParams(location.search);
+    const src = hash.has('error') ? hash : query.has('error') ? query : null;
+    if (!src) return null;
+    const msg = src.get('error_description') || src.get('error');
+    ['error', 'error_code', 'error_description'].forEach(k => query.delete(k));
+    const qs = query.toString();
+    history.replaceState(history.state, '', location.pathname + (qs ? '?' + qs : '') + (src === hash ? '#list' : location.hash));
+    return msg;
+  }
+
   async function initAuth() {
+    const oauthError = takeOAuthError();
+    if (oauthError) showToast('Sign-in failed: ' + oauthError, 'error');
     const { data } = await sb.auth.getSession();   // also consumes any OAuth redirect in the URL
     session = data.session || null;
     authReady = true;
@@ -208,8 +225,14 @@
     // or wrongly prompt an existing user to pick a name (which then 23505s on insert).
     if (error) { console.warn('profile load failed', error); return; }
     profile = data || null;
-    if (session && !profile) promptDisplayName();   // genuinely new user (Google or email)
+    // New users haven't chosen a name yet: the sign-up trigger (db/26) gives them a
+    // placeholder, or no profile at all if the placeholder clashed. Either way, ask.
+    if (session && needsDisplayName()) promptDisplayName();
   }
+
+  // The sign-up trigger's placeholder username. Keep in sync with db/26.
+  const PLACEHOLDER_NAME = /^climber-[0-9a-f]{8}$/i;
+  const needsDisplayName = () => !profile || PLACEHOLDER_NAME.test(profile.username || '');
 
   async function authEmail() {
     const email = document.getElementById('auth-email').value.trim();
@@ -260,22 +283,27 @@
     const editing = mode === 'edit';
     document.getElementById('name-modal-title').textContent = editing ? 'Edit display name' : 'Choose a display name';
     document.getElementById('name-cancel').hidden = !editing;
-    const email = (session && session.user && session.user.email) || '';
-    document.getElementById('name-input').value = editing
-      ? ((profile && profile.username) || '')
-      : (email.split('@')[0] || '').trim();
+    // First sign-in starts empty on purpose: pre-filling the email prefix nudged
+    // people into publishing part of their email address as their public name.
+    document.getElementById('name-input').value = editing ? ((profile && profile.username) || '') : '';
     document.getElementById('name-error').textContent = '';
     document.getElementById('name-modal').classList.add('show');
-    if (editing) setTimeout(() => document.getElementById('name-input').focus(), 50);
+    setTimeout(() => document.getElementById('name-input').focus(), 50);
   }
-  function promptDisplayName() { openNameModal('create'); }   // first sign-in
+  function promptDisplayName() {   // first sign-in (mandatory: no Cancel)
+    // loadProfile can run more than once on start-up; don't reset a half-typed name.
+    if (document.getElementById('name-modal').classList.contains('show')) return;
+    openNameModal('create');
+  }
   function closeNameModal() { document.getElementById('name-modal').classList.remove('show'); }
 
   async function saveDisplayName() {
     const errEl = document.getElementById('name-error');
     const name = document.getElementById('name-input').value.trim();
     if (name.length < 2) { errEl.textContent = 'Pick a name (at least 2 characters).'; return; }
+    if (PLACEHOLDER_NAME.test(name)) { errEl.textContent = 'Pick a name of your own.'; return; }
     if (!session) { errEl.textContent = 'Session expired — please sign in again.'; return; }
+    const wasEditing = !needsDisplayName();
     const btn = document.getElementById('name-save'); btn.disabled = true;
     // Update if a profile row already exists (editing), otherwise create it.
     const { error } = profile
@@ -286,7 +314,6 @@
       errEl.textContent = error.code === '23505' ? 'That name is taken — try another.' : error.message;
       return;
     }
-    const wasEditing = !!profile;
     closeNameModal();
     await loadProfile();
     profileNames[session.user.id] = name;   // reflect the rename on this user's problems
