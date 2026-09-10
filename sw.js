@@ -12,9 +12,9 @@
 // Bump CACHE whenever the asset list changes so old caches are cleared.
 
 const CACHE = 'pb-v73';
-// The app shell is precached as './' only. NOT './index.html': Cloudflare 307s
-// /index.html -> /, and a cached redirect can't answer a navigation, so an offline
-// launch would fail until the first online load overwrote it.
+// The app shell is precached as './' only (Cloudflare 307s /index.html -> /; the
+// navigate branch below keeps the shell under './'). precache() makes any other
+// redirected entry, such as privacy.html, safe to serve offline.
 const ASSETS = [
   './',
   './privacy.html',
@@ -40,10 +40,25 @@ const ASSETS = [
   './mirror_map.json'
 ];
 
+// Like cache.addAll, but never stores a redirect. Cloudflare 307s every *.html URL
+// to its extensionless form (privacy.html -> /privacy), and a response marked
+// `redirected` can't answer a navigation, so an offline open of privacy.html would
+// fail. A redirected response is re-wrapped as a plain copy of its final body.
+async function precache(cache) {
+  await Promise.all(ASSETS.map(async path => {
+    const resp = await fetch(path);
+    if (!resp.ok) throw new Error(`precache ${path}: HTTP ${resp.status}`);
+    const clean = resp.redirected
+      ? new Response(await resp.blob(), { status: resp.status, statusText: resp.statusText, headers: resp.headers })
+      : resp;
+    await cache.put(path, clean);
+  }));
+}
+
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE)
-      .then(cache => cache.addAll(ASSETS))
+      .then(precache)
       .then(() => self.skipWaiting())   // activate the new worker immediately
   );
 });
@@ -84,8 +99,14 @@ self.addEventListener('fetch', event => {
           }
           return resp;
         })
-        .catch(() => (isShell ? caches.match('./') : caches.match(req, { ignoreSearch: true }))
-          .then(r => r || Response.error()))
+        .catch(async () => {
+          if (isShell) return (await caches.match('./')) || Response.error();
+          // Cloudflare serves /privacy from privacy.html, so an extensionless page
+          // falls back to its precached .html copy if it was never visited online.
+          const cached = (await caches.match(req, { ignoreSearch: true })) ||
+            (!/\.[a-z0-9]+$/i.test(url.pathname) && (await caches.match(url.pathname + '.html')));
+          return cached || Response.error();
+        })
     );
     return;
   }
