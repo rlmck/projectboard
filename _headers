@@ -1,6 +1,7 @@
 /sw.js
   Cache-Control: no-cache
-/index.html
+# The app shell is served at / (Cloudflare 307s /index.html -> /, so a rule on /index.html only hit the redirect)
+/
   Cache-Control: no-cache
 /*
   X-Content-Type-Options: nosniff

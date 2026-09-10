@@ -22,6 +22,7 @@ OUT=public
 FILES=(
   # markup
   index.html
+  privacy.html
   trace_holds.html
 
   # styles

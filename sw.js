@@ -11,10 +11,13 @@
 // client the previous file for a whole load.
 // Bump CACHE whenever the asset list changes so old caches are cleared.
 
-const CACHE = 'pb-v72';
+const CACHE = 'pb-v73';
+// The app shell is precached as './' only. NOT './index.html': Cloudflare 307s
+// /index.html -> /, and a cached redirect can't answer a navigation, so an offline
+// launch would fail until the first online load overwrote it.
 const ASSETS = [
   './',
-  './index.html',
+  './privacy.html',
   './styles.css',
   './state.js',
   './core.js',
@@ -60,16 +63,29 @@ self.addEventListener('fetch', event => {
   // Only handle same-origin GETs. Supabase + CDN go straight to the network.
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
 
-  // Network-first for the page itself, so a new deploy shows up on next load.
+  // Pages: network-first, so a new deploy shows up on the next load.
+  // Only a navigation to the app shell itself (the scope root or index.html, with
+  // any query such as ?src=qr or OAuth params) refreshes the cached shell at './'.
+  // Every other page (privacy.html, trace_holds.html) is cached under its OWN URL
+  // and falls back to its own copy — so opening one can never overwrite the shell
+  // and make an offline launch show the wrong page.
   if (req.mode === 'navigate' || req.destination === 'document') {
+    const scopePath = new URL(self.registration.scope).pathname;   // '/' on symmetryboard.co.uk
+    const isShell = url.pathname === scopePath || url.pathname === scopePath + 'index.html';
     event.respondWith(
       fetch(req)
         .then(resp => {
-          const copy = resp.clone();
-          caches.open(CACHE).then(cache => cache.put('./index.html', copy));
+          // Only a plain same-origin 200 is safe to replay for a navigation later —
+          // not an error page, and not a redirect (a navigation's fetch returns an
+          // 'opaqueredirect' for Cloudflare's /index.html -> / hop).
+          if (resp.ok && resp.type === 'basic' && !resp.redirected) {
+            const copy = resp.clone();
+            caches.open(CACHE).then(cache => cache.put(isShell ? './' : req, copy));
+          }
           return resp;
         })
-        .catch(() => caches.match('./index.html').then(r => r || caches.match('./')))
+        .catch(() => (isShell ? caches.match('./') : caches.match(req, { ignoreSearch: true }))
+          .then(r => r || Response.error()))
     );
     return;
   }

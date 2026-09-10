@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <title>Privacy — Project Board</title>
+  <meta name="description" content="What Project Board stores about you, and why." />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <!-- Shares the app's palette (the :root colour tokens + body) from styles.css. -->
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .privacy {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: calc(env(safe-area-inset-top) + 20px) 22px calc(env(safe-area-inset-bottom) + 48px);
+      line-height: 1.6;
+      font-size: 15px;
+    }
+    .privacy-head { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+    .privacy-head img { width: 40px; height: 40px; border-radius: 10px; }
+    .privacy-head .name { font-weight: 800; font-size: 17px; }
+    .privacy-head .name span { color: var(--accent); }
+    .privacy-head .back { margin-left: auto; }
+    .privacy h1 { font-size: 26px; font-weight: 800; line-height: 1.2; }
+    .privacy .updated { color: var(--text-muted); font-size: 13px; margin: 4px 0 22px; }
+    .privacy h2 { font-size: 17px; font-weight: 800; margin: 28px 0 8px; }
+    .privacy p, .privacy ul { color: #d4d4d4; margin-bottom: 12px; }
+    .privacy ul { padding-left: 20px; }
+    .privacy li { margin-bottom: 6px; }
+    .privacy b { color: var(--text); }
+    .privacy .summary {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+  </style>
+</head>
+<body>
+<main class="privacy">
+  <div class="privacy-head">
+    <img src="icon.svg" alt="" />
+    <div class="name">Project<span> Board</span></div>
+    <a class="link back" href="./">← Back to the app</a>
+  </div>
+
+  <h1>Privacy</h1>
+  <p class="updated">Last updated 10 September 2026</p>
+
+  <p class="summary">Project Board (symmetryboard.co.uk) is a free app for browsing, lighting up and ticking problems on the symmetry board at The Hangout, Portland. It keeps only what it needs to work. It has no adverts and no tracking cookies, and your data is never sold.</p>
+
+  <h2>Who’s responsible</h2>
+  <p>Project Board is run by <b>Ross McKechnie</b>, who is the data controller for the information described on this page. You can contact him at <a class="link" href="mailto:hello@symmetryboard.co.uk">hello@symmetryboard.co.uk</a>.</p>
+
+  <h2>Without an account</h2>
+  <p>You can browse problems and cast them to the board without signing in. Nothing about you is stored, apart from the short-lived technical logs (such as IP addresses) that our hosting and database providers keep to run and secure their services.</p>
+
+  <h2>If you create an account</h2>
+  <ul>
+    <li><b>Your email address</b>, so you can sign in. If you use “Continue with Google”, Google also shares your name and profile picture. These are stored with your account but aren’t shown in the app.</li>
+    <li><b>Your display name.</b> It’s public: it shows on problems you set and on the leaderboard. You can change it at any time from your profile.</li>
+    <li><b>Your ticks</b> (which problems you’ve sent, which way round, and when) and <b>your favourites</b>. These are private to you, except that your points total and number of sends appear on the public leaderboard.</li>
+    <li><b>Problems and circuits you create.</b> These are public and credited to your display name.</li>
+  </ul>
+
+  <h2>Your location</h2>
+  <p>When you cast a problem, the app asks your phone for its approximate location and checks, on the phone itself, that you’re at the gym. Your location is <b>never stored or sent</b> to us or anyone else, and the app forgets it within a minute. If you don’t allow location access, casting still works.</p>
+
+  <h2>On your device</h2>
+  <p>Your browser stores your sign-in session, two small settings (whether you’ve dismissed the install banner and the welcome screen) and an offline copy of the app. None of this is used to track you.</p>
+
+  <h2>Who handles your data</h2>
+  <ul>
+    <li><b>Supabase</b> runs our database and sign-in. Your data is stored in London, UK.</li>
+    <li><b>Google</b> handles sign-in, but only if you choose “Continue with Google”.</li>
+    <li><b>Cloudflare</b> hosts the site and provides cookieless, aggregate visitor statistics.</li>
+  </ul>
+  <p>We don’t share your data with anyone else.</p>
+
+  <h2>How long we keep it</h2>
+  <p>We keep it for as long as you have an account. If your account is deleted, your email address, display name, ticks and favourites are deleted with it. Problems and circuits you created stay on the board for others to climb. Problems keep the setter name you had when you created them.</p>
+
+  <h2>Your rights and contact</h2>
+  <p>To see, correct or delete your data, or to delete your account, email <a class="link" href="mailto:hello@symmetryboard.co.uk">hello@symmetryboard.co.uk</a>. If you’re unhappy with how we’ve handled your data, you can complain to the Information Commissioner’s Office at <a class="link" href="https://ico.org.uk" rel="noopener">ico.org.uk</a>.</p>
+</main>
+</body>
+</html>

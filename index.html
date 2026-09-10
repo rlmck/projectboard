@@ -87,6 +87,7 @@
     </div>
 
     <button class="welcome-continue" id="welcome-continue" type="button">Continue in browser</button>
+    <a class="welcome-privacy" href="privacy.html">Privacy</a>
   </div>
 </div>
 
@@ -278,6 +279,8 @@
   </header>
   <main>
     <div id="profile-content"></div>
+    <!-- Static, outside #profile-content (which account.js re-renders), so it shows signed in or out -->
+    <footer class="profile-footer"><a href="privacy.html">Privacy</a></footer>
   </main>
 </section>
 

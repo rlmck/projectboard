@@ -1,6 +1,6 @@
 # Public rollout: custom domain, Cloudflare Workers, QR → install flow
 
-**Status:** Part A and B1 are complete. B2 and B3 are done on `dev` (awaiting staging check + merge). B4 onwards is outstanding.
+**Status:** Part A and B1 are complete. B2–B4 are done on `dev` (awaiting staging check + merge). B5 onwards is outstanding.
 **Live:** https://symmetryboard.co.uk
 **Staging:** https://dev-projectboard.rosslewismckechnie.workers.dev (stable per-branch preview; see Hosting below)
 
@@ -44,7 +44,7 @@ Build settings in the dashboard: build command `bash build.sh`, deploy command `
 1. ✅ Domain `symmetryboard.co.uk` bought at Cloudflare Registrar.
 2. ✅ Cloudflare Worker `projectboard` created, git-connected to `rlmck/projectboard`, production branch `main`, custom domain live.
    - ⬜ **Outstanding:** `www.symmetryboard.co.uk` redirect rule to the apex.
-   - ⬜ **Outstanding:** Web Analytics (cookieless, injected automatically, no consent banner needed).
+   - ✅ Web Analytics (cookieless, injected automatically, no consent banner needed) — turned on.
    - ⬜ **Outstanding, needed before B4:** Email Routing `hello@symmetryboard.co.uk` → Gmail. The privacy page and Google branding both reference this address.
 3. ✅ **Supabase → Auth → URL Configuration**: Site URL `https://symmetryboard.co.uk`; redirect URL `https://symmetryboard.co.uk/**` added; github.io entry retained.
    - ⬜ **Before testing B2–B5 on staging:** add `https://dev-projectboard.rosslewismckechnie.workers.dev/**`, or `https://*-projectboard.rosslewismckechnie.workers.dev/**` to cover all branch previews. Without this, Google sign-in on staging bounces to production.
@@ -58,7 +58,7 @@ Build settings in the dashboard: build command `bash build.sh`, deploy command `
 **B1. Hosting infrastructure** — ✅ DONE (commits `b43b884`, `3325c51`, on `main`)
 - `wrangler.jsonc`: name `projectboard`, `assets.directory: "./public"`, no `main`, no `not_found_handling` (so unmatched paths 404 rather than serving the app shell).
 - `build.sh`: `set -euo pipefail`, wipes and rebuilds `public/` from an explicit allowlist. A missing allowlisted file fails the build loudly (verified).
-  - Current allowlist (27 files after B2): `index.html trace_holds.html styles.css state.js core.js problems.js admin.js account.js authoring.js circuits.js leaderboard.js app.js sw.js manifest.json icon.svg icon-192.png icon-512.png icon-maskable-512.png apple-touch-icon.png screenshot-list.png screenshot-detail.png hold_map.json mirror_map.json hold_shapes.json ProjectBoard.png _headers _redirects`
+  - Current allowlist (28 files after B4): `index.html privacy.html trace_holds.html styles.css state.js core.js problems.js admin.js account.js authoring.js circuits.js leaderboard.js app.js sw.js manifest.json icon.svg icon-192.png icon-512.png icon-maskable-512.png apple-touch-icon.png screenshot-list.png screenshot-detail.png hold_map.json mirror_map.json hold_shapes.json ProjectBoard.png _headers _redirects`
   - `led_map.json` is deliberately excluded — it is the Pi wiring contract and the app never fetches it.
 - `_headers`: `no-cache` on `/sw.js` and `/index.html`; site-wide `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: geolocation=(self)` (the cast geofence needs geolocation).
 - `_redirects`: `/scan  /?src=qr  302`. **The printed QR encodes `https://symmetryboard.co.uk/scan`**, so where it points can be changed later without reprinting.
@@ -108,7 +108,17 @@ Build settings in the dashboard: build command `bash build.sh`, deploy command `
 - When it appears: on mobile, not standalone, **and** (arrived via `?src=qr` / `?src=moved` **or** first visit, i.e. the `pb-welcome-seen` localStorage key is unset). Read `src`, then remove **only that param** with `URLSearchParams` + `history.replaceState`, which leaves Supabase's OAuth params alone. That way iOS saves the clean root URL. On any load where the welcome shows, the small banner stays hidden. "Continue in browser" sets `pb-welcome-seen` but not the banner's dismiss key, so the banner can still act as a gentle reminder later. `appinstalled` switches the welcome to "Installed ✓, open Project Board from your home screen".
 - It's an overlay, not a routed view, so `router()`/`setView` and the hash don't change. The splash fades to reveal it.
 
-**B4. Privacy page + SW fix** (`dev`)
+**B4. Privacy page + SW fix** (`dev`) — ✅ DONE on `dev`
+- **What shipped / deviations from the spec below:**
+  - **The app shell is cached as `./`, not `./index.html`.** Cloudflare 307s `/index.html` → `/`, so the old precache of `./index.html` stored a *redirect*, and a redirect can't answer a navigation. An offline launch before the first online load would have failed. `./index.html` is out of ASSETS, and the navigate branch writes the shell under `./` only for the scope root or `index.html` (any query string is fine).
+  - Other pages (`privacy.html`, `trace_holds.html`) are cached under their own URL and fall back to their own copy offline. If a page was never cached, the fallback is the browser's offline error, **not** the app shell, so the wrong page is never shown.
+  - Only a plain same-origin 200 (not an error page, not a redirect) is written to the cache. The old branch cached every navigation response, 404s included.
+  - `_headers`: the `no-cache` rule moved from `/index.html` (which only ever matched the redirect) to `/`.
+  - `CACHE` `pb-v72` → `pb-v73`.
+  - Tested locally against a server that copies Cloudflare's 307, with offline = server shut down. **Fresh install:** the shell is cached once as a plain 200; visiting `privacy.html` leaves it intact; offline, `/`, `/?src=qr`, `/index.html` and `/#detail/…` open the app, `/privacy.html` opens the privacy page, and an uncached `/trace_holds.html` gets the browser's offline error. **Upgrade from B3:** the `pb-v72` cache (including its redirected `/index.html` entry) is deleted, and offline `privacy.html` now shows the privacy page (B3 showed the app).
+  - Privacy copy was checked against the code: location is compared on-device, held ≤60s in memory, and never sent; the cast payload carries no user identity; the leaderboard publicly shows display name, points and send count; on account deletion, problems keep the setter-name snapshot.
+  - Data controller named on the page: **Ross McKechnie**, contact `hello@symmetryboard.co.uk`. The analytics line stays as written, since Web Analytics is on.
+  - ⚠️ **Before merging to `main`:** `hello@symmetryboard.co.uk` must exist (Part A2 Email Routing). The privacy page gives it as the only contact.
 - Requires `hello@symmetryboard.co.uk` to exist (Part A2).
 - `privacy.html`: a static page in the same dark style. It covers:
   - What's stored: email, display name, ticks, favourites, created problems/circuits.

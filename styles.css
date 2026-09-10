@@ -1412,3 +1412,8 @@
       cursor: pointer;
       touch-action: manipulation;
     }
+    .welcome-privacy { margin-top: 4px; padding: 8px; font-size: 13px; color: var(--text-muted); text-decoration: none; }
+
+    /* Static Privacy link under the (re-rendered) profile content */
+    .profile-footer { text-align: center; padding: 28px 0 8px; }
+    .profile-footer a { font-size: 13px; color: var(--text-muted); text-decoration: underline; text-underline-offset: 3px; }
