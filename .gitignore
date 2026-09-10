@@ -1,9 +1,11 @@
 pi/
 db/
-# docs/ stays private, except the rollout plan (the source of truth for hosting).
-# Must be docs/* not docs/ — git can't re-include a file inside an ignored directory.
+# docs/ stays private, except the rollout plan (hosting source of truth) and the
+# codebase overview. Must be docs/* not docs/ — git can't re-include a file inside
+# an ignored directory. NEVER add an exception for docs/security-findings.md.
 docs/*
 !docs/rollout-plan.md
+!docs/codebase-overview.md
 reference/
 reverse-engineering/
 dtb-backup.img

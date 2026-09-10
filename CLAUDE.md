@@ -11,6 +11,8 @@ The app is live at **https://symmetryboard.co.uk**, served by **Cloudflare Worke
 **There are real users now, so every change goes through staging:** work on `dev` → push → test on the staging URL on a real phone → merge `dev` → `main` only when Ross approves. Don't commit feature work straight to `main`.
 
 > **`docs/rollout-plan.md` is the source of truth for hosting, the rollout and the install flow.** If it and this file disagree about any of those, trust the plan.
+>
+> **`docs/codebase-overview.md` is the architecture reference** (verified against the live DB, 10 Sep 2026): how the pieces fit, the data model, auth, caching, deploy, the legacy branch, known issues and a rebrand checklist. Read it at the start of a session. Where it and this file disagree about the database or auth, trust the overview; its section 16 lists what's stale here. Security findings are kept in **`docs/security-findings.md`**, which is local only and must never be committed. Read it before touching RLS, grants, casting or sign-up.
 
 ---
 
