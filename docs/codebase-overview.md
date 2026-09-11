@@ -401,7 +401,7 @@ All of these live in `tools/`. The Python scripts find their files relative to t
 
 | Tool | Does | Needs |
 |---|---|---|
-| `register_holds.py` | Original DTB coordinates + Ross's dots (`tools/hold_positions.json`) → `app/hold_map.json` (ICP fit). ⚠️ Re-running it drops `hold243`, which was added to the committed map by hand afterwards | `reference/` (local) |
+| `register_holds.py` | Built the **backup** map `app/hold_map.json` (June 2026): fits Gareth's labelled layout onto Ross's 187 unlabelled dots (`tools/hold_positions.json`) and labels each dot. A one-off: the live map is edited with `#calibrate`, and a re-run reproduces the committed file byte for byte (including the `hold243` → `hold242` fix, now in the script's `SAME_HOLD`). Its header explains it in plain English | `reference/` (local) |
 | `register_mirror.py` | Gareth's `MirrorDic.txt` → `app/mirror_map.json` (repairs one 4-hold knot). Its input path was wrong (`dtb/dtb/…`) until 11 Sep 2026; re-running it now reproduces the committed map exactly | `reference/` |
 | `register_shapes.py` | Auto-traces hold outlines from the **live** board → `app/hold_shapes.json`; merges by default, `--overwrite` to replace. Writes a `tools/shapes_preview.png` (ignored) | network; run after every recalibration |
 | `trace_holds.html` | Manual outline tracing/repair (autosaves to localStorage; Import/Export). **Not deployed**: run `python -m http.server 8000` in the **repo root** and open `http://localhost:8000/tools/trace_holds.html` (it fetches `../app/…`) | a local http server |
@@ -488,7 +488,7 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
   - `holdChips()` is never called.
   - The "run db/NN in Supabase" messages will never fire now that every script is applied.
   - 8 of the 9 script headers omit `leaderboard.js` from the stated load order.
-  - The bundled `hold_map.json` lacks `hold218`.
+  - The bundled `hold_map.json` lacks `hold218` (I12). Neither of `register_holds.py`'s sources can place it, and no problem used it on 11 Sep 2026; the live map has it.
 - **Missing site polish:** no custom 404 page.
 - **Duplication worth consolidating before the next board feature:**
   - three nearest-hold functions (`nearestHold`, `ccNearestHold`, `calNearest`);
