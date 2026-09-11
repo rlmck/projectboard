@@ -138,7 +138,7 @@ await channel.send({
 
 ## Status
 
-**The app** has four tabs (Problems · Circuits · Ranks · Profile) and 11 views; the full route list is in overview §4.3. SW `CACHE` is `pb-v75`.
+**The app** has four tabs (Problems · Circuits · Ranks · Profile) and 11 views; the full route list is in overview §4.3. SW `CACHE` is `pb-v76`. Pinch and double-tap zoom are disabled app-wide (viewport meta + `html { touch-action }` + an iOS gesture guard at the top of `app.js`).
 
 **Next:**
 - **Circuits Phase 2:** the cast screen (5 s countdown + beeps, speed in 0.1 s steps, loop toggle, big STOP), `cast_circuit`/`stop` broadcasts, writing `circuit_logs` (which also activates the circuits "Exclude Done" pill), and the Pi listener update. Spec: `docs/project-notes.md`.

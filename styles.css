@@ -23,6 +23,9 @@
     }
 
     html, body { height: 100%; }
+    /* Panning only: no pinch or double-tap zoom anywhere in the app (the
+       viewport meta + app.js's iOS gesture guard cover the browsers that ignore this). */
+    html { touch-action: pan-x pan-y; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: var(--bg);

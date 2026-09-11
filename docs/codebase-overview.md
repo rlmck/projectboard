@@ -303,7 +303,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 **Google Auth Platform:** app name "Project Board", published. Brand verification is optional.
 
-## 7. Service worker and caching (`sw.js`, `CACHE = 'pb-v75'` on 11 Sep 2026)
+## 7. Service worker and caching (`sw.js`, `CACHE = 'pb-v76'` on 11 Sep 2026)
 
 | Request | Strategy |
 |---|---|

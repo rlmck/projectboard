@@ -2,6 +2,17 @@
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
 // state, core, problems, admin, account, authoring, circuits, app. This file: event wiring, PWA service worker + install banner, and boot (loaded LAST).
 
+  // ── No pinch-zoom ─────────────────────────────────────────────────────────────
+  // The viewport meta (user-scalable=no) stops it on Android, but iOS Safari and
+  // home-screen apps ignore that, so cancel WebKit's gesture events and any
+  // multi-finger move. Single-finger scrolling and swipes are untouched.
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(type => {
+    document.addEventListener(type, e => e.preventDefault(), { passive: false });
+  });
+  document.addEventListener('touchmove', e => {
+    if (e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+
   // ── Wire up events ────────────────────────────────────────────────────────────
   // Search — the clear "×" stays visible whenever the field has text (not just
   // while focused, unlike the native control), and re-focuses for a fresh search.
