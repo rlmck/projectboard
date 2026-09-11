@@ -8,6 +8,8 @@
 - if not already done, check Google sign-in on symmetryboard.co.uk itself, including from an iPhone home-screen install.
 
 The `www` redirect and removing github.io from Supabase were done on 10 Sep 2026.
+
+**Repo layout (11 Sep 2026):** the deployed files moved from the repo root into `app/`, and the generators and dev tools into `tools/`. `build.sh` now copies its allowlist from `app/` into `public/`, so every deployed URL and byte is unchanged. This plan is a record of the rollout, so it still names files by their old root paths: read `sw.js`, `index.html`, `_headers`, `_redirects` and the other shipped files as `app/…`, and `make_icons.py`, `make_qr.py`, `register_*.py` and `trace_holds.html` as `tools/…`. `build.sh` and `wrangler.jsonc` stay at the root.
 **Live:** https://symmetryboard.co.uk
 **Staging:** https://dev-projectboard.rosslewismckechnie.workers.dev (stable per-branch preview; see Hosting below)
 
@@ -73,8 +75,8 @@ Build settings in the dashboard: build command `bash build.sh`, deploy command `
 - `.gitignore`: `public/` added.
 - `.gitattributes`: `build.sh`, `_headers`, `_redirects` pinned to `text eol=lf`, so a fresh Windows clone doesn't produce a CRLF `build.sh` that Git Bash refuses to run.
 
-> **Rule for every later session: a new deployable file must be added in three places —**
-> **`build.sh` allowlist, `sw.js` ASSETS, and referenced from `index.html`.**
+> **Rule for every later session: a new deployable file lives in `app/` and must be added in three places —**
+> **`build.sh` allowlist, `app/sw.js` ASSETS, and referenced from `app/index.html`.**
 > Miss the first and the build fails; miss the second and it won't work offline.
 > **Exception:** the manifest `screenshot-*.png` files are `build.sh` only, not in `sw.js` ASSETS. Only the online install sheet uses them, so precaching would add ~350 KB to every install and cache bump for nothing (decided in B2).
 
@@ -222,7 +224,7 @@ The old URL **keeps being served by GitHub Pages permanently**, but from an orph
 - ⚠️ Staging shares the **live Supabase DB**, and you are an admin, so the geofence doesn't apply. Test problems and casts made on staging are real. Delete test data and don't cast unintentionally.
 
 ## Open decisions
-- ✅ **`trace_holds.html` on the public host:** resolved on 10 Sep 2026. It was dropped from the `build.sh` allowlist and is run locally (`python -m http.server` in the repo root). The `build.sh` allowlist is now 28 files: `trace_holds.html` out, the vendored `supabase-js-2.116.0.js` in.
+- ✅ **`trace_holds.html` on the public host:** resolved on 10 Sep 2026. It was dropped from the `build.sh` allowlist and is run locally (`python -m http.server` in the repo root, then open `/tools/trace_holds.html`; it moved to `tools/` on 11 Sep 2026). The `build.sh` allowlist is now 28 files: `trace_holds.html` out, the vendored `supabase-js-2.116.0.js` in.
 
 ## Pre-launch gaps (not part of this plan; separate tasks)
 - **"Forgot password" and email confirmation:** the app side is built (10 Sep 2026) but switched off until custom SMTP is live. Supabase's built-in email only delivers to project team members. Setup steps: `docs/codebase-overview.md` section 12, "Email setup".

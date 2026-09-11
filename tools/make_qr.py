@@ -3,7 +3,7 @@ make_qr.py
 
 Generates the printed QR code for the poster beside the board.
 
-    python make_qr.py      ->  print/qr-scan.svg
+    python tools/make_qr.py   ->  print/qr-scan.svg
 
 Needs segno (pip install segno). The output is committed; print/ is deliberately
 NOT in the build.sh allowlist, so none of it is deployed.
@@ -11,7 +11,7 @@ NOT in the build.sh allowlist, so none of it is deployed.
 What it encodes
 ---------------
 https://symmetryboard.co.uk/scan — never the app URL directly. /scan is a 302 in
-_redirects (currently to /?src=qr, which opens the welcome/install screen), so where
+app/_redirects (currently to /?src=qr, which opens the welcome/install screen), so where
 the printed code lands can be changed later without reprinting anything. Keep the
 path lowercase: /SCAN would 404.
 
@@ -28,9 +28,9 @@ from pathlib import Path
 
 import segno
 
-HERE = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent   # repo root (this script is in tools/)
 URL = 'https://symmetryboard.co.uk/scan'
-OUT = HERE / 'print' / 'qr-scan.svg'
+OUT = ROOT / 'print' / 'qr-scan.svg'
 
 
 def main():
@@ -40,7 +40,7 @@ def main():
     qr.save(OUT, kind='svg', border=4, dark='#000', light='#fff', omitsize=True,
             title='QR code: symmetryboard.co.uk/scan')
     size = qr.symbol_size(border=4)[0]
-    print(f'make_qr.py: wrote {OUT.relative_to(HERE)} — {URL}, version {qr.version}, '
+    print(f'make_qr.py: wrote {OUT.relative_to(ROOT).as_posix()} — {URL}, version {qr.version}, '
           f'error {qr.error}, {size}x{size} modules incl. quiet zone')
     print(f'make_qr.py: at 7 cm wide one module is {70 / size:.2f} mm')
 

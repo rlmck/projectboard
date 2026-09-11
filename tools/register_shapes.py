@@ -34,15 +34,17 @@ re-run KEEPS every outline the file already has and only fills in the missing
 ones. Pass --overwrite to replace them with freshly detected ones.
 
 Deps: pip install numpy opencv-python-headless   (dev-only; not shipped)
-Run:  python register_shapes.py            # merge into hold_shapes.json + preview
-      python register_shapes.py --overwrite # replace every outline
+Run:  python tools/register_shapes.py            # merge into app/hold_shapes.json + preview
+      python tools/register_shapes.py --overwrite # replace every outline
+The preview (shapes_preview.png) is written next to this script, in tools/.
 """
 import argparse, json, os, urllib.request
 
 import cv2
 import numpy as np
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.abspath(__file__))        # tools/
+APP = os.path.join(os.path.dirname(HERE), "app")         # the deployed site
 SUPA_URL = "https://uqirowyfqwiceyjznosl.supabase.co"
 ANON = ("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6"
         "InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAs"
@@ -85,13 +87,13 @@ def load_board():
         print(f"(live board_config unavailable: {e}; falling back to bundled)")
 
     if img_bytes is None:
-        with open(os.path.join(HERE, "ProjectBoard.png"), "rb") as f:
+        with open(os.path.join(APP, "ProjectBoard.png"), "rb") as f:
             img_bytes = f.read()
-        print("bundled image: ProjectBoard.png")
+        print("bundled image: app/ProjectBoard.png")
     if hold_map is None:
-        with open(os.path.join(HERE, "hold_map.json")) as f:
+        with open(os.path.join(APP, "hold_map.json")) as f:
             hold_map = json.load(f)
-        print("bundled map: hold_map.json")
+        print("bundled map: app/hold_map.json")
 
     img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
     if img is None:
@@ -228,11 +230,12 @@ def write_preview(img, out, centers, path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--out", default="hold_shapes.json", help="output file (default: hold_shapes.json)")
+    ap.add_argument("--out", default="hold_shapes.json",
+                    help="output file, relative to app/ (default: hold_shapes.json)")
     ap.add_argument("--overwrite", action="store_true",
                     help="replace existing outlines instead of keeping them (DISCARDS hand edits)")
     args = ap.parse_args()
-    out_path = os.path.join(HERE, args.out)
+    out_path = os.path.join(APP, args.out)
 
     img, hold_map, version = load_board()
     traced, fails, centers = detect(img, hold_map)

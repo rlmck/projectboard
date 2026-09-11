@@ -91,7 +91,10 @@
     + '<line x1="0" y1="15" x2="10" y2="15"/><line x1="20" y1="15" x2="30" y2="15"/></g>'
     + '<circle cx="15" cy="15" r="1.6" fill="#f5c842"/></svg>';
 
-  let holdMap = null, imgSrc = 'ProjectBoard.png', imgLabel = 'bundled (fallback)';
+  // Bundled files live in app/. Serve the REPO ROOT (python -m http.server 8000) and
+  // open http://localhost:8000/tools/trace_holds.html so these relative paths resolve.
+  const APP = '../app/';
+  let holdMap = null, imgSrc = APP + 'ProjectBoard.png', imgLabel = 'bundled (fallback)';
   let holds = [], shapes = {}, cur = 0, meta = null;
 
   const holdNum = h => parseInt(String(h).replace(/[^0-9]/g, ''), 10) || 0;
@@ -119,7 +122,7 @@
     }
   } catch (e) { /* offline — fall back */ }
   if (!holdMap) {
-    try { holdMap = await (await fetch('hold_map.json', { cache: 'no-cache' })).json(); imgLabel += ' + bundled map'; }
+    try { holdMap = await (await fetch(APP + 'hold_map.json', { cache: 'no-cache' })).json(); imgLabel += ' + bundled map'; }
     catch (e) { holdMap = null; }
   }
   board.src = imgSrc;
@@ -129,7 +132,7 @@
   // throw on holdMap[undefined].x — stop here rather than leaving a dead page.
   if (!holds.length) {
     $('curLabel').textContent = 'no hold map';
-    alert('Could not load a hold map (offline, or opened via file://). Serve this page over http and reload.');
+    alert('Could not load a hold map (offline, or opened via file://). Serve the repo root over http and open /tools/trace_holds.html.');
     return;
   }
 
@@ -139,7 +142,7 @@
   // over the auto-trace. When they differ, let the operator pick.
   let lsShapes = null, fileShapes = null;
   try { const ls = JSON.parse(localStorage.getItem(LS_SHAPES) || 'null'); if (ls && typeof ls === 'object') lsShapes = ls; } catch (e) {}
-  try { const r = await fetch('hold_shapes.json', { cache: 'no-cache' }); if (r.ok) { const j = await r.json(); if (j && typeof j === 'object') fileShapes = j; } } catch (e) {}
+  try { const r = await fetch(APP + 'hold_shapes.json', { cache: 'no-cache' }); if (r.ok) { const j = await r.json(); if (j && typeof j === 'object') fileShapes = j; } } catch (e) {}
   let shapeSrc = 'browser';
   if (lsShapes && Object.keys(lsShapes).length) {
     shapes = lsShapes;

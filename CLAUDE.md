@@ -32,7 +32,7 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 6. **Don't change the Supabase schema** (tables, policies, grants, functions) without being asked. Flag the need and wait.
 7. **Check what already exists before writing new code.** Read the relevant script(s) and `index.html` fully. The scripts share one global scope, so a symbol may be defined in a file you don't expect: grep across all `.js` files.
 8. **The Supabase anon key is safe to commit.** It's a public key. Don't replace it with an environment variable.
-9. **Keep the structure:** `index.html` (markup) + `styles.css` + nine ordered classic scripts. **Not ES modules**, and don't convert them without being asked.
+9. **Keep the structure:** `app/index.html` (markup) + `app/styles.css` + nine ordered classic scripts, all flat in `app/`. **Not ES modules**, and don't convert them without being asked. Don't add subfolders inside `app/`: it's copied to the site one-to-one, so a subfolder changes live URLs.
 10. **When in doubt about behaviour, ask.** Don't invent product decisions.
 
 ---
@@ -42,7 +42,7 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 - **The `legacy` branch and GitHub Pages.** Never delete the branch, never disable Pages, never touch either unless asked. Old installs and old links depend on them.
 - **The repo stays public and is never renamed.** Free Pages needs a public repo, and the github.io redirect follows the repo name.
 - **Nothing secret is ever committed.** `docs/security-findings.md` never gets a `.gitignore` exception. `db/.env` (direct-Postgres URL + service key) is never printed, pasted or committed. Pi credentials stay out of the repo.
-- **The three-places rule.** A new deployable file goes in the `build.sh` allowlist **and** `sw.js` `ASSETS` **and** is referenced from `index.html` (or another shipped page). Exception: the manifest `screenshot-*.png` files are `build.sh` only. A new committed PNG also needs a `!` exception in `.gitignore` (which ignores `*.png`). A new script also keeps the load order in `index.html`.
+- **The three-places rule.** A new deployable file lives in `app/`, and goes in the `build.sh` allowlist **and** `sw.js` `ASSETS` **and** is referenced from `index.html` (or another shipped page). Exception: the manifest `screenshot-*.png` files are `build.sh` only. A new committed PNG also needs a `!app/…` exception in `.gitignore` (which ignores `*.png`). A new script also keeps the load order in `index.html`.
 - **Bump `CACHE` in `sw.js`** to push an update to already-open clients, and whenever `ASSETS` or the fetch logic changes.
 - **The CSP in `_headers`.** No inline scripts and no `on*=` handlers, ever. Any new third-party origin (CDN, font, API) must be added to the CSP, or it's silently blocked.
 - **Never cache or precache a redirect in `sw.js`.** Cloudflare 307s `/index.html` → `/` and `/x.html` → `/x`. The app shell is cached under `./` only.
@@ -53,7 +53,16 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 
 ## Where things are
 
-**App logic: nine classic scripts sharing one global scope**, loaded by `index.html` in this order, after the vendored `supabase-js-2.116.0.js`. Every top-level `let`/`const`/`function` is visible everywhere, so **a name may be declared only once across all nine**, and top-level code can't use later files. Check with `cat state.js core.js problems.js admin.js account.js authoring.js circuits.js leaderboard.js app.js > all.js && node --check all.js`.
+**The layout:**
+```
+app/      the website: exactly the files that are deployed, flat. build.sh copies it into public/.
+tools/    generators and dev tools (never deployed)
+print/    the A5 poster and QR (never deployed)
+docs/     codebase-overview.md + rollout-plan.md (the rest is local only)
+build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs them from there
+```
+
+**App logic: nine classic scripts in `app/`, sharing one global scope**, loaded by `index.html` in this order, after the vendored `supabase-js-2.116.0.js`. Every top-level `let`/`const`/`function` is visible everywhere, so **a name may be declared only once across all nine**, and top-level code can't use later files. Check with `cd app && cat state.js core.js problems.js admin.js account.js authoring.js circuits.js leaderboard.js app.js > ../all.js && node --check ../all.js`, then delete `all.js`.
 
 | File | Owns |
 |---|---|
@@ -68,15 +77,15 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 | `app.js` | **Loaded last:** event wiring, service worker, install flow, boot |
 
 **Other tracked files:**
-- **Shipped:** `index.html`, `privacy.html` (keep its claims true), `styles.css`, `sw.js`, `manifest.json`, the icons, `ProjectBoard.png`, and the fallback board data `hold_map.json`, `mirror_map.json`, `hold_shapes.json`.
-- **`supabase-js-2.116.0.js`:** vendored and pinned. Never a CDN URL. To upgrade, see overview §4.1.
-- **Hosting config:** `build.sh` (the deploy allowlist), `wrangler.jsonc`, `_headers`, `_redirects`, `.gitattributes`.
-- **Tools, not deployed:** `register_holds.py`, `register_mirror.py`, `register_shapes.py`, `register_leds.py`, `make_icons.py`, `make_qr.py`, `trace_holds.html` (run locally), `hold_positions.json`, `led_map.json` (the Pi wiring contract). What each does: overview §11.
-- **`print/`:** the A5 poster and QR, not deployed. The QR encodes `/scan`; change where it lands in `_redirects`, never by reprinting.
+- **Shipped (`app/`):** `index.html`, `privacy.html` (keep its claims true), `styles.css`, `sw.js`, `manifest.json`, the icons, `ProjectBoard.png`, the fallback board data `hold_map.json`, `mirror_map.json`, `hold_shapes.json`, and Cloudflare's `_headers` and `_redirects`.
+- **`app/supabase-js-2.116.0.js`:** vendored and pinned. Never a CDN URL. To upgrade, see overview §4.1.
+- **Hosting config:** `build.sh` (the deploy allowlist, copying from `app/`), `wrangler.jsonc`, `app/_headers`, `app/_redirects`, `.gitattributes`.
+- **Tools (`tools/`, not deployed):** `register_holds.py`, `register_mirror.py`, `register_shapes.py`, `register_leds.py`, `make_icons.py`, `make_qr.py`, `trace_holds.html` (run locally from the repo root), `hold_positions.json`, `led_map.json` (the Pi wiring contract). They find their files relative to themselves and write the bundled data into `app/`. What each does: overview §11.
+- **`print/`:** the A5 poster and QR, not deployed. The QR encodes `/scan`; change where it lands in `app/_redirects`, never by reprinting.
 
-**Local only (gitignored):** `db/`, `pi/` (the board listener), `docs/*` except the two committed docs, `reference/` (Gareth's original code; two register scripts read it by path). Gareth's SD-card image and the old reverse-engineering are archived outside the repo in `Documents\ProjectBoard-archive\`.
+**Local only (gitignored):** `db/`, `pi/` (the board listener), `docs/*` except the two committed docs, `reference/original-pi-codebase/dtb/` (Gareth's original code; two register scripts read it by path). Gareth's SD-card image, the rest of its boot partition, the old reverse-engineering and the old LED test scripts are archived outside the repo in `Documents\ProjectBoard-archive\`.
 
-**Deploy:** Cloudflare Workers static assets. Push `dev` → a preview build at the staging URL (not promoted). Merge to `main` → production. `build.sh` wipes and rebuilds `public/` from its allowlist; anything unlisted never ships. Details: overview §9 and `docs/rollout-plan.md`.
+**Deploy:** Cloudflare Workers static assets. Push `dev` → a preview build at the staging URL (not promoted). Merge to `main` → production. `build.sh` wipes and rebuilds `public/` from its allowlist of files in `app/`; anything unlisted never ships. Preview locally with `python -m http.server` inside `app/`. Details: overview §9 and `docs/rollout-plan.md`.
 
 ---
 
@@ -151,4 +160,4 @@ await channel.send({
 
 ---
 
-*Rewritten 11 September 2026: cut from 96 KB to rules and pointers. The old build history is in `docs/changelog.md` (local) and in git. Maintained by Ross (rlmck).*
+*Rewritten 11 September 2026: cut from 96 KB to rules and pointers. The same day the repo was tidied into `app/` (the website) and `tools/`, without changing a deployed byte. The old build history is in `docs/changelog.md` (local) and in git. Maintained by Ross (rlmck).*

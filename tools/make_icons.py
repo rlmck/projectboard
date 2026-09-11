@@ -5,12 +5,12 @@ Generates the PWA's PNG icons from the same geometry as icon.svg, so every
 platform gets a real raster icon instead of the SVG (iOS ignores an SVG
 apple-touch-icon and falls back to a page screenshot on the home screen).
 
-    python make_icons.py      ->  icon-192.png, icon-512.png,
-                                  icon-maskable-512.png, apple-touch-icon.png
+    python tools/make_icons.py  ->  app/icon-192.png, app/icon-512.png,
+                                    app/icon-maskable-512.png, app/apple-touch-icon.png
 
-Needs Pillow. The outputs are committed (see the !icon-*.png /
-!apple-touch-icon.png exceptions in .gitignore); re-run this only when the icon
-design changes, and keep it in step with icon.svg by hand.
+Needs Pillow. The outputs are committed (see the !app/icon-*.png /
+!app/apple-touch-icon.png exceptions in .gitignore); re-run this only when the
+icon design changes, and keep it in step with app/icon.svg by hand.
 
 The glyph (from icon.svg, in a 512x512 viewBox)
 -----------------------------------------------
@@ -39,7 +39,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-HERE = Path(__file__).resolve().parent
+APP = Path(__file__).resolve().parent.parent / 'app'   # the deployed site
 
 BG = (0x0A, 0x0A, 0x0A, 255)    # #0a0a0a — matches manifest background/theme colour
 PINK = (0xEC, 0x48, 0x99, 255)  # #ec4899 — the app's accent
@@ -111,8 +111,8 @@ def main():
         'apple-touch-icon.png':  draw_icon(180, rounded=False).convert('RGB'),
     }
     for name, img in outputs.items():
-        img.save(HERE / name, optimize=True)
-        print(f'make_icons.py: wrote {name} ({img.width}x{img.height})')
+        img.save(APP / name, optimize=True)
+        print(f'make_icons.py: wrote app/{name} ({img.width}x{img.height})')
 
     print(f'make_icons.py: maskable glyph reaches {glyph_radius(MASKABLE_GLYPH_SCALE) / (VIEW / 2):.0%} '
           f'of the half-width (safe zone {SAFE_RADIUS / (VIEW / 2):.0%})')

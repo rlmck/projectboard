@@ -10,15 +10,17 @@ SAME physical board. So we register (align) the labelled layout onto your dots
 with a similarity transform (scale + rotation + translation, optional flip)
 using ICP, then give each dot the hold ID of the nearest labelled hold.
 
-Output: hold_map.json  (hold ID -> {x,y} %, positions are YOUR dots, labels are
-the ground-truth hold IDs).
+Output: app/hold_map.json  (hold ID -> {x,y} %, positions are YOUR dots, labels
+are the ground-truth hold IDs).
 """
 import json
 import math
 import os
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REF = os.path.join(HERE, "reference", "original-pi-codebase", "dtb")
+HERE = os.path.dirname(os.path.abspath(__file__))        # tools/
+ROOT = os.path.dirname(HERE)                             # repo root
+APP = os.path.join(ROOT, "app")                          # the deployed site
+REF = os.path.join(ROOT, "reference", "original-pi-codebase", "dtb")
 
 # ---- authoritative labelled layout ----
 with open(os.path.join(REF, "SettingsFolder", "holdlist.csv"), encoding="utf-8") as f:
@@ -124,7 +126,7 @@ for dist, di, hi in pairs:
 
 hold_map = {f"hold{n}": {"x": round(assign[n][0], 2), "y": round(assign[n][1], 2)}
             for n in sorted(assign)}
-with open(os.path.join(HERE, "hold_map.json"), "w", encoding="utf-8") as f:
+with open(os.path.join(APP, "hold_map.json"), "w", encoding="utf-8") as f:
     json.dump(hold_map, f, indent=2)
 
 dists = sorted(a[2] for a in assign.values())
@@ -143,4 +145,4 @@ for n in example:
     else:
         print(f"  hold{n:<4} -- no dot assigned")
 print()
-print(f"Wrote hold_map.json ({len(hold_map)} holds)")
+print(f"Wrote app/hold_map.json ({len(hold_map)} holds)")

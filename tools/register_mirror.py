@@ -32,18 +32,20 @@ small set and re-pair that set by geometric distance. I12 has no partner, so it
 maps to itself (mirroring leaves it in place rather than dropping it).
 
 Inputs:
-  reference/original-pi-codebase/dtb/dtb/SettingsFolder/MirrorDic.txt  (grid->grid)
-  reference/original-pi-codebase/dtb/dtb/SettingsFolder/holdlist.csv   (names[N]=grid of holdN)
-  hold_map.json   (holdN -> {x,y} %, for the geometric repair + axis)
+  reference/original-pi-codebase/dtb/SettingsFolder/MirrorDic.txt  (grid->grid)
+  reference/original-pi-codebase/dtb/SettingsFolder/holdlist.csv   (names[N]=grid of holdN)
+  app/hold_map.json   (holdN -> {x,y} %, for the geometric repair + axis)
 
 Output:
-  mirror_map.json  (holdN -> holdM string; self for centre / no-partner holds)
+  app/mirror_map.json  (holdN -> holdM string; self for centre / no-partner holds)
 """
 import json
 import os
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REF = os.path.join(HERE, "reference", "original-pi-codebase", "dtb", "dtb", "SettingsFolder")
+HERE = os.path.dirname(os.path.abspath(__file__))        # tools/
+ROOT = os.path.dirname(HERE)                             # repo root
+APP = os.path.join(ROOT, "app")                          # the deployed site
+REF = os.path.join(ROOT, "reference", "original-pi-codebase", "dtb", "SettingsFolder")
 
 # The 189 real holds (ground truth from the DTB layout) — same list app.js uses.
 VALID = [1,3,4,5,7,8,10,12,14,16,17,19,20,22,23,24,25,27,28,30,31,32,33,34,35,36,
@@ -85,7 +87,7 @@ def load_gareth_map():
 
 def main():
     gareth = load_gareth_map()
-    with open(os.path.join(HERE, "hold_map.json"), encoding="utf-8") as f:
+    with open(os.path.join(APP, "hold_map.json"), encoding="utf-8") as f:
         hm = json.load(f)
     pos = {int(k[4:]): (v["x"], v["y"]) for k, v in hm.items()}   # holdN -> (x,y)
     axis = sum(pos[n][0] for n in AXIS_HOLDS) / len(AXIS_HOLDS)
@@ -150,7 +152,7 @@ def main():
     assert set(partner) == VSET, "every valid hold must have an entry"
 
     out = {f"hold{n}": f"hold{partner[n]}" for n in sorted(VALID)}
-    with open(os.path.join(HERE, "mirror_map.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(APP, "mirror_map.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2)
 
     # ---- report ----
@@ -178,7 +180,7 @@ def main():
     for d, n in big:
         if partner[n] > n:
             print(f"  hold{n}({grid_name(n)}) <-> hold{partner[n]}({grid_name(partner[n])})  d={d:.1f}")
-    print(f"\nWrote mirror_map.json ({len(out)} holds)")
+    print(f"\nWrote app/mirror_map.json ({len(out)} holds)")
 
 
 if __name__ == "__main__":
