@@ -25,7 +25,7 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 ## Working rules
 
 1. **Read this file and `docs/codebase-overview.md` at the start of every session.**
-2. **Work on `dev`, never straight on `main`.** When a task is done: commit on `dev` → push → Ross tests on a real phone at the staging URL → **merge `dev` → `main` only when Ross approves.** The merge is what deploys to real users.
+2. **For now, every change goes straight to live (Ross, 11 Sep 2026).** When a task is done: commit on `dev` → push `dev` → fast-forward `main` to `dev` → push `main`, without asking first, then confirm the live `sw.js` shows the new `CACHE`. Keep the two branches level so staging is ready when it's needed again. **This lasts until the app is properly rolled out and the LEDs work.** After that, go back to: Ross tests on a real phone at the staging URL, and `dev` merges to `main` only when he approves. Pushing to `main` deploys to real users, so still run the syntax check before every push.
 3. **One feature per session.** Finish it properly before starting the next.
 4. **Rewrite whole files** rather than providing inline diffs.
 5. **Don't install frameworks** (React, Vue, …) or add a build step without being asked.
