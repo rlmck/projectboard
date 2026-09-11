@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, app. This file: problem list, detail, swipe, info, cast, board loaders, tick/delete/grade buttons.
+// state, core, problems, admin, account, authoring, circuits, app. This file: problem list, detail, swipe, info, cast, board loaders, tick/delete/grade/benchmark buttons.
 
   // ── List: filter + sort ──────────────────────────────────────────────────────
   function visibleProblems() {
@@ -31,6 +31,7 @@
           <div class="problem-name">${escHtml(displayName(p))}</div>
           <div class="problem-meta">
             <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
+            ${p.is_benchmark ? benchMarkSvg() : ''}
             <span class="meta-setter">${escHtml(setterName(p))}</span>
             ${starsHtml(p.stars)}
             ${isTicked(p.id) ? '<span class="tick-flag" title="Sent">✓</span>' : ''}
@@ -112,7 +113,7 @@
           <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
           <span class="meta-setter">by ${escHtml(setterName(p))}</span>
           ${starsHtml(p.stars)}
-          ${p.is_benchmark ? `<span class="bench-badge">★ Benchmark</span>` : ''}
+          ${p.is_benchmark ? `<span class="bench-badge">${benchMarkSvg()}Benchmark</span>` : ''}
           ${(myTicksNormal.has(String(p.id)) && myTicksMirrored.has(String(p.id))) ? `<span class="both-badge">✓ both sides</span>` : ''}
         </div>
       </div>
@@ -453,23 +454,65 @@
   }
 
   // Every .admin-only control appears only for admins, on a real problem. Delete
-  // also appears for the problem's owner (see openDeleteConfirm for their limit).
+  // also appears for the problem's owner, unless it's a benchmark (see
+  // openDeleteConfirm for their other limit). The benchmark item reads "Mark" or
+  // "Remove", and isn't offered for an ungraded problem (e.g. "Project"): a
+  // benchmark is accurate at its grade, and an ungraded one would score nothing.
   function updateAdminUI() {
     const show = !!(profile && profile.is_admin && currentProblem);
     document.querySelectorAll('.admin-only').forEach(btn => { btn.hidden = !show; });
     const del = document.getElementById('menu-delete');
-    if (del) del.hidden = !(currentProblem && (isAdmin() || isOwnProblem(currentProblem)));
+    if (del) del.hidden = !(currentProblem && (isAdmin() || (isOwnProblem(currentProblem) && !currentProblem.is_benchmark)));
+    const bench = document.getElementById('menu-bench');
+    if (bench && show) {
+      const on = !!currentProblem.is_benchmark;
+      bench.hidden = !on && !isGraded(currentProblem);
+      document.getElementById('menu-bench-label').textContent = on ? 'Remove benchmark' : 'Mark as benchmark';
+    }
   }
 
   const isOwnProblem = p => !!(session && p && p.setter_id && p.setter_id === session.user.id);
+  const isGraded = p => gradeRank(p.grade) < GRADE_ORDER.length;
+
+  // ── Benchmark a problem (admins only) ────────────────────────────────────────
+  // A benchmark is a high-quality problem that's accurate at its grade, and only
+  // benchmarks score points: leaderboard() (db/27) is the single source of truth.
+  // The DB enforces who can set it: the db/25 trigger pins is_benchmark for
+  // non-admins, and db/27 locks a benchmark's row (edit, delete) to admins.
+  let benchBusy = false;
+  async function toggleBenchmark() {
+    const p = currentProblem;
+    if (!p || !isAdmin() || benchBusy) return;
+    const make = !p.is_benchmark;
+    if (make && !isGraded(p)) { showToast('Give it a grade before making it a benchmark', 'error'); return; }
+    benchBusy = true;
+    // .select() so a write the DB quietly refused (RLS hides the row, or the
+    // trigger pins the flag for a user who's no longer an admin) isn't reported
+    // as a success.
+    const { data, error } = await sb.from('problems')
+      .update({ is_benchmark: make }).eq('id', p.id).select('id, is_benchmark');
+    benchBusy = false;
+    if (error) { showToast('Couldn’t change the benchmark — try again', 'error'); console.error(error); return; }
+    if (!data || !data.length || data[0].is_benchmark !== make) {
+      showToast('Only admins can change benchmarks', 'error');
+      return;
+    }
+    p.is_benchmark = make;               // same object lives in allProblems
+    leaderboardLoaded = false;           // points depend on it — refetch the board next view
+    renderList();
+    if (currentView === 'detail' && currentProblem === p) renderDetail(p.id);
+    showToast(make ? `${displayName(p)} is now a benchmark` : `${displayName(p)} is no longer a benchmark`, 'success');
+  }
 
   // ── Delete a problem ─────────────────────────────────────────────────────────
   // Admins can delete any problem. An owner can delete their own only while nobody
-  // else has ticked it (their own ticks don't count) — db/25 enforces this in RLS,
-  // so this check is just so the owner gets a clear message instead of a dead end.
+  // else has ticked it (their own ticks don't count), and never once it's a
+  // benchmark — db/25 and db/27 enforce this in RLS, so these checks are just so
+  // the owner gets a clear message instead of a dead end.
   async function openDeleteConfirm() {
     const p = currentProblem;
     if (!p || !(isAdmin() || isOwnProblem(p))) return;
+    if (!isAdmin() && p.is_benchmark) { showToast('This is a benchmark, so only an admin can delete it', 'error'); return; }
     if (!isAdmin()) {
       const { data, error } = await sb.rpc('problem_has_other_ticks', { pid: p.id });
       if (error) { showToast('Couldn’t check that — try again', 'error'); return; }
@@ -503,7 +546,7 @@
     if (!data || !data.length) {
       errEl.textContent = isAdmin()
         ? 'Couldn’t delete it — it may already have been removed.'
-        : 'Someone else has ticked this, so only an admin can delete it now.';
+        : 'Only an admin can delete this now: someone else has ticked it, or it’s become a benchmark.';
       return;
     }
 
@@ -521,9 +564,12 @@
   }
 
   // ── Edit a problem (admins only) — chooser: grade or holds ───────────────────
+  // On a benchmark the chooser doubles as the warning: changing it changes the
+  // points of everyone who's sent it.
   function openEditChoice() {
     if (!currentProblem || !(profile && profile.is_admin)) return;
     document.getElementById('edit-choice-name').textContent = displayName(currentProblem);
+    document.getElementById('edit-choice-bench').hidden = !currentProblem.is_benchmark;
     document.getElementById('edit-choice-modal').classList.add('show');
   }
   function closeEditChoice() { document.getElementById('edit-choice-modal').classList.remove('show'); }

@@ -106,7 +106,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 - **Hold outlines (`hold_shapes.json`) fit one board version.** `shapesUsable()` falls back to dots unless the live board's `updated_at` matches. After any recalibration, re-run `register_shapes.py` and commit the new file.
 - **Create rules:** the top 25% of the board (by the live map's hold y-span) is the finish zone: exactly one finish, no starts, other holds allowed. Everywhere else, holds cycle start (the first two) → hold → off. A problem needs 1–2 starts, at least one intermediate and one finish.
 - **Colours:** start green, intermediate blue, finish red, feet orange.
-- **Points come only from the `leaderboard()` RPC.** Never re-implement the formula in JS.
+- **Points come only from the `leaderboard()` RPC.** Never re-implement the formula in JS. **Only benchmarks score** (db/27). Only admins mark a benchmark (detail ⋮ menu), and once a problem is one, only admins can edit or delete it (RLS). Details: overview §4.6.
 - **`.icon-btn { display:flex }` beats `[hidden]`**, so every hideable icon button needs an explicit `#id[hidden]{display:none}`.
 - **A write blocked by RLS "succeeds"**: an update or delete whose policy hides the row returns no error and 0 rows. Add `.select()` and check the count.
 
@@ -121,7 +121,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 | Anon key | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA` |
 
 - **Tables, policies and functions:** overview §5. RLS is on everywhere and is the real gate; the app's admin-only UI is just UX.
-- **DB scripts** live in local `db/`, numbered and idempotent, applied by hand in the SQL editor. All of 01–26 are applied. The index and warnings are in `db/README.md`. A new script takes the next number.
+- **DB scripts** live in local `db/`, numbered and idempotent, applied by hand in the SQL editor. All of 01–27 are applied. The index and warnings are in `db/README.md`. A new script takes the next number.
 - **Admin** = `profiles.is_admin`. It's set in the Supabase dashboard or in-app through `admin_set_admin()`, which only an existing admin can call and which refuses changing your own flag. **Nobody can promote themselves.**
 - **Who can do what:** browsing and casting need no login. Ticking, favourites and creating need sign-in. Admins edit (grade, holds) and delete any problem; an owner can delete their own problem only while nobody else has ticked it. Details: overview §5–6.
 - **Direct Postgres** for reviews: `db/.env` → `SUPABASE_DB_URL` (session pooler), via `pg8000`. Default to read-only. How to connect: overview §5.
@@ -147,7 +147,7 @@ await channel.send({
 
 ## Status
 
-**The app** has four tabs (Problems · Circuits · Ranks · Profile) and 11 views; the full route list is in overview §4.3. SW `CACHE` is `pb-v77`. Pinch and double-tap zoom are disabled app-wide (viewport meta + `html { touch-action }` + an iOS gesture guard at the top of `app.js`), and so is text selection outside inputs (`body { user-select: none }`; `.welcome-url` stays selectable for the in-app-browser copy fallback).
+**The app** has four tabs (Problems · Circuits · Ranks · Profile) and 11 views; the full route list is in overview §4.3. SW `CACHE` is `pb-v78`. Pinch and double-tap zoom are disabled app-wide (viewport meta + `html { touch-action }` + an iOS gesture guard at the top of `app.js`), and so is text selection outside inputs (`body { user-select: none }`; `.welcome-url` stays selectable for the in-app-browser copy fallback).
 
 **Next:**
 - **Circuits Phase 2:** the cast screen (5 s countdown + beeps, speed in 0.1 s steps, loop toggle, big STOP), `cast_circuit`/`stop` broadcasts, writing `circuit_logs` (which also activates the circuits "Exclude Done" pill), and the Pi listener update. Spec: `docs/project-notes.md`.

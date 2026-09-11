@@ -2,7 +2,8 @@
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
 // state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file:
 // the public all-time points leaderboard (the leaderboard() RPC is the single source of
-// truth for the scoring formula — see db/23).
+// truth for the scoring formula — see db/27). Only benchmark problems score, so the
+// RPC lists only climbers with points, and "sends" counts benchmark sends.
 
   // Fetch the ranking from the leaderboard() RPC and cache it. Cheap to call: it
   // no-ops once loaded unless forced (e.g. the reload button, or after a tick
@@ -54,7 +55,7 @@
     }
     if (!leaderboardLoaded) { el.innerHTML = `<div class="spinner"></div>`; return; }
     if (!leaderboard.length) {
-      el.innerHTML = `<div class="state-msg"><div class="icon">🏆</div>No sends yet — tick a problem to get on the board.</div>`;
+      el.innerHTML = `<div class="state-msg"><div class="icon">🏆</div>No points yet — send a benchmark to get on the board.</div>`;
       return;
     }
     el.innerHTML = `<div class="problem-list">${leaderboard.map(leaderboardRowHtml).join('')}</div>`;

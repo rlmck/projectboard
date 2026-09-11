@@ -186,9 +186,10 @@
   document.getElementById('detail-tick').addEventListener('click', toggleTick);
   document.getElementById('detail-fave').addEventListener('click', () => { if (currentProblem) toggleFave(currentProblem.id); });
 
-  // Overflow (⋮) menu — folds Edit/Delete/Information into one header button.
+  // Overflow (⋮) menu — folds Edit/Benchmark/Delete/Information into one header button.
   wireOverflowMenu('detail-menu-btn', 'detail-menu');
   document.getElementById('menu-edit').addEventListener('click', openEditChoice);
+  document.getElementById('menu-bench').addEventListener('click', toggleBenchmark);
   document.getElementById('menu-delete').addEventListener('click', openDeleteConfirm);
   document.getElementById('menu-info').addEventListener('click', openInfo);
 

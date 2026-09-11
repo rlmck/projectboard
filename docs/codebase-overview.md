@@ -85,7 +85,7 @@ build.sh  wrangler.jsonc  CLAUDE.md  .gitignore  .gitattributes   (the repo root
 | `CLAUDE.md`, `docs/rollout-plan.md`, `docs/codebase-overview.md` | Docs | no |
 
 Local only (gitignored), on Ross's laptop:
-- `db/`: numbered SQL scripts 01–26, applied by hand in the Supabase SQL editor, indexed in `db/README.md`, plus `db/.env` holding the direct-Postgres URL and the service key. **Never print or commit that file.**
+- `db/`: numbered SQL scripts 01–27, applied by hand in the Supabase SQL editor, indexed in `db/README.md`, plus `db/.env` holding the direct-Postgres URL and the service key. **Never print or commit that file.**
 - `pi/`: the board listener, its systemd unit, a smoke test, `clear_strip.py`, and `problems.csv` (Gareth's problem list, the input to db/03).
 - `docs/*`: `changelog.md`, `project-notes.md`, `CC_Reference_Gareth_Code.md`, `hardware/` photos, and `security-findings.md`.
 - `reference/original-pi-codebase/dtb/`: Gareth's original DTB code, extracted from his SD card. `tools/register_holds.py` and `tools/register_mirror.py` read `dtb/SettingsFolder/holdlist.csv`, `dtb/SettingsFolder/MirrorDic.txt` and `dtb/dicholdlist.txt` from it by path, so it stays where it is.
@@ -200,12 +200,17 @@ Positions are **percentages of the image**, so the overlay scales with it. The r
 - **Favourites:**
   - Problems use the old `likes` table; circuits use `circuit_likes`.
   - Toggles are optimistic, and a duplicate insert error (`23505`) counts as success.
-- **Points** come only from the `leaderboard()` RPC, the single source of truth:
-  - base = grade index × 10;
-  - +50% of base for a benchmark;
-  - +50% of base once if the problem was sent both ways.
+- **Points** come only from the `leaderboard()` RPC (db/27), the single source of truth. **Only benchmark problems score** (Ross, 11 Sep 2026):
+  - base = grade index × 10 (`5` = 10 … `8a` = 150);
+  - +50% of base once if the benchmark was sent both ways;
+  - a non-benchmark scores 0. The old +50% benchmark bonus went with db/27.
 
-  The profile's "Total points" reads the caller's own row back from the RPC. `leaderboardLoaded = false` invalidates the cache after ticks, grade/hold edits and deletes.
+  Only climbers with points are listed, and "sends" counts benchmark sends. Points are worked out live, so marking a problem a benchmark scores its existing ticks straight away, and unmarking it takes them back. The profile's "Total points" reads the caller's own row back from the RPC. `leaderboardLoaded = false` invalidates the cache after ticks, grade/hold edits, benchmark toggles and deletes.
+- **Benchmarks:** high-quality problems that are accurate at their grade.
+  - Only admins mark them: the "Mark as benchmark" / "Remove benchmark" item in the detail ⋮ menu (`toggleBenchmark` in `problems.js`). It isn't offered for an ungraded problem (`Project`).
+  - They show a gold disc with a star cut out (`benchMarkSvg()` in `core.js`) on list cards and in the detail badge, and there's a Benchmarks filter pill.
+  - Admin Edit on a benchmark warns in the edit chooser that it changes everyone's points.
+  - Owners lose Delete on their own problem once it's a benchmark (db/27 enforces it).
 - **Circuits have no completion logging yet.** That's Phase 2. The circuits "Exclude Done" pill is deliberately inert.
 
 ### 4.7 Casting
@@ -260,8 +265,8 @@ RLS is **enabled on every public table**, and it does the row-level gating. Sinc
 - Own-rows-only on `ticks`, `likes`, `circuit_likes`, `sessions`.
 - Insert-as-yourself (`setter_id = auth.uid()`) on `problems` and `circuits`.
 - Owner-or-admin update/delete on `circuits`.
-- `problems` DELETE (db/25): **an admin, or the owner while nobody else has ticked it**. The owner's own ticks don't count.
-- `problems` UPDATE: owner or admin. The app only offers editing to admins. The trigger `problems_guard_curation` (db/25) pins `is_benchmark`, `stars` and the `setter` snapshot for non-admin API callers, on INSERT as well. It's SECURITY INVOKER and keys off `current_user in ('anon','authenticated')`, so the SQL editor and service role are never restricted.
+- `problems` DELETE (db/25, db/27): **an admin, or the owner while it isn't a benchmark and nobody else has ticked it**. The owner's own ticks don't count.
+- `problems` UPDATE (db/27): an admin, or the owner while it isn't a benchmark. The app only offers editing to admins. Once benchmarks became the only source of points, an owner re-grading their own benchmark through the API would have been a direct route to points, hence the lock. The trigger `problems_guard_curation` (db/25) pins `is_benchmark`, `stars` and the `setter` snapshot for non-admin API callers, on INSERT as well. It's SECURITY INVOKER and keys off `current_user in ('anon','authenticated')`, so the SQL editor and service role are never restricted.
 - `profiles`: users can INSERT only `id`+`username` and UPDATE only `username`, via column grants. **`is_admin` can't be written through the API.** Guests can SELECT only `id, username, created_at`.
 
 **Functions** (all `SECURITY DEFINER`, all with `search_path = public` pinned):
@@ -317,7 +322,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 **Google Auth Platform:** app name "Project Board", published. Brand verification is optional.
 
-## 7. Service worker and caching (`sw.js`, `CACHE = 'pb-v77'` on 11 Sep 2026)
+## 7. Service worker and caching (`sw.js`, `CACHE = 'pb-v78'` on 11 Sep 2026)
 
 | Request | Strategy |
 |---|---|

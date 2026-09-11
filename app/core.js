@@ -30,6 +30,16 @@
     return `<span class="stars" title="${n} star${n !== 1 ? 's' : ''}">${out}</span>`;
   }
 
+  // The benchmark mark: a solid gold disc with a star cut out of the centre (one
+  // path; evenodd makes the star a hole, so the background shows through). Used on
+  // list cards and in the detail badge. A benchmark is a high-quality problem
+  // that's accurate at its grade; only benchmarks score points (db/27).
+  function benchMarkSvg() {
+    return '<svg class="bench-mark" viewBox="0 0 24 24" role="img" aria-label="Benchmark">' +
+      '<path fill-rule="evenodd" d="M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20Z' +
+      'M12 6.3 13.5 10.44 17.9 10.58 14.43 13.29 15.64 17.52 12 15.05 8.36 17.52 9.57 13.29 6.1 10.58 10.5 10.44Z"></path></svg>';
+  }
+
   // The problem's display name — just the stored name, trimmed. Name and grade are
   // independent: the grade is shown separately as a badge, so editing a climb's
   // grade never changes its name. (Names are stored clean — the original migration

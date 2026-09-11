@@ -436,6 +436,9 @@
     #detail-mirror.active { color: #60a5fa; border-color: #3b82f6; background: rgba(59,130,246,0.16); }
 
     .bench-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
       background: rgba(245,158,11,0.16);
       border: 1px solid rgba(245,158,11,0.5);
       color: var(--gold);
@@ -444,6 +447,14 @@
       font-size: 12px;
       font-weight: 700;
     }
+    .bench-badge .bench-mark { width: 14px; height: 14px; }
+
+    /* Benchmark mark (benchMarkSvg): solid gold disc with a star cut out */
+    .bench-mark { width: 16px; height: 16px; flex-shrink: 0; display: block; fill: var(--gold); }
+
+    /* Edit chooser: the "this is a benchmark" warning */
+    .shell-sub.bench-warn { color: var(--gold); }   /* beats .shell-sub, defined later */
+    .bench-warn[hidden] { display: none; }
 
     /* "Sent in both orientations" — earns the mirror bonus */
     .both-badge {
@@ -987,6 +998,7 @@
       font-size: 15px;
       font-weight: 600;
       text-align: left;
+      white-space: nowrap;   /* the menu grows to fit "Remove benchmark" instead of wrapping */
       padding: 12px;
       border-radius: 8px;
       cursor: pointer;
