@@ -6,8 +6,8 @@
 #
 # public/ is the ONLY thing Cloudflare serves, and it is built from an explicit
 # allowlist. Anything not named below never reaches the internet — so CLAUDE.md,
-# README.md, review_output.md, the register_*.py tools, db/, pi/, docs/ and the
-# reference material stay private without relying on an ignore rule.
+# the register_*.py tools, db/, pi/, docs/ and the reference material stay
+# private without relying on an ignore rule.
 #
 # Adding a deployable file? Add it here AND to sw.js's ASSETS.
 # A file listed here but missing on disk is a hard error: the build stops rather

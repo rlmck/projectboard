@@ -7,6 +7,7 @@
 - **Working rules** (dev → staging → merge on approval, one feature per session, no schema changes without asking): `CLAUDE.md`.
 - **Architecture, data model, auth, caching, deploy mechanics and known issues:** this file. Where it disagrees with CLAUDE.md about the database, this file was checked against the live DB and CLAUDE.md wasn't. The discrepancies are listed at the end.
 - **Security findings:** `docs/security-findings.md`. It's **local only and never committed**, because the repo is public. If you don't have it, you're not on Ross's laptop; ask before touching RLS, grants, casting or sign-up.
+- **Also local only, on Ross's laptop:** `docs/changelog.md` (the feature-by-feature history that used to fill CLAUDE.md), `docs/project-notes.md` (hardware, the Pi, the original DTB system, the Circuits Phase 2 spec) and `db/README.md` (the index of every DB script).
 
 ---
 
@@ -47,7 +48,7 @@ There is **no server code**:
 
 ## 3. Repository map
 
-Tracked at the repo root (there's no `frontend/` folder, whatever the stale local `README.md` says):
+Tracked at the repo root (there are no subfolders apart from `docs/` and `print/`):
 
 | Path | What | Deployed? |
 |---|---|---|
@@ -72,12 +73,13 @@ Tracked at the repo root (there's no `frontend/` folder, whatever the stale loca
 | `CLAUDE.md`, `docs/rollout-plan.md`, `docs/codebase-overview.md` | Docs | no |
 
 Local only (gitignored), on Ross's laptop:
-- `db/`: numbered SQL scripts 01–26, applied by hand in the Supabase SQL editor, plus `db/.env` holding the direct-Postgres URL and the service key. **Never print or commit that file.**
-- `pi/`: the board listener, its systemd unit, and a smoke test.
-- `docs/*`: project notes, hardware notes, and `security-findings.md`.
-- `reference/`, `reverse-engineering/`: Gareth's original DTB code and the analysis of it.
-- `dtb-backup.img`: a 31 GB SD-card image.
-- `.gitignore` also ignores `*.png` and `README.md`, so **every committed PNG needs a `!` exception**.
+- `db/`: numbered SQL scripts 01–26, applied by hand in the Supabase SQL editor, indexed in `db/README.md`, plus `db/.env` holding the direct-Postgres URL and the service key. **Never print or commit that file.**
+- `pi/`: the board listener, its systemd unit, a smoke test, and old LED test scripts in `pi/archive/`.
+- `docs/*`: `changelog.md`, `project-notes.md`, `CC_Reference_Gareth_Code.md`, `hardware/` photos, and `security-findings.md`.
+- `reference/`: Gareth's original DTB code, extracted from his SD card. `register_holds.py` and `register_mirror.py` read from it by path, so it stays where it is.
+- `.claude/settings.local.json`: Claude Code's per-machine settings.
+- **Archived outside the repo** (11 Sep 2026) in `Documents\ProjectBoard-archive\`: the 31 GB image of Gareth's SD card, the reverse-engineering of the DTB app, and unused source art. Nothing depends on them.
+- `.gitignore` also ignores `*.png`, so **every committed PNG needs a `!` exception**.
 
 ## 4. Front end
 
@@ -194,11 +196,7 @@ Positions are **percentages of the image**, so the overlay scales with it. The r
 
 ### 4.7 Casting
 `castByName(name, btn, mirror)` in `problems.js` is the only cast path.
-1. **Geofence** (`ensureCastLocation`). The centre is `GYM_GEOFENCE` (50.53, −2.4525, radius 300 m).
-   - It only blocks a *confidently far* fix: distance − accuracy > radius.
-   - No permission, a timeout, no support, or a poor fix all allow the cast.
-   - Admins bypass it.
-   - A fix is cached for 60 s.
+1. **Geofence** (`ensureCastLocation`; centre and radius in `GYM_GEOFENCE`). A nudge for honest users, not access control: it's deliberately lenient, so it never blocks someone at the wall because of a poor GPS fix, and admins bypass it. The exact rules are in the code.
 2. **Broadcast:** `channel.send({type:'broadcast', event:'cast_problem', payload:{problem_name, mirror?}})` on `board:HangoutPortland`.
    - The channel is created with `broadcast.ack`, and anything but `'ok'` shows "Cast failed".
    - The ack means **the Realtime server** got it, not the Pi. There's no end-to-end confirmation.
@@ -285,7 +283,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 - A Postgres trigger on `auth.users` (`on_auth_user_created` → `handle_new_user()`, db/26) inserts the `profiles` row at sign-up. The username is a placeholder: `climber-` + the first 8 hex characters of the user id. The insert is `on conflict do nothing`, so a clash can never block a sign-up; it just leaves the user with no profile.
 - `loadProfile()` → `needsDisplayName()` treats **a placeholder name or a missing profile** as "no name chosen". Either way it opens the **mandatory** name modal: no Cancel, no Escape, and the field starts empty. `saveDisplayName()` then UPDATEs the placeholder row, or INSERTs if there was none, and refuses names that look like placeholders.
 - The placeholder pattern is duplicated in `PLACEHOLDER_NAME` in `account.js` and in db/26. **Keep the two in sync.**
-- Before 10 Sep 2026 the trigger used the email prefix. That blocked sign-up whenever two prefixes matched, and made part of the email address the user's public name. Two existing accounts still carry names from that era; they're left as they are.
+- Before 10 Sep 2026 the trigger used the email prefix. That blocked sign-up whenever two prefixes matched, and made part of the email address the user's public name.
 - Users rename themselves from Profile.
 
 **Session state:**
@@ -305,7 +303,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 **Google Auth Platform:** app name "Project Board", published. Brand verification is optional.
 
-## 7. Service worker and caching (`sw.js`, `CACHE = 'pb-v74'`)
+## 7. Service worker and caching (`sw.js`, `CACHE = 'pb-v75'` on 11 Sep 2026)
 
 | Request | Strategy |
 |---|---|
@@ -356,7 +354,12 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
    - Checked on 10 Sep 2026 by driving every view in headless Chrome with the policy enforced: zero violations.
 6. **`_redirects`:** `/scan  /?src=qr  302`. The printed QR encodes `/scan`, so change its destination here, **never by reprinting**. Paths are case-sensitive.
 7. **`.gitattributes`** pins `build.sh`, `_headers` and `_redirects` to LF, so Git Bash can run `build.sh` from a Windows clone.
-8. **Manifest screenshots are hand-captured.** Regenerate them when the list or detail view changes materially: 412×915 at DPR 2, as a guest, with the banner suppressed, 256-colour quantized (see CLAUDE.md).
+8. **Manifest screenshots are hand-captured** (`screenshot-list.png`, `screenshot-detail.png`), so they don't update with the app. Regenerate them when the list or detail view changes materially, or Android's install sheet shows a stale app. How they were made:
+   - a local build, in headless Chrome with CDP mobile emulation at 412×915 CSS px and DPR 2 (so 824×1830);
+   - as a guest, with the install banner suppressed (`pb-install-dismissed`);
+   - then 256-colour quantized with Pillow. The detail shot is *Cool Curve*.
+
+   Keep the `sizes` in `manifest.json` matching, and keep both shots the same size.
 9. ⚠️ **Staging shares the live database.** Test problems, ticks and casts made there are real, and admins bypass the geofence. Clean up after yourself.
 
 ## 10. The `legacy` branch: why it must never be deleted
@@ -413,7 +416,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
   7. Merge to `main`, and update this section.
 
   Dashboard menu names drift; the settings themselves are standard.
-- **The geofence centre is unverified on-site.** If it's off by more than about 300 m plus typical accuracy, members standing at the wall get "Casting only works at the gym". Admins would never notice, because they bypass the gate. Verify it with a non-admin phone at the board.
+- **The geofence centre is unverified on-site.** If it's off by more than the radius, members standing at the wall get "Casting only works at the gym". Admins would never notice, because they bypass the gate. Verify it with a non-admin phone at the board.
 - **`manifest.json` has `"orientation": "portrait"`.** On Android installs this locks portrait, so the landscape auto-fullscreen on detail views never fires there; the expand button still works. iOS ignores the manifest orientation.
 - **Circuits Phase 2 isn't built:** casting, countdown, `circuit_logs`, and wiring up the circuits "Exclude Done" pill. Phase 3 (circuit leaderboards) isn't built either.
 - **Problem name/setter editing isn't built** (admins can edit holds and grade).
@@ -522,18 +525,12 @@ The domain `symmetryboard.co.uk` doesn't contain the brand, so **a name change d
 - **Supabase errors:**
   - `23505` = duplicate; toggles treat it as success, creates as "name taken".
   - `42501` = RLS denial. It's raised when a *new* row fails a policy check (an insert, an upsert, or an update's `WITH CHECK`). An update or delete whose `USING` clause hides the row raises nothing and just returns 0 rows.
-- **Offline, the geofence allows the cast.** Only a confident far fix blocks it.
 - **Admin status is cached** in `profile` for the session; a demoted admin keeps the admin UI until they reload.
 - **Supabase auth storage is keyed by project ref** (`sb-uqirowyfqwiceyjznosl-auth-token`), not by domain. Moving origin logs everyone out, which is why the move needed "sign in again".
 - **The staging URL contains the Worker name.** Renaming the Worker breaks staging Google sign-in until Supabase's redirect list is updated.
 - **Pages builds:** a Pages source change through the GitHub API doesn't trigger a build; request one explicitly.
 - **`docs/` is gitignored** except `rollout-plan.md` and this file. Anything else you write there stays local.
 
-## 16. Where CLAUDE.md is stale (as of 10 Sep 2026)
+## 16. How this file relates to CLAUDE.md
 
-The auth rules, schema block, DB script list and "Session 1 task" were corrected on 10 Sep 2026, alongside db/24–26. Still stale:
-- **Problems graded `Project`:** the database-review note says 4; there are 2.
-- **"Re-run db/12"** (in the admin-hub build note): don't re-run it whole. Only step 2 is safe; see the DB script list.
-- **The Navigation and "Pages / views" sections:** they list 2 tabs and 4 views. There are 4 tabs (Problems · Circuits · Ranks · Profile) and 11 views.
-- **The ES-modules line** ("`app.js` can be broken into ES modules … ask first"): superseded by working rule 9.
-- **The local `README.md`** (gitignored) still describes a `frontend/` folder and GitHub Pages deploys.
+On 11 Sep 2026 CLAUDE.md was cut from 96 KB to rules and pointers. The history it carried went to the local `docs/changelog.md`, the DB script list to `db/README.md`, and the schema, data model and auth detail are here. CLAUDE.md keeps only the working rules, the invariants that must not break, and the data traps. When you change something this file describes, update this file; add to CLAUDE.md only if it's a new rule or a new trap.
