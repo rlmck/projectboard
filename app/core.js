@@ -162,7 +162,7 @@
   // polygon, 1 = fully rounded (can bulge a little past the traced points). The
   // viewBox is stretched, but the curve is affine-invariant so it stays true.
   // Keep in step with SMOOTH in tools/trace_holds.html so the editor matches.
-  const SHAPE_SMOOTH = 0.7;
+  const SHAPE_SMOOTH = 0.9;
   function smoothShapePath(pts) {
     const n = pts.length, k = SHAPE_SMOOTH / 6;
     const f = v => +v.toFixed(3);

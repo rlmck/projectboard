@@ -279,7 +279,7 @@
   // The app draws outlines as a closed Catmull-Rom curve through the traced
   // points (core.js smoothShapePath). SMOOTH must match its SHAPE_SMOOTH so what
   // you trace here is what climbers see. The vertices you drag are unchanged.
-  const SMOOTH = 0.7;
+  const SMOOTH = 0.9;
   function smoothD(pts) {
     const n = pts.length, k = SMOOTH / 6;
     const f = v => +v.toFixed(3);
