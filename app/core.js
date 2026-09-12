@@ -157,6 +157,25 @@
     return Object.keys(HOLD_SHAPES).length > 1;      // more than just __meta
   }
 
+  // Traced outlines are drawn as a closed Catmull-Rom curve through every traced
+  // point, not straight segments. SHAPE_SMOOTH is the tension: 0 = the straight
+  // polygon, 1 = fully rounded (can bulge a little past the traced points). The
+  // viewBox is stretched, but the curve is affine-invariant so it stays true.
+  // Keep in step with SMOOTH in tools/trace_holds.html so the editor matches.
+  const SHAPE_SMOOTH = 0.7;
+  function smoothShapePath(pts) {
+    const n = pts.length, k = SHAPE_SMOOTH / 6;
+    const f = v => +v.toFixed(3);
+    let d = `M${f(pts[0][0])},${f(pts[0][1])}`;
+    for (let i = 0; i < n; i++) {
+      const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+      d += `C${f(p1[0] + (p2[0] - p0[0]) * k)},${f(p1[1] + (p2[1] - p0[1]) * k)}`
+        + ` ${f(p2[0] - (p3[0] - p1[0]) * k)},${f(p2[1] - (p3[1] - p1[1]) * k)}`
+        + ` ${f(p2[0])},${f(p2[1])}`;
+    }
+    return d + 'Z';
+  }
+
   // roles: { holdId -> 'start' | 'int' | 'finish' }. `mirror` pulls each hold's
   // position AND shape from its mirror partner (roles preserved). `dim` adds the
   // darken-the-rest mask (detail view); create/edit passes dim:false so the whole
@@ -178,9 +197,9 @@
       const pos = HOLD_MAP[key];
       const role = roles[h];
       if (pts && pts.length >= 3) {
-        const s = pts.map(p => p[0] + ',' + p[1]).join(' ');
-        holes.push(`<polygon points="${s}" fill="#000"/>`);
-        outlines.push(`<polygon points="${s}" class="hs ${role}"/>`);
+        const d = smoothShapePath(pts);
+        holes.push(`<path d="${d}" fill="#000"/>`);
+        outlines.push(`<path d="${d}" class="hs ${role}"/>`);
       } else if (pos) {                       // no traced shape yet — show a dot
         const e = `cx="${pos.x}" cy="${pos.y}" rx="${rx}" ry="${ry}"`;
         holes.push(`<ellipse ${e} fill="#000"/>`);

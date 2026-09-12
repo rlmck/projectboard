@@ -61,6 +61,8 @@
   #others .poly.hot { fill: rgba(59,130,246,0.18); stroke: rgba(147,197,253,0.9); }
   #cur .poly { fill: rgba(245,200,66,0.14); stroke: var(--gold); stroke-width: 1.8px; vector-effect: non-scaling-stroke; }
   #cur .poly.thin { fill: none; }
+  #cur .skel { fill: none; stroke: rgba(245,200,66,0.35); stroke-width: 1px; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  #frame svg path, #loupeSvg path { stroke-linejoin: round; }
   .layer { position: absolute; inset: 0; pointer-events: none; }
 
   .gdot { position: absolute; width: 7px; height: 7px; border-radius: 50%; transform: translate(-50%,-50%);
@@ -163,6 +165,7 @@
     <div class="sep"></div>
     <label class="chk"><input type="checkbox" id="showOthers" checked /> others</label>
     <label class="chk"><input type="checkbox" id="showLabels" /> labels</label>
+    <label class="chk" title="Draw outlines as smooth curves, as the app does"><input type="checkbox" id="showSmooth" checked /> smooth</label>
     <label class="chk"><input type="checkbox" id="showLoupe" checked /> loupe</label>
     <span class="grow"></span>
     <span class="pill" id="saved">auto-save on</span>
@@ -272,6 +275,30 @@
   const curHold = () => holds[cur];
   const curPts = () => shapes[curHold()] || [];
   const ptsStr = pts => pts.map(p => p[0] + ',' + p[1]).join(' ');
+
+  // The app draws outlines as a closed Catmull-Rom curve through the traced
+  // points (core.js smoothShapePath). SMOOTH must match its SHAPE_SMOOTH so what
+  // you trace here is what climbers see. The vertices you drag are unchanged.
+  const SMOOTH = 0.7;
+  function smoothD(pts) {
+    const n = pts.length, k = SMOOTH / 6;
+    const f = v => +v.toFixed(3);
+    let d = `M${f(pts[0][0])},${f(pts[0][1])}`;
+    for (let i = 0; i < n; i++) {
+      const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+      d += `C${f(p1[0] + (p2[0] - p0[0]) * k)},${f(p1[1] + (p2[1] - p0[1]) * k)}`
+        + ` ${f(p2[0] - (p3[0] - p1[0]) * k)},${f(p2[1] - (p3[1] - p1[1]) * k)}`
+        + ` ${f(p2[0])},${f(p2[1])}`;
+    }
+    return d + 'Z';
+  }
+  // One outline as SVG: the smooth curve when "smooth" is ticked and there is a
+  // real shape (≥3 points), otherwise the straight polygon.
+  function shapeSvg(cls, pts) {
+    return $('showSmooth').checked && pts.length >= 3
+      ? `<path class="${cls}" d="${smoothD(pts)}"/>`
+      : `<polygon class="${cls}" points="${ptsStr(pts)}"/>`;
+  }
   const clone = o => JSON.parse(JSON.stringify(o));
   const r2 = n => Math.round(n * 100) / 100;
   const tracedCount = () => holds.filter(h => (shapes[h] || []).length >= 3).length;
@@ -496,7 +523,7 @@
       holds.forEach(g => {
         if (g === h) return;
         const pts = shapes[g];
-        if (pts && pts.length >= 2) ps += `<polygon class="poly${g === hotHold ? ' hot' : ''}" points="${ptsStr(pts)}"/>`;
+        if (pts && pts.length >= 2) ps += shapeSvg('poly' + (g === hotHold ? ' hot' : ''), pts);
         const p = holdMap[g];
         if (!p) return;
         const done = (pts || []).length >= 3, chg = !same(pts, baseline[g]);
@@ -512,7 +539,11 @@
   function render() {
     const h = curHold(), pts = curPts();
     svgCur.innerHTML = pts.length >= 2
-      ? `<polygon class="poly${pts.length < 3 ? ' thin' : ''}" points="${ptsStr(pts)}"/>` : '';
+      // With smoothing on, a faint straight skeleton shows the real edges, which
+      // are what the hover "+" (insert a vertex) snaps to.
+      ? (($('showSmooth').checked && pts.length >= 3) ? `<polygon class="skel" points="${ptsStr(pts)}"/>` : '')
+        + shapeSvg('poly' + (pts.length < 3 ? ' thin' : ''), pts)
+      : '';
     let ms = '';
     pts.forEach((p, i) => {
       const cls = i === sel ? ' sel' : (i === hotVtx ? ' hot' : '');
@@ -591,11 +622,11 @@
         if (!pts || pts.length < 3) return;
         const b = bbox(pts);
         if (b.x1 < x - wPct || b.x0 > x + wPct || b.y1 < y - hPct || b.y0 > y + hPct) return;
-        s += `<polygon class="other" points="${ptsStr(pts)}"/>`;
+        s += shapeSvg('other', pts);
       });
     }
     const cp = curPts();
-    if (cp.length >= 2) s += `<polygon class="poly" points="${ptsStr(cp)}"/>`;
+    if (cp.length >= 2) s += shapeSvg('poly', cp);
     ls.innerHTML = s;
     $('loupeTag').textContent = x.toFixed(2) + ', ' + y.toFixed(2);
   }
@@ -1046,6 +1077,7 @@
   $('focus').onclick = () => zoomToHold(curHold());
   $('showOthers').onchange = () => { renderStatic(); render(); };
   $('showLabels').onchange = renderStatic;
+  $('showSmooth').onchange = () => { renderStatic(); render(); };
   $('showLoupe').onchange = e => $('loupe').classList.toggle('hide', !e.target.checked);
   $('helpBtn').onclick = () => $('help').classList.toggle('hide');
   $('helpClose').onclick = () => $('help').classList.add('hide');
