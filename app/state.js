@@ -42,6 +42,8 @@
   let currentView = 'list';
   let listScroll = 0;
   let currentProblem = null;
+  let detailTrail = [];  // problem ids swiped through to reach the current one,
+                         // oldest first — deleting steps back along it.
   let HOLD_MAP = null;   // hold id -> {x,y} %, from board_config (admin) or bundled hold_map.json
   let HOLD_SHAPES = null; // hold id -> [[x,y],…] % polygon, bundled hold_shapes.json (problem overlay only)
   let MIRROR_MAP = null; // hold id -> mirror-partner hold id (bundled mirror_map.json); self = centre/no-partner

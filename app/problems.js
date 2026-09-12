@@ -161,6 +161,7 @@
     const next = deck[nextIdx];
     // Replace the hash (don't push history) so Back still returns to the list,
     // then render in place — the view stays put, only its content swaps.
+    detailTrail.push(currentProblem.id);   // deleting `next` comes back here
     history.replaceState(null, '', '#detail/' + encodeURIComponent(next.id));
     closeInfo();
     renderDetail(next.id);
@@ -560,9 +561,18 @@
     buildGradeTabs();
     renderList();
     showToast('Problem deleted', 'success');
-    // Back to the list where the user left it: replaceRoute swaps the dead
-    // #detail entry for #list rather than pushing on top of it.
-    replaceRoute('#list');
+
+    // Where to land. Swiped here? Step back to the problem they were looking at
+    // before (skipping any that have since been deleted too), so a deck they're
+    // working through isn't interrupted. Came straight from the list? Back to the
+    // list, where replaceRoute keeps their scroll position and leaves no Back that
+    // returns to the problem that's just gone.
+    let backTo = '';
+    while (detailTrail.length && !backTo) {
+      const id = detailTrail.pop();
+      if (allProblems.some(x => String(x.id) === String(id))) backTo = id;
+    }
+    replaceRoute(backTo ? '#detail/' + encodeURIComponent(backTo) : '#list');
   }
 
   // ── Edit a problem (admins only) — chooser: grade or holds ───────────────────

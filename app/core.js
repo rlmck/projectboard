@@ -372,7 +372,11 @@
   function router() {
     const { route, param } = parseHash();
     switch (route) {
-      case 'detail':  renderDetail(param); setView('detail'); break;
+      case 'detail':
+        // Arriving from anywhere else starts a new swipe trail. Staying inside the
+        // detail view (a swipe, or delete stepping back) keeps the one we have.
+        if (currentView !== 'detail') detailTrail = [];
+        renderDetail(param); setView('detail'); break;
       case 'create':
         // Only bounce guests once we actually know the auth state — otherwise a
         // cold reload/deep-link on #create would kick a signed-in user to #auth.
