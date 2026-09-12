@@ -319,7 +319,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 **Supabase Auth config** (dashboard):
 - Site URL `https://symmetryboard.co.uk`.
-- Redirect URLs: `https://symmetryboard.co.uk/**` and the staging URL. github.io was removed on 10 Sep 2026.
+- Redirect URLs: `https://symmetryboard.co.uk/**`, the staging URL, and `http://127.0.0.1:8123/**` (added 12 Sep 2026, for Google sign-in in `tools/trace_holds.html`, which `trace.cmd` serves on that port). github.io was removed on 10 Sep 2026.
 
 **Google Auth Platform:** app name "Project Board", published. Brand verification is optional.
 
