@@ -107,6 +107,16 @@
   #help td:first-child { white-space: nowrap; }
   kbd { background: #222a33; border: 1px solid #344; border-radius: 4px; padding: 0 5px; font-size: 11px;
         font-family: ui-monospace, Consolas, monospace; }
+  #signin { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); z-index: 35;
+            background: var(--panel); border: 1px solid var(--btn-line); border-radius: 12px;
+            padding: 18px 22px; width: 330px; box-shadow: 0 20px 60px rgba(0,0,0,.7); }
+  #signin.hide { display: none; }
+  #signin h3 { margin: 0 0 8px; font-size: 14px; }
+  #signin input { width: 100%; background: #0d1117; color: var(--ink); border: 1px solid var(--btn-line);
+                  border-radius: 7px; padding: 8px 10px; font: inherit; }
+  #account.in { background: #14351f; border-color: #1f5132; color: #b7f0c9; }
+  #account.out { background: var(--btn); }
+
   #toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 40;
            background: #1b212a; border: 1px solid var(--btn-line); border-radius: 8px; padding: 8px 14px;
            font-size: 12px; opacity: 0; transition: opacity .18s; pointer-events: none; }
@@ -156,8 +166,10 @@
     <label class="chk"><input type="checkbox" id="showLoupe" checked /> loupe</label>
     <span class="grow"></span>
     <span class="pill" id="saved">auto-save on</span>
+    <span class="pill" id="account" title="Publishing needs an admin sign-in">not signed in</span>
+    <button id="publish" class="primary" title="Publish these outlines to the live board (ctrl+shift+P)">Publish → live</button>
     <button id="link" title="Link app/hold_shapes.json so ctrl+S writes straight to it">Link file…</button>
-    <button id="save" class="primary" title="Save (ctrl+S)">Export JSON</button>
+    <button id="save" title="Save the file copy (ctrl+S)">Export JSON</button>
     <button id="importBtn">Import…</button>
     <button id="reset" class="warn">Reset all</button>
     <button id="helpBtn">?</button>
@@ -195,14 +207,30 @@
     <tr><td><kbd>ctrl</kbd>+<kbd>Z</kbd> / <kbd>ctrl</kbd>+<kbd>shift</kbd>+<kbd>Z</kbd></td><td>undo / redo</td></tr>
     <tr><td><kbd>c</kbd> / <kbd>r</kbd></td><td>clear this outline / revert it to the loaded file</td></tr>
     <tr><td>wheel</td><td>zoom at the cursor · <kbd>space</kbd>-drag or middle-drag to pan · <kbd>0</kbd> fit · <kbd>f</kbd> zoom to hold</td></tr>
-    <tr><td><kbd>ctrl</kbd>+<kbd>S</kbd></td><td>save (writes straight to the file once you've used <b>Link file…</b>, otherwise downloads)</td></tr>
+    <tr><td><kbd>ctrl</kbd>+<kbd>S</kbd></td><td>save the file copy (writes straight to it once you've used <b>Link file…</b>, otherwise downloads)</td></tr>
+    <tr><td><kbd>ctrl</kbd>+<kbd>shift</kbd>+<kbd>P</kbd></td><td><b>Publish → live</b>: writes the outlines to the board row in Supabase, so every phone picks them up on its next load. Needs an admin sign-in once per browser. No commit, no deploy.</td></tr>
   </table>
   <p class="hint" style="margin:12px 0 0">
-    Outlines are stored as % of the board image, against the live board version in <code>__meta.board_updated_at</code>.
-    Hold positions come from the live board map and are never changed here. Progress auto-saves to this browser;
-    the file on disk only changes when you save.
+    Outlines are stored as % of the board image, against the live board version in <code>__meta.board_updated_at</code>;
+    the app ignores any set that doesn't match the live board. Hold positions come from the live board map and are
+    never changed here. Progress auto-saves to this browser — nothing reaches anyone else until you <b>Publish</b>.
+    <b>Export JSON</b> / <b>Link file…</b> are for refreshing <code>app/hold_shapes.json</code>, the copy that ships
+    with the app as its offline fallback; worth committing now and then, but the live board is what people see.
   </p>
   <p style="margin:10px 0 0"><button id="helpClose" class="primary">Close</button></p>
+</div>
+
+<div id="signin" class="hide">
+  <h3>Sign in to publish</h3>
+  <p class="hint" style="margin:0 0 12px">Your Project Board admin account. Publishing writes the outlines to
+    the live board; everyone picks them up on their next load. Nothing else on this page needs a sign-in.</p>
+  <form id="signinForm" autocomplete="on">
+    <p style="margin:0 0 8px"><input id="siEmail" type="email" placeholder="email" autocomplete="username" required /></p>
+    <p style="margin:0 0 12px"><input id="siPass" type="password" placeholder="password" autocomplete="current-password" required /></p>
+    <p class="hint" id="siError" style="margin:0 0 12px; color:#fca5a5"></p>
+    <p style="margin:0"><button class="primary" type="submit" id="siGo">Sign in</button>
+       <button type="button" id="siCancel">Cancel</button></p>
+  </form>
 </div>
 
 <div id="toast"></div>
@@ -227,10 +255,13 @@
     + '<circle cx="15" cy="15" r="1.6" fill="#f5c842"/></svg>';
 
   const HIT = 11;                   // px grab radius for vertices and edges
+  const SLOP = 3;                   // px a drag must travel before it moves anything
   const LOUPE = 220, LOUPE_MAG = 4;
 
   let holdMap = null, imgSrc = APP + 'ProjectBoard.png', imgLabel = 'bundled (fallback)';
   let holds = [], shapes = {}, baseline = {}, meta = null, liveVersion = null;
+  let liveShapes = null, baselineLabel = 'file', session = null;
+  const LS_SESSION = 'pb_trace_session';
   let cur = 0, mode = 'edit', sel = null, hotVtx = null, hotHold = null, ghost = null;
   let undoStack = [], redoStack = [], fileHandle = null;
   let drag = null, spaceDown = false, aspect = 1, scale = 1, fitScale = 1;
@@ -282,11 +313,14 @@
 
   // ── load the LIVE board image + hold map (board_config), like the app does ──
   try {
-    const r = await fetch(`${SUPA_URL}/rest/v1/board_config?wall=eq.HangoutPortland&select=image_path,updated_at,hold_map`,
+    // `*`, not a column list: hold_shapes only exists once db/28 is applied, and
+    // naming a column PostgREST doesn't know 400s the whole request.
+    const r = await fetch(`${SUPA_URL}/rest/v1/board_config?wall=eq.HangoutPortland&select=*`,
       { headers: { apikey: ANON, Authorization: 'Bearer ' + ANON } });
     const row = (await r.json())[0];
     if (row) {
       liveVersion = row.updated_at || null;
+      if (row.hold_shapes && Object.keys(row.hold_shapes).length > 1) liveShapes = row.hold_shapes;
       if (row.image_path) {
         const ver = row.updated_at ? `?v=${encodeURIComponent(row.updated_at)}` : '';
         imgSrc = `${SUPA_URL}/storage/v1/object/public/${BUCKET}/${row.image_path}${ver}`;
@@ -317,27 +351,33 @@
   let lsShapes = null, fileShapes = null;
   try { const ls = JSON.parse(localStorage.getItem(LS_SHAPES) || 'null'); if (ls && typeof ls === 'object') lsShapes = ls; } catch (e) {}
   try { const r = await fetch(APP + 'hold_shapes.json', { cache: 'no-cache' }); if (r.ok) { const j = await r.json(); if (j && typeof j === 'object') fileShapes = j; } } catch (e) {}
+  // What counts as "published": the live board row once db/28 is applied, else the
+  // committed file. It is both what a fresh browser starts from and what the
+  // "changed" counter measures against, so the count answers the question that
+  // matters — is what I am looking at what everyone else is seeing?
+  const source = liveShapes || fileShapes;
+  const sourceName = liveShapes ? 'live' : 'file';
   let shapeSrc = 'browser';
   // The browser copy never holds __meta (it is stripped below and re-attached on
   // save), so compare outlines only — otherwise the prompt fires on every reload.
   const noMeta = o => { const c = Object.assign({}, o); delete c.__meta; return JSON.stringify(c); };
   if (lsShapes && Object.keys(lsShapes).length) {
     shapes = lsShapes;
-    if (fileShapes && noMeta(fileShapes) !== noMeta(lsShapes)) {
-      const msg = 'hold_shapes.json on disk differs from the progress saved in this browser.'
+    if (source && noMeta(source) !== noMeta(lsShapes)) {
+      const msg = 'The ' + sourceName + ' outlines differ from the progress saved in this browser.'
         + String.fromCharCode(10, 10)
-        + 'OK = load the file (discards unexported browser edits)'
+        + 'OK = load the ' + sourceName + ' copy (discards unpublished browser edits)'
         + String.fromCharCode(10)
         + 'Cancel = keep the browser copy';
-      if (confirm(msg)) { shapes = fileShapes; shapeSrc = 'file'; }
-      else { shapeSrc = 'browser (file differs!)'; }
+      if (confirm(msg)) { shapes = clone(source); shapeSrc = sourceName; }
+      else { shapeSrc = 'browser (' + sourceName + ' differs!)'; }
     }
-  } else if (fileShapes) { shapes = fileShapes; shapeSrc = 'file'; }
-  meta = shapes.__meta || (fileShapes && fileShapes.__meta) || null;
+  } else if (source) { shapes = clone(source); shapeSrc = sourceName; }
+  meta = shapes.__meta || (source && source.__meta) || null;
   delete shapes.__meta;                       // kept aside; re-attached on save
-  // "Changed" is measured against the file on disk — that is what a save rewrites.
-  baseline = fileShapes ? clone(fileShapes) : clone(shapes);
+  baseline = source ? clone(source) : clone(shapes);
   delete baseline.__meta;
+  baselineLabel = source ? sourceName : 'start';
   $('imgLabel').textContent = imgLabel + ' · shapes: ' + shapeSrc;
 
   // Outlines only fit the board version they were traced against; the app hides
@@ -503,6 +543,9 @@
     const chg = changedHolds();
     $('changes').textContent = chg.length ? `${chg.length} changed` : 'no changes';
     $('changes').className = 'pill' + (chg.length ? ' cur' : '');
+    $('changes').title = chg.length
+      ? chg.length + ' outline(s) differ from the ' + baselineLabel + ' copy: ' + chg.join(', ')
+      : 'Identical to the ' + baselineLabel + ' copy';
     $('changedJump').innerHTML = chg.length
       ? '<option value="">Changed: ' + chg.length + '</option>'
         + chg.map(g => `<option value="${holds.indexOf(g)}">${g}</option>`).join('')
@@ -597,7 +640,7 @@
     const vi = hitVertex(x, y);
     if (vi != null) {
       push(); sel = vi;
-      drag = { type: 'vtx', i: vi, moved: false };
+      drag = { type: 'vtx', i: vi, sx: e.clientX, sy: e.clientY, live: false, keep: false };
       frame.setPointerCapture(e.pointerId); render(); return;
     }
     if (mode === 'edit') {
@@ -607,13 +650,14 @@
         const pts = shapes[curHold()];
         pts.splice(ed.after + 1, 0, [r2(x), r2(y)]);
         sel = ed.after + 1; ghost = null;
-        drag = { type: 'vtx', i: sel, moved: true };
+        drag = { type: 'vtx', i: sel, sx: e.clientX, sy: e.clientY, live: true, keep: true };
         frame.setPointerCapture(e.pointerId); render(); return;
       }
       const pts = curPts();
       if (pts.length >= 3 && inPoly(pts, x, y)) {
         push();
-        drag = { type: 'poly', x: x, y: y, start: clone(pts) };
+        drag = { type: 'poly', x: x, y: y, sx: e.clientX, sy: e.clientY,
+                 live: false, keep: false, start: clone(pts) };
         frame.setPointerCapture(e.pointerId); return;
       }
       const other = hitOtherHold(x, y);
@@ -637,13 +681,19 @@
       stage.scrollTop = drag.st - (e.clientY - drag.sy);
       return;
     }
-    if (drag && drag.type === 'vtx') {
-      shapes[curHold()][drag.i] = [r2(x), r2(y)];
-      drag.moved = true; render(); return;
-    }
-    if (drag && drag.type === 'poly') {
-      const dx = x - drag.x, dy = y - drag.y;
-      shapes[curHold()] = drag.start.map(p => [r2(p[0] + dx), r2(p[1] + dy)]);
+    // A stray click inside an outline is not a drag. Nothing moves until the
+    // pointer has travelled SLOP px, so a mis-click can't silently nudge a shape
+    // (at 2 decimal places even a 1px wobble rounds into the saved coordinates).
+    if (drag && (drag.type === 'vtx' || drag.type === 'poly')) {
+      if (!drag.live) {
+        if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < SLOP) return;
+        drag.live = true; drag.keep = true;
+      }
+      if (drag.type === 'vtx') shapes[curHold()][drag.i] = [r2(x), r2(y)];
+      else {
+        const dx = x - drag.x, dy = y - drag.y;
+        shapes[curHold()] = drag.start.map(p => [r2(p[0] + dx), r2(p[1] + dy)]);
+      }
       render(); return;
     }
     // hover feedback
@@ -661,8 +711,8 @@
   function endDrag(e) {
     if (!drag) return;
     if (drag.type === 'pan') stage.classList.remove('grabbing');
-    // a vertex click that never moved is not an edit — drop its history entry
-    if (drag.type === 'vtx' && !drag.moved) undoStack.pop();
+    // a grab that never became a drag is not an edit — drop its history entry
+    if ((drag.type === 'vtx' || drag.type === 'poly') && !drag.keep) undoStack.pop();
     drag = null;
     try { frame.releasePointerCapture(e.pointerId); } catch (err) {}
     render();
@@ -701,6 +751,7 @@
   document.addEventListener('keydown', e => {
     const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
     if (e.code === 'Space' && !typing) { spaceDown = true; stage.classList.add('panning'); e.preventDefault(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'p') { e.preventDefault(); publish(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); doSave(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
       e.preventDefault(); e.shiftKey ? redo() : undo(); return;
@@ -761,10 +812,10 @@
   }
   function revertHold() {
     const h = curHold();
-    if (same(shapes[h], baseline[h])) return toast('Already matches the file');
+    if (same(shapes[h], baseline[h])) return toast('Already matches the ' + baselineLabel + ' copy');
     push();
     if (baseline[h]) shapes[h] = clone(baseline[h]); else delete shapes[h];
-    sel = null; render(); toast('Reverted ' + h + ' to the file');
+    sel = null; render(); toast('Reverted ' + h + ' to the ' + baselineLabel + ' copy');
   }
   function payload() {
     const out = {};
@@ -795,6 +846,151 @@
       toast('Saved to ' + fileHandle.name);
     } catch (err) { toast('Save failed: ' + err.message); }
   }
+
+  // ── sign in + publish ──────────────────────────────────────────────────────
+  // Raw REST against Supabase Auth rather than pulling supabase-js into tools/:
+  // it is two endpoints, and the anon key is public. The tokens live in this
+  // browser only (the same place supabase-js keeps the app's own session), so
+  // signing in is a once-per-laptop thing and Publish stays one click.
+  function setAccount() {
+    const a = $('account');
+    if (session && session.email) {
+      a.textContent = session.is_admin === false ? session.email + ' (not admin)' : session.email;
+      a.className = 'pill ' + (session.is_admin === false ? 'bad' : 'in');
+      a.title = 'Signed in — click to sign out';
+    } else {
+      a.textContent = 'not signed in'; a.className = 'pill out';
+      a.title = 'Publishing needs an admin sign-in — click to sign in';
+    }
+  }
+  function saveSession() {
+    try {
+      if (session) localStorage.setItem(LS_SESSION, JSON.stringify(session));
+      else localStorage.removeItem(LS_SESSION);
+    } catch (e) {}
+    setAccount();
+  }
+  try { session = JSON.parse(localStorage.getItem(LS_SESSION) || 'null'); } catch (e) { session = null; }
+  setAccount();
+
+  async function authPost(grant, body) {
+    const r = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=${grant}`, {
+      method: 'POST',
+      headers: { apikey: ANON, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error_description || j.msg || j.message || ('sign-in failed (' + r.status + ')'));
+    return {
+      access_token: j.access_token, refresh_token: j.refresh_token,
+      expires_at: (j.expires_at ? j.expires_at * 1000 : Date.now() + (j.expires_in || 3600) * 1000),
+      email: j.user && j.user.email, uid: j.user && j.user.id
+    };
+  }
+  // Signed-in users may read is_admin (db/24 only closed that to guests), so the
+  // tool can say "not admin" up front instead of after a failed publish. RLS is
+  // still the real gate — this is only UX.
+  async function checkAdmin() {
+    if (!session) return;
+    try {
+      const r = await fetch(`${SUPA_URL}/rest/v1/profiles?id=eq.${session.uid}&select=is_admin`,
+        { headers: { apikey: ANON, Authorization: 'Bearer ' + session.access_token } });
+      const j = await r.json();
+      session.is_admin = !!(j && j[0] && j[0].is_admin);
+      saveSession();
+    } catch (e) {}
+  }
+  async function token() {
+    if (!session) return null;
+    if (session.expires_at && Date.now() > session.expires_at - 60000) {
+      try {
+        const next = await authPost('refresh_token', { refresh_token: session.refresh_token });
+        session = Object.assign({}, session, next); saveSession();
+      } catch (err) { session = null; saveSession(); return null; }
+    }
+    return session.access_token;
+  }
+
+  function openSignin() {
+    $('siError').textContent = '';
+    $('signin').classList.remove('hide');
+    $('siEmail').value = session && session.email ? session.email : '';
+    ($('siEmail').value ? $('siPass') : $('siEmail')).focus();
+  }
+  $('signinForm').onsubmit = async e => {
+    e.preventDefault();
+    const btn = $('siGo'); btn.disabled = true; btn.textContent = 'Signing in…';
+    try {
+      session = await authPost('password', { email: $('siEmail').value.trim(), password: $('siPass').value });
+      $('siPass').value = '';                  // never kept; only the tokens are
+      saveSession();
+      await checkAdmin();
+      $('signin').classList.add('hide');
+      toast(session.is_admin ? 'Signed in as ' + session.email : 'Signed in — but this account is not an admin');
+    } catch (err) {
+      $('siError').textContent = err.message;
+    }
+    btn.disabled = false; btn.textContent = 'Sign in';
+  };
+  $('siCancel').onclick = () => $('signin').classList.add('hide');
+  $('account').onclick = () => {
+    if (session) { if (confirm('Sign out of ' + session.email + '?')) { session = null; saveSession(); toast('Signed out'); } }
+    else openSignin();
+  };
+
+  async function publish() {
+    const out = payload();
+    const n = Object.keys(out).filter(k => k !== '__meta').length;
+    if (!n) return toast('Nothing to publish');
+    // Publishing outlines traced against a different board would be invisible:
+    // the app hides them the moment __meta.board_updated_at stops matching.
+    if (!meta || !meta.board_updated_at) return toast('No __meta.board_updated_at — the app would ignore these');
+    if (liveVersion && meta.board_updated_at !== liveVersion) {
+      return alert('These outlines were traced against board ' + meta.board_updated_at
+        + String.fromCharCode(10) + 'but the live board is ' + liveVersion + '.'
+        + String.fromCharCode(10, 10)
+        + 'The app hides outlines that do not match the live board, so publishing these would change nothing. '
+        + 'Re-trace them against the current board first.');
+    }
+    const tok = await token();
+    if (!tok) { openSignin(); return; }
+    const btn = $('publish'); const prev = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Publishing…';
+    try {
+      const r = await fetch(`${SUPA_URL}/rest/v1/board_config?wall=eq.HangoutPortland`, {
+        method: 'PATCH',
+        headers: {
+          apikey: ANON, Authorization: 'Bearer ' + tok,
+          'Content-Type': 'application/json',
+          // Without return=representation an RLS-blocked PATCH looks like a
+          // success: 204, no error, and zero rows touched.
+          Prefer: 'return=representation'
+        },
+        // hold_shapes ONLY: updated_at is the board version these outlines are
+        // pinned to, and bumping it would retire the very outlines being published.
+        body: JSON.stringify({ hold_shapes: out })
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok) {
+        const code = j && j.code;
+        if (code === 'PGRST204' || code === '42703') throw new Error('board_config has no hold_shapes column — apply db/28 first');
+        if (r.status === 401) { session = null; saveSession(); throw new Error('Session expired — sign in again'); }
+        if (r.status === 403 || code === '42501') throw new Error('That account is not an admin');
+        throw new Error((j && (j.message || j.hint)) || ('publish failed (' + r.status + ')'));
+      }
+      if (!Array.isArray(j) || !j.length) throw new Error('Nothing was written — that account is not an admin');
+      liveShapes = out;
+      baseline = clone(out); delete baseline.__meta;
+      baselineLabel = 'live';
+      status();
+      toast('Published ' + n + ' outlines — live for everyone on their next load');
+    } catch (err) {
+      alert('Publish failed: ' + err.message);
+    }
+    btn.disabled = false; btn.textContent = prev;
+  }
+  $('publish').onclick = publish;
+  if (session) checkAdmin();
 
   $('prev').onclick = () => goTo(cur - 1);
   $('next').onclick = () => goTo(cur + 1);

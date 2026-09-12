@@ -45,12 +45,13 @@
   let detailTrail = [];  // problem ids swiped through to reach the current one,
                          // oldest first — deleting steps back along it.
   let HOLD_MAP = null;   // hold id -> {x,y} %, from board_config (admin) or bundled hold_map.json
-  let HOLD_SHAPES = null; // hold id -> [[x,y],…] % polygon, bundled hold_shapes.json (problem overlay only)
+  let HOLD_SHAPES = null; // hold id -> [[x,y],…] % polygon, from board_config (admin) or bundled hold_shapes.json (problem overlay only)
   let MIRROR_MAP = null; // hold id -> mirror-partner hold id (bundled mirror_map.json); self = centre/no-partner
   let detailMirror = false; // detail view is showing the left/right-mirrored problem
   let BOARD_IMG = 'ProjectBoard.png';   // resolved board image URL (Supabase upload, else bundled)
   let configHasMap = false;             // true once board_config supplied a hold map (suppresses the bundled fallback)
   let configHasMirror = false;          // true once board_config supplied a mirror map (suppresses the bundled fallback)
+  let configHasShapes = false;          // true once board_config supplied hold outlines (suppresses the bundled fallback)
   let boardConfigVersion = null;        // board_config.updated_at — the board the live map/image belong to
   let boardAspect = 0;                  // board image naturalWidth/naturalHeight (0 = not measured yet)
   const BOARD_BUCKET = 'board';         // Supabase Storage bucket holding the uploaded board image

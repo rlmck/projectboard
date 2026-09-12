@@ -347,17 +347,20 @@
     refreshBoardViews();
   }
 
-  // ── Load hold outline shapes (bundled; hold id -> [[x,y],…] % polygon) ───────
-  // Shipped as a bundled file, but its % coords are traced against the LIVE board
-  // image + map (board_config), which is what the detail/create views render — so
-  // re-run register_shapes.py (or re-trace) after any board recalibration and
-  // commit the new file. The board version it was traced against is recorded in
+  // ── Load hold outline shapes (hold id -> [[x,y],…] % polygon) ───────────────
+  // Their % coords are traced against the LIVE board image + map (board_config),
+  // which is what the detail/create views render, so outlines and board have to
+  // move together: board_config.hold_shapes (db/28) is the source of truth once
+  // an admin has published from tools/trace_holds.html, and this bundled file is
+  // the first-paint / offline fallback. Don't clobber outlines that already came
+  // from board_config. The board version they were traced against is recorded in
   // __meta.board_updated_at; shapesUsable() refuses to draw over any other board,
-  // so a stale or missing file just falls back to the dot overlay.
+  // so a stale or missing copy just falls back to the dot overlay.
   async function loadHoldShapes() {
+    if (configHasShapes) return;
     try {
       const res = await fetch('hold_shapes.json', { cache: 'no-cache' });
-      if (res.ok) HOLD_SHAPES = await res.json();
+      if (res.ok && !configHasShapes) HOLD_SHAPES = await res.json();
     } catch (err) {
       console.warn('hold_shapes.json load failed — shape overlay disabled', err);
     }
@@ -386,7 +389,11 @@
   async function loadBoardConfig() {
     try {
       const { data, error } = await sb
-        .from('board_config').select('hold_map, mirror_map, image_path, updated_at')
+        // `*` rather than a column list: naming a column PostgREST doesn't know
+        // 400s the whole request, which would take the board image and hold map
+        // down with it — exactly what would happen on a deploy that lands before
+        // its migration. It's one small row, and the columns are all wanted here.
+        .from('board_config').select('*')
         .eq('wall', 'HangoutPortland').maybeSingle();
       if (error || !data) return;
       boardConfigVersion = data.updated_at || null;   // the board version hold_shapes.json must match
@@ -402,6 +409,13 @@
       if (data.mirror_map && typeof data.mirror_map === 'object' && Object.keys(data.mirror_map).length) {
         MIRROR_MAP = data.mirror_map;
         configHasMirror = true;
+      }
+      // Published outlines (db/28). shapesUsable() still gates them on
+      // __meta.board_updated_at matching this row's updated_at, so a set
+      // published against an older board is ignored exactly like a stale file.
+      if (data.hold_shapes && typeof data.hold_shapes === 'object' && Object.keys(data.hold_shapes).length > 1) {
+        HOLD_SHAPES = data.hold_shapes;
+        configHasShapes = true;
       }
       refreshBoardViews();
     } catch (err) {

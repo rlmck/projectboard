@@ -80,7 +80,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 - **Shipped (`app/`):** `index.html`, `privacy.html` (keep its claims true), `styles.css`, `sw.js`, `manifest.json`, the icons, `ProjectBoard.png`, the fallback board data `hold_map.json`, `mirror_map.json`, `hold_shapes.json`, and Cloudflare's `_headers` and `_redirects`.
 - **`app/supabase-js-2.116.0.js`:** vendored and pinned. Never a CDN URL. To upgrade, see overview §4.1.
 - **Hosting config:** `build.sh` (the deploy allowlist, copying from `app/`), `wrangler.jsonc`, `app/_headers`, `app/_redirects`, `.gitattributes`.
-- **Tools (`tools/`, not deployed):** `register_holds.py`, `register_mirror.py`, `register_shapes.py`, `register_leds.py`, `make_icons.py`, `make_qr.py`, `trace_holds.html` (run locally from the repo root), `hold_positions.json`, `led_map.json` (the Pi wiring contract). They find their files relative to themselves and write the bundled data into `app/`. What each does: overview §11.
+- **Tools (`tools/`, not deployed):** `register_holds.py`, `register_mirror.py`, `register_shapes.py`, `register_leds.py`, `make_icons.py`, `make_qr.py`, `trace_holds.html` + `trace.cmd` (the hold-outline editor; double-click the .cmd, it serves the repo root locally), `hold_positions.json`, `led_map.json` (the Pi wiring contract). They find their files relative to themselves and write the bundled data into `app/`. What each does: overview §11.
 - **`print/`:** the A5 poster and QR, not deployed. The QR encodes `/scan`; change where it lands in `app/_redirects`, never by reprinting.
 
 **Local only (gitignored):** `db/`, `pi/` (the board listener), `docs/*` except the two committed docs, `reference/original-pi-codebase/dtb/` (Gareth's original code; two register scripts read it by path). Gareth's SD-card image, the rest of its boot partition, the old reverse-engineering and the old LED test scripts are archived outside the repo in `Documents\ProjectBoard-archive\`.
@@ -103,7 +103,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 - **Board orientation: row 1 is at the BOTTOM.** `holdN` is row-major from the bottom-left: `hold1` = A1, `hold19` = S1, `hold20` = A2, `hold247` = S13. `holdN` numbering doesn't map cleanly to visual rows on this hand-set board.
 - **Hold positions** come from the live `board_config.hold_map`, with the bundled `hold_map.json` as a fallback. Recalibrate in-app (`#calibrate`); don't hand-edit the map or re-derive positions from a uniform grid. The live board image is `board.jpg` in Storage, framed differently from the bundled `ProjectBoard.png`: never mix the live map with the bundled image or the other way round.
 - **Mirroring is a lookup table** (`board_config.mirror_map`, fallback `mirror_map.json`), keyed by hold id. Never grid arithmetic: the board is staggered. When the Pi listener is rebuilt, feed it the **live** mirror map, not Gareth's raw `MirrorDic.txt`.
-- **Hold outlines (`hold_shapes.json`) fit one board version.** `shapesUsable()` falls back to dots unless the live board's `updated_at` matches. After any recalibration, re-run `register_shapes.py` and commit the new file.
+- **Hold outlines fit one board version.** The live copy is `board_config.hold_shapes` (db/28), published in one click from `tools/trace_holds.html`; `app/hold_shapes.json` is the shipped fallback. `shapesUsable()` falls back to dots unless the live board's `updated_at` matches `__meta.board_updated_at`. **Publishing writes `hold_shapes` alone and must never touch `updated_at`** — bumping the version retires the outlines being published. After any recalibration, re-trace (or re-run `register_shapes.py`) and Publish.
 - **Create rules:** the top 25% of the board (by the live map's hold y-span) is the finish zone: exactly one finish, no starts, other holds allowed. Everywhere else, holds cycle start (the first two) → hold → off. A problem needs 1–2 starts, at least one intermediate and one finish.
 - **Colours:** start green, intermediate blue, finish red, feet orange.
 - **Points come only from the `leaderboard()` RPC.** Never re-implement the formula in JS. **Only benchmarks score** (db/27). Only admins mark a benchmark (detail ⋮ menu), and once a problem is one, only admins can edit or delete it (RLS). Details: overview §4.6.
@@ -121,7 +121,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 | Anon key | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA` |
 
 - **Tables, policies and functions:** overview §5. RLS is on everywhere and is the real gate; the app's admin-only UI is just UX.
-- **DB scripts** live in local `db/`, numbered and idempotent, applied by hand in the SQL editor. All of 01–27 are applied. The index and warnings are in `db/README.md`. A new script takes the next number.
+- **DB scripts** live in local `db/`, numbered and idempotent, applied by hand in the SQL editor. 01–27 are applied. **`28_hold_shapes.sql` is written but NOT yet applied** (12 Sep 2026) — until Ross runs it, the editor's Publish button fails with "no hold_shapes column" and the app just uses the bundled outlines. The index and warnings are in `db/README.md`. A new script takes the next number.
 - **Admin** = `profiles.is_admin`. It's set in the Supabase dashboard or in-app through `admin_set_admin()`, which only an existing admin can call and which refuses changing your own flag. **Nobody can promote themselves.**
 - **Who can do what:** browsing and casting need no login. Ticking, favourites and creating need sign-in. Admins edit (grade, holds) and delete any problem; an owner can delete their own problem only while nobody else has ticked it. Details: overview §5–6.
 - **Direct Postgres** for reviews: `db/.env` → `SUPABASE_DB_URL` (session pooler), via `pg8000`. Default to read-only. How to connect: overview §5.
@@ -147,7 +147,7 @@ await channel.send({
 
 ## Status
 
-**The app** has four tabs (Problems · Circuits · Ranks · Profile) and 11 views; the full route list is in overview §4.3. SW `CACHE` is `pb-v81`. Pinch and double-tap zoom are disabled app-wide (viewport meta + `html { touch-action }` + an iOS gesture guard at the top of `app.js`), and so is text selection outside inputs (`body { user-select: none }`; `.welcome-url` stays selectable for the in-app-browser copy fallback).
+**The app** has four tabs (Problems · Circuits · Ranks · Profile) and 11 views; the full route list is in overview §4.3. SW `CACHE` is `pb-v82`. Pinch and double-tap zoom are disabled app-wide (viewport meta + `html { touch-action }` + an iOS gesture guard at the top of `app.js`), and so is text selection outside inputs (`body { user-select: none }`; `.welcome-url` stays selectable for the in-app-browser copy fallback).
 
 **Next:**
 - **Circuits Phase 2:** the cast screen (5 s countdown + beeps, speed in 0.1 s steps, loop toggle, big STOP), `cast_circuit`/`stop` broadcasts, writing `circuit_logs` (which also activates the circuits "Exclude Done" pill), and the Pi listener update. Spec: `docs/project-notes.md`.
@@ -156,7 +156,7 @@ await channel.send({
 
 **Don't build yet:** Circuits Phase 3 (PBs, leaderboards), tags, session/logbook tracking beyond ticks, the Flutter migration.
 
-**Waiting on Ross:** email (custom SMTP) before password reset and email confirmation go live (overview §12), Cloudflare *Always Use HTTPS* (overview §8), and checking the geofence centre on-site.
+**Waiting on Ross:** apply `db/28_hold_shapes.sql` in the SQL editor (one `alter table`, it's what makes the editor's Publish button work), email (custom SMTP) before password reset and email confirmation go live (overview §12), Cloudflare *Always Use HTTPS* (overview §8), and checking the geofence centre on-site.
 
 ---
 

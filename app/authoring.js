@@ -570,8 +570,9 @@
       configHasMap = true;
       // The traced hold outlines belong to the board we just replaced, so bumping
       // the version retires them: shapesUsable() now fails and every client falls
-      // back to the (always-correct) dot overlay until hold_shapes.json is
-      // re-traced against this board and committed. See the cal-saved modal.
+      // back to the (always-correct) dot overlay until the outlines are re-traced
+      // against this board and published from tools/trace_holds.html (which writes
+      // board_config.hold_shapes, db/28). See the cal-saved modal.
       boardConfigVersion = row.updated_at;
       if (CAL.mirror && Object.keys(CAL.mirror).length) {
         MIRROR_MAP = JSON.parse(JSON.stringify(CAL.mirror));
