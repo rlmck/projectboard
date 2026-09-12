@@ -354,8 +354,13 @@
     const navFor = { list: 'list', detail: 'list', create: 'list', calibrate: 'profile', admin: 'profile', profile: 'profile', auth: 'profile', circuits: 'circuits', 'circuit-detail': 'circuits', 'circuit-create': 'circuits', leaderboard: 'leaderboard' }[name] || 'list';
     document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.nav === navFor));
 
-    if (name === 'list') window.scrollTo(0, listScroll);
-    else window.scrollTo(0, 0);
+    if (name === 'list') {
+      window.scrollTo(0, listScroll);
+      // Some engines finish their own scrolling (a fragment jump, a restore) a
+      // frame after the hash changes, which would land the list back at the top.
+      // Re-assert once the frame has settled, unless the user has already moved.
+      requestAnimationFrame(() => { if (currentView === 'list' && window.scrollY === 0) window.scrollTo(0, listScroll); });
+    } else window.scrollTo(0, 0);
 
     currentView = name;
 
@@ -410,6 +415,15 @@
       case 'list':
       default:        setView('list'); break;
     }
+  }
+
+  // Swap route without a fragment navigation, for when the current entry points at
+  // something that no longer exists (a just-deleted problem or circuit). Setting
+  // location.hash would push a dead entry Back could return to, and a fragment
+  // jump can scroll the document to the top, losing the list's scroll position.
+  function replaceRoute(hash) {
+    history.replaceState(null, '', hash);
+    router();
   }
 
   function goBack() {

@@ -560,7 +560,9 @@
     buildGradeTabs();
     renderList();
     showToast('Problem deleted', 'success');
-    location.hash = '#list';
+    // Back to the list where the user left it: replaceRoute swaps the dead
+    // #detail entry for #list rather than pushing on top of it.
+    replaceRoute('#list');
   }
 
   // ── Edit a problem (admins only) — chooser: grade or holds ───────────────────

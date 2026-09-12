@@ -309,7 +309,7 @@
     myCircuitFaves.delete(String(c.id));
     closeCircuitDelete();
     showToast('Circuit deleted', 'success');
-    location.hash = '#circuits';
+    replaceRoute('#circuits');   // don't leave a Back that returns to the deleted circuit
   }
 
   // ── Create a circuit ─────────────────────────────────────────────────────────────
