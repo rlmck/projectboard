@@ -551,6 +551,11 @@
       return;
     }
 
+    // The deck (and this problem's place in it) as it stood before the delete —
+    // that's what names the neighbour we fall back to below.
+    const deck = visibleProblems();
+    const deckIdx = deck.findIndex(x => String(x.id) === String(p.id));
+
     allProblems = allProblems.filter(x => String(x.id) !== String(p.id));
     myTicks.delete(String(p.id));
     myTicksNormal.delete(String(p.id));
@@ -562,15 +567,22 @@
     renderList();
     showToast('Problem deleted', 'success');
 
-    // Where to land. Swiped here? Step back to the problem they were looking at
-    // before (skipping any that have since been deleted too), so a deck they're
-    // working through isn't interrupted. Came straight from the list? Back to the
-    // list, where replaceRoute keeps their scroll position and leaves no Back that
-    // returns to the problem that's just gone.
+    // Where to land — stay in viewing mode wherever we can:
+    //   1. swiped here → the last problem they were looking at (skipping any that
+    //      have since gone too), so working through a deck isn't interrupted;
+    //   2. otherwise → the problem before this one in the deck, or the one after
+    //      it if they've just deleted the first;
+    //   3. nothing either side (that was the only problem left, or it wasn't in
+    //      the deck at all) → the list, where replaceRoute keeps their scroll
+    //      position and leaves no Back that returns to the problem that's gone.
     let backTo = '';
     while (detailTrail.length && !backTo) {
       const id = detailTrail.pop();
       if (allProblems.some(x => String(x.id) === String(id))) backTo = id;
+    }
+    if (!backTo && deckIdx !== -1) {
+      const neighbour = deckIdx > 0 ? deck[deckIdx - 1] : deck[deckIdx + 1];
+      if (neighbour) backTo = neighbour.id;
     }
     replaceRoute(backTo ? '#detail/' + encodeURIComponent(backTo) : '#list');
   }
