@@ -121,7 +121,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 | Anon key | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA` |
 
 - **Tables, policies and functions:** overview §5. RLS is on everywhere and is the real gate; the app's admin-only UI is just UX.
-- **DB scripts** live in local `db/`, numbered and idempotent, applied by hand in the SQL editor. 01–27 are applied. **`28_hold_shapes.sql` is written but NOT yet applied** (12 Sep 2026) — until Ross runs it, the editor's Publish button fails with "no hold_shapes column" and the app just uses the bundled outlines. The index and warnings are in `db/README.md`. A new script takes the next number.
+- **DB scripts** live in local `db/`, numbered and idempotent, applied by hand in the SQL editor. 01–28 are applied (28 on 12 Sep 2026). The index and warnings are in `db/README.md`. A new script takes the next number.
 - **Admin** = `profiles.is_admin`. It's set in the Supabase dashboard or in-app through `admin_set_admin()`, which only an existing admin can call and which refuses changing your own flag. **Nobody can promote themselves.**
 - **Who can do what:** browsing and casting need no login. Ticking, favourites and creating need sign-in. Admins edit (grade, holds) and delete any problem; an owner can delete their own problem only while nobody else has ticked it. Details: overview §5–6.
 - **Direct Postgres** for reviews: `db/.env` → `SUPABASE_DB_URL` (session pooler), via `pg8000`. Default to read-only. How to connect: overview §5.
@@ -156,7 +156,7 @@ await channel.send({
 
 **Don't build yet:** Circuits Phase 3 (PBs, leaderboards), tags, session/logbook tracking beyond ticks, the Flutter migration.
 
-**Waiting on Ross:** apply `db/28_hold_shapes.sql` in the SQL editor (one `alter table`, it's what makes the editor's Publish button work), email (custom SMTP) before password reset and email confirmation go live (overview §12), Cloudflare *Always Use HTTPS* (overview §8), and checking the geofence centre on-site.
+**Waiting on Ross:** email (custom SMTP) before password reset and email confirmation go live (overview §12), Cloudflare *Always Use HTTPS* (overview §8), and checking the geofence centre on-site.
 
 ---
 
