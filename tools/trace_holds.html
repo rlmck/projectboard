@@ -3,87 +3,222 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Hold-shape tracer — ProjectBoard</title>
+<title>Hold-shape editor — ProjectBoard</title>
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d10; --panel: #11151a; --line: #222a33; --btn: #1b212a; --btn-line: #2c3742;
+    --ink: #e7e9ec; --dim: #93a1b0; --gold: #f5c842; --blue: #3b82f6; --green: #22c55e; --red: #ef4444;
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: #0b0d10; color: #e7e9ec; }
-  header { position: sticky; top: 0; z-index: 10; background: #11151a; border-bottom: 1px solid #222a33;
-           padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  header .grow { flex: 1 1 auto; }
-  button, select { background: #1b212a; color: #e7e9ec; border: 1px solid #2c3742;
-           border-radius: 7px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
+  html, body { height: 100%; }
+  body { margin: 0; font: 13px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--ink);
+         display: flex; flex-direction: column; overflow: hidden; user-select: none; }
+
+  header { background: var(--panel); border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+  .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 10px; }
+  .bar + .bar { border-top: 1px solid var(--line); }
+  .grow { flex: 1 1 auto; }
+  .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 3px; }
+
+  button, select, input[type=number] {
+    background: var(--btn); color: var(--ink); border: 1px solid var(--btn-line);
+    border-radius: 7px; padding: 5px 9px; font: inherit; font-size: 12px; cursor: pointer;
+  }
   button:hover { background: #232b36; }
+  button:disabled { opacity: .4; cursor: default; }
   button.primary { background: #2563eb; border-color: #2563eb; }
   button.warn { background: #7f1d1d; border-color: #991b1b; }
-  .pill { background: #1b212a; border: 1px solid #2c3742; border-radius: 999px; padding: 4px 10px; font-size: 12px; }
-  .pill.cur { background: #f5c842; color: #111; font-weight: 700; border-color: #f5c842; }
-  .hint { color: #93a1b0; font-size: 12px; }
-  #stage { padding: 12px; }
-  #frame { position: relative; display: inline-block; outline: 1px solid #2c3742; cursor: crosshair; }
-  #frame img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
-  /* polygons in stretched viewBox units (match the % board); markers in fixed px */
-  #polys { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
-  .saved-poly { fill: rgba(59,130,246,0.10); stroke: rgba(59,130,246,0.6); stroke-width: 1.4px; vector-effect: non-scaling-stroke; }
-  .cur-poly   { fill: rgba(245,200,66,0.16); stroke: #f5c842; stroke-width: 1.8px; vector-effect: non-scaling-stroke; }
-  #markers { position: absolute; inset: 0; pointer-events: none; }
+  button.on { background: var(--gold); border-color: var(--gold); color: #111; font-weight: 700; }
+  input[type=number] { width: 78px; cursor: text; font-variant-numeric: tabular-nums; }
+  select { max-width: 190px; }
+  label.chk { display: inline-flex; align-items: center; gap: 5px; color: var(--dim); font-size: 12px; cursor: pointer; }
+
+  .pill { background: var(--btn); border: 1px solid var(--btn-line); border-radius: 999px;
+          padding: 4px 10px; font-size: 12px; white-space: nowrap; }
+  .pill.cur { background: var(--gold); color: #111; font-weight: 700; border-color: var(--gold); }
+  .pill.bad { background: #7f1d1d; border-color: #991b1b; color: #fee; }
+  .pill.good { background: #14351f; border-color: #1f5132; color: #b7f0c9; }
+  .pill.mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, Consolas, monospace; }
+  /* fixed widths: these pills change text constantly and must not rewrap the bar */
+  #cursorPos { min-width: 104px; text-align: center; }
+  #changes { min-width: 96px; text-align: center; }
+  #progress { min-width: 104px; text-align: center; }
+  #curLabel { min-width: 160px; text-align: center; }
+  #saved { min-width: 132px; text-align: center; }
+  .hint { color: var(--dim); font-size: 12px; }
+
+  /* ── stage ───────────────────────────────────────────────────────────────── */
+  #stage { position: relative; flex: 1 1 auto; overflow: auto; padding: 10px; }
+  #stage.panning { cursor: grab; }
+  #stage.panning.grabbing { cursor: grabbing; }
+  #frame { position: relative; margin: 0 auto; outline: 1px solid var(--btn-line); cursor: crosshair;
+           touch-action: none; }
+  #frame img { display: block; width: 100%; height: auto; pointer-events: none; -webkit-user-drag: none; }
+  #frame svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  #others .poly { fill: rgba(59,130,246,0.10); stroke: rgba(125,185,255,0.85); stroke-width: 1.4px; vector-effect: non-scaling-stroke;
+                  filter: drop-shadow(0 0 1px rgba(0,0,0,.9)); }
+  #others .poly.hot { fill: rgba(59,130,246,0.18); stroke: rgba(147,197,253,0.9); }
+  #cur .poly { fill: rgba(245,200,66,0.14); stroke: var(--gold); stroke-width: 1.8px; vector-effect: non-scaling-stroke; }
+  #cur .poly.thin { fill: none; }
+  .layer { position: absolute; inset: 0; pointer-events: none; }
+
   .gdot { position: absolute; width: 7px; height: 7px; border-radius: 50%; transform: translate(-50%,-50%);
-          background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.40); }
-  .gdot.done { background: rgba(34,197,94,0.30); border-color: #22c55e; }
-  .vtx { position: absolute; width: 8px; height: 8px; transform: translate(-50%,-50%) rotate(45deg);
-         background: #f5c842; border: 1px solid #111; }
+          background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.35); }
+  .gdot.done { background: rgba(34,197,94,0.28); border-color: var(--green); }
+  .gdot.changed { background: rgba(245,200,66,0.45); border-color: var(--gold); }
+  .vtx { position: absolute; width: 9px; height: 9px; transform: translate(-50%,-50%) rotate(45deg);
+         background: var(--gold); border: 1px solid #111; }
+  .vtx.sel { background: #fff; width: 13px; height: 13px; box-shadow: 0 0 0 2px rgba(245,200,66,.9); }
+  .vtx.hot { background: #fff; }
+  .ghost { position: absolute; width: 11px; height: 11px; border-radius: 50%; transform: translate(-50%,-50%);
+           background: rgba(255,255,255,0.85); border: 2px solid var(--gold); }
   .xhair { position: absolute; transform: translate(-50%,-50%); filter: drop-shadow(0 0 1.5px #000); }
-  .xhair svg { display: block; }
-  .xlabel { position: absolute; transform: translate(-50%, 16px); background: #f5c842; color: #111;
+  .xlabel { position: absolute; transform: translate(-50%, 16px); background: var(--gold); color: #111;
             font-weight: 700; font-size: 11px; padding: 1px 6px; border-radius: 5px; white-space: nowrap;
             box-shadow: 0 1px 3px rgba(0,0,0,0.6); }
-  kbd { background: #222a33; border: 1px solid #344; border-radius: 4px; padding: 0 5px; font-size: 11px; }
+  .olabel { position: absolute; transform: translate(-50%,-50%); color: rgba(190,215,255,.75);
+            font-size: 10px; text-shadow: 0 1px 2px #000; white-space: nowrap; }
+
+  /* ── loupe ───────────────────────────────────────────────────────────────── */
+  #loupe { position: fixed; right: 14px; bottom: 14px; width: 220px; height: 220px; overflow: hidden;
+           border: 1px solid var(--btn-line); border-radius: 10px; background: #000; z-index: 20;
+           box-shadow: 0 8px 26px rgba(0,0,0,.6); pointer-events: none; }
+  #loupe.hide { display: none; }
+  #loupeImg { position: absolute; max-width: none; image-rendering: auto; }
+  #loupeSvg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  #loupeSvg .poly { fill: rgba(245,200,66,0.10); stroke: var(--gold); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+  #loupeSvg .other { fill: none; stroke: rgba(59,130,246,.55); stroke-width: 1.1px; vector-effect: non-scaling-stroke; }
+  #loupeCross { position: absolute; inset: 0; }
+  #loupeCross:before, #loupeCross:after { content: ''; position: absolute; background: rgba(255,255,255,.55); }
+  #loupeCross:before { left: 50%; top: 0; bottom: 0; width: 1px; }
+  #loupeCross:after { top: 50%; left: 0; right: 0; height: 1px; }
+  #loupeTag { position: absolute; left: 6px; bottom: 4px; font-size: 10px; color: #fff;
+              text-shadow: 0 1px 2px #000; font-variant-numeric: tabular-nums; }
+
+  /* ── help + toast ────────────────────────────────────────────────────────── */
+  #help { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); z-index: 30;
+          background: var(--panel); border: 1px solid var(--btn-line); border-radius: 12px;
+          padding: 16px 20px; max-width: 640px; box-shadow: 0 20px 60px rgba(0,0,0,.7); }
+  #help.hide { display: none; }
+  #help h3 { margin: 0 0 10px; font-size: 14px; }
+  #help table { border-collapse: collapse; font-size: 12px; }
+  #help td { padding: 3px 10px 3px 0; vertical-align: top; }
+  #help td:first-child { white-space: nowrap; }
+  kbd { background: #222a33; border: 1px solid #344; border-radius: 4px; padding: 0 5px; font-size: 11px;
+        font-family: ui-monospace, Consolas, monospace; }
+  #toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 40;
+           background: #1b212a; border: 1px solid var(--btn-line); border-radius: 8px; padding: 8px 14px;
+           font-size: 12px; opacity: 0; transition: opacity .18s; pointer-events: none; }
+  #toast.show { opacity: 1; }
 </style>
 </head>
 <body>
+
 <header>
-  <button id="prev">◀ Prev (p)</button>
-  <select id="jump" title="Jump to hold"></select>
-  <button id="next">Next (n) ▶</button>
-  <button id="nextTodo">Next untraced</button>
-  <button id="undo">Undo pt (z)</button>
-  <button id="clear" class="warn">Clear hold (c)</button>
-  <span class="grow"></span>
-  <span class="pill" id="imgLabel">loading…</span>
-  <span class="pill cur" id="curLabel">—</span>
-  <span class="pill" id="progress">0 / 0</span>
-  <span class="pill" id="saved">auto-save on</span>
-  <label class="hint">zoom <input id="zoom" type="range" min="1" max="5" step="0.25" value="1.5" /></label>
-  <button id="importBtn">Import…</button>
-  <button id="export" class="primary">Export hold_shapes.json</button>
-  <button id="reset" class="warn">Reset all</button>
-  <input id="importFile" type="file" accept="application/json" hidden />
+  <div class="bar">
+    <button id="prev" title="Previous hold (p)">◀</button>
+    <select id="jump" title="Jump to hold"></select>
+    <button id="next" title="Next hold (n)">▶</button>
+    <button id="nextTodo" title="Next hold with no outline">Next untraced</button>
+    <select id="changedJump" title="Jump to a hold that differs from the file"><option value="">Changed: none</option></select>
+    <div class="sep"></div>
+    <button id="modeEdit" class="on" title="Edit mode (e) — drag vertices, insert on edges">Edit</button>
+    <button id="modeDraw" title="Draw mode (d) — click to append points">Draw</button>
+    <div class="sep"></div>
+    <button id="undo" title="Undo (ctrl+Z)">Undo</button>
+    <button id="redo" title="Redo (ctrl+shift+Z)">Redo</button>
+    <button id="revert" title="Revert this hold to the loaded file (r)">Revert hold</button>
+    <button id="clear" class="warn" title="Delete this hold's outline (c)">Clear</button>
+    <span class="grow"></span>
+    <span class="pill" id="imgLabel">loading…</span>
+    <span class="pill" id="versionPill" hidden></span>
+  </div>
+
+  <div class="bar">
+    <span class="pill cur" id="curLabel">—</span>
+    <span class="pill" id="progress">0 / 0</span>
+    <span class="pill" id="changes">no changes</span>
+    <div class="sep"></div>
+    <span class="hint">vertex</span>
+    <input id="vx" type="number" step="0.01" title="Selected vertex X (%)" disabled />
+    <input id="vy" type="number" step="0.01" title="Selected vertex Y (%)" disabled />
+    <span class="pill mono" id="cursorPos">–, –</span>
+    <div class="sep"></div>
+    <button id="zoomOut" title="Zoom out (-)">–</button>
+    <span class="pill mono" id="zoomPill">100%</span>
+    <button id="zoomIn" title="Zoom in (+)">+</button>
+    <button id="fit" title="Fit board (0)">Fit</button>
+    <button id="focus" title="Zoom to this hold (f)">Zoom to hold</button>
+    <div class="sep"></div>
+    <label class="chk"><input type="checkbox" id="showOthers" checked /> others</label>
+    <label class="chk"><input type="checkbox" id="showLabels" /> labels</label>
+    <label class="chk"><input type="checkbox" id="showLoupe" checked /> loupe</label>
+    <span class="grow"></span>
+    <span class="pill" id="saved">auto-save on</span>
+    <button id="link" title="Link app/hold_shapes.json so ctrl+S writes straight to it">Link file…</button>
+    <button id="save" class="primary" title="Save (ctrl+S)">Export JSON</button>
+    <button id="importBtn">Import…</button>
+    <button id="reset" class="warn">Reset all</button>
+    <button id="helpBtn">?</button>
+    <input id="importFile" type="file" accept="application/json" hidden />
+  </div>
 </header>
 
 <div id="stage">
-  <p class="hint" style="margin:0 0 8px">
-    Trace the hold marked by the <b style="color:#f5c842">yellow cross</b>. Click around its edge to drop points
-    (need ≥3). Faint dots = untraced holds, green = traced. Keys: <kbd>n</kbd>/<kbd>p</kbd> hold,
-    <kbd>z</kbd> undo point, <kbd>c</kbd> clear hold. Progress auto-saves to this browser — close and come back any time.
-    Hit <b>Export</b> for the final <code>hold_shapes.json</code>. Hold positions come from the live board and are never changed.
-  </p>
   <div id="frame">
     <img id="board" alt="board" />
-    <svg id="polys" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
-    <div id="markers"></div>
+    <svg id="others" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+    <svg id="cur" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+    <div class="layer" id="dots"></div>
+    <div class="layer" id="handles"></div>
   </div>
 </div>
+
+<div id="loupe">
+  <img id="loupeImg" alt="" />
+  <svg id="loupeSvg" preserveAspectRatio="none"></svg>
+  <div id="loupeCross"></div>
+  <div id="loupeTag"></div>
+</div>
+
+<div id="help" class="hide">
+  <h3>Hold-shape editor</h3>
+  <table>
+    <tr><td><b>Edit mode</b></td><td>Drag a vertex to move it. Hover an edge and a <b>+</b> appears — drag it to insert a vertex there. Drag inside the outline to move the whole shape. Right-click a vertex to delete it. Click another hold's outline to switch to it.</td></tr>
+    <tr><td><b>Draw mode</b></td><td>Click around the hold to append points (need ≥3).</td></tr>
+    <tr><td><kbd>n</kbd> / <kbd>p</kbd></td><td>next / previous hold</td></tr>
+    <tr><td><kbd>e</kbd> / <kbd>d</kbd></td><td>edit / draw mode</td></tr>
+    <tr><td>arrows</td><td>nudge the selected vertex 0.05% — <kbd>shift</kbd> 0.5%, <kbd>alt</kbd> 0.01%. With nothing selected, nudges the whole outline.</td></tr>
+    <tr><td><kbd>tab</kbd> / <kbd>shift+tab</kbd></td><td>select next / previous vertex</td></tr>
+    <tr><td><kbd>del</kbd></td><td>delete the selected vertex</td></tr>
+    <tr><td><kbd>ctrl</kbd>+<kbd>Z</kbd> / <kbd>ctrl</kbd>+<kbd>shift</kbd>+<kbd>Z</kbd></td><td>undo / redo</td></tr>
+    <tr><td><kbd>c</kbd> / <kbd>r</kbd></td><td>clear this outline / revert it to the loaded file</td></tr>
+    <tr><td>wheel</td><td>zoom at the cursor · <kbd>space</kbd>-drag or middle-drag to pan · <kbd>0</kbd> fit · <kbd>f</kbd> zoom to hold</td></tr>
+    <tr><td><kbd>ctrl</kbd>+<kbd>S</kbd></td><td>save (writes straight to the file once you've used <b>Link file…</b>, otherwise downloads)</td></tr>
+  </table>
+  <p class="hint" style="margin:12px 0 0">
+    Outlines are stored as % of the board image, against the live board version in <code>__meta.board_updated_at</code>.
+    Hold positions come from the live board map and are never changed here. Progress auto-saves to this browser;
+    the file on disk only changes when you save.
+  </p>
+  <p style="margin:10px 0 0"><button id="helpClose" class="primary">Close</button></p>
+</div>
+
+<div id="toast"></div>
 
 <script>
 (async function () {
   const $ = id => document.getElementById(id);
-  const frame = $('frame'), polys = $('polys'), markers = $('markers'), board = $('board');
+  const stage = $('stage'), frame = $('frame'), board = $('board');
+  const svgOthers = $('others'), svgCur = $('cur'), dots = $('dots'), handles = $('handles');
   const LS_SHAPES = 'pb_hold_shapes', LS_CUR = 'pb_hold_cur';
 
   // Public Supabase creds (anon key is a public key — safe to embed).
   const SUPA_URL = 'https://uqirowyfqwiceyjznosl.supabase.co';
   const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA';
   const BUCKET = 'board';
+  const APP = '../app/';            // serve the REPO ROOT, open /tools/trace_holds.html
 
   const CROSS = '<svg width="30" height="30" viewBox="0 0 30 30">'
     + '<g stroke="#f5c842" stroke-width="2">'
@@ -91,28 +226,67 @@
     + '<line x1="0" y1="15" x2="10" y2="15"/><line x1="20" y1="15" x2="30" y2="15"/></g>'
     + '<circle cx="15" cy="15" r="1.6" fill="#f5c842"/></svg>';
 
-  // Bundled files live in app/. Serve the REPO ROOT (python -m http.server 8000) and
-  // open http://localhost:8000/tools/trace_holds.html so these relative paths resolve.
-  const APP = '../app/';
+  const HIT = 11;                   // px grab radius for vertices and edges
+  const LOUPE = 220, LOUPE_MAG = 4;
+
   let holdMap = null, imgSrc = APP + 'ProjectBoard.png', imgLabel = 'bundled (fallback)';
-  let holds = [], shapes = {}, cur = 0, meta = null;
+  let holds = [], shapes = {}, baseline = {}, meta = null, liveVersion = null;
+  let cur = 0, mode = 'edit', sel = null, hotVtx = null, hotHold = null, ghost = null;
+  let undoStack = [], redoStack = [], fileHandle = null;
+  let drag = null, spaceDown = false, aspect = 1, scale = 1, fitScale = 1;
 
   const holdNum = h => parseInt(String(h).replace(/[^0-9]/g, ''), 10) || 0;
   const curHold = () => holds[cur];
+  const curPts = () => shapes[curHold()] || [];
   const ptsStr = pts => pts.map(p => p[0] + ',' + p[1]).join(' ');
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const r2 = n => Math.round(n * 100) / 100;
   const tracedCount = () => holds.filter(h => (shapes[h] || []).length >= 3).length;
+  const same = (a, b) => JSON.stringify(a || null) === JSON.stringify(b || null);
+  const changedHolds = () => holds.filter(h => !same(shapes[h], baseline[h]));
+
+  let toastT = 0;
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1600);
+  }
 
   function save() {
     try { localStorage.setItem(LS_SHAPES, JSON.stringify(shapes)); localStorage.setItem(LS_CUR, String(cur)); } catch (e) {}
-    $('saved').textContent = '✓ saved ' + new Date().toLocaleTimeString();
+    $('saved').textContent = '✓ browser ' + new Date().toLocaleTimeString();
   }
 
-  // ── Load the LIVE board image + hold map (board_config), like the app does ──
+  // ── history ────────────────────────────────────────────────────────────────
+  // Every mutation touches exactly one hold, so a snapshot is just that hold's
+  // points — cheap enough to keep a deep stack of.
+  function snapshot(h) { return { h: h, pts: shapes[h] ? clone(shapes[h]) : null, sel: sel }; }
+  function restore(s) {
+    if (s.pts) shapes[s.h] = s.pts; else delete shapes[s.h];
+    const i = holds.indexOf(s.h);
+    if (i >= 0 && i !== cur) { cur = i; renderStatic(); }
+    sel = s.sel;
+  }
+  function push(h) {
+    undoStack.push(snapshot(h || curHold()));
+    if (undoStack.length > 300) undoStack.shift();
+    redoStack.length = 0;
+  }
+  function undo() {
+    if (!undoStack.length) return toast('Nothing to undo');
+    const s = undoStack.pop(); redoStack.push(snapshot(s.h)); restore(s); render(); renderStatic();
+  }
+  function redo() {
+    if (!redoStack.length) return toast('Nothing to redo');
+    const s = redoStack.pop(); undoStack.push(snapshot(s.h)); restore(s); render(); renderStatic();
+  }
+
+  // ── load the LIVE board image + hold map (board_config), like the app does ──
   try {
     const r = await fetch(`${SUPA_URL}/rest/v1/board_config?wall=eq.HangoutPortland&select=image_path,updated_at,hold_map`,
       { headers: { apikey: ANON, Authorization: 'Bearer ' + ANON } });
     const row = (await r.json())[0];
     if (row) {
+      liveVersion = row.updated_at || null;
       if (row.image_path) {
         const ver = row.updated_at ? `?v=${encodeURIComponent(row.updated_at)}` : '';
         imgSrc = `${SUPA_URL}/storage/v1/object/public/${BUCKET}/${row.image_path}${ver}`;
@@ -126,7 +300,7 @@
     catch (e) { holdMap = null; }
   }
   board.src = imgSrc;
-  $('imgLabel').textContent = imgLabel;
+  $('loupeImg').src = imgSrc;
   holds = holdMap ? Object.keys(holdMap).sort((a, b) => holdNum(a) - holdNum(b)) : [];
   // Without a map there is no hold to point the crosshair at, and render() would
   // throw on holdMap[undefined].x — stop here rather than leaving a dead page.
@@ -144,121 +318,565 @@
   try { const ls = JSON.parse(localStorage.getItem(LS_SHAPES) || 'null'); if (ls && typeof ls === 'object') lsShapes = ls; } catch (e) {}
   try { const r = await fetch(APP + 'hold_shapes.json', { cache: 'no-cache' }); if (r.ok) { const j = await r.json(); if (j && typeof j === 'object') fileShapes = j; } } catch (e) {}
   let shapeSrc = 'browser';
+  // The browser copy never holds __meta (it is stripped below and re-attached on
+  // save), so compare outlines only — otherwise the prompt fires on every reload.
+  const noMeta = o => { const c = Object.assign({}, o); delete c.__meta; return JSON.stringify(c); };
   if (lsShapes && Object.keys(lsShapes).length) {
     shapes = lsShapes;
-    if (fileShapes && JSON.stringify(fileShapes) !== JSON.stringify(lsShapes)) {
+    if (fileShapes && noMeta(fileShapes) !== noMeta(lsShapes)) {
       const msg = 'hold_shapes.json on disk differs from the progress saved in this browser.'
         + String.fromCharCode(10, 10)
         + 'OK = load the file (discards unexported browser edits)'
         + String.fromCharCode(10)
         + 'Cancel = keep the browser copy';
-      if (confirm(msg)) {
-        shapes = fileShapes; shapeSrc = 'file';
-      } else { shapeSrc = 'browser (file differs!)'; }
+      if (confirm(msg)) { shapes = fileShapes; shapeSrc = 'file'; }
+      else { shapeSrc = 'browser (file differs!)'; }
     }
-  } else if (fileShapes) {
-    shapes = fileShapes; shapeSrc = 'file';
-  }
+  } else if (fileShapes) { shapes = fileShapes; shapeSrc = 'file'; }
   meta = shapes.__meta || (fileShapes && fileShapes.__meta) || null;
-  delete shapes.__meta;                       // kept aside; re-attached on export
+  delete shapes.__meta;                       // kept aside; re-attached on save
+  // "Changed" is measured against the file on disk — that is what a save rewrites.
+  baseline = fileShapes ? clone(fileShapes) : clone(shapes);
+  delete baseline.__meta;
   $('imgLabel').textContent = imgLabel + ' · shapes: ' + shapeSrc;
-  cur = Math.min(holds.length - 1, Math.max(0, parseInt(localStorage.getItem(LS_CUR) || '0', 10) || 0));
 
-  // jump dropdown
+  // Outlines only fit the board version they were traced against; the app hides
+  // them outright when the versions differ, so say so loudly here too.
+  const traced = meta && meta.board_updated_at;
+  const vp = $('versionPill');
+  if (traced && liveVersion && traced !== liveVersion) {
+    vp.hidden = false; vp.className = 'pill bad';
+    vp.textContent = 'board version MISMATCH — traced ' + traced.slice(0, 10) + ', live ' + liveVersion.slice(0, 10);
+  } else if (traced && liveVersion) {
+    vp.hidden = false; vp.className = 'pill good'; vp.textContent = 'board version ✓';
+  } else if (!traced) {
+    vp.hidden = false; vp.className = 'pill bad'; vp.textContent = 'no __meta.board_updated_at — app will ignore these';
+  }
+
+  cur = Math.min(holds.length - 1, Math.max(0, parseInt(localStorage.getItem(LS_CUR) || '0', 10) || 0));
   $('jump').innerHTML = holds.map((h, i) => `<option value="${i}">${h} (${holdNum(h)})</option>`).join('');
 
-  function render(scroll) {
+  // ── geometry helpers (all in board % space unless noted) ───────────────────
+  const rect = () => frame.getBoundingClientRect();
+  function toPct(clientX, clientY) {
+    const r = rect();
+    return [((clientX - r.left) / r.width) * 100, ((clientY - r.top) / r.height) * 100];
+  }
+  // % → px scale factors, so hit radii stay a constant number of screen pixels.
+  const pxPerX = () => rect().width / 100, pxPerY = () => rect().height / 100;
+  function distPx(p, x, y) {
+    const dx = (p[0] - x) * pxPerX(), dy = (p[1] - y) * pxPerY();
+    return Math.hypot(dx, dy);
+  }
+  // Closest point on segment a→b to (x,y), measured in screen px.
+  function projectPx(a, b, x, y) {
+    const sx = pxPerX(), sy = pxPerY();
+    const ax = a[0] * sx, ay = a[1] * sy, bx = b[0] * sx, by = b[1] * sy;
+    const px = x * sx, py = y * sy;
+    const vx = bx - ax, vy = by - ay;
+    const len2 = vx * vx + vy * vy;
+    let t = len2 ? ((px - ax) * vx + (py - ay) * vy) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const cx = ax + vx * t, cy = ay + vy * t;
+    return { d: Math.hypot(px - cx, py - cy), pt: [cx / sx, cy / sy], t: t };
+  }
+  function inPoly(pts, x, y) {
+    let hit = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, yi] = pts[i], [xj, yj] = pts[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+    }
+    return hit;
+  }
+  function bbox(pts) {
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+  }
+
+  // ── zoom / pan ─────────────────────────────────────────────────────────────
+  function stageBox() { return { w: stage.clientWidth - 20, h: stage.clientHeight - 20 }; }
+  function computeFit() {
+    const b = stageBox();
+    fitScale = 1;
+    frame.style.width = Math.max(120, Math.min(b.w, b.h * aspect)) + 'px';
+  }
+  function setScale(next, anchorX, anchorY) {
+    const b = stageBox();
+    const fitW = Math.max(120, Math.min(b.w, b.h * aspect));
+    scale = Math.max(0.5, Math.min(14, next));
+    const r = rect();
+    const ax = anchorX == null ? r.left + r.width / 2 : anchorX;
+    const ay = anchorY == null ? r.top + r.height / 2 : anchorY;
+    const fx = (ax - r.left) / r.width, fy = (ay - r.top) / r.height;
+    const newW = fitW * scale;
+    frame.style.width = newW + 'px';
+    const newH = newW / aspect;
+    const sr = stage.getBoundingClientRect();
+    stage.scrollLeft = frame.offsetLeft + fx * newW - (ax - sr.left);
+    stage.scrollTop = frame.offsetTop + fy * newH - (ay - sr.top);
+    $('zoomPill').textContent = Math.round(scale * 100) + '%';
+    render();
+  }
+  function fit() { scale = 1; computeFit(); $('zoomPill').textContent = '100%'; render(); }
+  function zoomToHold(h) {
+    const pts = shapes[h], pos = holdMap[h];
+    const b = pts && pts.length >= 3 ? bbox(pts)
+      : { x0: pos.x - 2, x1: pos.x + 2, y0: pos.y - 2, y1: pos.y + 2 };
+    const sb = stageBox();
+    const fitW = Math.max(120, Math.min(sb.w, sb.h * aspect));
+    const wPct = Math.max(2.5, (b.x1 - b.x0) * 2.4), hPct = Math.max(2.5, (b.y1 - b.y0) * 2.4);
+    // scale so the padded hold box fills the stage in its tighter dimension
+    const s = Math.min((sb.w / fitW) * (100 / wPct), (sb.h / (fitW / aspect)) * (100 / hPct));
+    scale = Math.max(0.5, Math.min(14, s));
+    const newW = fitW * scale, newH = newW / aspect;
+    frame.style.width = newW + 'px';
+    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+    stage.scrollLeft = frame.offsetLeft + (cx / 100) * newW - stage.clientWidth / 2;
+    stage.scrollTop = frame.offsetTop + (cy / 100) * newH - stage.clientHeight / 2;
+    $('zoomPill').textContent = Math.round(scale * 100) + '%';
+    render();
+  }
+  function centreOnHold(h) {
+    const pos = holdMap[h], r = rect();
+    stage.scrollLeft = frame.offsetLeft + (pos.x / 100) * r.width - stage.clientWidth / 2;
+    stage.scrollTop = frame.offsetTop + (pos.y / 100) * r.height - stage.clientHeight / 2;
+  }
+
+  // ── rendering ──────────────────────────────────────────────────────────────
+  // Split in two: renderStatic() redraws the other 188 holds (only when the
+  // current hold or a toggle changes), render() redraws just the hold being
+  // edited, so dragging a vertex stays smooth.
+  function renderStatic() {
     const h = curHold();
-    // polygons
-    let ps = '';
-    holds.forEach(g => { if (g === h) return; const pts = shapes[g]; if (pts && pts.length >= 2) ps += `<polygon class="saved-poly" points="${ptsStr(pts)}"/>`; });
-    const cpts = shapes[h] || [];
-    if (cpts.length >= 2) ps += `<polygon class="cur-poly" points="${ptsStr(cpts)}"/>`;
-    polys.innerHTML = ps;
-    // markers (fixed px)
-    let ms = '';
-    holds.forEach(g => { if (g === h) return; const p = holdMap[g]; const done = (shapes[g] || []).length >= 3; ms += `<div class="gdot ${done ? 'done' : ''}" style="left:${p.x}%;top:${p.y}%"></div>`; });
-    cpts.forEach(p => { ms += `<div class="vtx" style="left:${p[0]}%;top:${p[1]}%"></div>`; });
-    const ch = holdMap[h];
-    ms += `<div class="xhair" id="xhair" style="left:${ch.x}%;top:${ch.y}%">${CROSS}</div>`;
-    ms += `<div class="xlabel" style="left:${ch.x}%;top:${ch.y}%">${h} (${holdNum(h)})</div>`;
-    markers.innerHTML = ms;
-    // header
-    $('curLabel').textContent = `${h} · hold ${cur + 1}/${holds.length} · ${cpts.length} pts`;
-    $('progress').textContent = `${tracedCount()} / ${holds.length} traced`;
+    const showOthers = $('showOthers').checked, showLabels = $('showLabels').checked;
+    let ps = '', ds = '';
+    if (showOthers) {
+      holds.forEach(g => {
+        if (g === h) return;
+        const pts = shapes[g];
+        if (pts && pts.length >= 2) ps += `<polygon class="poly${g === hotHold ? ' hot' : ''}" points="${ptsStr(pts)}"/>`;
+        const p = holdMap[g];
+        if (!p) return;
+        const done = (pts || []).length >= 3, chg = !same(pts, baseline[g]);
+        ds += `<div class="gdot ${chg ? 'changed' : (done ? 'done' : '')}" style="left:${p.x}%;top:${p.y}%"></div>`;
+        if (showLabels) ds += `<div class="olabel" style="left:${p.x}%;top:${p.y - 1.4}%">${holdNum(g)}</div>`;
+      });
+    }
+    svgOthers.innerHTML = ps;
+    dots.innerHTML = ds;
     $('jump').value = String(cur);
-    if (scroll) { const x = $('xhair'); if (x) x.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' }); }
+  }
+
+  function render() {
+    const h = curHold(), pts = curPts();
+    svgCur.innerHTML = pts.length >= 2
+      ? `<polygon class="poly${pts.length < 3 ? ' thin' : ''}" points="${ptsStr(pts)}"/>` : '';
+    let ms = '';
+    pts.forEach((p, i) => {
+      const cls = i === sel ? ' sel' : (i === hotVtx ? ' hot' : '');
+      ms += `<div class="vtx${cls}" data-i="${i}" style="left:${p[0]}%;top:${p[1]}%"></div>`;
+    });
+    if (ghost) ms += `<div class="ghost" style="left:${ghost.pt[0]}%;top:${ghost.pt[1]}%"></div>`;
+    const ch = holdMap[h];
+    if (ch) {
+      ms += `<div class="xhair" style="left:${ch.x}%;top:${ch.y}%">${CROSS}</div>`;
+      ms += `<div class="xlabel" style="left:${ch.x}%;top:${ch.y}%">${h} (${holdNum(h)})</div>`;
+    }
+    handles.innerHTML = ms;
+
+    $('curLabel').textContent = `${h} · ${cur + 1}/${holds.length} · ${pts.length} pts`;
+    const v = sel != null && pts[sel];
+    $('vx').disabled = $('vy').disabled = !v;
+    $('vx').value = v ? pts[sel][0] : '';
+    $('vy').value = v ? pts[sel][1] : '';
+    $('undo').disabled = !undoStack.length;
+    $('redo').disabled = !redoStack.length;
+    scheduleStatus();
+  }
+
+  // Comparing all 189 outlines and writing localStorage is far too heavy to do on
+  // every pointermove, so the counters lag a drag by a beat and settle when it stops.
+  let statusT = 0;
+  function scheduleStatus() { clearTimeout(statusT); statusT = setTimeout(status, 150); }
+  function status() {
+    $('progress').textContent = `${tracedCount()} / ${holds.length} traced`;
+    const chg = changedHolds();
+    $('changes').textContent = chg.length ? `${chg.length} changed` : 'no changes';
+    $('changes').className = 'pill' + (chg.length ? ' cur' : '');
+    $('changedJump').innerHTML = chg.length
+      ? '<option value="">Changed: ' + chg.length + '</option>'
+        + chg.map(g => `<option value="${holds.indexOf(g)}">${g}</option>`).join('')
+      : '<option value="">Changed: none</option>';
+    $('revert').disabled = same(shapes[curHold()], baseline[curHold()]);
     save();
   }
 
-  function goTo(idx) { cur = (idx + holds.length) % holds.length; render(true); }
+  function goTo(idx, keepView) {
+    cur = (idx + holds.length) % holds.length;
+    sel = null; hotVtx = null; ghost = null; hotHold = null;
+    renderStatic(); render();
+    if (!keepView) { if (scale > 1.6) centreOnHold(curHold()); }
+  }
   function nextTodo() {
-    for (let i = 1; i <= holds.length; i++) { const idx = (cur + i) % holds.length; if ((shapes[holds[idx]] || []).length < 3) return goTo(idx); }
-    alert('All holds have ≥3 points 🎉');
+    for (let i = 1; i <= holds.length; i++) {
+      const idx = (cur + i) % holds.length;
+      if ((shapes[holds[idx]] || []).length < 3) return goTo(idx);
+    }
+    toast('All holds have ≥3 points 🎉');
   }
 
-  frame.addEventListener('click', e => {
-    const r = frame.getBoundingClientRect();
-    const x = +(((e.clientX - r.left) / r.width) * 100).toFixed(2);
-    const y = +(((e.clientY - r.top) / r.height) * 100).toFixed(2);
-    (shapes[curHold()] = shapes[curHold()] || []).push([x, y]);
-    render(false);
+  // ── loupe ──────────────────────────────────────────────────────────────────
+  function drawLoupe(x, y) {
+    if (!$('showLoupe').checked) return;
+    const r = rect();
+    const w = r.width * LOUPE_MAG, hh = r.height * LOUPE_MAG;
+    const li = $('loupeImg');
+    li.style.width = w + 'px'; li.style.height = hh + 'px';
+    li.style.left = (LOUPE / 2 - (x / 100) * w) + 'px';
+    li.style.top = (LOUPE / 2 - (y / 100) * hh) + 'px';
+    const wPct = (LOUPE / LOUPE_MAG) / r.width * 100;
+    const hPct = (LOUPE / LOUPE_MAG) / r.height * 100;
+    const ls = $('loupeSvg');
+    ls.setAttribute('viewBox', `${x - wPct / 2} ${y - hPct / 2} ${wPct} ${hPct}`);
+    let s = '';
+    if ($('showOthers').checked) {
+      holds.forEach(g => {
+        if (g === curHold()) return;
+        const pts = shapes[g];
+        if (!pts || pts.length < 3) return;
+        const b = bbox(pts);
+        if (b.x1 < x - wPct || b.x0 > x + wPct || b.y1 < y - hPct || b.y0 > y + hPct) return;
+        s += `<polygon class="other" points="${ptsStr(pts)}"/>`;
+      });
+    }
+    const cp = curPts();
+    if (cp.length >= 2) s += `<polygon class="poly" points="${ptsStr(cp)}"/>`;
+    ls.innerHTML = s;
+    $('loupeTag').textContent = x.toFixed(2) + ', ' + y.toFixed(2);
+  }
+
+  // ── pointer interaction ────────────────────────────────────────────────────
+  function hitVertex(x, y) {
+    const pts = curPts();
+    let best = -1, bestD = HIT;
+    pts.forEach((p, i) => { const d = distPx(p, x, y); if (d <= bestD) { bestD = d; best = i; } });
+    return best >= 0 ? best : null;
+  }
+  function hitEdge(x, y) {
+    const pts = curPts();
+    if (pts.length < 2) return null;
+    let best = null;
+    for (let i = 0; i < pts.length; i++) {
+      const j = (i + 1) % pts.length;
+      const pr = projectPx(pts[i], pts[j], x, y);
+      if (pr.d <= HIT && (!best || pr.d < best.d)) best = { d: pr.d, pt: pr.pt, after: i };
+    }
+    return best;
+  }
+  function hitOtherHold(x, y) {
+    if (!$('showOthers').checked) return null;
+    for (const g of holds) {
+      if (g === curHold()) continue;
+      const pts = shapes[g];
+      if (pts && pts.length >= 3 && inPoly(pts, x, y)) return g;
+    }
+    return null;
+  }
+
+  frame.addEventListener('pointerdown', e => {
+    const [x, y] = toPct(e.clientX, e.clientY);
+    // pan: space, middle button, or right button on empty space
+    if (spaceDown || e.button === 1) {
+      drag = { type: 'pan', sx: e.clientX, sy: e.clientY, sl: stage.scrollLeft, st: stage.scrollTop };
+      stage.classList.add('grabbing');
+      frame.setPointerCapture(e.pointerId); e.preventDefault(); return;
+    }
+    if (e.button === 2) return;                    // handled in contextmenu
+    if (e.button !== 0) return;
+
+    const vi = hitVertex(x, y);
+    if (vi != null) {
+      push(); sel = vi;
+      drag = { type: 'vtx', i: vi, moved: false };
+      frame.setPointerCapture(e.pointerId); render(); return;
+    }
+    if (mode === 'edit') {
+      const ed = hitEdge(x, y);
+      if (ed) {
+        push();
+        const pts = shapes[curHold()];
+        pts.splice(ed.after + 1, 0, [r2(x), r2(y)]);
+        sel = ed.after + 1; ghost = null;
+        drag = { type: 'vtx', i: sel, moved: true };
+        frame.setPointerCapture(e.pointerId); render(); return;
+      }
+      const pts = curPts();
+      if (pts.length >= 3 && inPoly(pts, x, y)) {
+        push();
+        drag = { type: 'poly', x: x, y: y, start: clone(pts) };
+        frame.setPointerCapture(e.pointerId); return;
+      }
+      const other = hitOtherHold(x, y);
+      if (other) { goTo(holds.indexOf(other), true); return; }
+      sel = null; render(); return;
+    }
+    // draw mode: append
+    push();
+    (shapes[curHold()] = shapes[curHold()] || []).push([r2(x), r2(y)]);
+    sel = shapes[curHold()].length - 1;
+    render();
   });
 
-  $('prev').onclick = () => goTo(cur - 1);
-  $('next').onclick = () => goTo(cur + 1);
-  $('nextTodo').onclick = nextTodo;
-  $('undo').onclick = () => { (shapes[curHold()] || []).pop(); render(false); };
-  $('clear').onclick = () => { delete shapes[curHold()]; render(false); };
-  $('jump').onchange = e => goTo(parseInt(e.target.value, 10));
+  frame.addEventListener('pointermove', e => {
+    const [x, y] = toPct(e.clientX, e.clientY);
+    $('cursorPos').textContent = x.toFixed(2) + ', ' + y.toFixed(2);
+    drawLoupe(x, y);
 
+    if (drag && drag.type === 'pan') {
+      stage.scrollLeft = drag.sl - (e.clientX - drag.sx);
+      stage.scrollTop = drag.st - (e.clientY - drag.sy);
+      return;
+    }
+    if (drag && drag.type === 'vtx') {
+      shapes[curHold()][drag.i] = [r2(x), r2(y)];
+      drag.moved = true; render(); return;
+    }
+    if (drag && drag.type === 'poly') {
+      const dx = x - drag.x, dy = y - drag.y;
+      shapes[curHold()] = drag.start.map(p => [r2(p[0] + dx), r2(p[1] + dy)]);
+      render(); return;
+    }
+    // hover feedback
+    const vi = hitVertex(x, y);
+    const ed = vi == null && mode === 'edit' ? hitEdge(x, y) : null;
+    const oh = vi == null && !ed && mode === 'edit' ? hitOtherHold(x, y) : null;
+    const changedHot = oh !== hotHold;
+    if (vi !== hotVtx || JSON.stringify(ed && ed.pt) !== JSON.stringify(ghost && ghost.pt)) {
+      hotVtx = vi; ghost = ed; render();
+    }
+    if (changedHot) { hotHold = oh; renderStatic(); }
+    frame.style.cursor = vi != null ? 'move' : ed ? 'copy' : oh ? 'pointer' : (mode === 'draw' ? 'crosshair' : 'default');
+  });
+
+  function endDrag(e) {
+    if (!drag) return;
+    if (drag.type === 'pan') stage.classList.remove('grabbing');
+    // a vertex click that never moved is not an edit — drop its history entry
+    if (drag.type === 'vtx' && !drag.moved) undoStack.pop();
+    drag = null;
+    try { frame.releasePointerCapture(e.pointerId); } catch (err) {}
+    render();
+  }
+  frame.addEventListener('pointerup', endDrag);
+  frame.addEventListener('pointercancel', endDrag);
+
+  frame.addEventListener('contextmenu', e => {
+    const [x, y] = toPct(e.clientX, e.clientY);
+    const vi = hitVertex(x, y);
+    if (vi == null) return;                        // let the browser menu through
+    e.preventDefault();
+    push();
+    shapes[curHold()].splice(vi, 1);
+    if (!shapes[curHold()].length) delete shapes[curHold()];
+    sel = null; hotVtx = null;
+    render();
+  });
+
+  stage.addEventListener('wheel', e => {
+    if (e.ctrlKey || !e.shiftKey) {                // plain wheel zooms; shift+wheel scrolls
+      e.preventDefault();
+      setScale(scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX, e.clientY);
+    }
+  }, { passive: false });
+
+  // ── keyboard ───────────────────────────────────────────────────────────────
+  function nudge(dx, dy) {
+    const pts = shapes[curHold()];
+    if (!pts || !pts.length) return;
+    push();
+    if (sel != null && pts[sel]) pts[sel] = [r2(pts[sel][0] + dx), r2(pts[sel][1] + dy)];
+    else shapes[curHold()] = pts.map(p => [r2(p[0] + dx), r2(p[1] + dy)]);
+    render();
+  }
   document.addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-    if (e.key === 'n' || e.key === 'Enter') { goTo(cur + 1); e.preventDefault(); }
-    else if (e.key === 'p') goTo(cur - 1);
-    else if (e.key === 'z' || e.key === 'Backspace') { (shapes[curHold()] || []).pop(); render(false); e.preventDefault(); }
-    else if (e.key === 'c') { delete shapes[curHold()]; render(false); }
+    const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
+    if (e.code === 'Space' && !typing) { spaceDown = true; stage.classList.add('panning'); e.preventDefault(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); doSave(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault(); e.shiftKey ? redo() : undo(); return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+    if (typing) return;
+
+    const step = e.shiftKey ? 0.5 : e.altKey ? 0.01 : 0.05;
+    switch (e.key) {
+      case 'ArrowLeft':  nudge(-step, 0); e.preventDefault(); break;
+      case 'ArrowRight': nudge(step, 0); e.preventDefault(); break;
+      case 'ArrowUp':    nudge(0, -step); e.preventDefault(); break;
+      case 'ArrowDown':  nudge(0, step); e.preventDefault(); break;
+      case 'Tab': {
+        const n = curPts().length;
+        if (n) { sel = sel == null ? 0 : (sel + (e.shiftKey ? -1 : 1) + n) % n; render(); }
+        e.preventDefault(); break;
+      }
+      case 'Delete': case 'Backspace': {
+        const pts = shapes[curHold()];
+        if (!pts || !pts.length) break;
+        push();
+        if (sel != null && pts[sel]) { pts.splice(sel, 1); sel = null; } else pts.pop();
+        if (!pts.length) delete shapes[curHold()];
+        render(); e.preventDefault(); break;
+      }
+      case 'Escape':
+        if (!$('help').classList.contains('hide')) $('help').classList.add('hide');
+        else { sel = null; render(); }
+        break;
+      case 'n': goTo(cur + 1); break;
+      case 'p': goTo(cur - 1); break;
+      case 'e': setMode('edit'); break;
+      case 'd': setMode('draw'); break;
+      case 'c': clearHold(); break;
+      case 'r': revertHold(); break;
+      case 'f': zoomToHold(curHold()); break;
+      case '0': fit(); break;
+      case '+': case '=': setScale(scale * 1.25); break;
+      case '-': setScale(scale / 1.25); break;
+      case '?': $('help').classList.toggle('hide'); break;
+    }
+  });
+  document.addEventListener('keyup', e => {
+    if (e.code === 'Space') { spaceDown = false; stage.classList.remove('panning', 'grabbing'); }
   });
 
-  function sizeFrame() {
-    const base = window.innerWidth - 28;
-    frame.style.width = (base * parseFloat($('zoom').value)) + 'px';
+  // ── actions ────────────────────────────────────────────────────────────────
+  function setMode(m) {
+    mode = m; ghost = null;
+    $('modeEdit').classList.toggle('on', m === 'edit');
+    $('modeDraw').classList.toggle('on', m === 'draw');
+    render();
   }
-  $('zoom').oninput = sizeFrame;
-  window.addEventListener('resize', sizeFrame);
-  board.addEventListener('load', sizeFrame);
-  sizeFrame();
-
-  $('export').onclick = () => {
+  function clearHold() {
+    if (!shapes[curHold()]) return;
+    push(); delete shapes[curHold()]; sel = null; render(); toast('Cleared ' + curHold());
+  }
+  function revertHold() {
+    const h = curHold();
+    if (same(shapes[h], baseline[h])) return toast('Already matches the file');
+    push();
+    if (baseline[h]) shapes[h] = clone(baseline[h]); else delete shapes[h];
+    sel = null; render(); toast('Reverted ' + h + ' to the file');
+  }
+  function payload() {
     const out = {};
     // __meta.board_updated_at tells the app which board these were traced against;
     // drop it and the app disables the shape overlay entirely.
     if (meta) out.__meta = meta;
     Object.keys(shapes).forEach(h => { if ((shapes[h] || []).length >= 3) out[h] = shapes[h]; });
-    const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
+    return out;
+  }
+  function download() {
+    const blob = new Blob([JSON.stringify(payload())], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = 'hold_shapes.json'; a.click();
     URL.revokeObjectURL(a.href);
+    toast('Downloaded — copy it over app/hold_shapes.json');
+  }
+  async function doSave() {
+    if (!fileHandle) return download();
+    try {
+      if (fileHandle.requestPermission && await fileHandle.requestPermission({ mode: 'readwrite' }) !== 'granted') {
+        return toast('Write permission denied');
+      }
+      const w = await fileHandle.createWritable();
+      await w.write(JSON.stringify(payload()));
+      await w.close();
+      baseline = clone(payload()); delete baseline.__meta;
+      render();
+      toast('Saved to ' + fileHandle.name);
+    } catch (err) { toast('Save failed: ' + err.message); }
+  }
+
+  $('prev').onclick = () => goTo(cur - 1);
+  $('next').onclick = () => goTo(cur + 1);
+  $('nextTodo').onclick = nextTodo;
+  $('jump').onchange = e => { goTo(parseInt(e.target.value, 10)); e.target.blur(); };
+  $('changedJump').onchange = e => { if (e.target.value !== '') goTo(parseInt(e.target.value, 10)); e.target.blur(); };
+  $('modeEdit').onclick = () => setMode('edit');
+  $('modeDraw').onclick = () => setMode('draw');
+  $('undo').onclick = undo;
+  $('redo').onclick = redo;
+  $('clear').onclick = clearHold;
+  $('revert').onclick = revertHold;
+  $('zoomIn').onclick = () => setScale(scale * 1.25);
+  $('zoomOut').onclick = () => setScale(scale / 1.25);
+  $('fit').onclick = fit;
+  $('focus').onclick = () => zoomToHold(curHold());
+  $('showOthers').onchange = () => { renderStatic(); render(); };
+  $('showLabels').onchange = renderStatic;
+  $('showLoupe').onchange = e => $('loupe').classList.toggle('hide', !e.target.checked);
+  $('helpBtn').onclick = () => $('help').classList.toggle('hide');
+  $('helpClose').onclick = () => $('help').classList.add('hide');
+  $('save').onclick = doSave;
+  $('link').onclick = async () => {
+    if (!window.showOpenFilePicker) return toast('This browser has no file access — use Export instead');
+    try {
+      const [fh] = await window.showOpenFilePicker({
+        types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]
+      });
+      fileHandle = fh;
+      $('save').textContent = 'Save → ' + fh.name;
+      $('link').textContent = 'Linked: ' + fh.name;
+      toast('Linked — ctrl+S writes straight to it');
+    } catch (err) { /* picker cancelled */ }
   };
+
+  function applyVertexInput() {
+    const pts = shapes[curHold()];
+    if (sel == null || !pts || !pts[sel]) return;
+    const x = parseFloat($('vx').value), y = parseFloat($('vy').value);
+    if (!isFinite(x) || !isFinite(y)) return;
+    push(); pts[sel] = [r2(x), r2(y)]; render();
+  }
+  $('vx').onchange = applyVertexInput;
+  $('vy').onchange = applyVertexInput;
+
   $('importBtn').onclick = () => $('importFile').click();
   $('importFile').onchange = e => {
     const f = e.target.files[0]; if (!f) return;
     const rd = new FileReader();
     rd.onload = () => {
       try {
-        shapes = JSON.parse(rd.result) || {};
-        if (shapes.__meta) { meta = shapes.__meta; delete shapes.__meta; }
-        render(false);
+        const j = JSON.parse(rd.result) || {};
+        if (j.__meta) { meta = j.__meta; delete j.__meta; }
+        shapes = j; baseline = clone(j);
+        undoStack = []; redoStack = []; sel = null;
+        renderStatic(); render(); toast('Imported ' + f.name);
       } catch (err) { alert('Bad JSON'); }
     };
     rd.readAsText(f);
+    e.target.value = '';
   };
   $('reset').onclick = () => {
-    if (!confirm('Erase ALL traced shapes from this browser? (Export first if you want to keep them.)')) return;
-    shapes = {}; try { localStorage.removeItem(LS_SHAPES); } catch (e) {} render(false);
+    if (!confirm('Erase ALL outlines from this browser? (Save first if you want to keep them.)')) return;
+    push(); shapes = {}; try { localStorage.removeItem(LS_SHAPES); } catch (e) {}
+    sel = null; renderStatic(); render();
   };
 
-  render(true);
+  // ── boot ───────────────────────────────────────────────────────────────────
+  function onImg() {
+    aspect = (board.naturalWidth || 3) / (board.naturalHeight || 4);
+    fit();
+    renderStatic(); render();
+    if (scale > 1.6) centreOnHold(curHold());
+  }
+  board.addEventListener('load', onImg);
+  board.addEventListener('error', () => {
+    $('imgLabel').textContent = imgLabel + ' — IMAGE FAILED TO LOAD';
+    aspect = 3 / 4; fit(); renderStatic(); render();
+  });
+  if (board.complete && board.naturalWidth) onImg();
+  window.addEventListener('resize', () => { setScale(scale); });
+  renderStatic(); render();
 })();
 </script>
 </body>
