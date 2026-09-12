@@ -224,6 +224,8 @@
   <h3>Sign in to publish</h3>
   <p class="hint" style="margin:0 0 12px">Your Project Board admin account. Publishing writes the outlines to
     the live board; everyone picks them up on their next load. Nothing else on this page needs a sign-in.</p>
+  <p style="margin:0 0 12px"><button type="button" class="primary" id="siGoogle">Sign in with Google</button></p>
+  <p class="hint" style="margin:0 0 8px">or with an email and password:</p>
   <form id="signinForm" autocomplete="on">
     <p style="margin:0 0 8px"><input id="siEmail" type="email" placeholder="email" autocomplete="username" required /></p>
     <p style="margin:0 0 12px"><input id="siPass" type="password" placeholder="password" autocomplete="current-password" required /></p>
@@ -872,6 +874,41 @@
   }
   try { session = JSON.parse(localStorage.getItem(LS_SESSION) || 'null'); } catch (e) { session = null; }
   setAccount();
+
+  // Google sign-in: Supabase's implicit OAuth flow. The browser goes to Google
+  // and comes back to this same page with the tokens in the URL hash. The page's
+  // address must be in Supabase → Auth → URL Configuration → Redirect URLs
+  // (http://127.0.0.1:8123/**), or Supabase sends the tokens to the live site instead.
+  // Traced progress is already auto-saved, so leaving the page loses nothing.
+  $('siGoogle').onclick = () => {
+    location.href = `${SUPA_URL}/auth/v1/authorize?provider=google&redirect_to=`
+      + encodeURIComponent(location.origin + location.pathname);
+  };
+  const back = new URLSearchParams(location.hash.slice(1));
+  if (back.has('access_token') || back.has('error')) {
+    history.replaceState(null, '', location.pathname + location.search);   // tokens out of the address bar
+    if (back.has('error')) {
+      toast('Google sign-in failed: ' + (back.get('error_description') || back.get('error')));
+    } else {
+      try {
+        const at = back.get('access_token');
+        const r = await fetch(`${SUPA_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: 'Bearer ' + at } });
+        const u = await r.json();
+        if (!r.ok) throw new Error(u.msg || u.message || ('status ' + r.status));
+        const exp = parseInt(back.get('expires_at'), 10);
+        session = {
+          access_token: at, refresh_token: back.get('refresh_token'),
+          expires_at: exp ? exp * 1000 : Date.now() + (parseInt(back.get('expires_in'), 10) || 3600) * 1000,
+          email: u.email, uid: u.id
+        };
+        saveSession();
+        await checkAdmin();
+        toast(session.is_admin ? 'Signed in as ' + session.email : 'Signed in — but this account is not an admin');
+      } catch (err) {
+        toast('Google sign-in failed: ' + err.message);
+      }
+    }
+  }
 
   async function authPost(grant, body) {
     const r = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=${grant}`, {
