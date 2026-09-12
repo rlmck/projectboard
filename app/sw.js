@@ -12,7 +12,7 @@
 // client the previous file for a whole load.
 // Bump CACHE whenever the asset list changes so old caches are cleared.
 
-const CACHE = 'pb-v84';
+const CACHE = 'pb-v85';
 // The app shell is precached as './' only (Cloudflare 307s /index.html -> /; the
 // navigate branch below keeps the shell under './'). precache() makes any other
 // redirected entry, such as privacy.html, safe to serve offline.

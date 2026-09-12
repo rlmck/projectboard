@@ -113,6 +113,15 @@
             background: var(--panel); border: 1px solid var(--btn-line); border-radius: 12px;
             padding: 18px 22px; width: 330px; box-shadow: 0 20px 60px rgba(0,0,0,.7); }
   #signin.hide { display: none; }
+  #preview { position: fixed; inset: 0; z-index: 40; background: #000; display: flex; flex-direction: column; }
+  #preview.hide { display: none; }
+  #preview .pvbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--panel);
+                    border-bottom: 1px solid var(--btn-line); }
+  #preview .hint { margin: 0; }
+  #pvFrame { flex: 1; width: 100%; border: 0; background: #000; }
+  input[type=range]#smooth { width: 90px; vertical-align: middle; }
+  #smoothVal { min-width: 38px; text-align: center; }
+  #smoothVal.bad { background: #3b2a0b; border-color: #6b4d12; color: #fcd68a; }
   #signin h3 { margin: 0 0 8px; font-size: 14px; }
   #signin input { width: 100%; background: #0d1117; color: var(--ink); border: 1px solid var(--btn-line);
                   border-radius: 7px; padding: 8px 10px; font: inherit; }
@@ -165,11 +174,13 @@
     <div class="sep"></div>
     <label class="chk"><input type="checkbox" id="showOthers" checked /> others</label>
     <label class="chk"><input type="checkbox" id="showLabels" /> labels</label>
-    <label class="chk" title="Draw outlines as smooth curves, as the app does"><input type="checkbox" id="showSmooth" checked /> smooth</label>
+    <label class="chk" title="How rounded the outlines are drawn: 0 = straight lines, 1 = fully rounded. Goes live with Publish.">round
+      <input type="range" id="smooth" min="0" max="1" step="0.05" /> <span class="pill mono" id="smoothVal">0.70</span></label>
     <label class="chk"><input type="checkbox" id="showLoupe" checked /> loupe</label>
     <span class="grow"></span>
     <span class="pill" id="saved">auto-save on</span>
     <span class="pill" id="account" title="Publishing needs an admin sign-in">not signed in</span>
+    <button id="previewBtn" title="See every outline as the app draws it (v)">Preview</button>
     <button id="publish" class="primary" title="Publish these outlines to the live board (ctrl+shift+P)">Publish → live</button>
     <button id="link" title="Link app/hold_shapes.json so ctrl+S writes straight to it">Link file…</button>
     <button id="save" title="Save the file copy (ctrl+S)">Export JSON</button>
@@ -238,6 +249,19 @@
   </form>
 </div>
 
+<div id="preview" class="hide">
+  <div class="pvbar">
+    <b>App preview</b>
+    <span class="hint" id="pvNote">every hold, drawn by the app's own code and styles — unpublished edits and roundness included</span>
+    <span class="grow"></span>
+    <button class="pvrole on" data-role="int">Blue</button>
+    <button class="pvrole" data-role="start">Green</button>
+    <button class="pvrole" data-role="finish">Red</button>
+    <button id="pvClose" class="primary">Close</button>
+  </div>
+  <iframe id="pvFrame" title="App preview"></iframe>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -277,11 +301,15 @@
   const ptsStr = pts => pts.map(p => p[0] + ',' + p[1]).join(' ');
 
   // The app draws outlines as a closed Catmull-Rom curve through the traced
-  // points (core.js smoothShapePath). SMOOTH must match its SHAPE_SMOOTH so what
-  // you trace here is what climbers see. The vertices you drag are unchanged.
-  const SMOOTH = 0.9;
+  // points (core.js smoothShapePath). `smooth` is its tension (0 = straight,
+  // 1 = fully rounded): set with the "round" slider, kept in this browser, and
+  // published with the outlines as __meta.smooth, which the app reads.
+  // DEFAULT_SMOOTH must match core.js SHAPE_SMOOTH (used when a set has none).
+  const DEFAULT_SMOOTH = 0.7, LS_SMOOTH = 'pb_hold_smooth';
+  const okSmooth = s => typeof s === 'number' && isFinite(s) && s >= 0 && s <= 1;
+  let smooth = DEFAULT_SMOOTH, publishedSmooth = DEFAULT_SMOOTH;
   function smoothD(pts) {
-    const n = pts.length, k = SMOOTH / 6;
+    const n = pts.length, k = smooth / 6;
     const f = v => +v.toFixed(3);
     let d = `M${f(pts[0][0])},${f(pts[0][1])}`;
     for (let i = 0; i < n; i++) {
@@ -292,10 +320,10 @@
     }
     return d + 'Z';
   }
-  // One outline as SVG: the smooth curve when "smooth" is ticked and there is a
-  // real shape (≥3 points), otherwise the straight polygon.
+  // One outline as SVG: the curve when there is any roundness and a real shape
+  // (≥3 points), otherwise the straight polygon.
   function shapeSvg(cls, pts) {
-    return $('showSmooth').checked && pts.length >= 3
+    return smooth > 0 && pts.length >= 3
       ? `<path class="${cls}" d="${smoothD(pts)}"/>`
       : `<polygon class="${cls}" points="${ptsStr(pts)}"/>`;
   }
@@ -408,6 +436,21 @@
   delete baseline.__meta;
   baselineLabel = source ? sourceName : 'start';
   $('imgLabel').textContent = imgLabel + ' · shapes: ' + shapeSrc;
+
+  // Roundness: the published value is the baseline; a value moved in this
+  // browser but not yet published wins, and the pill turns amber until Publish.
+  if (source && source.__meta && okSmooth(source.__meta.smooth)) publishedSmooth = source.__meta.smooth;
+  smooth = publishedSmooth;
+  try { const v = parseFloat(localStorage.getItem(LS_SMOOTH)); if (okSmooth(v)) smooth = v; } catch (e) {}
+  function setSmoothLabel() {
+    const el = $('smoothVal');
+    el.textContent = smooth.toFixed(2);
+    const differs = Math.abs(smooth - publishedSmooth) > 1e-9;
+    el.className = 'pill mono' + (differs ? ' bad' : '');
+    el.title = differs ? 'Not published yet — live is ' + publishedSmooth.toFixed(2) : 'Matches the ' + sourceName + ' copy';
+  }
+  $('smooth').value = smooth;
+  setSmoothLabel();
 
   // Outlines only fit the board version they were traced against; the app hides
   // them outright when the versions differ, so say so loudly here too.
@@ -541,7 +584,7 @@
     svgCur.innerHTML = pts.length >= 2
       // With smoothing on, a faint straight skeleton shows the real edges, which
       // are what the hover "+" (insert a vertex) snaps to.
-      ? (($('showSmooth').checked && pts.length >= 3) ? `<polygon class="skel" points="${ptsStr(pts)}"/>` : '')
+      ? ((smooth > 0 && pts.length >= 3) ? `<polygon class="skel" points="${ptsStr(pts)}"/>` : '')
         + shapeSvg('poly' + (pts.length < 3 ? ' thin' : ''), pts)
       : '';
     let ms = '';
@@ -791,6 +834,9 @@
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
     if (typing) return;
+    // While the preview is up the editor underneath is out of reach.
+    if (!$('preview').classList.contains('hide')) { if (e.key === 'Escape' || e.key === 'v') closePreview(); return; }
+    if (e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey) { openPreview(); return; }
 
     const step = e.shiftKey ? 0.5 : e.altKey ? 0.01 : 0.05;
     switch (e.key) {
@@ -854,7 +900,7 @@
     const out = {};
     // __meta.board_updated_at tells the app which board these were traced against;
     // drop it and the app disables the shape overlay entirely.
-    if (meta) out.__meta = meta;
+    if (meta) out.__meta = Object.assign({}, meta, { smooth: smooth });
     Object.keys(shapes).forEach(h => { if ((shapes[h] || []).length >= 3) out[h] = shapes[h]; });
     return out;
   }
@@ -1048,6 +1094,7 @@
       }
       if (!Array.isArray(j) || !j.length) throw new Error('Nothing was written — that account is not an admin');
       liveShapes = out;
+      publishedSmooth = smooth; setSmoothLabel();
       baseline = clone(out); delete baseline.__meta;
       baselineLabel = 'live';
       status();
@@ -1077,7 +1124,46 @@
   $('focus').onclick = () => zoomToHold(curHold());
   $('showOthers').onchange = () => { renderStatic(); render(); };
   $('showLabels').onchange = renderStatic;
-  $('showSmooth').onchange = () => { renderStatic(); render(); };
+  $('smooth').oninput = e => {
+    smooth = r2(parseFloat(e.target.value));
+    try { localStorage.setItem(LS_SMOOTH, String(smooth)); } catch (err) {}
+    setSmoothLabel(); renderStatic(); render(); refreshPreview();
+  };
+  $('smooth').onchange = e => e.target.blur();   // hand the arrow keys back to nudging
+
+  // ── app preview ────────────────────────────────────────────────────────────
+  // tools/preview_holds.html loads the app's OWN state.js, core.js and
+  // styles.css, so the dimming, colours, line width and curve are the app's
+  // code, not a copy. We hand it the outlines as they stand (unpublished edits
+  // and roundness included), the live map and image, and a role for every hold.
+  let pvRole = 'int', pvReady = false;
+  function refreshPreview() {
+    if ($('preview').classList.contains('hide') || !pvReady) return;
+    const w = $('pvFrame').contentWindow;
+    if (!w || !w.renderPreview) return;
+    const out = payload();
+    const version = liveVersion || (meta && meta.board_updated_at) || null;
+    const res = w.renderPreview({ shapes: out, holdMap: holdMap, img: imgSrc, version: version, role: pvRole });
+    $('pvNote').textContent = res && res.usable
+      ? 'every hold, drawn by the app\'s own code and styles — roundness ' + smooth.toFixed(2) + ', unpublished edits included'
+      : 'the app would show DOTS, not outlines: ' + ((res && res.why) || 'the outlines don\'t match the live board');
+  }
+  function openPreview() {
+    $('preview').classList.remove('hide');
+    const f = $('pvFrame');
+    if (!f.getAttribute('src')) {
+      f.onload = () => { pvReady = true; refreshPreview(); };
+      f.src = 'preview_holds.html';
+    } else refreshPreview();
+  }
+  const closePreview = () => $('preview').classList.add('hide');
+  $('previewBtn').onclick = openPreview;
+  $('pvClose').onclick = closePreview;
+  document.querySelectorAll('.pvrole').forEach(b => b.onclick = () => {
+    pvRole = b.dataset.role;
+    document.querySelectorAll('.pvrole').forEach(x => x.classList.toggle('on', x === b));
+    refreshPreview();
+  });
   $('showLoupe').onchange = e => $('loupe').classList.toggle('hide', !e.target.checked);
   $('helpBtn').onclick = () => $('help').classList.toggle('hide');
   $('helpClose').onclick = () => $('help').classList.add('hide');
@@ -1112,7 +1198,10 @@
     rd.onload = () => {
       try {
         const j = JSON.parse(rd.result) || {};
-        if (j.__meta) { meta = j.__meta; delete j.__meta; }
+        if (j.__meta) {
+          meta = j.__meta; delete j.__meta;
+          if (okSmooth(meta.smooth)) { smooth = meta.smooth; $('smooth').value = smooth; setSmoothLabel(); }
+        }
         shapes = j; baseline = clone(j);
         undoStack = []; redoStack = []; sel = null;
         renderStatic(); render(); toast('Imported ' + f.name);

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hold outlines: app preview</title>
+<!--
+  The trace tool's Preview pane (tools/trace_holds.html opens this in an iframe).
+  It draws with the app's OWN files rather than copies of them: styles.css for
+  the colours, line width, drop shadow and dimming; state.js for the shared
+  globals; core.js for holdShapeLayerHtml(), shapesUsable() and the curve. So
+  what shows here is what a phone shows. The tool calls window.renderPreview().
+  Served from the repo root by tools/trace.cmd; never deployed.
+-->
+<link rel="stylesheet" href="../app/styles.css" />
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  #pvWrap { flex: none; }
+  #pvWrap .board-graphic { width: 100%; height: auto; display: block; }
+  #pvEmpty { color: #9ca3af; font: 13px system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<div class="board-wrap" id="pvWrap" hidden>
+  <img class="board-graphic" id="pvImg" alt="The Hangout symmetry board" />
+</div>
+<div id="pvEmpty">Loading…</div>
+
+<script>
+  // state.js builds a Supabase client and subscribes to the cast channel at load.
+  // The preview needs neither, so hand it an inert stand-in: no network, and no
+  // chance of anything reaching the board.
+  window.supabase = {
+    createClient: function () {
+      return { channel: function () { return { subscribe: function () {}, send: function () {} }; } };
+    }
+  };
+</script>
+<script src="../app/state.js"></script>
+<script src="../app/core.js"></script>
+<script>
+  (function () {
+    const wrap = document.getElementById('pvWrap');
+    const img = document.getElementById('pvImg');
+    let last = null;
+
+    // Fit the board to the frame at its true aspect, like the detail view.
+    function size() {
+      if (!boardAspect) return;
+      const w = Math.min(window.innerWidth, window.innerHeight * boardAspect);
+      wrap.style.width = Math.floor(w) + 'px';
+    }
+
+    function draw() {
+      if (!last || !HOLD_MAP) return;
+      wrap.querySelectorAll('.hold-shape-layer, .hold-layer').forEach(el => el.remove());
+      const roles = {};
+      Object.keys(HOLD_MAP).forEach(h => { roles[h] = last.role; });
+      // The app's own renderer. null = the app would fall back to dots.
+      let html = holdShapeLayerHtml(roles, { mirror: false, dim: true });
+      if (html === null) {
+        html = '<div class="hold-layer">' + Object.keys(HOLD_MAP).map(h => {
+          const p = HOLD_MAP[h];
+          return p ? `<div class="hold-dot ${last.role}" style="left:${p.x}%;top:${p.y}%"></div>` : '';
+        }).join('') + '</div>';
+      }
+      wrap.insertAdjacentHTML('beforeend', html);
+    }
+
+    img.addEventListener('load', () => {
+      boardAspect = img.naturalWidth / img.naturalHeight;
+      wrap.hidden = false;
+      document.getElementById('pvEmpty').hidden = true;
+      size(); draw();                    // dots depend on boardAspect, so redraw
+    });
+    img.addEventListener('error', () => { document.getElementById('pvEmpty').textContent = 'The board image failed to load.'; });
+    window.addEventListener('resize', size);
+
+    // d: { shapes (with __meta), holdMap, img, version (live board updated_at), role }
+    window.renderPreview = function (d) {
+      last = d;
+      HOLD_SHAPES = d.shapes;
+      HOLD_MAP = d.holdMap;
+      configHasMap = true;
+      boardConfigVersion = d.version;
+      if (img.getAttribute('src') !== d.img) img.src = d.img;
+      else draw();
+      const meta = d.shapes && d.shapes.__meta;
+      let why = '';
+      if (!meta || !meta.board_updated_at) why = 'the outlines carry no board version';
+      else if (meta.board_updated_at !== d.version) why = 'traced against board ' + meta.board_updated_at + ', live is ' + d.version;
+      return { usable: shapesUsable(), why: why };
+    };
+  })();
+</script>
+</body>
+</html>

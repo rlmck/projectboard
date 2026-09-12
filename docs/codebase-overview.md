@@ -77,7 +77,8 @@ build.sh  wrangler.jsonc  CLAUDE.md  .gitignore  .gitattributes   (the repo root
 | `app/_headers`, `app/_redirects` | Cloudflare static-asset config (section 9); they must sit in the assets directory | yes |
 | `build.sh`, `wrangler.jsonc`, `.gitattributes` | Hosting config (section 9). The first two stay at the root: the Cloudflare dashboard runs `bash build.sh` and `npx wrangler deploy` from there | no |
 | `tools/register_holds.py`, `register_mirror.py`, `register_shapes.py`, `register_leds.py` | Generators for the JSON data (section 11) | no |
-| `tools/trace_holds.html` | Dev tool for viewing and hand-editing the hold outlines; run it locally (section 11) | no (removed from the deploy on 10 Sep 2026) |
+| `tools/trace_holds.html` | Dev tool for viewing and hand-editing the hold outlines; run it locally (section 11). Its "round" slider sets the outline smoothing, published as `hold_shapes.__meta.smooth` (app default `SHAPE_SMOOTH` 0.7 in `core.js`) | no (removed from the deploy on 10 Sep 2026) |
+| `tools/preview_holds.html` | The trace tool's Preview pane: loads the app's own `state.js`, `core.js` and `styles.css` (with an inert Supabase stub) to draw every outline exactly as the app does | no |
 | `tools/hold_positions.json` | Input to `register_holds.py` (Ross's 187 hand-placed dots) | no |
 | `tools/led_map.json` | Hold → physical LED index; the Pi wiring contract. The app never reads it | no |
 | `tools/make_icons.py`, `tools/make_qr.py` | Icon generator, QR generator | no |

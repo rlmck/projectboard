@@ -158,13 +158,18 @@
   }
 
   // Traced outlines are drawn as a closed Catmull-Rom curve through every traced
-  // point, not straight segments. SHAPE_SMOOTH is the tension: 0 = the straight
-  // polygon, 1 = fully rounded (can bulge a little past the traced points). The
-  // viewBox is stretched, but the curve is affine-invariant so it stays true.
-  // Keep in step with SMOOTH in tools/trace_holds.html so the editor matches.
-  const SHAPE_SMOOTH = 0.9;
+  // point, not straight segments. The tension runs 0 = the straight polygon to
+  // 1 = fully rounded (can bulge a little past the traced points). It is set in
+  // tools/trace_holds.html and published with the outlines as __meta.smooth;
+  // SHAPE_SMOOTH is the default for a set without one (e.g. the bundled file).
+  // The viewBox is stretched, but the curve is affine-invariant so it stays true.
+  const SHAPE_SMOOTH = 0.7;
+  function shapeSmooth() {
+    const s = HOLD_SHAPES && HOLD_SHAPES.__meta && HOLD_SHAPES.__meta.smooth;
+    return (typeof s === 'number' && s >= 0 && s <= 1) ? s : SHAPE_SMOOTH;
+  }
   function smoothShapePath(pts) {
-    const n = pts.length, k = SHAPE_SMOOTH / 6;
+    const n = pts.length, k = shapeSmooth() / 6;
     const f = v => +v.toFixed(3);
     let d = `M${f(pts[0][0])},${f(pts[0][1])}`;
     for (let i = 0; i < n; i++) {
