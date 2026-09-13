@@ -32,6 +32,7 @@
           <div class="problem-meta">
             <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
             ${p.is_benchmark ? benchMarkSvg() : ''}
+            ${newBadgeHtml(p)}
             <span class="meta-setter">${escHtml(setterName(p))}</span>
             ${starsHtml(p.stars)}
             ${isTicked(p.id) ? '<span class="tick-flag" title="Sent">✓</span>' : ''}
@@ -111,7 +112,8 @@
         <h1 class="detail-name">${escHtml(displayName(p))}</h1>
         <div class="detail-meta">
           <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
-          <span class="meta-setter">by ${escHtml(setterName(p))}</span>
+          ${newBadgeHtml(p)}
+          <span class="meta-setter">by${escHtml(setterName(p))}</span>
           ${starsHtml(p.stars)}
           ${p.is_benchmark ? `<span class="bench-badge">${benchMarkSvg()}Benchmark</span>` : ''}
           ${(myTicksNormal.has(String(p.id)) && myTicksMirrored.has(String(p.id))) ? `<span class="both-badge">✓ both sides</span>` : ''}

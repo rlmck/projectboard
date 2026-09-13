@@ -40,6 +40,17 @@
       'M12 6.3 13.5 10.44 17.9 10.58 14.43 13.29 15.64 17.52 12 15.05 8.36 17.52 9.57 13.29 6.1 10.58 10.5 10.44Z"></path></svg>';
   }
 
+  // "New" badge: shown for NEW_DAYS after a row's created_at. The migrated
+  // problems all share one import date (20 May 2026), so they're never new.
+  const NEW_DAYS = 14;
+  function isNew(row) {
+    const t = Date.parse(row && row.created_at);
+    return Number.isFinite(t) && Date.now() - t < NEW_DAYS * 86400000;
+  }
+  function newBadgeHtml(row) {
+    return isNew(row) ? '<span class="new-badge" title="Set in the last 2 weeks">New</span>' : '';
+  }
+
   // The problem's display name — just the stored name, trimmed. Name and grade are
   // independent: the grade is shown separately as a badge, so editing a climb's
   // grade never changes its name. (Names are stored clean — the original migration
