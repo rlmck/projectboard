@@ -211,7 +211,7 @@
 <div id="help" class="hide">
   <h3>Hold-shape editor</h3>
   <table>
-    <tr><td><b>Edit mode</b></td><td>Drag a vertex to move it. Hover an edge and a <b>+</b> appears — drag it to insert a vertex there. Drag inside the outline to move the whole shape. Right-click a vertex to delete it. Click another hold's outline to switch to it.</td></tr>
+    <tr><td><b>Edit mode</b></td><td>Drag a vertex to move it. Hover an edge and a <b>+</b> appears — drag it to insert a vertex there. Drag inside the outline to move the whole shape. Right-click a vertex to delete it. Click another hold's outline to switch to it. Double-click a hold (outline or dot) to select it and zoom to it.</td></tr>
     <tr><td><b>Draw mode</b></td><td>Click around the hold to append points (need ≥3).</td></tr>
     <tr><td><kbd>n</kbd> / <kbd>p</kbd></td><td>next / previous hold</td></tr>
     <tr><td><kbd>e</kbd> / <kbd>d</kbd></td><td>edit / draw mode</td></tr>
@@ -806,6 +806,29 @@
     if (!shapes[curHold()].length) delete shapes[curHold()];
     sel = null; hotVtx = null;
     render();
+  });
+
+  // Double-click a hold (its outline, or its dot if it has none) to select it and
+  // zoom to it. The first click of the pair has already switched holds.
+  frame.addEventListener('dblclick', e => {
+    if (mode !== 'edit' || spaceDown) return;
+    const [x, y] = toPct(e.clientX, e.clientY);
+    if (hitVertex(x, y) != null || hitEdge(x, y)) return;
+    const pts = curPts();
+    let h = pts.length >= 3 && inPoly(pts, x, y) ? curHold() : hitOtherHold(x, y);
+    if (!h) {
+      let bestD = HIT * 2;
+      holds.forEach(g => {
+        const p = holdMap[g];
+        if (!p) return;
+        const d = distPx([p.x, p.y], x, y);
+        if (d <= bestD) { bestD = d; h = g; }
+      });
+    }
+    if (!h) return;
+    e.preventDefault();
+    if (h !== curHold()) goTo(holds.indexOf(h), true);
+    zoomToHold(h);
   });
 
   stage.addEventListener('wheel', e => {
