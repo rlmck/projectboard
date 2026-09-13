@@ -113,7 +113,7 @@
         <div class="detail-meta">
           <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
           ${newBadgeHtml(p)}
-          <span class="meta-setter">by${escHtml(setterName(p))}</span>
+          <span class="meta-setter">by ${escHtml(setterName(p))}</span>
           ${starsHtml(p.stars)}
           ${p.is_benchmark ? `<span class="bench-badge">${benchMarkSvg()}Benchmark</span>` : ''}
           ${(myTicksNormal.has(String(p.id)) && myTicksMirrored.has(String(p.id))) ? `<span class="both-badge">✓ both sides</span>` : ''}
