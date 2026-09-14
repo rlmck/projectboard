@@ -671,11 +671,21 @@
   measureBoardAspect(); // board w/h — the shape overlay needs it for round fallback dots
   initAuth();      // restore session, wire auth state, handle Google redirect
 
-  // Splash: linger briefly, then fade out and remove from the DOM.
+  // Splash: let the entrance finish (the timeline is in styles.css), then fade
+  // out and remove from the DOM. With reduced motion there's no sequence to
+  // watch, so it goes early.
+  // transitionend BUBBLES, and .splash-stage transitions its own transform on
+  // the way out, so the removal has to check that it was the overlay's fade that
+  // ended. The timer is the backstop for a browser that never fires it at all
+  // (a background tab, say) — remove() on a detached node is a no-op.
   const splash = document.getElementById('splash');
   if (splash) {
+    const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     setTimeout(() => {
       splash.classList.add('hide');
-      splash.addEventListener('transitionend', () => splash.remove(), { once: true });
-    }, 1800);
+      splash.addEventListener('transitionend', e => {
+        if (e.target === splash && e.propertyName === 'opacity') splash.remove();
+      });
+      setTimeout(() => splash.remove(), 900);
+    }, calm ? 900 : 1800);
   }

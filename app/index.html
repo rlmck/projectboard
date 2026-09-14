@@ -33,9 +33,23 @@
 <body>
 
 <!-- ══ SPLASH / BOOT OVERLAY ══════════════════════════════════════════ -->
+<!-- The mark is inlined (same geometry as icon.svg) so its two parts can be
+     animated: the chevron draws outward from its vertex, then the dot lands.
+     The whole entrance is CSS in styles.css - see the timeline there. -->
 <div id="splash">
-  <img src="icon.svg" alt="" />
-  <div class="splash-name">Project<span> Board</span></div>
+  <div class="splash-grid" aria-hidden="true"></div>
+  <div class="splash-cast" aria-hidden="true"></div>
+  <div class="splash-stage">
+    <div class="splash-mark">
+      <svg viewBox="0 0 512 512" aria-hidden="true" focusable="false">
+        <path class="splash-chevron" d="M132 168 L256 356 L380 168" pathLength="100"
+              fill="none" stroke="#ec4899" stroke-width="56" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle class="splash-dot" cx="256" cy="132" r="26" fill="#ec4899"/>
+      </svg>
+    </div>
+    <div class="splash-name"><span class="sn-a">Project</span> <span class="sn-b">Board</span></div>
+    <div class="splash-rule" aria-hidden="true"></div>
+  </div>
 </div>
 
 <!-- ══ WELCOME / INSTALL OVERLAY ══════════════════════════════════════

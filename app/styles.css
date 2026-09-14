@@ -39,29 +39,216 @@
     }
 
     /* ── Splash / boot overlay ───────────────────────────────────────────
-       Matches the native PWA launch screen (same bg + mark) so the two read
-       as one continuous splash, then fades out shortly after boot. */
+       Matches the native PWA launch screen (same bg + mark) so the two read as
+       one continuous splash, then plays a short entrance and fades out.
+
+       It's all CSS on purpose. styles.css is render-blocking, so the sequence
+       starts on the very first painted frame; an animation library would have to
+       download, parse and run first — the one screen in the app where that delay
+       lands exactly where it hurts. Everything animated here is a transform, an
+       opacity or a stroke dash, so it stays cheap on a phone.
+
+       Timeline, in ms after first paint:
+          0   the board lattice fades up behind the mark
+        100   the accent halo swells
+        120   the chevron draws outward from its vertex, symmetrically — the
+              board is a symmetry board, so its logo is drawn like one
+        720   the dot lands, with a small overshoot
+        760   a ring of lit holds casts out across the wall
+        820   "Project Board" rises, its letter-spacing settling in
+       1080   the hairline opens from the centre
+       1800   app.js adds .hide: the lockup lifts away as the overlay fades
+
+       Under prefers-reduced-motion the same composition is shown at its end
+       state with no motion at all (the block at the end of this section). */
     #splash {
       position: fixed;
       inset: 0;
       z-index: 1000;
+      overflow: hidden;          /* the cast ring sweeps out past the edges */
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 22px;
       background: var(--bg);
       transition: opacity 0.45s ease;
     }
     #splash.hide { opacity: 0; pointer-events: none; }
-    #splash img { width: 96px; height: 96px; border-radius: 22px; }
+
+    .splash-stage {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    /* The exit: the lockup lifts and drifts toward the viewer as it fades. */
+    #splash.hide .splash-stage { transform: translateY(-10px) scale(1.05); }
+
+    /* The wall behind the mark: a lattice of holds, faint enough to read as
+       texture, masked to a soft vignette so it never shows a hard edge. */
+    .splash-grid,
+    .splash-cast {
+      position: absolute;
+      inset: -20%;
+      pointer-events: none;
+      background-image: radial-gradient(circle, currentColor 1.1px, transparent 1.7px);
+      background-size: 26px 26px;
+      background-position: center;   /* puts a hold dead centre, behind the mark */
+    }
+    .splash-grid {
+      color: rgba(255, 255, 255, 0.075);
+      opacity: 0;
+      -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 68%);
+      mask-image: radial-gradient(circle, #000 0%, transparent 68%);
+      animation: splashGrid 0.7s ease-out forwards;
+    }
+    @keyframes splashGrid {
+      from { opacity: 0; transform: scale(1.06); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+
+    /* The cast: one ring of holds lighting up and racing outwards, the way the
+       wall does when a problem is cast. It's a ring-shaped mask over the same
+       lattice, scaled out — so the whole effect costs one transform.
+       Linear timing with the easing baked into the stops: each keyframe would
+       otherwise re-apply the curve to its own segment. */
+    .splash-cast {
+      color: var(--accent);
+      opacity: 0;
+      -webkit-mask-image: radial-gradient(circle, transparent 0 39%, #000 47% 53%, transparent 62%);
+      mask-image: radial-gradient(circle, transparent 0 39%, #000 47% 53%, transparent 62%);
+      animation: splashCast 0.94s linear 0.76s forwards;
+    }
+    @keyframes splashCast {
+      0%   { opacity: 0;    transform: scale(0.1); }
+      18%  { opacity: 0.85; transform: scale(0.55); }
+      45%  { opacity: 0.7;  transform: scale(1.02); }
+      72%  { opacity: 0.32; transform: scale(1.38); }
+      100% { opacity: 0;    transform: scale(1.7); }
+    }
+
+    /* The mark: the same geometry as icon.svg, minus its opaque backing tile so
+       the halo shows through it. 96px, matching the <img> it replaced. */
+    .splash-mark {
+      position: relative;
+      width: 96px;
+      height: 96px;
+    }
+    .splash-mark svg {
+      position: relative;
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .splash-mark::before {          /* the halo */
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 280px;
+      height: 280px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(236, 72, 153, 0.19), rgba(236, 72, 153, 0.05) 40%, transparent 72%);
+      opacity: 0;
+      pointer-events: none;
+      animation: splashGlow 1.2s ease-out 0.1s forwards;
+    }
+    @keyframes splashGlow {
+      0%   { opacity: 0;    transform: translate(-50%, -50%) scale(0.6); }
+      55%  { opacity: 1;    transform: translate(-50%, -50%) scale(1.06); }
+      100% { opacity: 0.85; transform: translate(-50%, -50%) scale(1); }
+    }
+
+    /* Drawing the chevron out from its vertex in both directions at once.
+       pathLength="100" normalises the path and the two arms are equal, so the
+       vertex sits at 50: a dash of length L centred there is
+       stroke-dasharray: L 100 with stroke-dashoffset: L/2 - 50. */
+    .splash-chevron {
+      stroke-dasharray: 0 100;
+      stroke-dashoffset: -50;
+      opacity: 0;
+      animation: splashDraw 0.66s cubic-bezier(0.34, 0.9, 0.3, 1) 0.12s forwards;
+    }
+    @keyframes splashDraw {
+      0%   { stroke-dasharray: 0 100; stroke-dashoffset: -50; opacity: 0; }
+      14%  { opacity: 1; }
+      100% { stroke-dasharray: 100 100; stroke-dashoffset: 0; opacity: 1; }
+    }
+
+    /* fill-box so the dot scales about itself, not about the SVG origin. */
+    .splash-dot {
+      transform-box: fill-box;
+      transform-origin: 50% 50%;
+      opacity: 0;
+      transform: scale(0);
+      animation: splashPop 0.42s cubic-bezier(0.2, 1.5, 0.4, 1) 0.72s forwards;
+    }
+    @keyframes splashPop {
+      from { opacity: 0; transform: scale(0); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+
     #splash .splash-name {
+      margin-top: 22px;
       font-size: 22px;
       font-weight: 700;
       letter-spacing: 0.5px;
       color: var(--text);
+      white-space: nowrap;
+      /* backwards: the wide tracking applies through the delay as well */
+      animation: splashTrack 0.6s cubic-bezier(0.2, 0.7, 0.3, 1) 0.82s backwards;
     }
-    #splash .splash-name span { color: var(--accent); }
+    @keyframes splashTrack {
+      from { letter-spacing: 4px; }
+      to   { letter-spacing: 0.5px; }
+    }
+    #splash .splash-name span {
+      display: inline-block;
+      opacity: 0;
+      animation: splashRise 0.55s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+    }
+    #splash .splash-name .sn-a { animation-delay: 0.82s; }
+    #splash .splash-name .sn-b { color: var(--accent); animation-delay: 0.9s; }
+    @keyframes splashRise {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .splash-rule {
+      margin-top: 16px;
+      width: 132px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(236, 72, 153, 0.85), transparent);
+      opacity: 0;
+      transform: scaleX(0);
+      animation: splashRule 0.55s cubic-bezier(0.2, 0.8, 0.3, 1) 1.08s forwards;
+    }
+    @keyframes splashRule {
+      from { opacity: 0; transform: scaleX(0); }
+      to   { opacity: 1; transform: scaleX(1); }
+    }
+
+    /* Reduced motion: the finished composition, held still. app.js shortens the
+       linger to match, since there's no longer a sequence to watch. */
+    @media (prefers-reduced-motion: reduce) {
+      #splash .splash-grid,
+      #splash .splash-cast,
+      #splash .splash-mark::before,
+      #splash .splash-chevron,
+      #splash .splash-dot,
+      #splash .splash-name,
+      #splash .splash-name span,
+      #splash .splash-rule { animation: none; }
+      #splash .splash-cast { display: none; }
+      #splash .splash-grid { opacity: 1; transform: none; }
+      #splash .splash-mark::before { opacity: 0.85; transform: translate(-50%, -50%) scale(1); }
+      #splash .splash-chevron { stroke-dasharray: none; stroke-dashoffset: 0; opacity: 1; }
+      #splash .splash-dot { opacity: 1; transform: none; }
+      #splash .splash-name span { opacity: 1; transform: none; }
+      #splash .splash-rule { opacity: 1; transform: scaleX(1); }
+      #splash .splash-stage { transition: none; }
+      #splash.hide .splash-stage { transform: none; }
+    }
 
     /* ── View switching ──────────────────────────────────────────────── */
     .view { display: none; }

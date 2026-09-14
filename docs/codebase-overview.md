@@ -139,7 +139,7 @@ These are plain `<script>` tags, not ES modules. There's no build step and no fr
    - `loadBoardConfig()`, **then** `loadHoldMap()` + `loadMirrorMap()`. They run in sequence so the bundled fallbacks never overwrite the live map.
    - `loadHoldShapes()` and `measureBoardAspect()`.
    - `initAuth()`.
-3. The splash fades after 1.8 s.
+3. The splash plays its CSS entrance, then fades after 1.8 s (0.9 s under `prefers-reduced-motion`).
 
 Nothing blocks on the network before first paint, so the list shows its spinner straight away.
 
@@ -511,7 +511,7 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 The domain `symmetryboard.co.uk` doesn't contain the brand, so **a name change doesn't need a domain change** and the QR can stay.
 
 **Renaming the app:**
-1. `index.html`: `<title>`, `apple-mobile-web-app-title`, `og:site_name`, `og:title`, `og:image:alt`, splash (`Project<span> Board</span>`), welcome title, the "Open Project Board from your home screen" note, the install-banner text.
+1. `index.html`: `<title>`, `apple-mobile-web-app-title`, `og:site_name`, `og:title`, `og:image:alt`, splash (`<span class="sn-a">Project</span> <span class="sn-b">Board</span>`), welcome title, the "Open Project Board from your home screen" note, the install-banner text.
 2. `manifest.json`: `name`, `short_name`.
 3. `app.js`: the `?src=moved` welcome title (`'Project Board<span> has moved here</span>'`).
 4. `privacy.html`: `<title>`, meta description, header, and two body mentions.
