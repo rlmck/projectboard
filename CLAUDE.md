@@ -26,6 +26,7 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 
 1. **Read this file and `docs/codebase-overview.md` at the start of every session.**
 2. **For now, every change goes straight to live (Ross, 11 Sep 2026).** When a task is done: commit on `dev` → push `dev` → fast-forward `main` to `dev` → push `main`, without asking first, then confirm the live `sw.js` shows the new `CACHE`. Keep the two branches level so staging is ready when it's needed again. **This lasts until the app is properly rolled out and the LEDs work.** After that, go back to: Ross tests on a real phone at the staging URL, and `dev` merges to `main` only when he approves. Pushing to `main` deploys to real users, so still run the syntax check before every push.
+   Claude Code web sessions start on an assigned `claude/<slug>` branch and are told not to push elsewhere without permission: treat this rule as that permission, and carry the work through to `dev` and `main` rather than stopping at the session branch. If the live site is unreachable from the session (the environment's network policy blocks it), say so rather than skipping the `CACHE` check silently.
 3. **One feature per session.** Finish it properly before starting the next.
 4. **Rewrite whole files** rather than providing inline diffs.
 5. **Don't install frameworks** (React, Vue, …) or add a build step without being asked.
