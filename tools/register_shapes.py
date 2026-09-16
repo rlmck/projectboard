@@ -2,7 +2,7 @@
 """
 register_shapes.py — auto-trace accurate hold outlines into hold_shapes.json.
 
-Instead of hand-drawing crude polygons in trace_holds.html, this detects each
+Instead of hand-drawing crude polygons, this detects each
 hold's real outline straight from the board image and writes the same
 hold_shapes.json the app consumes (hold id -> [[x,y], ...] as % of the image).
 
@@ -21,17 +21,21 @@ Each region's external contour is simplified (approxPolyDP) into a tidy polygon
 and converted to image-percentage coords, matching hold_map.json's space.
 
 Source of truth is the LIVE board (Supabase board_config: board.jpg + hold_map),
-exactly like the app and trace_holds.html — NOT the bundled ProjectBoard.png,
+exactly like the app — NOT the bundled ProjectBoard.png,
 which has a different framing. Falls back to the bundled image/map if offline.
 
 The board's board_config.updated_at is written into the output as
 __meta.board_updated_at. The app refuses to draw these outlines over any other
-board (see shapesUsable() in core.js), so a recalibration cleanly retires them
+board (see shapesUsable() in core.js), so a re-mapped board cleanly retires them
 instead of silently misplacing every hold.
 
-Merging: hold_shapes.json is hand-repaired in trace_holds.html, so by default a
-re-run KEEPS every outline the file already has and only fills in the missing
-ones. Pass --overwrite to replace them with freshly detected ones.
+Merging: by default a re-run KEEPS every outline the file already has and only
+fills in the missing ones. Pass --overwrite to replace them with freshly
+detected ones. Hand repairs are made in the app's outline editor (#outlines)
+and live in board_config.hold_shapes, not in this file.
+
+Getting a run live: this writes the FILE. Deploy it, then in the app open
+Admin -> Hold outlines -> menu -> Load the shipped copy, review, and Publish.
 
 Deps: pip install numpy opencv-python-headless   (dev-only; not shipped)
 Run:  python tools/register_shapes.py            # merge into app/hold_shapes.json + preview
@@ -145,7 +149,7 @@ def marker_groups(centers, min_sep):
 
 def detect(img, hold_map):
     H, W = img.shape[:2]
-    # Percentages come from the calibrate tool and can sit on (or a hair outside)
+    # Percentages come from the live hold map and can sit on (or a hair outside)
     # the edge, so clamp before indexing — numpy would raise on W/H and silently
     # wrap a negative round to the opposite edge of the image.
     def clamp(v, hi):
@@ -240,8 +244,7 @@ def main():
     img, hold_map, version = load_board()
     traced, fails, centers = detect(img, hold_map)
 
-    # Existing file wins by default: its outlines may have been hand-repaired in
-    # trace_holds.html (and nothing else records that work).
+    # Existing file wins by default: its outlines may have been hand-repaired.
     existing, kept = {}, 0
     if os.path.exists(out_path):
         with open(out_path) as f:
@@ -276,7 +279,7 @@ def main():
         print(f"detector missed ({len(fails)}): {', '.join(sorted(fails))}")
     if missing:
         print(f"NOT in the output ({len(missing)}): {', '.join(sorted(missing))}")
-        print("  fix these by hand in trace_holds.html (Import the JSON, edit, Export).")
+        print("  fix these by hand in the app: Admin -> Hold outlines (after loading the shipped copy).")
 
 
 if __name__ == "__main__":

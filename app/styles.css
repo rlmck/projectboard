@@ -955,52 +955,130 @@
     .save-icon-btn:active { background: var(--accent-hover); }
     .save-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    /* ── Calibrate view (admin: re-map holds onto a new board image) ─── */
-    #view-calibrate main { padding-bottom: 40px; }
-    .cal-toolbar { display: flex; align-items: center; gap: 10px; padding: 12px 2px; flex-wrap: wrap; }
-    .cal-chip {
-      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
-      border-radius: 9px; padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+    /* ── Hold outlines editor (#outlines, admin) ──────────────────────────
+       Pinned to the viewport like the detail view: header, a stage the board is
+       zoomed and panned inside (every gesture is handled in authoring.js, so the
+       stage opts out of the browser's own touch actions), and a fixed control
+       panel. The bottom nav is hidden here (setView). The canvas is laid out at its
+       real zoomed size and positioned with a translate; the photo, the outline svgs
+       and the %-positioned handles all scale with it. Colours follow the old
+       desktop tool: gold = the hold being edited, blue = the others, amber = changed. */
+    #view-outlines.active {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column; overflow: hidden;
     }
-    .cal-chip.ghost { background: transparent; color: var(--text-muted); }
-    .cal-mode { display: flex; margin-left: auto; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
-    .cal-seg { background: var(--surface); color: var(--text-muted); border: none; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
-    .cal-seg.active { background: var(--accent); color: #fff; }
-    .cal-status { font-size: 13px; color: var(--accent-hover); min-height: 18px; margin: 0 0 10px; text-align: center; font-weight: 600; }
-    .cal-board { border-radius: 10px; overflow: hidden; -webkit-tap-highlight-color: transparent; touch-action: manipulation; cursor: crosshair; }
-    .cal-board.nudging { touch-action: none; }
-    #cal-img { width: 100%; height: auto; display: block; }
-    .cal-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-    .cal-dot {
-      position: absolute; width: 2.6%; aspect-ratio: 1; transform: translate(-50%, -50%);
-      border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.85);
-      background: rgba(236,72,153,0.45); box-sizing: border-box;
-      box-shadow: 0 0 0 1px rgba(0,0,0,0.45);
+    #view-outlines .topbar { flex: none; }
+    #view-outlines .icon-btn:disabled { opacity: 0.35; cursor: default; }
+    .ol-stage {
+      flex: 1; min-height: 0; position: relative; overflow: hidden;
+      background: #050505; touch-action: none; cursor: default;
+      -webkit-tap-highlight-color: transparent;
     }
-    .cal-dot.sel { background: rgba(250,204,21,0.92); border-color: #fff; width: 4%; z-index: 3; }
-    .cal-dot.anchored { background: rgba(34,197,94,0.75); border-color: #bbf7d0; }
-    /* Mirror mode: the selected hold's current partner, and holds with no mirror. */
-    .cal-dot.partner { background: rgba(59,130,246,0.9); border-color: #bfdbfe; width: 4%; z-index: 2; }
-    .cal-dot.selfmirror { background: rgba(245,158,11,0.7); border-color: #fde68a; }
-    .cal-anchor {
-      position: absolute; width: 3%; aspect-ratio: 1; transform: translate(-50%, -50%);
-      border-radius: 50%; border: 2px solid #4ade80; box-sizing: border-box; z-index: 2;
+    .ol-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+    .ol-img {
+      display: block; width: 100%; height: 100%;
+      pointer-events: none; -webkit-user-drag: none; -webkit-touch-callout: none;
     }
-    .cal-anchor::before, .cal-anchor::after { content: ''; position: absolute; background: #4ade80; }
-    .cal-anchor::before { left: 50%; top: -30%; width: 2px; height: 160%; transform: translateX(-50%); }
-    .cal-anchor::after { top: 50%; left: -30%; height: 2px; width: 160%; transform: translateY(-50%); }
-    .cal-panel { padding: 14px 2px 8px; }
-    .cal-anchors-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 13px; color: var(--text-muted); font-weight: 600; }
-    /* Fit is a secondary action — soft pink. Save is the primary, solid accent. */
-    #cal-fit {
-      background: rgba(236,72,153,0.16);
-      color: var(--accent-hover);
-      border: 1px solid rgba(236,72,153,0.45);
+    .ol-svg, .ol-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+    .ol-svg path, .ol-svg polygon, .ol-svg polyline { vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+    /* No drop-shadow filter here: Chrome drops a filtered svg once the zoomed canvas gets large. */
+    .ol-other { fill: rgba(59,130,246,0.12); stroke: rgba(125,185,255,0.95); stroke-width: 1.6px; }
+    .ol-other.chg { fill: rgba(245,158,11,0.12); stroke: rgba(251,191,36,0.95); }
+    .ol-poly { fill: rgba(245,200,66,0.16); stroke: #f5c842; stroke-width: 2px; }
+    .ol-poly.open { fill: none; }
+    .ol-skel { fill: none; stroke: rgba(245,200,66,0.45); stroke-width: 1px; stroke-dasharray: 3 3; }
+
+    .ol-v, .ol-m, .ol-x, .ol-dot { position: absolute; transform: translate(-50%, -50%); box-sizing: border-box; }
+    .ol-v {
+      width: 12px; height: 12px; transform: translate(-50%, -50%) rotate(45deg);
+      background: #f5c842; border: 1.5px solid #111;
     }
-    #cal-fit:disabled { opacity: 0.45; cursor: not-allowed; }
-    #cal-save { margin-top: 12px; }
-    .cal-help { font-size: 12px; line-height: 1.6; color: var(--text-muted); margin: 14px 0 0; }
-    .cal-help b { color: var(--text); font-weight: 700; }
+    .ol-v.sel { width: 17px; height: 17px; background: #fff; box-shadow: 0 0 0 3px rgba(245,200,66,0.9); z-index: 2; }
+    .ol-m {
+      width: 11px; height: 11px; border-radius: 50%;
+      background: rgba(10,10,10,0.55); border: 2px solid rgba(245,200,66,0.9);
+    }
+    .ol-x { width: 14px; height: 14px; filter: drop-shadow(0 0 1.5px #000); }
+    .ol-x::before, .ol-x::after { content: ""; position: absolute; background: rgba(255,255,255,0.9); }
+    .ol-x::before { left: 50%; top: 0; bottom: 0; width: 1.5px; transform: translateX(-50%); }
+    .ol-x::after { top: 50%; left: 0; right: 0; height: 1.5px; transform: translateY(-50%); }
+    .ol-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: rgba(255,255,255,0.15); border: 1.5px solid rgba(255,255,255,0.6);
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+    }
+    @media (pointer: coarse) {
+      .ol-v { width: 14px; height: 14px; }
+      .ol-v.sel { width: 19px; height: 19px; }
+      .ol-m { width: 13px; height: 13px; }
+    }
+
+    /* The magnifier: sits above the finger while a point is dragged. */
+    .ol-loupe {
+      position: absolute; width: 120px; height: 120px; border-radius: 50%; overflow: hidden;
+      background: #000; border: 2px solid #f5c842; box-shadow: 0 6px 22px rgba(0,0,0,0.7);
+      pointer-events: none; z-index: 4;
+    }
+    .ol-loupe img { position: absolute; max-width: none; }
+    .ol-loupe svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+    .ol-loupe path { fill: rgba(245,200,66,0.12); stroke: #f5c842; stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+    .ol-loupe::before, .ol-loupe::after { content: ""; position: absolute; background: rgba(255,255,255,0.7); z-index: 1; }
+    .ol-loupe::before { left: 50%; top: 30%; bottom: 30%; width: 1px; }
+    .ol-loupe::after { top: 50%; left: 30%; right: 30%; height: 1px; }
+
+    .ol-note {
+      position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 3;
+      width: max-content; max-width: calc(100% - 16px);
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: 12px;
+      background: rgba(10,10,10,0.85); border: 1px solid var(--border);
+      font-size: 13px; line-height: 1.35; color: var(--text); text-align: center;
+      -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+      pointer-events: none;
+    }
+    .ol-note-btn {
+      flex: none; pointer-events: auto; cursor: pointer; touch-action: manipulation;
+      background: var(--accent); color: #fff; border: none; border-radius: 8px;
+      padding: 6px 12px; font-size: 13px; font-weight: 700;
+    }
+    #ol-note[hidden], #ol-loupe[hidden], #ol-note-btn[hidden] { display: none; }
+
+    .ol-panel {
+      flex: none; background: var(--surface); border-top: 1px solid var(--border);
+      padding: 8px calc(12px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
+    }
+    .ol-row { display: flex; align-items: center; gap: 8px; max-width: 680px; margin: 0 auto; }
+    .ol-row + .ol-row { margin-top: 8px; }
+    .ol-jump {
+      flex: 1; min-width: 0; height: 38px; padding: 0 10px;
+      background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 9px;
+      font: inherit; font-size: 15px; font-weight: 600;
+    }
+    .ol-pad { display: flex; gap: 6px; }
+    .ol-pad .icon-btn { touch-action: none; }
+    .ol-btn {
+      flex: 1; min-width: 0; height: 38px; padding: 0 10px;
+      background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 9px;
+      font-size: 14px; font-weight: 700; cursor: pointer; touch-action: manipulation; white-space: nowrap;
+    }
+    .ol-btn:disabled { opacity: 0.4; cursor: default; }
+    .ol-publish { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .ol-publish:disabled { background: var(--surface2); border-color: var(--border); color: var(--text-muted); opacity: 1; }
+    .ol-round {
+      flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+      font-size: 13px; font-weight: 600; color: var(--text-muted);
+    }
+    .ol-round input { flex: 1; min-width: 50px; accent-color: var(--accent); }
+    .ol-round-val { min-width: 32px; font-variant-numeric: tabular-nums; color: var(--text); }
+    .ol-round-val.chg { color: var(--gold); }
+    /* The toast normally clears the bottom nav; here it has to clear the panel. */
+    #view-outlines.active ~ #toast {
+      bottom: calc(160px + env(safe-area-inset-bottom));
+      transform: translateX(-50%) translateY(calc(100% + 200px));
+    }
+    #view-outlines.active ~ #toast.show { transform: translateX(-50%) translateY(0); }
+    /* The install banner would sit on top of the panel's controls. */
+    #view-outlines.active ~ #install-banner { display: none; }
 
     /* ── Problem hold overlay (detail view) ──────────────────────────── */
     /* The board-wrap matches the image box (natural aspect), so percentage
@@ -1312,7 +1390,7 @@
     /* ── Admin hub (#admin) ──────────────────────────────────────────── */
     #admin-content { padding: 12px 16px 24px; max-width: 520px; margin: 0 auto; }
 
-    /* Tappable card linking to a sub-tool (e.g. Recalibrate board) */
+    /* Tappable card linking to a sub-tool (e.g. Hold outlines) */
     .admin-card {
       display: flex;
       align-items: center;

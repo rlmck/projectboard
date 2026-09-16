@@ -2,7 +2,7 @@
 register_holds.py -- built the BACKUP hold map, app/hold_map.json (10 June 2026).
 
 You shouldn't need to run this. The real hold map lives in the database
-(board_config.hold_map) and is edited in the app with #calibrate. This script
+(board_config.hold_map); the app no longer edits positions. This script
 only rebuilds the backup the app falls back to when the database can't be
 reached, and it can only ever rebuild the same backup from the same June
 inputs. Re-running it is safe: it reproduces the committed file exactly.
@@ -37,7 +37,7 @@ Two of Gareth's 189 holds have no dot, and that's expected:
     hand on 19 June 2026 (commit b54d5a6); it lives here now so a re-run keeps it.
   * hold218 (I12): Ross didn't dot it, and Gareth's own position for it is 70 px
     above the top of his photo, so neither source can place it. The live map has
-    it (added through #calibrate). No problem used it as of 11 Sep 2026.
+    it (added through the old in-app #calibrate tool). No problem used it as of 11 Sep 2026.
 
 Needs reference/original-pi-codebase/dtb/ (local only, gitignored). Run it from
 anywhere: python tools/register_holds.py

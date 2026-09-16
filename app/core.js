@@ -89,8 +89,7 @@
   }
 
   // Grid name for a hold number: hold1 -> A1, hold19 -> S1, hold20 -> A2, hold243 -> O13.
-  // 19 columns (A–S) × 13 rows, numbered row-major. Used to label holds in the
-  // calibrate "Add" mode so the admin knows which physical hold to place.
+  // 19 columns (A–S) × 13 rows, numbered row-major. Labels holds in the outline editor.
   function gridName(n) {
     n = +n;
     if (!n || n < 1) return 'hold' + n;
@@ -151,14 +150,14 @@
   // used holds stay bright. Returns null when shapes can't be used so callers
   // fall back to boardOverlayHtml().
   //
-  // Shapes are traced (register_shapes.py / trace_holds.html) against ONE specific
+  // Shapes are traced (register_shapes.py / the #outlines editor) against ONE specific
   // board — the LIVE board_config image + hold map — and hold_shapes.json records
   // that board's updated_at in __meta.board_updated_at. They only fit that board,
   // so the overlay stays off unless board_config supplied the map AND its version
   // still matches the traced one. That covers the offline/bundled fallback (the
-  // bundled ProjectBoard.png has different framing) and an admin recalibrating the
-  // board — which bumps updated_at and drops everyone back to the always-correct
-  // dot overlay until the shapes are re-traced and re-committed.
+  // bundled ProjectBoard.png has different framing) and a board that has been
+  // re-mapped since — which bumps updated_at and drops everyone back to the
+  // always-correct dot overlay until the shapes are re-traced and published.
   let hsMaskSeq = 0;
   function shapesUsable() {
     if (!HOLD_SHAPES || !HOLD_MAP || !configHasMap) return false;
@@ -171,16 +170,17 @@
   // Traced outlines are drawn as a closed Catmull-Rom curve through every traced
   // point, not straight segments. The tension runs 0 = the straight polygon to
   // 1 = fully rounded (can bulge a little past the traced points). It is set in
-  // tools/trace_holds.html and published with the outlines as __meta.smooth;
+  // the #outlines editor and published with the outlines as __meta.smooth;
   // SHAPE_SMOOTH is the default for a set without one (e.g. the bundled file).
   // The viewBox is stretched, but the curve is affine-invariant so it stays true.
+  // The editor passes its own unpublished `smooth`; everything else uses the set's.
   const SHAPE_SMOOTH = 0.7;
   function shapeSmooth() {
     const s = HOLD_SHAPES && HOLD_SHAPES.__meta && HOLD_SHAPES.__meta.smooth;
     return (typeof s === 'number' && s >= 0 && s <= 1) ? s : SHAPE_SMOOTH;
   }
-  function smoothShapePath(pts) {
-    const n = pts.length, k = shapeSmooth() / 6;
+  function smoothShapePath(pts, smooth = shapeSmooth()) {
+    const n = pts.length, k = smooth / 6;
     const f = v => +v.toFixed(3);
     let d = `M${f(pts[0][0])},${f(pts[0][1])}`;
     for (let i = 0; i < n; i++) {
@@ -258,8 +258,8 @@
   }
 
   // Floating "expand to fullscreen" button drawn over a board. Used by the inline
-  // detail/circuit-detail render templates; the static create/circuit-create/
-  // calibrate boards carry the same markup in index.html.
+  // detail/circuit-detail render templates; the static create/circuit-create
+  // boards carry the same markup in index.html.
   function boardExpandBtn() {
     return '<button class="board-expand-btn" type="button" aria-label="Fullscreen board">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
@@ -270,7 +270,7 @@
   // ── Fullscreen board mode ──────────────────────────────────────────────────────
   // Two ways in: the expand button enters a CSS-rotated landscape fullscreen on any
   // board view; turning a touch device to landscape auto-enters a natural (un-rotated)
-  // fullscreen on the read-only detail views (create/calibrate are excluded — a
+  // fullscreen on the read-only detail views (create is excluded — a
   // fullscreen board would cover their form + save controls). Both hide the header +
   // bottom nav. The board-wrap is positioned fixed and sized via the --fs-bw CSS var
   // (computed here), and its %-positioned overlay scales with it, so dots stay aligned.
@@ -378,15 +378,16 @@
     // The circuit Play preview only runs on the circuit detail view.
     if (name !== 'circuit-detail') stopCircuitPlay(false);
 
-    ['list','detail','create','calibrate','admin','auth','profile','circuits','circuit-detail','circuit-create','leaderboard'].forEach(v => {
+    ['list','detail','create','outlines','admin','auth','profile','circuits','circuit-detail','circuit-create','leaderboard'].forEach(v => {
       document.getElementById('view-' + v).classList.toggle('active', v === name);
     });
 
-    // Bottom nav: hidden on the focused auth screen.
-    document.getElementById('bottom-nav').style.display = name === 'auth' ? 'none' : 'flex';
+    // Bottom nav: hidden on the focused auth screen, and in the outline editor,
+    // which needs the whole screen for the board and its controls.
+    document.getElementById('bottom-nav').style.display = (name === 'auth' || name === 'outlines') ? 'none' : 'flex';
 
     // Active nav highlight.
-    const navFor = { list: 'list', detail: 'list', create: 'list', calibrate: 'profile', admin: 'profile', profile: 'profile', auth: 'profile', circuits: 'circuits', 'circuit-detail': 'circuits', 'circuit-create': 'circuits', leaderboard: 'leaderboard' }[name] || 'list';
+    const navFor = { list: 'list', detail: 'list', create: 'list', outlines: 'profile', admin: 'profile', profile: 'profile', auth: 'profile', circuits: 'circuits', 'circuit-detail': 'circuits', 'circuit-create': 'circuits', leaderboard: 'leaderboard' }[name] || 'list';
     document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.nav === navFor));
 
     if (name === 'list') {
@@ -423,14 +424,19 @@
         setView('create');
         break;
       case 'calibrate':
+        // The old recalibrate tool's address; the outline editor replaced it.
+        location.replace(location.pathname + '#outlines');
+        break;
+      case 'outlines':
         // Admin-only tool. Bounce non-admins once auth is known (don't kick during
-        // a cold load before the profile has resolved).
+        // a cold load before the profile has resolved). setView first: the editor
+        // measures its stage, which has no size while the view is hidden.
         if (authReady && !isAdmin()) { location.replace(location.pathname + '#list'); break; }
-        initCalibrate();
-        setView('calibrate');
+        setView('outlines');
+        initOutlines();
         break;
       case 'admin':
-        // Admin-only hub (board recalibration + user management). Bounce non-admins
+        // Admin-only hub (hold outlines + user management). Bounce non-admins
         // once auth is known (don't kick during a cold load before profile resolves).
         if (authReady && !isAdmin()) { location.replace(location.pathname + '#list'); break; }
         setView('admin');

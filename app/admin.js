@@ -1,10 +1,10 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, app. This file: admin hub (#admin) - recalibrate entry point + user management.
+// state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file: admin hub (#admin) - the hold outlines entry point + user management.
 
-  // ── Admin hub (#admin) — board recalibration + user management ───────────────
+  // ── Admin hub (#admin) — hold outlines + user management ─────────────────────
   // Three sub-screens, all under the one #admin view, driven by the hash param:
-  //   #admin            -> hub: cards for Recalibrate board + Users
+  //   #admin            -> hub: cards for Hold outlines + Users
   //   #admin/users      -> the user list (rows are links, no inline delete)
   //   #admin/user/<id>  -> one user's stats, with the delete button down there
   // User listing/deletion can't be done with the anon key (email lives in
@@ -64,11 +64,11 @@
     adminSetHeader('Admin', false);
     document.getElementById('admin-content').innerHTML = `
       <div class="admin-hub">
-        <a class="admin-card" href="#calibrate">
+        <a class="admin-card" href="#outlines">
           <div class="admin-card-icon">${boardIconSvg}</div>
           <div class="admin-card-text">
-            <div class="admin-card-title">Recalibrate board</div>
-            <div class="admin-card-sub">Re-map holds onto a new board photo and publish it.</div>
+            <div class="admin-card-title">Hold outlines</div>
+            <div class="admin-card-sub">Fine-tune the outline of each hold and publish it.</div>
           </div>
           <div class="admin-card-chev">${chevSvg}</div>
         </a>
@@ -169,7 +169,7 @@
     pendingAdminChange = { id, name, make };
     document.getElementById('user-admin-modal-title').textContent = make ? 'Make admin?' : 'Remove admin?';
     document.getElementById('user-admin-modal-text').innerHTML = make
-      ? `Give <b>${escHtml(name)}</b> admin rights? They’ll be able to delete and re-grade problems, recalibrate the board, and manage users.`
+      ? `Give <b>${escHtml(name)}</b> admin rights? They’ll be able to delete and re-grade problems, edit the hold outlines, and manage users.`
       : `Remove admin rights from <b>${escHtml(name)}</b>? They’ll go back to a normal member.`;
     document.getElementById('user-admin-error').textContent = '';
     const confirm = document.getElementById('user-admin-confirm');

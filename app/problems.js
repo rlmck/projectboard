@@ -307,16 +307,16 @@
   function refreshBoardViews() {
     if (currentView === 'detail') router();
     if (currentView === 'create') applyCreateRoles();
-    if (currentView === 'calibrate') initCalibrate();
+    if (currentView === 'outlines') initOutlines();
     if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
     if (currentView === 'circuit-create') applyCircuitCreate();
   }
 
-  // Point every static board <img> (create + calibrate + circuit create) at the
+  // Point every static board <img> (create + circuit create) at the
   // current BOARD_IMG. The detail views' <img> is built per-render, so it reads
   // BOARD_IMG directly.
   function applyBoardImage() {
-    document.querySelectorAll('#create-board .board-graphic, #cc-board .board-graphic, #cal-img').forEach(img => {
+    document.querySelectorAll('#create-board .board-graphic, #cc-board .board-graphic').forEach(img => {
       if (img.getAttribute('src') !== BOARD_IMG) img.setAttribute('src', BOARD_IMG);
     });
     measureBoardAspect();
@@ -335,8 +335,7 @@
   }
 
   // ── Load hold position map (bundled fallback for the board overlay) ──────────
-  // board_config (loadBoardConfig) is the source of truth when an admin has saved
-  // one; this bundled file is the first-paint / offline fallback. Don't clobber a
+  // board_config (loadBoardConfig) is the source of truth; this bundled file is the first-paint / offline fallback. Don't clobber a
   // map that already came from board_config.
   async function loadHoldMap() {
     if (configHasMap) return;
@@ -353,7 +352,7 @@
   // Their % coords are traced against the LIVE board image + map (board_config),
   // which is what the detail/create views render, so outlines and board have to
   // move together: board_config.hold_shapes (db/28) is the source of truth once
-  // an admin has published from tools/trace_holds.html, and this bundled file is
+  // an admin has published from the #outlines editor, and this bundled file is
   // the first-paint / offline fallback. Don't clobber outlines that already came
   // from board_config. The board version they were traced against is recorded in
   // __meta.board_updated_at; shapesUsable() refuses to draw over any other board,

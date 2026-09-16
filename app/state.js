@@ -44,7 +44,7 @@
   let currentProblem = null;
   let detailTrail = [];  // problem ids swiped through to reach the current one,
                          // oldest first — deleting steps back along it.
-  let HOLD_MAP = null;   // hold id -> {x,y} %, from board_config (admin) or bundled hold_map.json
+  let HOLD_MAP = null;   // hold id -> {x,y} %, from board_config or bundled hold_map.json
   let HOLD_SHAPES = null; // hold id -> [[x,y],…] % polygon, from board_config (admin) or bundled hold_shapes.json (problem overlay only)
   let MIRROR_MAP = null; // hold id -> mirror-partner hold id (bundled mirror_map.json); self = centre/no-partner
   let detailMirror = false; // detail view is showing the left/right-mirrored problem
@@ -55,9 +55,6 @@
   let boardConfigVersion = null;        // board_config.updated_at — the board the live map/image belong to
   let boardAspect = 0;                  // board image naturalWidth/naturalHeight (0 = not measured yet)
   const BOARD_BUCKET = 'board';         // Supabase Storage bucket holding the uploaded board image
-  // The 189 real holds on the board (ground truth from the DTB layout). Used by the
-  // calibrate "Add" mode to offer holds that are absent from the current map.
-  const VALID_HOLD_IDS = [1,3,4,5,7,8,10,12,14,16,17,19,20,22,23,24,25,27,28,30,31,32,33,34,35,36,38,39,41,42,43,44,45,46,47,48,49,50,51,53,54,55,58,59,60,61,62,63,64,65,69,70,71,72,73,74,75,76,79,80,81,82,83,85,86,87,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,143,145,146,147,148,149,150,151,152,154,155,156,157,158,160,161,162,163,164,165,166,167,168,169,171,172,174,175,176,177,178,179,180,185,186,188,189,190,191,192,194,195,196,198,199,202,203,205,206,207,208,212,213,216,218,219,221,222,230,231,233,234,235,236,237,239,242,243,244,245,246];
   let session = null;    // Supabase auth session (null = guest)
   let authReady = false; // true once getSession has resolved (don't gate routes before then)
   let profile = null;    // { id, username, is_admin } for the signed-in user

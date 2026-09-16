@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, app. This file: event wiring, PWA service worker + install banner, and boot (loaded LAST).
+// state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file: event wiring, PWA service worker + install banner, and boot (loaded LAST).
 
   // ── No pinch-zoom ─────────────────────────────────────────────────────────────
   // The viewport meta (user-scalable=no) stops it on Android, but iOS Safari and
@@ -167,8 +167,7 @@
   // ── Fullscreen board ──────────────────────────────────────────────────────────
   // Expand button (on any board) → rotated landscape fullscreen. Capture phase +
   // stopPropagation so a tap on the button over an interactive board (create /
-  // circuit-create / calibrate) doesn't also cycle/append a hold or, in calibrate
-  // nudge mode, start dragging a corner hold via the board's pointerdown handler.
+  // circuit-create) doesn't also cycle/append a hold.
   ['pointerdown', 'click'].forEach(type => {
     document.addEventListener(type, e => {
       if (!e.target.closest('.board-expand-btn')) return;
@@ -357,30 +356,56 @@
   });
   document.getElementById('cc-save').addEventListener('click', saveCircuit);
 
-  // Calibrate (admin board recalibration)
-  document.getElementById('cal-back').addEventListener('click', goBack);
-  document.getElementById('cal-reset').addEventListener('click', calReset);
-  document.getElementById('cal-load').addEventListener('click', () => document.getElementById('cal-file').click());
-  document.getElementById('cal-file').addEventListener('change', e => calLoadImage(e.target.files[0]));
-  document.getElementById('cal-clear-anchors').addEventListener('click', calClearAnchors);
-  document.getElementById('cal-fit').addEventListener('click', calFit);
-  document.getElementById('cal-save').addEventListener('click', calSave);
-  document.getElementById('cal-saved-ok').addEventListener('click', () => document.getElementById('cal-saved-modal').classList.remove('show'));
-  document.getElementById('cal-mode').addEventListener('click', e => {
-    const b = e.target.closest('.cal-seg'); if (b) calSetMode(b.dataset.mode);
+  // Hold outlines editor (#outlines, admin)
+  document.getElementById('ol-back').addEventListener('click', () => {
+    if (olDirty()) showToast('Not published yet — your changes are kept on this device', 'success');
+    goBack();
   });
-  const calBoard = document.getElementById('cal-board');
-  calBoard.addEventListener('click', e => {
-    if (CAL.mode === 'anchor') calAnchorTap(e);
-    else if (CAL.mode === 'add') calAddTap(e);
-    else if (CAL.mode === 'mirror') calMirrorTap(e);
+  document.getElementById('ol-undo').addEventListener('click', olUndo);
+  document.getElementById('ol-redo').addEventListener('click', olRedo);
+  wireOverflowMenu('ol-menu-btn', 'ol-menu');
+  document.getElementById('ol-m-zoom').addEventListener('click', () => olZoomToHold(olCurHold()));
+  document.getElementById('ol-m-fit').addEventListener('click', olFit);
+  document.getElementById('ol-m-todo').addEventListener('click', olNextUntraced);
+  document.getElementById('ol-m-others').addEventListener('click', olToggleOthers);
+  document.getElementById('ol-m-preview').addEventListener('click', olTogglePreview);
+  document.getElementById('ol-m-redraw').addEventListener('click', olRedraw);
+  document.getElementById('ol-m-revert').addEventListener('click', olRevertHold);
+  document.getElementById('ol-m-shipped').addEventListener('click', olLoadShipped);
+  document.getElementById('ol-m-discard').addEventListener('click', olDiscardAll);
+  document.getElementById('ol-note-btn').addEventListener('click', olNoteAction);
+  document.getElementById('ol-prev').addEventListener('click', () => olGoTo(OL.cur - 1));
+  document.getElementById('ol-next').addEventListener('click', () => olGoTo(OL.cur + 1));
+  document.getElementById('ol-jump').addEventListener('change', e => { olGoTo(parseInt(e.target.value, 10)); e.target.blur(); });
+  document.getElementById('ol-del').addEventListener('click', olDeletePoint);
+  document.getElementById('ol-publish').addEventListener('click', olPublish);
+  document.getElementById('ol-smooth').addEventListener('input', e => olSetSmooth(e.target.value));
+  document.getElementById('ol-img').addEventListener('load', olImgReady);
+  const olStageEl = document.getElementById('ol-stage');
+  olStageEl.addEventListener('pointerdown', olDown);
+  olStageEl.addEventListener('pointermove', olMove);
+  olStageEl.addEventListener('pointerup', olUp);
+  olStageEl.addEventListener('pointercancel', olUp);
+  olStageEl.addEventListener('wheel', olWheel, { passive: false });
+  olStageEl.addEventListener('contextmenu', olContextMenu);
+  document.addEventListener('keydown', olKey);
+  window.addEventListener('resize', () => { if (currentView === 'outlines') olLayout(true); });
+  // Nudge pad: one step per press, then repeating while held (one undo step per press).
+  let olRepeat = null;
+  const olStopRepeat = () => { if (olRepeat) { clearTimeout(olRepeat.t); clearInterval(olRepeat.i); olRepeat = null; } };
+  document.querySelectorAll('#ol-pad button').forEach(b => {
+    const dx = +b.dataset.dx * OL_NUDGE, dy = +b.dataset.dy * OL_NUDGE;
+    b.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      olStopRepeat();
+      olNudge(dx, dy, true);
+      olRepeat = { t: setTimeout(() => { if (olRepeat) olRepeat.i = setInterval(() => olNudge(dx, dy, false), 70); }, 400) };
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => b.addEventListener(t, olStopRepeat));
+    b.addEventListener('click', e => { if (e.detail === 0) olNudge(dx, dy, true); });   // keyboard activation
   });
-  calBoard.addEventListener('pointerdown', calDragStart);
-  calBoard.addEventListener('pointermove', calDragMove);
-  calBoard.addEventListener('pointerup', calDragEnd);
-  calBoard.addEventListener('pointercancel', calDragEnd);
 
-  // Admin hub (#admin): board recalibration link + user management
+  // Admin hub (#admin): hold outlines link + user management
   document.getElementById('admin-back').addEventListener('click', goBack);
   document.getElementById('admin-refresh').addEventListener('click', adminRefreshUsers);
   document.getElementById('user-delete-cancel').addEventListener('click', closeUserDelete);
@@ -426,7 +451,10 @@
 
   // True while the user has in-progress create-form state that a hard reload
   // would silently discard (tapped holds + typed name/grade live only in memory).
+  // The outline editor keeps a draft, but a reload mid-edit would still lose the
+  // zoom, the selection and the undo history, so it waits too.
   function hasUnsavedWork() {
+    if (currentView === 'outlines' && olDirty()) return true;
     if (currentView === 'create') {
       if (Object.keys(createRoles).length) return true;
       if (createGrade) return true;

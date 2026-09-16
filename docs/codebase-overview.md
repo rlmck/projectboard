@@ -62,7 +62,7 @@ build.sh  wrangler.jsonc  CLAUDE.md  .gitignore  .gitattributes   (the repo root
 
 | Path | What | Deployed? |
 |---|---|---|
-| `app/index.html` | All markup: splash, welcome overlay, 11 view `<section>`s, 9 modals, nav, install banner, toast | yes |
+| `app/index.html` | All markup: splash, welcome overlay, 11 view `<section>`s, 8 modals, nav, install banner, toast | yes |
 | `app/styles.css` | All styling (dark theme, `--accent: #ec4899`) | yes |
 | `app/state.js` … `app/app.js` | The nine app scripts (section 4) | yes |
 | `app/sw.js`, `app/manifest.json` | Service worker, PWA manifest | yes |
@@ -77,8 +77,6 @@ build.sh  wrangler.jsonc  CLAUDE.md  .gitignore  .gitattributes   (the repo root
 | `app/_headers`, `app/_redirects` | Cloudflare static-asset config (section 9); they must sit in the assets directory | yes |
 | `build.sh`, `wrangler.jsonc`, `.gitattributes` | Hosting config (section 9). The first two stay at the root: the Cloudflare dashboard runs `bash build.sh` and `npx wrangler deploy` from there | no |
 | `tools/register_holds.py`, `register_mirror.py`, `register_shapes.py`, `register_leds.py` | Generators for the JSON data (section 11) | no |
-| `tools/trace_holds.html` | Dev tool for viewing and hand-editing the hold outlines; run it locally (section 11). Its "round" slider sets the outline smoothing, published as `hold_shapes.__meta.smooth` (app default `SHAPE_SMOOTH` 0.7 in `core.js`) | no (removed from the deploy on 10 Sep 2026) |
-| `tools/preview_holds.html` | The trace tool's Preview pane: loads the app's own `state.js`, `core.js` and `styles.css` (with an inert Supabase stub) to draw every outline exactly as the app does | no |
 | `tools/hold_positions.json` | Input to `register_holds.py` (Ross's 187 hand-placed dots) | no |
 | `tools/led_map.json` | Hold → physical LED index; the Pi wiring contract. The app never reads it | no |
 | `tools/make_icons.py`, `tools/make_qr.py` | Icon generator, QR generator | no |
@@ -125,7 +123,7 @@ These are plain `<script>` tags, not ES modules. There's no build step and no fr
 | `problems.js` | Problem list/filters/cards, detail, swipe, info modal, **geofence + `castByName`**, board data loaders (`loadBoardConfig`, `loadHoldMap`, `loadMirrorMap`, `loadHoldShapes`), problem loading, tick button, admin delete + grade edit |
 | `admin.js` | `#admin` hub: user list/detail, promote/demote, delete user (RPCs) |
 | `account.js` | Ticks, favourites, filter-pill sync, **auth** (`initAuth`, email, Google, sign-out), display-name modal, profile page |
-| `authoring.js` | Create/edit problem (tap-to-cycle roles, finish zone, invert-on-save), the calibrate tool (anchor/fit/nudge/add/mirror, **Save board**), circuit helpers |
+| `authoring.js` | Create/edit problem (tap-to-cycle roles, finish zone, invert-on-save), the hold-outline editor (`#outlines`: pinch/pan, drag/add/delete points, nudge, roundness, preview, draft, **Publish**), circuit helpers |
 | `circuits.js` | Circuits list, detail, the Play-preview engine, create, delete |
 | `leaderboard.js` | `#leaderboard` view; `userPoints()` for the profile |
 | `app.js` | **Loaded last.** All event wiring, service-worker registration and update handling, the install flow (welcome overlay + banner), and **boot** |
@@ -151,7 +149,7 @@ Hash routing; `router()` switches on `parseHash()` (`route/param`).
 | `#list` (default) | problem list | grade tabs (tap = single, hold = multi-select), search, 3 filter pills |
 | `#detail/<id>` | problem detail | board overlay, tick/fave/mirror/cast, ⋮ menu (Edit: admin; Delete: admin or the problem's owner; Information: everyone); swipe = next/prev in the filtered deck, via `replaceState` |
 | `#create` / `#create/<id>` | create / admin edit-holds | guests bounced to `#auth`; non-admins bounced off `/<id>` |
-| `#calibrate` | recalibrate board | admin |
+| `#outlines` | hold-outline editor (bottom nav hidden) | admin; the old `#calibrate` redirects here |
 | `#admin`, `#admin/users`, `#admin/user/<id>` | admin hub drill-down | admin |
 | `#circuits`, `#circuit/<id>`, `#circuit-create` | circuits | create needs sign-in |
 | `#leaderboard` | ranks | public |
@@ -320,7 +318,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 **Supabase Auth config** (dashboard):
 - Site URL `https://symmetryboard.co.uk`.
-- Redirect URLs: `https://symmetryboard.co.uk/**`, the staging URL, and `http://127.0.0.1:8123/**` (added 12 Sep 2026, for Google sign-in in `tools/trace_holds.html`, which `trace.cmd` serves on that port). github.io was removed on 10 Sep 2026.
+- Redirect URLs: `https://symmetryboard.co.uk/**`, the staging URL, and `http://127.0.0.1:8123/**` (added 12 Sep 2026 for the desktop trace tool, which was retired on 16 Sep 2026; the entry can be removed). github.io was removed on 10 Sep 2026.
 
 **Google Auth Platform:** app name "Project Board", published. Brand verification is optional.
 
@@ -371,7 +369,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
    - `no-cache` on `/sw.js` and `/`.
    - Site-wide: `nosniff`, `Referrer-Policy`, `Permissions-Policy: geolocation=(self)` (the geofence needs it), `X-Frame-Options: DENY`, HSTS (1 year), and a **Content-Security-Policy**.
    - The CSP allows scripts only from the site itself plus Cloudflare's analytics beacon, and network connections only to Supabase (https + wss) and the analytics endpoint.
-   - It keeps `'unsafe-inline'` for styles only, because the overlays use `style="left/top"`. Images may come from the site, Supabase Storage and `blob:` (calibrate's preview).
+   - It keeps `'unsafe-inline'` for styles only, because the overlays use `style="left/top"`. Images may come from the site and Supabase Storage (`blob:` went with the calibrate tool on 16 Sep 2026).
    - There are **no inline scripts or inline event handlers anywhere; keep it that way.**
    - **Any new third-party origin (CDN, font, API) must be added to the CSP, or it's silently blocked.**
    - Checked on 10 Sep 2026 by driving every view in headless Chrome with the policy enforced: zero violations.
@@ -408,17 +406,15 @@ All of these live in `tools/`. The Python scripts find their files relative to t
 
 | Tool | Does | Needs |
 |---|---|---|
-| `register_holds.py` | Built the **backup** map `app/hold_map.json` (June 2026): fits Gareth's labelled layout onto Ross's 187 unlabelled dots (`tools/hold_positions.json`) and labels each dot. A one-off: the live map is edited with `#calibrate`, and a re-run reproduces the committed file byte for byte (including the `hold243` → `hold242` fix, now in the script's `SAME_HOLD`). Its header explains it in plain English | `reference/` (local) |
+| `register_holds.py` | Built the **backup** map `app/hold_map.json` (June 2026): fits Gareth's labelled layout onto Ross's 187 unlabelled dots (`tools/hold_positions.json`) and labels each dot. A one-off: the live map is `board_config.hold_map` (the in-app `#calibrate` editor that changed it was retired on 16 Sep 2026), and a re-run reproduces the committed file byte for byte (including the `hold243` → `hold242` fix, now in the script's `SAME_HOLD`). Its header explains it in plain English | `reference/` (local) |
 | `register_mirror.py` | Gareth's `MirrorDic.txt` → `app/mirror_map.json` (repairs one 4-hold knot). Its input path was wrong (`dtb/dtb/…`) until 11 Sep 2026; re-running it now reproduces the committed map exactly | `reference/` |
-| `register_shapes.py` | Auto-traces hold outlines from the **live** board → `app/hold_shapes.json`; merges by default, `--overwrite` to replace. Writes a `tools/shapes_preview.png` (ignored). It writes the **file**, not the live copy — open the editor and Publish to push the result live | network; run after every recalibration |
-| `trace_holds.html` | Viewer + precision editor for the hold outlines. Draw mode appends points; Edit mode drags vertices, inserts one by dragging the **+** that appears on a hovered edge, right-click deletes one, arrows nudge by 0.05%/0.5%/0.01%, and the selected vertex's X/Y can be typed in. Wheel zooms at the cursor, space-drag pans, `f` zooms to the current hold, and a loupe magnifies under the cursor. **Publish → live** (ctrl+shift+P) writes `board_config.hold_shapes` — one click, no commit or deploy; it signs in over raw Supabase Auth REST (once per browser, tokens in `localStorage`), refuses to publish outlines traced against a different board, and checks the returned row count because an RLS-blocked PATCH looks like a success. The counter measures against the **live** copy when there is one, else the file (`Revert hold` puts one back). **Export JSON** / **Link file…** still maintain `app/hold_shapes.json`, the shipped fallback. Autosaves to localStorage. **Not deployed** (F11): double-click `tools/trace.cmd`, or serve the **repo root** yourself and open `/tools/trace_holds.html` (it fetches `../app/…`) | a local http server; an admin sign-in to publish |
-| `trace.cmd` | Double-click launcher for the editor: starts `python -m http.server 8123` at the repo root (reusing one that's already up) and opens the page | Windows, Python |
+| `register_shapes.py` | Auto-traces hold outlines from the **live** board → `app/hold_shapes.json`; merges by default, `--overwrite` to replace. Writes a `tools/shapes_preview.png` (ignored). It writes the **file**, not the live copy: deploy it, then in the outline editor use ⋮ → *Load the shipped copy*, review, and Publish | network; run after every recalibration |
 | `register_leds.py` | Gareth's wiring → `tools/led_map.json` (asserts all 247 cells) | n/a |
 | `make_icons.py` | `app/icon.svg` geometry → 4 PNG icons in `app/` (Pillow). **The geometry is duplicated by hand**: keep it in step with `icon.svg` | Pillow |
 | `make_qr.py` | `https://symmetryboard.co.uk/scan` → `print/qr-scan.svg` (level Q) | segno |
-| In-app `#calibrate` | Recalibrate the board from a phone: upload a photo, anchor 3+ holds, Fit (least-squares affine), Nudge, Add missing holds, fix Mirror pairs, **Save board** (publishes to `board_config`, live for everyone) | admin |
+| In-app `#outlines` | The hold-outline editor, built for a phone (Admin → Hold outlines; replaced both `#calibrate` and the desktop `trace_holds.html` on 16 Sep 2026). Pinch to zoom and pan (one finger on empty board pans too); tap a hold to select it, double-tap to zoom to it; drag a point (a magnifier shows it above the finger); tap or drag the circle on an edge to add a point; drag inside to move the whole outline; a nudge pad moves the selected point, or the whole outline, by 0.05% (holding repeats). ⋮ menu: zoom to hold / whole board, next hold with no outline, hide others, **Preview as the app** (draws with core.js's own `holdShapeLayerHtml`), redraw, revert hold, load the shipped `hold_shapes.json`, discard all (undoable). Round slider = `__meta.smooth`. Edits are kept as a localStorage draft (`pb-outline-draft`, per board version) until published. **Publish** updates `board_config.hold_shapes` only (never `updated_at`) and checks the returned rows. It refuses outlines whose `__meta.board_updated_at` doesn't match the live board. Desktop: wheel zoom, arrows nudge, Delete, ctrl+Z/Y, n/p, f, 0, right-click deletes a point | admin |
 
-**After a recalibration**, overlays fall back to dots until someone re-traces the outlines against the new board and hits **Publish** in the editor. The "Board saved" modal says so.
+**Hold positions, the board photo and mirror pairs can no longer be edited in the app** (Ross, 16 Sep 2026). If the board is ever re-mapped (in the database), bumping `updated_at` drops every client to dots until the outlines are re-traced against it and published.
 
 ## 12. Known gaps (product, not bugs)
 
@@ -471,9 +467,7 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 - **`goBack()` uses `history.length > 1`**, so Back from a deep link opened in a tab with prior history leaves the app.
 - **`parseHash()` calls `decodeURIComponent` unguarded.** A truncated shared link (`…%2`) throws on every navigation and leaves the app stuck.
 - **The create and circuit-create boards ignore taps** until `HOLD_MAP` arrives, which happens after the `board_config` round trip. There's no loading state.
-- **Calibrate seeds from whatever map is loaded.** If `board_config` failed and the fallback loaded, **Save board** publishes bundled-era positions over the live board.
 - **The cast button** stays `disabled`/`.sent` for 2 s even after you swipe to the next problem. Worse, the name is captured at tap time, so a swipe during the up-to-6 s location wait casts the *previous* problem.
-- **A deploy reload can wipe calibrate work.** `hasUnsavedWork()` covers the create forms but not calibrate: anchors, nudges, mirror edits and a picked image are all lost.
 - **Writes blocked by RLS "succeed".** A blocked `delete()`/`update()` returns no error, just 0 rows, so the UI reports success. Problem delete now checks this. Grade edit, edit-holds and circuit delete still don't, which matters for an admin demoted mid-session. Add `.select()` and check the row count.
 - **Deleting a user doesn't refresh the leaderboard.** `doDeleteUser` never sets `leaderboardLoaded = false`, and the cached admin user list (with emails) survives sign-out.
 - **`router()` side effects when data arrives** (section 4.3).
@@ -491,7 +485,7 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
   - `loadHoldMap`/`loadMirrorMap` check their guard before the `await`. That's only safe because of the boot ordering.
   - `doSignOut` ignores errors and uses the default *global* scope, which signs you out of every device.
   - The in-app **Copy link** drops the `#detail/…` hash.
-- **Performance:** the hidden create/calibrate `<img>` tags download the 2.1 MB `ProjectBoard.png` on every first load, even when a live board exists. It's also precached. Convert it to WebP/JPEG, or set `src` lazily.
+- **Performance:** the hidden create/circuit-create `<img>` tags download the 2.1 MB `ProjectBoard.png` on every first load, even when a live board exists. It's also precached. Convert it to WebP/JPEG, or set `src` lazily.
 - **Stale or dead code:**
   - `holdChips()` is never called.
   - The "run db/NN in Supabase" messages will never fire now that every script is applied.
@@ -503,7 +497,7 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
   - two copies of the circuit "by hold" overlay builder;
   - five near-identical confirm modals;
   - three optimistic-toggle functions;
-  - the anon key and URL in `state.js`, `trace_holds.html` and the Pi listener;
+  - the anon key and URL in `state.js` and the Pi listener;
   - the icon geometry in five places (`icon.svg`, `make_icons.py`, the poster, and the legacy `index.html`/`404.html`).
 
 ## 14. Rebrand checklist (the "Project Board" name and the logo)
@@ -546,7 +540,7 @@ The domain `symmetryboard.co.uk` doesn't contain the brand, so **a name change d
 
 - **`.icon-btn { display:flex }` beats the browser's `[hidden]` rule**, so every hideable icon button needs an explicit `#id[hidden]{display:none}` guard.
 - **Cloudflare 307s `/x.html` → `/x` and `/index.html` → `/`.** Links to `privacy.html` work; just never cache or precache a redirect.
-- **The hold outlines are useless after a recalibration** until they're re-traced; the version stamp enforces this, for the published copy as much as the bundled one.
+- **The hold outlines are useless after the board is re-mapped** until they're re-traced; the version stamp enforces this, for the published copy as much as the bundled one.
 - **The live board image is `board.jpg` in Storage**, not the bundled PNG. The two are framed differently: never mix the live map with the bundled image, or the other way round.
 - **Supabase errors:**
   - `23505` = duplicate; toggles treat it as success, creates as "name taken".

@@ -223,49 +223,93 @@
   </main>
 </section>
 
-<!-- ══ CALIBRATE VIEW (admins — re-map holds onto a new board image) ═══ -->
-<section id="view-calibrate" class="view">
+<!-- ══ HOLD OUTLINES VIEW (admins — fine-tune each hold's traced outline) ══ -->
+<section id="view-outlines" class="view">
   <header class="topbar detail-bar">
-    <button class="icon-btn" id="cal-back" aria-label="Back">
+    <button class="icon-btn" id="ol-back" aria-label="Back">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
     </button>
-    <div class="detail-bar-title">Recalibrate board</div>
-    <button class="icon-btn" id="cal-reset" aria-label="Reset to saved positions">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
-    </button>
-  </header>
-  <main>
-    <div class="cal-toolbar">
-      <button class="cal-chip" id="cal-load">Change image…</button>
-      <div class="cal-mode" id="cal-mode">
-        <button class="cal-seg active" data-mode="anchor" type="button">Anchor</button>
-        <button class="cal-seg" data-mode="nudge" type="button">Nudge</button>
-        <button class="cal-seg" data-mode="add" type="button">Add</button>
-        <button class="cal-seg" data-mode="mirror" type="button">Mirror</button>
+    <div class="detail-bar-title">Hold outlines</div>
+    <div class="detail-actions">
+      <button class="icon-btn" id="ol-undo" aria-label="Undo" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>
+      </button>
+      <button class="icon-btn" id="ol-redo" aria-label="Redo" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 14 20 9 15 4"></polyline><path d="M4 20v-7a4 4 0 0 1 4-4h12"></path></svg>
+      </button>
+      <div class="menu-wrap">
+        <button class="icon-btn" id="ol-menu-btn" aria-label="More options" aria-haspopup="true" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="19" r="2"></circle></svg>
+        </button>
+        <div class="overflow-menu" id="ol-menu" role="menu" hidden>
+          <button class="menu-item" id="ol-m-zoom" role="menuitem">Zoom to this hold</button>
+          <button class="menu-item" id="ol-m-fit" role="menuitem">Show the whole board</button>
+          <button class="menu-item" id="ol-m-todo" role="menuitem">Next hold with no outline</button>
+          <button class="menu-item" id="ol-m-others" role="menuitem">Hide other outlines</button>
+          <button class="menu-item" id="ol-m-preview" role="menuitem">Preview as the app</button>
+          <button class="menu-item" id="ol-m-redraw" role="menuitem">Redraw this outline</button>
+          <button class="menu-item" id="ol-m-revert" role="menuitem">Revert this hold</button>
+          <button class="menu-item" id="ol-m-shipped" role="menuitem">Load the shipped copy</button>
+          <button class="menu-item danger" id="ol-m-discard" role="menuitem">Discard all changes</button>
+        </div>
       </div>
-      <input type="file" id="cal-file" accept="image/*" hidden />
     </div>
+  </header>
 
-    <p class="cal-status" id="cal-status"></p>
+  <div class="ol-stage" id="ol-stage">
+    <div class="ol-canvas" id="ol-canvas">
+      <img class="ol-img" id="ol-img" alt="The Hangout symmetry board" />
+      <svg class="ol-svg" id="ol-others" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+      <div class="ol-layer" id="ol-dots"></div>
+      <div class="ol-layer" id="ol-preview"></div>
+      <svg class="ol-svg" id="ol-cur" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+      <div class="ol-layer" id="ol-handles"></div>
+    </div>
+    <div class="ol-loupe" id="ol-loupe" hidden>
+      <img id="ol-loupe-img" alt="" />
+      <svg id="ol-loupe-svg" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="ol-note" id="ol-note" hidden>
+      <span id="ol-note-text"></span>
+      <button type="button" class="ol-note-btn" id="ol-note-btn" hidden></button>
+    </div>
+  </div>
 
-    <div class="board-wrap cal-board" id="cal-board">
-      <img class="board-graphic" id="cal-img" src="ProjectBoard.png" alt="The Hangout symmetry board" />
-      <div class="cal-layer" id="cal-layer"></div>
-      <button class="board-expand-btn" type="button" aria-label="Fullscreen board">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+  <div class="ol-panel">
+    <div class="ol-row">
+      <button class="icon-btn" id="ol-prev" aria-label="Previous hold">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      </button>
+      <select class="ol-jump" id="ol-jump" aria-label="Choose a hold"></select>
+      <button class="icon-btn" id="ol-next" aria-label="Next hold">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
       </button>
     </div>
-
-    <div class="cal-panel">
-      <div class="cal-anchors-row">
-        <span id="cal-anchor-count">0 anchors</span>
-        <button class="cal-chip ghost" id="cal-clear-anchors" type="button">Clear anchors</button>
+    <div class="ol-row">
+      <div class="ol-pad" id="ol-pad" aria-label="Nudge the selected point, or the whole outline">
+        <button class="icon-btn" type="button" data-dx="-1" data-dy="0" aria-label="Nudge left">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        </button>
+        <button class="icon-btn" type="button" data-dx="0" data-dy="-1" aria-label="Nudge up">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+        </button>
+        <button class="icon-btn" type="button" data-dx="0" data-dy="1" aria-label="Nudge down">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
+        </button>
+        <button class="icon-btn" type="button" data-dx="1" data-dy="0" aria-label="Nudge right">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+        </button>
       </div>
-      <button class="btn-block" id="cal-fit" disabled>Fit all holds to anchors</button>
-      <button class="btn-block btn-primary" id="cal-save">Save board</button>
-      <p class="cal-help"><b>Anchor</b>: tap a dot, then tap where that hold really is on the image; pin 3–4 spread-out holds (corners are ideal), then <b>Fit</b> snaps them all. <b>Nudge</b>: drag any stragglers. <b>Add</b>: place a hold that's missing from the map. <b>Mirror</b>: fix a wrong mirror pairing — tap a hold to see its partner, then tap the correct partner (or tap the same hold again for "no mirror"); amber dots have no mirror. <b>Change image…</b> uploads a new board photo. <b>Save board</b> publishes the image + positions + mirror pairs to everyone. Fit re-snaps from the saved map, so do nudges/adds last.</p>
+      <button class="ol-btn" type="button" id="ol-del" disabled>Delete point</button>
     </div>
-  </main>
+    <div class="ol-row">
+      <label class="ol-round">Round
+        <input type="range" id="ol-smooth" min="0" max="1" step="0.05" />
+        <span class="ol-round-val" id="ol-smooth-val">0.70</span>
+      </label>
+      <button class="ol-btn ol-publish" type="button" id="ol-publish" disabled>Published ✓</button>
+    </div>
+  </div>
 </section>
 
 <!-- ══ AUTH VIEW ══════════════════════════════════════════════════════ -->
@@ -579,22 +623,6 @@
       <div class="modal-actions">
         <button class="btn-block btn-ghost" id="password-cancel">Later</button>
         <button class="btn-block btn-primary" id="password-save">Save</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ══ BOARD SAVED MODAL (admins) ═════════════════════════════════════ -->
-<div class="modal-overlay" id="cal-saved-modal">
-  <div class="modal" role="dialog" aria-modal="true" aria-label="Board saved">
-    <div class="modal-header">
-      <div class="modal-title">Board saved ✓</div>
-    </div>
-    <div class="name-body">
-      <p class="shell-sub" style="margin:0 0 16px">The new board image and hold positions are live for everyone. Reopen the app (or pull down to refresh) to see the change — already-open phones pick it up on their next load.</p>
-      <p class="shell-sub" style="margin:0 0 16px">Problem overlays have gone back to plain dots: the traced hold outlines belong to the previous board. Re-trace them against this board in the hold-shape editor (<code>tools/trace_holds.html</code>) and hit Publish to bring the shaped outlines back.</p>
-      <div class="modal-actions">
-        <button class="btn-block btn-primary" id="cal-saved-ok">Done</button>
       </div>
     </div>
   </div>

@@ -22,7 +22,7 @@ SRC=app
 OUT=public
 
 FILES=(
-  # markup (tools/trace_holds.html is a dev tool: run it locally, it's not deployed)
+  # markup
   index.html
   privacy.html
 
