@@ -616,6 +616,68 @@
       color: var(--text-muted);
     }
 
+    /* ── Problem detail: the board must not move between problems ──────
+       #detail-content centres [title block + board] as one stack in the pinned
+       area, so every pixel this block gains pushes the board down half a pixel.
+       Two things changed its height as you swiped: a name long enough to wrap,
+       and the meta row wrapping onto a second line — which the "both sides"
+       badge triggered whenever the problem was also a benchmark, the two longest
+       badges together needing more than the row's width. That moved the board
+       15px on exactly the problems people swipe between most (only benchmarks
+       score, so benchmarks are what gets sent both ways).
+       So the block's height is LOCKED to one name line + one meta line, and its
+       content is bottom-anchored: a second name line or a second badge row grows
+       UPWARD into the gap above instead of pushing the board down. The board's
+       top edge is then identical on every problem, whatever badges it carries.
+       Scoped to #view-detail — the circuit detail reuses these classes but isn't
+       pinned or swipeable. Keep the height in step with .detail-name (1.35rem
+       at line-height 1.2), its 7px margin and --meta-line. */
+    #view-detail .detail-head-info {
+      --meta-line: 20px;        /* tallest meta item: 12px text + 2px padding + 1px border each side */
+      height: calc(12px + (1.35rem * 1.2) + 7px + var(--meta-line) + 10px);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      /* The pinned view sizes itself from its content, so a no-wrap meta row wider
+         than the screen would widen main -> .board-wrap -> the board image, making
+         the board TALLER and moving it again. Clamping this block's width to the
+         viewport stops that contribution at the source. */
+      max-width: 100vw;
+    }
+    /* Neither child may be squeezed to fit the locked height — they overflow it. */
+    #view-detail .detail-name,
+    #view-detail .detail-meta { flex-shrink: 0; }
+    /* A long name starts on the line above. Two lines is the ceiling, so even a
+       pathological name can't climb up behind the sticky header. */
+    #view-detail .detail-name {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      max-height: calc(2 * 1.35rem * 1.2);
+      overflow: hidden;
+    }
+    /* The meta row stays on ONE line. Bottom-anchored, a wrapped second badge row
+       climbs upward and cuts the name in half behind the sticky header, and the
+       detail view is pinned so there's no slack to spend on reserving the space.
+       The setter name is the one item allowed to give (ellipsis), so the badges —
+       the "both sides" one included — always stay whole. */
+    #view-detail .detail-meta {
+      flex-wrap: nowrap;
+      min-height: var(--meta-line);
+      gap: 8px;                 /* 2px tighter than the list's: buys a badge's worth of room */
+    }
+    /* Badges keep their size, and one constant line box for every item, so a glyph
+       that falls back to a different font (the badge's tick) can't grow the row. */
+    #view-detail .detail-meta > * { flex: 0 0 auto; line-height: 14px; }
+    #view-detail .detail-meta .meta-setter {
+      flex: 0 1 auto;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     /* Tick · Mirror · Cast — boxed icon buttons (same style as the "i" button) */
     .detail-actions {
       flex-shrink: 0;
