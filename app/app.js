@@ -356,7 +356,7 @@
   });
   document.getElementById('cc-save').addEventListener('click', saveCircuit);
 
-  // Hold outlines editor (#outlines, admin)
+  // Trace Holds: the hold outline editor (#outlines, admin)
   document.getElementById('ol-back').addEventListener('click', () => {
     if (olDirty()) showToast('Not published yet — your changes are kept on this device', 'success');
     goBack();
@@ -364,11 +364,11 @@
   document.getElementById('ol-undo').addEventListener('click', olUndo);
   document.getElementById('ol-redo').addEventListener('click', olRedo);
   wireOverflowMenu('ol-menu-btn', 'ol-menu');
-  document.getElementById('ol-m-zoom').addEventListener('click', () => olZoomToHold(olCurHold()));
+  document.getElementById('ol-zoom-btn').addEventListener('click', () => olZoomToHold(olCurHold()));
   document.getElementById('ol-m-fit').addEventListener('click', olFit);
   document.getElementById('ol-m-todo').addEventListener('click', olNextUntraced);
   document.getElementById('ol-m-others').addEventListener('click', olToggleOthers);
-  document.getElementById('ol-m-preview').addEventListener('click', olTogglePreview);
+  document.getElementById('ol-preview-btn').addEventListener('click', olTogglePreview);
   document.getElementById('ol-m-redraw').addEventListener('click', olRedraw);
   document.getElementById('ol-m-revert').addEventListener('click', olRevertHold);
   document.getElementById('ol-m-shipped').addEventListener('click', olLoadShipped);

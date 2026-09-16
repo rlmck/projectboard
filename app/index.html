@@ -223,14 +223,19 @@
   </main>
 </section>
 
-<!-- ══ HOLD OUTLINES VIEW (admins — fine-tune each hold's traced outline) ══ -->
+<!-- ══ TRACE HOLDS VIEW (admins — fine-tune each hold's traced outline) ══ -->
 <section id="view-outlines" class="view">
   <header class="topbar detail-bar">
     <button class="icon-btn" id="ol-back" aria-label="Back">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
     </button>
-    <div class="detail-bar-title">Hold outlines</div>
     <div class="detail-actions">
+      <button class="icon-btn" id="ol-zoom-btn" aria-label="Zoom to this hold">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16" y2="16"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+      </button>
+      <button class="icon-btn" id="ol-preview-btn" aria-label="Preview as the app" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+      </button>
       <button class="icon-btn" id="ol-undo" aria-label="Undo" disabled>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>
       </button>
@@ -242,11 +247,9 @@
           <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="19" r="2"></circle></svg>
         </button>
         <div class="overflow-menu" id="ol-menu" role="menu" hidden>
-          <button class="menu-item" id="ol-m-zoom" role="menuitem">Zoom to this hold</button>
           <button class="menu-item" id="ol-m-fit" role="menuitem">Show the whole board</button>
           <button class="menu-item" id="ol-m-todo" role="menuitem">Next hold with no outline</button>
           <button class="menu-item" id="ol-m-others" role="menuitem">Hide other outlines</button>
-          <button class="menu-item" id="ol-m-preview" role="menuitem">Preview as the app</button>
           <button class="menu-item" id="ol-m-redraw" role="menuitem">Redraw this outline</button>
           <button class="menu-item" id="ol-m-revert" role="menuitem">Revert this hold</button>
           <button class="menu-item" id="ol-m-shipped" role="menuitem">Load the shipped copy</button>

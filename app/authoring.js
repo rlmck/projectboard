@@ -279,7 +279,7 @@
   // board_config.hold_shapes (db/28) so every client draws it on its next load.
   // It replaced both the old #calibrate tool and the desktop tools/trace_holds.html.
   //
-  // Touch: pinch to zoom, two fingers (or one on empty board) to pan. Tap a hold to
+  // Admin → Trace Holds. Touch: pinch to zoom, two fingers (or one on empty board) to pan. Tap a hold to
   // select it, double-tap to zoom to it. Drag a point to move it (a magnifier shows
   // it above the finger); drag or tap the small circle on an edge to add a point;
   // drag inside the outline to move the whole shape. The panel nudges the selected
@@ -294,7 +294,7 @@
   const isAdmin = () => !!(profile && profile.is_admin);
 
   const OL_DRAFT_KEY = 'pb-outline-draft';
-  const OL_MAX_W = 3000;          // px: the widest the zoomed board gets (phone memory; the photo is ~1400px anyway)
+  const OL_MAX_W = 8000;          // px: the widest the zoomed board gets (a hold is then ~350px across on a phone)
   const OL_SLOP = 6;              // px a pointer must travel before a press becomes a drag
   const OL_HIT = isTouchDevice ? 22 : 10;   // px grab radius for points
   const OL_MID_MIN = OL_HIT * 2;  // px: an edge shorter than this gets no add-point handle
@@ -315,7 +315,7 @@
     showOthers: true, preview: false, previewRole: 'int', previewUsable: true,
     aspect: 0, fitW: 0, s: 1, tx: 0, ty: 0, cw: 0, sw: 0, sh: 0,   // view: fit width, zoom, pan, laid-out width, stage size
     ptrs: new Map(), gesture: null, lastTap: null, raf: 0,
-    publishing: false, statusT: 0,
+    publishing: false, statusT: 0, previewKey: '',
   };
 
   const olClone = o => JSON.parse(JSON.stringify(o));
@@ -539,12 +539,10 @@
     const pv = document.getElementById('ol-preview');
     if (OL.preview) {
       others.innerHTML = ''; dots.innerHTML = '';
-      const r = olPreviewHtml();
-      pv.innerHTML = r.html;
-      OL.previewUsable = r.usable;
+      olRenderPreview(true);
       return;
     }
-    pv.innerHTML = '';
+    pv.innerHTML = ''; OL.previewKey = '';
     let paths = '', ds = '';
     OL.holds.forEach(g => {
       if (g === h) return;
@@ -575,6 +573,20 @@
     return { html: html || '', usable: html != null };
   }
 
+  // Preview is a working mode, not a view: everything stays editable, and the app's
+  // rendering is redrawn whenever the current outline settles (not on every frame
+  // of a drag — the gold outline tracks the finger meanwhile). Other holds only
+  // change through bulk actions, which go through olRenderStatic (force).
+  function olRenderPreview(force) {
+    const key = [OL.cur, OL.smooth, OL.previewRole, JSON.stringify(olPts())].join('|');
+    if (!force && key === OL.previewKey) return;
+    OL.previewKey = key;
+    const r = olPreviewHtml();
+    document.getElementById('ol-preview').innerHTML = r.html;
+    OL.previewUsable = r.usable;
+  }
+  const olDragging = () => !!(OL.gesture && OL.gesture.moved && (OL.gesture.type === 'vtx' || OL.gesture.type === 'poly'));
+
   function olMids(pts) {
     const pxX = OL.cw / 100, pxY = OL.cw / (OL.aspect || 1) / 100, out = [];
     for (let i = 0; i < pts.length; i++) {
@@ -597,26 +609,32 @@
     if (!OL.ready) return;
     const h = olCurHold(), pts = olPts();
     let svg = '', html = '';
-    if (!OL.preview) {
-      const ptsStr = pts.map(p => p[0] + ',' + p[1]).join(' ');
-      if (pts.length >= 3) {
-        svg = `<polygon class="ol-skel" points="${ptsStr}"/><path class="ol-poly" d="${smoothShapePath(pts, OL.smooth)}"/>`;
-      } else if (pts.length === 2) {
-        svg = `<polyline class="ol-poly open" points="${ptsStr}"/>`;
-      }
-      if (!olTiny(pts)) {
-        pts.forEach((p, i) => { html += `<div class="ol-v${i === OL.sel ? ' sel' : ''}" style="left:${p[0]}%;top:${p[1]}%"></div>`; });
-        if (!OL.drawing) olMids(pts).forEach(m => { html += `<div class="ol-m" style="left:${m.pt[0]}%;top:${m.pt[1]}%"></div>`; });
-      }
-      const c = HOLD_MAP[h];
-      if (c) html += `<div class="ol-x" style="left:${c.x}%;top:${c.y}%"></div>`;
+    const ptsStr = pts.map(p => p[0] + ',' + p[1]).join(' ');
+    // In preview the app's own drawing shows the settled outline, so the gold one
+    // only appears while a drag is moving it.
+    const gold = !OL.preview || olDragging();
+    if (pts.length >= 3) {
+      svg = `<polygon class="ol-skel" points="${ptsStr}"/>`
+        + (gold ? `<path class="ol-poly" d="${smoothShapePath(pts, OL.smooth)}"/>` : '');
+    } else if (pts.length === 2) {
+      svg = `<polyline class="ol-poly open" points="${ptsStr}"/>`;
     }
+    if (!olTiny(pts)) {
+      pts.forEach((p, i) => { html += `<div class="ol-v${i === OL.sel ? ' sel' : ''}" style="left:${p[0]}%;top:${p[1]}%"></div>`; });
+      if (!OL.drawing) olMids(pts).forEach(m => { html += `<div class="ol-m" style="left:${m.pt[0]}%;top:${m.pt[1]}%"></div>`; });
+    }
+    const c = HOLD_MAP[h];
+    if (c) html += `<div class="ol-x" style="left:${c.x}%;top:${c.y}%"></div>`;
+    if (OL.preview && !olDragging()) olRenderPreview(false);
     document.getElementById('ol-cur').innerHTML = svg;
     document.getElementById('ol-handles').innerHTML = html;
 
     document.getElementById('ol-undo').disabled = !OL.undo.length;
     document.getElementById('ol-redo').disabled = !OL.redo.length;
-    document.getElementById('ol-del').disabled = OL.preview || OL.sel == null;
+    document.getElementById('ol-del').disabled = OL.sel == null;
+    const pvb = document.getElementById('ol-preview-btn');
+    pvb.classList.toggle('on', OL.preview);
+    pvb.setAttribute('aria-pressed', OL.preview ? 'true' : 'false');
     const jump = document.getElementById('ol-jump');
     if (jump.value !== String(OL.cur)) jump.value = String(OL.cur);
     olNote();
@@ -625,12 +643,6 @@
   // One message at a time over the top of the board, most important first.
   function olNote() {
     const pts = olPts();
-    if (OL.preview) {
-      const names = { int: 'blue', start: 'green', finish: 'red' };
-      return olSetNote(OL.previewUsable ? 'App preview — what everyone sees once published'
-                                  : 'The app would show dots: these outlines don’t match the live board',
-                       'Colour: ' + names[OL.previewRole]);
-    }
     if (!olVersionOk()) return olSetNote('These outlines were traced against a different board, so the app ignores them. Publishing is off.');
     if (OL.staleDraft) return olSetNote('Someone published outlines since this draft was saved. Publishing overwrites theirs.', 'Discard my draft');
     if (OL.drawing) {
@@ -638,6 +650,12 @@
         ? `Tap around ${gridName(holdNum(olCurHold()))} to outline it · ${pts.length} point${pts.length === 1 ? '' : 's'}`
         : `${gridName(holdNum(olCurHold()))} has no outline. Tap around the hold to draw one.`,
         pts.length >= 3 ? 'Done' : '');
+    }
+    if (OL.preview) {
+      const names = { int: 'blue', start: 'green', finish: 'red' };
+      return olSetNote(OL.previewUsable ? 'Preview: as the app draws it'
+                                        : 'The app would show dots: these outlines don’t match the live board',
+                       'Colour: ' + names[OL.previewRole]);
     }
     if (olTiny(pts)) return olSetNote('Pinch or double-tap to zoom in and edit the points');
     olSetNote('');
@@ -652,17 +670,17 @@
     b.textContent = btn || '';
   }
   function olNoteAction() {
-    if (OL.preview) {
-      const order = ['int', 'start', 'finish'];
-      OL.previewRole = order[(order.indexOf(OL.previewRole) + 1) % order.length];
-      olRenderStatic(); olRenderCur();
-    } else if (!olVersionOk()) {
+    if (!olVersionOk()) {
       /* no action */
     } else if (OL.staleDraft) {
       olDiscardAll();
     } else if (OL.drawing && olPts().length >= 3) {
       OL.drawing = false; OL.sel = null;
       olRenderCur();
+    } else if (OL.preview) {
+      const order = ['int', 'start', 'finish'];
+      OL.previewRole = order[(order.indexOf(OL.previewRole) + 1) % order.length];
+      olRenderStatic(); olRenderCur();
     }
   }
 
@@ -691,8 +709,6 @@
     document.getElementById('ol-smooth').value = OL.smooth;
     const oth = document.getElementById('ol-m-others');
     if (oth) oth.textContent = OL.showOthers ? 'Hide other outlines' : 'Show other outlines';
-    const pvb = document.getElementById('ol-m-preview');
-    if (pvb) pvb.textContent = OL.preview ? 'Back to editing' : 'Preview as the app';
     document.getElementById('ol-m-revert').disabled = olSame(OL.shapes[olCurHold()], OL.baseline[olCurHold()]);
     document.getElementById('ol-m-discard').disabled = !olDirty();
     olSaveDraft();
@@ -724,7 +740,7 @@
   // ── hit testing (screen px) ──
   function olHitHandle(clientX, clientY) {
     const pts = olPts();
-    if (OL.preview || olTiny(pts)) return null;
+    if (olTiny(pts)) return null;
     const [x, y] = olPct(clientX, clientY);
     const pxX = olW() / 100, pxY = olH() / 100;
     const dist = p => Math.hypot((p[0] - x) * pxX, (p[1] - y) * pxY);
@@ -797,7 +813,7 @@
         olRenderCur();
       } else if (hit && hit.kind === 'mid') {
         Object.assign(g, { type: 'mid', after: hit.after, start: hit.pt.slice() });
-      } else if (!OL.preview && !OL.drawing && pts.length >= 3 && olInPoly(pts, x, y)) {
+      } else if (!OL.drawing && pts.length >= 3 && olInPoly(pts, x, y)) {
         Object.assign(g, { type: 'poly', startPts: olClone(pts) });
       }
     }
@@ -885,13 +901,6 @@
     const now = Date.now();
     const dbl = !!(OL.lastTap && now - OL.lastTap.t < 350 && Math.hypot(g.sx - OL.lastTap.x, g.sy - OL.lastTap.y) < 30);
     OL.lastTap = dbl ? null : { t: now, x: g.sx, y: g.sy };
-    if (OL.preview) {
-      if (!dbl) return;
-      if (OL.s > 1.2) { olFit(); return; }
-      const [sx, sy] = olStageXY(g.sx, g.sy);
-      olZoomAt(3, sx, sy); olApply(false);
-      return;
-    }
     if (OL.drawing) {
       const h = olCurHold();
       olPush();
@@ -975,7 +984,7 @@
   // Move the selected point, or the whole outline when none is selected.
   function olNudge(dx, dy, push = true) {
     const h = olCurHold(), pts = OL.shapes[h];
-    if (OL.preview || !pts || !pts.length) return;
+    if (!pts || !pts.length) return;
     if (push) olPush();
     if (OL.sel != null && pts[OL.sel]) pts[OL.sel] = [olR2(pts[OL.sel][0] + dx), olR2(pts[OL.sel][1] + dy)];
     else OL.shapes[h] = pts.map(p => [olR2(p[0] + dx), olR2(p[1] + dy)]);
@@ -984,7 +993,7 @@
 
   function olDeletePoint() {
     const h = olCurHold(), pts = OL.shapes[h];
-    if (OL.preview || !pts || OL.sel == null || !pts[OL.sel]) return;
+    if (!pts || OL.sel == null || !pts[OL.sel]) return;
     olPush();
     pts.splice(OL.sel, 1);
     if (!pts.length) delete OL.shapes[h];
@@ -997,7 +1006,7 @@
     const h = olCurHold();
     if (OL.shapes[h]) olPush();
     delete OL.shapes[h];
-    OL.sel = null; OL.drawing = true; OL.preview = false;
+    OL.sel = null; OL.drawing = true;
     olRenderStatic(); olRenderCur(); olStatus();
     olZoomToHold(h);
   }
@@ -1056,10 +1065,10 @@
     olRenderStatic(); olRenderCur(); olScheduleStatus();
   }
 
+  // Leaves the zoom, the pan, the hold and the selected point exactly as they are.
   function olTogglePreview() {
     OL.preview = !OL.preview;
-    OL.sel = null;
-    olRenderStatic(); olRenderCur(); olStatus();
+    olRenderStatic(); olRenderCur();
   }
   function olToggleOthers() {
     OL.showOthers = !OL.showOthers;

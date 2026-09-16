@@ -35,7 +35,7 @@ detected ones. Hand repairs are made in the app's outline editor (#outlines)
 and live in board_config.hold_shapes, not in this file.
 
 Getting a run live: this writes the FILE. Deploy it, then in the app open
-Admin -> Hold outlines -> menu -> Load the shipped copy, review, and Publish.
+Admin -> Trace Holds -> menu -> Load the shipped copy, review, and Publish.
 
 Deps: pip install numpy opencv-python-headless   (dev-only; not shipped)
 Run:  python tools/register_shapes.py            # merge into app/hold_shapes.json + preview
@@ -279,7 +279,7 @@ def main():
         print(f"detector missed ({len(fails)}): {', '.join(sorted(fails))}")
     if missing:
         print(f"NOT in the output ({len(missing)}): {', '.join(sorted(missing))}")
-        print("  fix these by hand in the app: Admin -> Hold outlines (after loading the shipped copy).")
+        print("  fix these by hand in the app: Admin -> Trace Holds (after loading the shipped copy).")
 
 
 if __name__ == "__main__":

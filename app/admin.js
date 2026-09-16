@@ -4,7 +4,7 @@
 
   // ── Admin hub (#admin) — hold outlines + user management ─────────────────────
   // Three sub-screens, all under the one #admin view, driven by the hash param:
-  //   #admin            -> hub: cards for Hold outlines + Users
+  //   #admin            -> hub: cards for Trace Holds + Users
   //   #admin/users      -> the user list (rows are links, no inline delete)
   //   #admin/user/<id>  -> one user's stats, with the delete button down there
   // User listing/deletion can't be done with the anon key (email lives in
@@ -67,7 +67,7 @@
         <a class="admin-card" href="#outlines">
           <div class="admin-card-icon">${boardIconSvg}</div>
           <div class="admin-card-text">
-            <div class="admin-card-title">Hold outlines</div>
+            <div class="admin-card-title">Trace Holds</div>
             <div class="admin-card-sub">Fine-tune the outline of each hold and publish it.</div>
           </div>
           <div class="admin-card-chev">${chevSvg}</div>

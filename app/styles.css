@@ -969,6 +969,9 @@
     }
     #view-outlines .topbar { flex: none; }
     #view-outlines .icon-btn:disabled { opacity: 0.35; cursor: default; }
+    /* No title in this header, so the back button sits left and the tools right. */
+    #view-outlines .detail-actions { gap: 6px; }
+    #ol-preview-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
     .ol-stage {
       flex: 1; min-height: 0; position: relative; overflow: hidden;
       background: #050505; touch-action: none; cursor: default;
