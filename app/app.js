@@ -13,6 +13,74 @@
     if (e.touches.length > 1) e.preventDefault();
   }, { passive: false });
 
+  // ── Pull-to-refresh (Problems list only) ──────────────────────────────────────
+  // The browser's own pull-to-refresh is off everywhere (overscroll-behavior in
+  // styles.css). On the list, a downward drag that starts at the top of the page
+  // opens .list-pull; letting go past PULL_TRIGGER re-fetches the list in place.
+  // A mostly sideways drag (the grade tabs scroll horizontally) is left alone.
+  const PULL_TRIGGER = 64;   // px of indicator height needed to refresh
+  const PULL_MAX = 96;       // the indicator stops growing here
+  const PULL_HOLD = 52;      // height it holds while refreshing
+  const listPull = document.getElementById('list-pull');
+  let pullStart = null;      // { x, y } of the touch, while a pull might begin
+  let pulling = false;
+  let pullDist = 0;
+  let pullBusy = false;
+
+  function setPull(h) {
+    pullDist = h;
+    listPull.style.height = h + 'px';
+    listPull.style.setProperty('--pull', Math.min(1, h / PULL_TRIGGER));
+    listPull.classList.toggle('ready', h >= PULL_TRIGGER);
+  }
+
+  document.addEventListener('touchstart', e => {
+    pullStart = null;
+    if (pullBusy || currentView !== 'list' || e.touches.length !== 1 || window.scrollY > 0) return;
+    if (!e.target.closest('#view-list') || e.target.closest('input')) return;
+    pullStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    if (!pullStart) return;
+    if (e.touches.length !== 1) { pullStart = null; if (pulling) { pulling = false; listPull.classList.remove('dragging'); setPull(0); } return; }
+    const dx = e.touches[0].clientX - pullStart.x;
+    const dy = e.touches[0].clientY - pullStart.y;
+    if (!pulling) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      if (dy <= 0 || Math.abs(dx) > Math.abs(dy) || window.scrollY > 0) { pullStart = null; return; }
+      pulling = true;
+      listPull.classList.add('dragging');
+    }
+    if (e.cancelable) e.preventDefault();
+    // Resistance: the indicator moves at half the finger's speed.
+    setPull(Math.max(0, Math.min(PULL_MAX, dy * 0.5)));
+  }, { passive: false });
+
+  async function endPull() {
+    pullStart = null;
+    if (!pulling) return;
+    pulling = false;
+    listPull.classList.remove('dragging');
+    if (pullDist < PULL_TRIGGER) { setPull(0); return; }
+    pullBusy = true;
+    listPull.classList.add('refreshing');
+    setPull(PULL_HOLD);
+    // Hold the spinner briefly so a fast response still reads as a refresh.
+    try {
+      await Promise.all([refreshProblems(), new Promise(r => setTimeout(r, 500))]);
+    } catch (err) {
+      console.warn('list refresh failed', err);
+      showToast('Couldn’t refresh problems', 'error');
+    } finally {
+      listPull.classList.remove('refreshing');
+      setPull(0);
+      pullBusy = false;
+    }
+  }
+  document.addEventListener('touchend', endPull);
+  document.addEventListener('touchcancel', endPull);
+
   // ── Wire up events ────────────────────────────────────────────────────────────
   // Search — the clear "×" stays visible whenever the field has text (not just
   // while focused, unlike the native control), and re-focuses for a fresh search.

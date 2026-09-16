@@ -454,6 +454,23 @@
     router();
   }
 
+  // Pull-to-refresh on the list (wired in app.js). Unlike loadProblems it doesn't
+  // re-run the router, which would restore a stale saved scroll position, and a
+  // failed fetch keeps the list that's already showing. Ticks and favourites come
+  // too, so the pills reflect sends made on another device.
+  async function refreshProblems() {
+    const [res] = await Promise.all([
+      sb.from('problems').select('*'),
+      session ? loadTicks() : null,
+      session ? loadFaves() : null,
+    ]);
+    if (res.error) { showToast('Couldn’t refresh problems', 'error'); return; }
+    allProblems = res.data || [];
+    loaded = true;
+    buildGradeTabs();
+    renderList();
+  }
+
   // ── Ticks (personal sends — private to the signed-in user) ───────────────────
   // Reflect the current problem's tick state on the detail header button.
   function updateTickButton() {

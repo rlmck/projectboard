@@ -26,6 +26,10 @@
     /* Panning only: no pinch or double-tap zoom anywhere in the app (the
        viewport meta + app.js's iOS gesture guard cover the browsers that ignore this). */
     html { touch-action: pan-x pan-y; }
+    /* No browser pull-to-refresh or overscroll bounce: it reloads the whole app,
+       which feels like a web page. The Problems list has its own pull-to-refresh
+       (.list-pull, wired in app.js) that re-fetches the list in place. */
+    html, body { overscroll-behavior-y: none; }
     /* No text highlighting except in form fields (and .welcome-url, the in-app
        browser's long-press-to-copy link, which sets its own user-select: all). */
     body { user-select: none; -webkit-user-select: none; }
@@ -450,6 +454,26 @@
 
     /* ── Problem cards (list) ────────────────────────────────────────── */
     .problem-list { display: flex; flex-direction: column; gap: 8px; }
+
+    /* Pull-to-refresh on the Problems list. app.js sets the height while the
+       finger drags (pushing the list down under the sticky header) and --pull
+       (0–1) to turn the ring; .refreshing holds it open and spins. */
+    .list-pull {
+      height: 0; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      transition: height 0.25s ease;
+    }
+    .list-pull.dragging { transition: none; }
+    .list-pull-icon {
+      width: 26px; height: 26px; flex: none;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      opacity: calc(0.3 + var(--pull, 0) * 0.7);
+      transform: rotate(calc(var(--pull, 0) * 270deg));
+    }
+    .list-pull.ready .list-pull-icon { border-right-color: var(--accent); }
+    .list-pull.refreshing .list-pull-icon { opacity: 1; animation: spin 0.7s linear infinite; }
 
     .problem-card {
       background: var(--surface);
