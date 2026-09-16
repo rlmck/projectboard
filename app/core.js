@@ -428,17 +428,20 @@
         location.replace(location.pathname + '#outlines');
         break;
       case 'outlines':
-        // Admin-only tool. Bounce non-admins once auth is known (don't kick during
-        // a cold load before the profile has resolved). setView first: the editor
-        // measures its stage, which has no size while the view is hidden.
-        if (authReady && !isAdmin()) { location.replace(location.pathname + '#list'); break; }
+        // Admin-only tool. Nothing is shown until auth (and the profile) is known —
+        // initAuth re-runs the router then — so a non-admin never sees it, not even
+        // for a moment on a cold deep link. setView first: the editor measures its
+        // stage, which has no size while the view is hidden.
+        if (!authReady) break;
+        if (!isAdmin()) { location.replace(location.pathname + '#list'); break; }
         setView('outlines');
         initOutlines();
         break;
       case 'admin':
-        // Admin-only hub (hold outlines + user management). Bounce non-admins
-        // once auth is known (don't kick during a cold load before profile resolves).
-        if (authReady && !isAdmin()) { location.replace(location.pathname + '#list'); break; }
+        // Admin-only hub (Trace Holds + user management). Same gate as #outlines:
+        // wait for auth + profile, then bounce non-admins.
+        if (!authReady) break;
+        if (!isAdmin()) { location.replace(location.pathname + '#list'); break; }
         setView('admin');
         renderAdmin(param);
         break;

@@ -56,7 +56,7 @@
   let boardAspect = 0;                  // board image naturalWidth/naturalHeight (0 = not measured yet)
   const BOARD_BUCKET = 'board';         // Supabase Storage bucket holding the uploaded board image
   let session = null;    // Supabase auth session (null = guest)
-  let authReady = false; // true once getSession has resolved (don't gate routes before then)
+  let authReady = false; // true once the session AND (if signed in) the profile are known — route guards wait for it
   let profile = null;    // { id, username, is_admin } for the signed-in user
   let profileNames = {}; // account id -> current username (for live setter names)
   let myTicks = new Set();         // problem_ids ticked in ANY orientation (the ✓ flag + "Total ticks")

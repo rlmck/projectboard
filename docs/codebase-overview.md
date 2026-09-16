@@ -155,7 +155,7 @@ Hash routing; `router()` switches on `parseHash()` (`route/param`).
 | `#leaderboard` | ranks | public |
 | `#auth`, `#profile` | sign-in, profile | bottom nav hidden on `#auth` |
 
-**Route guards only bounce once `authReady` is true.** Before that, a cold deep link is let through, and `initAuth` re-runs `router()` once the session is known.
+**Route guards only bounce once `authReady` is true**, which `initAuth` sets after the session **and the profile** have loaded (since `pb-v92`; before, an admin route judged `is_admin` from a profile that hadn't arrived). Before that, `#create` lets a cold deep link through; the admin routes (`#outlines`, `#admin`) show nothing until auth is known, so a non-admin never sees them, and `initAuth` re-runs `router()` then. Signing out while on an admin screen routes away from it.
 
 ⚠️ **`router()` doubles as the "data arrived, re-render" hook.** Loaders call it, and so does `refreshBoardViews()`. It has side effects: `setView` exits fullscreen and closes the info modal, and the `auth` case resets the form to sign-in. Prefer calling the specific render function over `router()` when adding a loader.
 
@@ -336,7 +336,8 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 - **Updates:**
   - Code is network-first, so a fresh load always gets the latest deploy with no cache bump.
   - To reach **already-open** clients, bump `CACHE`. A new worker → `skipWaiting` → `clients.claim` → the page's `controllerchange` → reload.
-  - The reload is **deferred** while a create form has unsaved work (`hasUnsavedWork()`), and skipped on first install.
+  - The reload is **deferred** while a create form or the outline editor has unsaved work (`hasUnsavedWork()`), and skipped on first install.
+  - **It's also skipped when the page is already running the new code** (since `pb-v92`). The first launch after a deploy fetches the new code network-first, then finds the new worker, which claims the page. That used to reload it and play the splash a second time. A worker found while the page boots (`reg.installing`/`waiting` at registration, or `updatefound` until 3 s after the load's own `reg.update()` settles) doesn't reload, unless the old worker served any of the page from its cache: `sw.js` posts `pb-served-from-cache` to the client when a network-first fetch falls back. A worker found later (the app left open, then resumed) still reloads. Tested against a local copy by bumping `CACHE` between launches.
   - Bump `CACHE` whenever `ASSETS` or the fetch logic changes.
   - Registration uses `updateViaCache:'none'`, and `reg.update()` runs on load and on focus. `_headers` sets `/sw.js` and `/` to `no-cache`.
 - **What works offline:** only the shell. Since `pb-v75`, `supabase-js` is vendored and precached, so an offline launch boots past the splash. But no problem data is cached, so the list can't load. Treat the precache as a speed-up, not an offline mode.

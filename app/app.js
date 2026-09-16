@@ -479,6 +479,23 @@
     let reloading = false;
     let pendingReload = false;
 
+    // Why launches used to show the splash twice: after a deploy, the first launch
+    // fetches the NEW code (the worker serves app code network-first), then the
+    // update check finds the new sw.js, which installs, claims the page, and fires
+    // controllerchange — and the reload that followed replayed the splash for code
+    // the page was already running. So a worker found while this page is booting
+    // doesn't reload it, unless the old worker had to serve any of the page from
+    // its cache (offline or a failed fetch: then the page really is on old code).
+    // A worker found later (the app left open, then resumed) still reloads.
+    let booting = true;             // until this load's own update check has settled
+    let freshWorker = null;         // a worker found while booting
+    let servedFromCache = false;    // sw.js posts this when it fell back to its cache
+    navigator.serviceWorker.addEventListener('message', e => {
+      if (e.data && e.data.type === 'pb-served-from-cache') servedFromCache = true;
+    });
+    const pageIsCurrent = () =>
+      !servedFromCache && (booting || (freshWorker && navigator.serviceWorker.controller === freshWorker));
+
     // Reload to show the update, but never yank an in-progress create form out
     // from under the user — defer until they've left it / it's empty.
     function applyUpdate() {
@@ -490,6 +507,7 @@
 
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!hadController) return;   // first install: already on latest, nothing to reload to
+      if (pageIsCurrent()) return;  // launched onto the new code already: no second splash
       applyUpdate();
     });
 
@@ -505,15 +523,20 @@
       // HTTP cache. A stale sw.js served from cache is the classic reason SW
       // updates stall and a device gets stranded on old code — this prevents it.
       navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+        // The browser may already have found the update on this navigation.
+        freshWorker = reg.installing || reg.waiting || null;
+        reg.addEventListener('updatefound', () => { if (booting) freshWorker = reg.installing; });
         // Check for a new version now, and whenever the app regains focus.
-        reg.update();
+        // update() settles once sw.js has been fetched; updatefound follows a beat
+        // later, so booting ends a few seconds after, not the instant it settles.
+        reg.update().catch(() => {}).then(() => setTimeout(() => { booting = false; }, 3000));
         document.addEventListener('visibilitychange', () => {
           if (document.visibilityState === 'visible') {
             reg.update();
             if (pendingReload) applyUpdate();
           }
         });
-      }).catch(err => console.warn('SW registration failed', err));
+      }).catch(err => { booting = false; console.warn('SW registration failed', err); });
     });
   }
 

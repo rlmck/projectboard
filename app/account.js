@@ -197,8 +197,12 @@
     const recovering = new URLSearchParams(location.hash.replace(/^#/, '')).get('type') === 'recovery';
     const { data } = await sb.auth.getSession();   // also consumes any OAuth redirect in the URL
     session = data.session || null;
+    // Not ready until the profile has loaded too: admin-only routes judge is_admin
+    // from it, and a router() run in between (loadProblems calls it) would bounce
+    // an admin, or let a non-admin see an admin screen.
+    if (session) await loadProfile();
     authReady = true;
-    if (session) { await loadProfile(); await loadTicks(); await loadFaves(); }
+    if (session) { await loadTicks(); await loadFaves(); }
     if (recovering && session) openPasswordModal();
     updateFaveControls();
     renderProfile();
@@ -220,6 +224,8 @@
       if (currentView === 'detail') { updateTickButton(); updateFaveButton(); }
       if (currentView === 'circuits') renderCircuits();
       if (currentView === 'circuit-detail') updateCircuitFaveButton();
+      // Signed out (or lost admin) while on an admin screen: route away from it.
+      if ((currentView === 'outlines' || currentView === 'admin') && !isAdmin()) router();
     });
   }
 

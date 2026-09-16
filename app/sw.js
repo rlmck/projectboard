@@ -12,7 +12,7 @@
 // client the previous file for a whole load.
 // Bump CACHE whenever the asset list changes so old caches are cleared.
 
-const CACHE = 'pb-v91';
+const CACHE = 'pb-v92';
 // The app shell is precached as './' only (Cloudflare 307s /index.html -> /; the
 // navigate branch below keeps the shell under './'). precache() makes any other
 // redirected entry, such as privacy.html, safe to serve offline.
@@ -41,6 +41,14 @@ const ASSETS = [
   './hold_shapes.json',
   './mirror_map.json'
 ];
+
+// Tell the page when it was served from the cache instead of the network (offline
+// or a failed fetch), so it knows it may be running old code: app.js then takes
+// the reload an update brings instead of skipping it.
+function noteCacheFallback(event) {
+  const id = event.resultingClientId || event.clientId;
+  if (id) self.clients.get(id).then(c => c && c.postMessage({ type: 'pb-served-from-cache' }));
+}
 
 // Like cache.addAll, but never stores a redirect. Cloudflare 307s every *.html URL
 // to its extensionless form (privacy.html -> /privacy), and a response marked
@@ -102,6 +110,7 @@ self.addEventListener('fetch', event => {
           return resp;
         })
         .catch(async () => {
+          noteCacheFallback(event);
           if (isShell) return (await caches.match('./')) || Response.error();
           // Cloudflare serves /privacy from privacy.html, so an extensionless page
           // falls back to its precached .html copy if it was never visited online.
@@ -130,7 +139,7 @@ self.addEventListener('fetch', event => {
           }
           return resp;
         })
-        .catch(() => caches.match(req))
+        .catch(() => { noteCacheFallback(event); return caches.match(req); })
     );
     return;
   }
