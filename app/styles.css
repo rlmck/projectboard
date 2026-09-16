@@ -30,6 +30,12 @@
        which feels like a web page. The Problems list has its own pull-to-refresh
        (.list-pull, wired in app.js) that re-fetches the list in place. */
     html, body { overscroll-behavior-y: none; }
+    /* iOS only (-webkit-touch-callout is iOS-only): keep the native rubber-band
+       bounce. A home-screen app on iOS has no pull-to-refresh to switch off, and
+       on the list the custom pull cancels the drag, so it shows the ring instead. */
+    @supports (-webkit-touch-callout: none) {
+      html, body { overscroll-behavior-y: auto; }
+    }
     /* No text highlighting except in form fields (and .welcome-url, the in-app
        browser's long-press-to-copy link, which sets its own user-select: all). */
     body { user-select: none; -webkit-user-select: none; }
