@@ -266,6 +266,7 @@
   });
   document.getElementById('detail-mirror').addEventListener('click', toggleDetailMirror);
   document.getElementById('detail-tick').addEventListener('click', toggleTick);
+  document.getElementById('detail-shuffle').addEventListener('click', toggleShuffle);
   document.getElementById('detail-fave').addEventListener('click', () => { if (currentProblem) toggleFave(currentProblem.id); });
 
   // Overflow (⋮) menu — folds Edit/Benchmark/Delete/Information into one header button.

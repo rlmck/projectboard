@@ -45,6 +45,9 @@
   let currentProblem = null;
   let detailTrail = [];  // problem ids swiped through to reach the current one,
                          // oldest first — deleting steps back along it.
+  let shuffleOn = false;  // detail view: swiping forward jumps to a random problem
+  let shuffleBack = [];   // shuffle path behind the current problem (ids, oldest first)
+  let shuffleFwd = [];    // …and ahead of it, after swiping back (next one last)
   let HOLD_MAP = null;   // hold id -> {x,y} %, from board_config or bundled hold_map.json
   let HOLD_SHAPES = null; // hold id -> [[x,y],…] % polygon, from board_config (admin) or bundled hold_shapes.json (problem + circuit overlays, and the #outlines editor)
   let MIRROR_MAP = null; // hold id -> mirror-partner hold id (bundled mirror_map.json); self = centre/no-partner

@@ -156,17 +156,60 @@
   function swipeToAdjacent(dir) {
     if (currentView !== 'detail' || !currentProblem) return;
     const deck = visibleProblems();
-    const idx = deck.findIndex(p => String(p.id) === String(currentProblem.id));
-    if (idx === -1) return;                       // current isn't in the filtered deck
-    const nextIdx = idx + dir;
-    if (nextIdx < 0 || nextIdx >= deck.length) return;   // stop at the ends
-    const next = deck[nextIdx];
+    let next;
+    if (shuffleOn) {
+      next = shuffleStep(deck, dir);
+      if (!next) return;
+    } else {
+      const idx = deck.findIndex(p => String(p.id) === String(currentProblem.id));
+      if (idx === -1) return;                       // current isn't in the filtered deck
+      const nextIdx = idx + dir;
+      if (nextIdx < 0 || nextIdx >= deck.length) return;   // stop at the ends
+      next = deck[nextIdx];
+    }
     // Replace the hash (don't push history) so Back still returns to the list,
     // then render in place — the view stays put, only its content swaps.
     detailTrail.push(currentProblem.id);   // deleting `next` comes back here
     history.replaceState(null, '', '#detail/' + encodeURIComponent(next.id));
     closeInfo();
     renderDetail(next.id);
+  }
+
+  // ── Shuffle (detail view) ─────────────────────────────────────────────────────
+  // With shuffle on, swiping forward goes to a random problem from the same deck,
+  // one not yet seen on this run while any are left. Swiping back retraces the
+  // path, and forward again replays it before picking new ones. The path starts
+  // afresh on each visit to the detail view and whenever shuffle is toggled.
+  function shuffleStep(deck, dir) {
+    const cur = currentProblem.id;
+    const inDeck = id => deck.find(p => String(p.id) === String(id));
+    const from = dir > 0 ? shuffleFwd : shuffleBack;
+    const to = dir > 0 ? shuffleBack : shuffleFwd;
+    while (from.length) {                         // skip any deleted or filtered out
+      const p = inDeck(from.pop());
+      if (p) { to.push(cur); return p; }
+    }
+    if (dir < 0) return null;                     // back where the run started
+    const seen = new Set([...shuffleBack, cur].map(String));
+    let pool = deck.filter(p => !seen.has(String(p.id)));
+    if (!pool.length) pool = deck.filter(p => String(p.id) !== String(cur));   // seen them all: go round again
+    if (!pool.length) return null;
+    to.push(cur);
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+  function toggleShuffle() {
+    shuffleOn = !shuffleOn;
+    shuffleBack = [];
+    shuffleFwd = [];
+    updateShuffleButton();
+    showToast(shuffleOn ? 'Shuffle on: swipe for a random problem' : 'Shuffle off', 'success');
+  }
+  function updateShuffleButton() {
+    const btn = document.getElementById('detail-shuffle');
+    if (!btn) return;
+    btn.classList.toggle('active', shuffleOn);
+    btn.setAttribute('aria-pressed', shuffleOn ? 'true' : 'false');
+    btn.setAttribute('aria-label', shuffleOn ? 'Shuffle on — tap to turn off' : 'Shuffle — swipe to a random problem');
   }
 
   // ── Info modal ─────────────────────────────────────────────────────────────────

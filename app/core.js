@@ -415,7 +415,7 @@
       case 'detail':
         // Arriving from anywhere else starts a new swipe trail. Staying inside the
         // detail view (a swipe, or delete stepping back) keeps the one we have.
-        if (currentView !== 'detail') detailTrail = [];
+        if (currentView !== 'detail') { detailTrail = []; shuffleBack = []; shuffleFwd = []; }
         renderDetail(param); setView('detail'); break;
       case 'create':
         // Only bounce guests once we actually know the auth state — otherwise a

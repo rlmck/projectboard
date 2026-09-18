@@ -735,6 +735,10 @@
     #circuit-detail-fave[hidden] { display: none; }
     /* Mirror toggle lit — the board overlay is showing the mirrored problem */
     #detail-mirror.active { color: #60a5fa; border-color: #3b82f6; background: rgba(59,130,246,0.16); }
+    /* Shuffle on — swiping forward picks a random problem */
+    #detail-shuffle.active { color: var(--accent-hover); border-color: var(--accent); background: rgba(236,72,153,0.14); }
+    /* Seven buttons in the detail bar: tighten the gaps on the narrowest phones */
+    @media (max-width: 359px) { #view-detail .detail-actions { gap: 5px; } }
 
     .bench-badge {
       display: inline-flex;
