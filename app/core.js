@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, app. This file: escape/toast/render helpers, hold + board-overlay helpers, and hash routing.
+// state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file: escape/toast/render helpers, hold + board-overlay helpers, and hash routing.
 
   // ── Escape helpers ───────────────────────────────────────────────────────────
   function escHtml(s) {
@@ -144,7 +144,7 @@
     return `<div class="hold-layer">${dots}</div>`;
   }
 
-  // ── Hold-shape overlay (problems only — circuits keep the .hold-dot path) ────
+  // ── Hold-shape overlay (problems and circuits) ───────────────────────────────
   // Draws each used hold as its *real traced outline* (hold_shapes.json) instead
   // of a circle, and on the detail view dims the rest of the board so only the
   // used holds stay bright. Returns null when shapes can't be used so callers
@@ -194,12 +194,14 @@
 
   // roles: { holdId -> 'start' | 'int' | 'finish' }. `mirror` pulls each hold's
   // position AND shape from its mirror partner (roles preserved). `dim` adds the
-  // darken-the-rest mask (detail view); create/edit passes dim:false so the whole
-  // board stays visible. A used hold with no traced polygon falls back to a dot.
+  // darken-the-rest mask (detail views); create/edit passes dim:false so the whole
+  // board stays visible. `fresh` (a hold id) marks the hold the circuit Play
+  // preview has just lit, which pulses once. A used hold with no traced polygon
+  // falls back to a dot.
   // The mask lives in its OWN svg so the outline svg can carry a plain CSS
   // drop-shadow: a CSS filter on an svg *child* resolves its lengths in the
   // stretched viewBox units, but on the outermost svg it resolves in CSS pixels.
-  function holdShapeLayerHtml(roles, { mirror = false, dim = false } = {}) {
+  function holdShapeLayerHtml(roles, { mirror = false, dim = false, fresh = null } = {}) {
     if (!shapesUsable()) return null;
     const maskId = 'hsmask-' + (++hsMaskSeq);
     // viewBox is 0..100 on both axes with preserveAspectRatio:none, so a <circle>
@@ -211,7 +213,7 @@
       const key = mirror ? mirrorHold(h) : h;
       const pts = HOLD_SHAPES[key];
       const pos = HOLD_MAP[key];
-      const role = roles[h];
+      const role = roles[h] + (h === fresh ? ' hs-fresh' : '');
       if (pts && pts.length >= 3) {
         const d = smoothShapePath(pts);
         holes.push(`<path d="${d}" fill="#000"/>`);
@@ -372,9 +374,10 @@
 
     // Preserve the list's scroll position across navigation.
     if (currentView === 'list' && name !== 'list') listScroll = window.scrollY;
+    if (currentView === 'circuits' && name !== 'circuits') circuitsScroll = window.scrollY;
 
-    // The info modal only belongs to the detail view.
-    if (name !== 'detail') closeInfo();
+    // The info modal belongs to the two detail views (problem and circuit).
+    if (name !== 'detail' && name !== 'circuit-detail') closeInfo();
     // The circuit Play preview only runs on the circuit detail view.
     if (name !== 'circuit-detail') stopCircuitPlay(false);
 
@@ -390,12 +393,13 @@
     const navFor = { list: 'list', detail: 'list', create: 'list', outlines: 'profile', admin: 'profile', profile: 'profile', auth: 'profile', circuits: 'circuits', 'circuit-detail': 'circuits', 'circuit-create': 'circuits', leaderboard: 'leaderboard' }[name] || 'list';
     document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.nav === navFor));
 
-    if (name === 'list') {
-      window.scrollTo(0, listScroll);
+    const keep = name === 'list' ? listScroll : name === 'circuits' ? circuitsScroll : null;
+    if (keep !== null) {
+      window.scrollTo(0, keep);
       // Some engines finish their own scrolling (a fragment jump, a restore) a
       // frame after the hash changes, which would land the list back at the top.
       // Re-assert once the frame has settled, unless the user has already moved.
-      requestAnimationFrame(() => { if (currentView === 'list' && window.scrollY === 0) window.scrollTo(0, listScroll); });
+      requestAnimationFrame(() => { if (currentView === name && window.scrollY === 0) window.scrollTo(0, keep); });
     } else window.scrollTo(0, 0);
 
     currentView = name;
@@ -445,8 +449,12 @@
         setView('admin');
         renderAdmin(param);
         break;
-      case 'circuits': setView('circuits'); renderCircuits(); break;
-      case 'circuit':  setView('circuit-detail'); renderCircuitDetail(param); break;
+      // Render before setView, so the restored scroll position has its content.
+      case 'circuits': renderCircuits(); setView('circuits'); break;
+      case 'circuit':
+        // Same swipe-trail rule as #detail.
+        if (currentView !== 'circuit-detail') circuitTrail = [];
+        setView('circuit-detail'); renderCircuitDetail(param); break;
       case 'circuit-create':
         // Login required, same pattern as #create — only bounce once auth is known.
         if (authReady && !session) { location.replace(location.pathname + '#auth'); break; }

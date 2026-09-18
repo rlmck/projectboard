@@ -124,7 +124,7 @@ These are plain `<script>` tags, not ES modules. There's no build step and no fr
 | `admin.js` | `#admin` hub: user list/detail, promote/demote, delete user (RPCs) |
 | `account.js` | Ticks, favourites, filter-pill sync, **auth** (`initAuth`, email, Google, sign-out), display-name modal, profile page |
 | `authoring.js` | Create/edit problem (tap-to-cycle roles, finish zone, invert-on-save), the hold-outline editor (`#outlines`: pinch/pan, drag/add/delete points, nudge, roundness, preview, draft, **Publish**), circuit helpers |
-| `circuits.js` | Circuits list, detail, the Play-preview engine, create, delete |
+| `circuits.js` | Circuits list, detail (swipe, info sheet), the Play-preview engine, create, delete |
 | `leaderboard.js` | `#leaderboard` view; `userPoints()` for the profile |
 | `app.js` | **Loaded last.** All event wiring, service-worker registration and update handling, the install flow (welcome overlay + banner), and **boot** |
 
@@ -151,7 +151,7 @@ Hash routing; `router()` switches on `parseHash()` (`route/param`).
 | `#create` / `#create/<id>` | create / admin edit-holds | guests bounced to `#auth`; non-admins bounced off `/<id>` |
 | `#outlines` | hold-outline editor (bottom nav hidden) | admin; the old `#calibrate` redirects here |
 | `#admin`, `#admin/users`, `#admin/user/<id>` | admin hub drill-down | admin |
-| `#circuits`, `#circuit/<id>`, `#circuit-create` | circuits | create needs sign-in |
+| `#circuits`, `#circuit/<id>`, `#circuit-create` | circuits | built to match the problem side: grade tabs (tap = single, hold = multi-select), pull-to-refresh, a pinned detail with swipe (`circuitTrail`), ⋮ menu (Delete: owner or admin; Information: everyone); create needs sign-in |
 | `#leaderboard` | ranks | public |
 | `#auth`, `#profile` | sign-in, profile | bottom nav hidden on `#auth` |
 
@@ -172,7 +172,7 @@ Four inputs, each with a live source and a fallback:
 
 Positions are **percentages of the image**, so the overlay scales with it. The render helpers are in `core.js`:
 - **Dot overlay:** `boardOverlayHtml`.
-- **Shape overlay:** `holdShapeLayerHtml`. It draws each hold as its traced polygon; on detail it dims the rest of the board with an SVG mask, on create it doesn't.
+- **Shape overlay:** `holdShapeLayerHtml`. It draws each hold as its traced polygon; on the two detail views (problem and circuit, including the circuit Play preview) it dims the rest of the board with an SVG mask, on the two create views it doesn't. Circuits build their roles with `circuitHoldRoles()` and add move-number tags (`seqTagsHtml`) hanging off each outline; `fresh` flashes the hold the Play preview has just lit. When shapes aren't usable, both fall back to dots (circuit dots carry the numbers inside).
 - **Shapes are traced against one specific board.** Both copies record it in `__meta.board_updated_at` (currently `2026-06-22T14:43:27.113+00:00`). `shapesUsable()` draws them **only** when `configHasMap` is true and the version matches. Any recalibration (which bumps `updated_at`) drops everyone back to dots until the outlines are re-traced against the new board and published. **Publishing must write `hold_shapes` alone and never touch `updated_at`** — bumping the version would retire the very outlines being published.
 - **Mirroring** is a lookup table, not grid arithmetic: the board is hand-set and staggered. 11 holds are self-mirror, including `hold218`/I12, which has no real partner.
 - `boardPct()` turns a tap into board percentages, taking rotated fullscreen into account. All three interactive boards use it.
@@ -212,6 +212,7 @@ Positions are **percentages of the image**, so the overlay scales with it. The r
   - Admin Edit on a benchmark warns in the edit chooser that it changes everyone's points.
   - Owners lose Delete on their own problem once it's a benchmark (db/27 enforces it).
 - **Circuits have no completion logging yet.** That's Phase 2. The circuits "Exclude Done" pill is deliberately inert.
+- **Circuit Play preview:** a round play/stop button, "Move n of N" (plus the lap on a looping circuit), and a speed slider running Slow → Fast (the slider value is the step time flipped end to end; 0.2–3.0 s per move in 0.1 s steps, kept for the session). It lights a 4-hold window over the dimmed board. A swipe that starts on the panel is ignored, so dragging the slider never changes circuit.
 
 ### 4.7 Casting
 `castByName(name, btn, mirror)` in `problems.js` is the only cast path.
@@ -469,7 +470,7 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 - **`parseHash()` calls `decodeURIComponent` unguarded.** A truncated shared link (`…%2`) throws on every navigation and leaves the app stuck.
 - **The create and circuit-create boards ignore taps** until `HOLD_MAP` arrives, which happens after the `board_config` round trip. There's no loading state.
 - **The cast button** stays `disabled`/`.sent` for 2 s even after you swipe to the next problem. Worse, the name is captured at tap time, so a swipe during the up-to-6 s location wait casts the *previous* problem.
-- **Writes blocked by RLS "succeed".** A blocked `delete()`/`update()` returns no error, just 0 rows, so the UI reports success. Problem delete now checks this. Grade edit, edit-holds and circuit delete still don't, which matters for an admin demoted mid-session. Add `.select()` and check the row count.
+- **Writes blocked by RLS "succeed".** A blocked `delete()`/`update()` returns no error, just 0 rows, so the UI reports success. Problem and circuit delete now check this. Grade edit and edit-holds still don't, which matters for an admin demoted mid-session. Add `.select()` and check the row count.
 - **Deleting a user doesn't refresh the leaderboard.** `doDeleteUser` never sets `leaderboardLoaded = false`, and the cached admin user list (with emails) survives sign-out.
 - **`router()` side effects when data arrives** (section 4.3).
 
@@ -477,10 +478,8 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 - **UI polish:**
   - The toast (z-index 200) renders behind modals (300).
   - Escape doesn't close the edit-choice or board-saved modals.
-  - Circuit grade tabs lose their scroll position on every keystroke.
 - **Races:**
   - A fast double tap on tick or fave can leave the UI out of step with the DB; there's no in-flight lock.
-  - Pressing Play during the 400 ms after a circuit preview finishes starts a run that's killed straight away.
 - **Correctness nits:**
   - `escAttr` doesn't escape `<`/`>`.
   - `loadHoldMap`/`loadMirrorMap` check their guard before the `await`. That's only safe because of the boot ordering.
@@ -495,7 +494,6 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 - **Missing site polish:** no custom 404 page.
 - **Duplication worth consolidating before the next board feature:**
   - three nearest-hold functions (`nearestHold`, `ccNearestHold`, `calNearest`);
-  - two copies of the circuit "by hold" overlay builder;
   - five near-identical confirm modals;
   - three optimistic-toggle functions;
   - the anon key and URL in `state.js` and the Pi listener;

@@ -176,6 +176,7 @@
     const comment = String(p.comment || '').trim();
     const showComment = comment && !/^no comments?\.?$/i.test(comment);
     const stars = Math.max(0, Math.min(3, Number(p.stars) || 0));
+    document.getElementById('info-title').textContent = 'Problem info';   // the circuit sheet shares this modal
 
     document.getElementById('info-body').innerHTML = `
       <div class="info-row">

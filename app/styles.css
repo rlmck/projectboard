@@ -659,10 +659,11 @@
        content is bottom-anchored: a second name line or a second badge row grows
        UPWARD into the gap above instead of pushing the board down. The board's
        top edge is then identical on every problem, whatever badges it carries.
-       Scoped to #view-detail — the circuit detail reuses these classes but isn't
-       pinned or swipeable. Keep the height in step with .detail-name (1.35rem
-       at line-height 1.2), its 7px margin and --meta-line. */
-    #view-detail .detail-head-info {
+       The circuit detail is pinned and swiped the same way, so it shares all of
+       this. Keep the height in step with .detail-name (1.35rem at line-height
+       1.2), its 7px margin and --meta-line. */
+    #view-detail .detail-head-info,
+    #view-circuit-detail .detail-head-info {
       --meta-line: 20px;        /* tallest meta item: 12px text + 2px padding + 1px border each side */
       height: calc(12px + (1.35rem * 1.2) + 7px + var(--meta-line) + 10px);
       display: flex;
@@ -676,10 +677,13 @@
     }
     /* Neither child may be squeezed to fit the locked height — they overflow it. */
     #view-detail .detail-name,
-    #view-detail .detail-meta { flex-shrink: 0; }
+    #view-detail .detail-meta,
+    #view-circuit-detail .detail-name,
+    #view-circuit-detail .detail-meta { flex-shrink: 0; }
     /* A long name starts on the line above. Two lines is the ceiling, so even a
        pathological name can't climb up behind the sticky header. */
-    #view-detail .detail-name {
+    #view-detail .detail-name,
+    #view-circuit-detail .detail-name {
       display: -webkit-box;
       -webkit-box-orient: vertical;
       -webkit-line-clamp: 2;
@@ -692,15 +696,18 @@
        detail view is pinned so there's no slack to spend on reserving the space.
        The setter name is the one item allowed to give (ellipsis), so the badges —
        the "both sides" one included — always stay whole. */
-    #view-detail .detail-meta {
+    #view-detail .detail-meta,
+    #view-circuit-detail .detail-meta {
       flex-wrap: nowrap;
       min-height: var(--meta-line);
       gap: 8px;                 /* 2px tighter than the list's: buys a badge's worth of room */
     }
     /* Badges keep their size, and one constant line box for every item, so a glyph
        that falls back to a different font (the badge's tick) can't grow the row. */
-    #view-detail .detail-meta > * { flex: 0 0 auto; line-height: 14px; }
-    #view-detail .detail-meta .meta-setter {
+    #view-detail .detail-meta > *,
+    #view-circuit-detail .detail-meta > * { flex: 0 0 auto; line-height: 14px; }
+    #view-detail .detail-meta .meta-setter,
+    #view-circuit-detail .detail-meta .meta-setter {
       flex: 0 1 auto;
       min-width: 0;
       white-space: nowrap;
@@ -887,9 +894,10 @@
     /* ── Board graphic ───────────────────────────────────────────────── */
     .board-graphic { width: 100%; display: block; }
 
-    /* Detail view is pinned to the viewport — no page scrolling.
-       Fixed positioning takes it out of body flow so nothing can scroll. */
-    #view-detail.active {
+    /* The detail views (problem and circuit) are pinned to the viewport — no page
+       scrolling. Fixed positioning takes them out of body flow so nothing can scroll. */
+    #view-detail.active,
+    #view-circuit-detail.active {
       position: fixed;
       inset: 0;
       display: flex;
@@ -897,7 +905,8 @@
       overflow: hidden;
     }
     /* main = everything between the sticky header and the bottom nav */
-    #view-detail main {
+    #view-detail main,
+    #view-circuit-detail main {
       flex: 1;
       min-height: 0;
       padding: 0;
@@ -929,7 +938,8 @@
     /* Board shown at its TRUE aspect ratio (no stretch) so a wide board reads as
        wide. The overlay is %-positioned and the board-wrap matches the image box,
        so dots still land on every hold. */
-    #view-detail .board-graphic {
+    #view-detail .board-graphic,
+    #view-circuit-detail .board-graphic {
       width: 100%;
       height: auto;
     }
@@ -1117,8 +1127,10 @@
     /* The board-wrap matches the image box (natural aspect), so percentage
        positions from hold_map.json land correctly on each hold. */
     .board-wrap { position: relative; }
-    #view-detail .board-wrap { width: 100%; }
-    #view-detail .board-wrap .board-graphic { height: auto; }
+    #view-detail .board-wrap,
+    #view-circuit-detail .board-wrap { width: 100%; }
+    #view-detail .board-wrap .board-graphic,
+    #view-circuit-detail .board-wrap .board-graphic { height: auto; }
     .hold-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
     .hold-dot {
       position: absolute;
@@ -1148,13 +1160,21 @@
     .hs.int    { stroke: #3b82f6; }
     .hs.finish { stroke: #ef4444; }
 
-    /* Create/edit has no dim to supply contrast, so an assigned hold gets the same
-       translucent fill and chunky edge the .hold-dot used to give it — a thin
-       hairline is not enough tap feedback on a bright board photo in a gym. */
-    #view-create .hs        { stroke-width: 2.4px; }
-    #view-create .hs.start  { fill: rgba(34,197,94,0.28); }
-    #view-create .hs.int    { fill: rgba(59,130,246,0.24); }
-    #view-create .hs.finish { fill: rgba(239,68,68,0.30); }
+    /* Create/edit (problem and circuit) has no dim to supply contrast, so an
+       assigned hold gets the same translucent fill and chunky edge the .hold-dot
+       used to give it — a thin hairline is not enough tap feedback on a bright
+       board photo in a gym. */
+    #view-create .hs, #view-circuit-create .hs               { stroke-width: 2.4px; }
+    #view-create .hs.start, #view-circuit-create .hs.start   { fill: rgba(34,197,94,0.28); }
+    #view-create .hs.int, #view-circuit-create .hs.int       { fill: rgba(59,130,246,0.24); }
+    #view-create .hs.finish, #view-circuit-create .hs.finish { fill: rgba(239,68,68,0.30); }
+
+    /* The hold the circuit Play preview has just lit flashes once. */
+    .hs.hs-fresh { animation: hsFresh 0.6s ease-out; }
+    @keyframes hsFresh {
+      from { stroke-width: 7px; fill: rgba(255,255,255,0.45); }
+      to   { stroke-width: 2.4px; fill: rgba(255,255,255,0); }
+    }
 
     /* ── Fullscreen board mode ───────────────────────────────────────────
        Expand button enters a rotated landscape fullscreen on any board; a touch
@@ -1344,7 +1364,6 @@
 
     /* ── Overflow (⋮) menu — detail headers (Edit / Delete / Information) ── */
     .menu-wrap { position: relative; flex-shrink: 0; display: flex; }
-    #circuit-menu-wrap[hidden] { display: none; }
     .overflow-menu {
       position: absolute;
       top: calc(100% + 6px);
@@ -1503,7 +1522,7 @@
       font-weight: 700;
     }
 
-    /* Move-order numbers inside a hold dot (detail + create overlays) */
+    /* Move-order numbers inside a hold dot (the fallback when outlines can't be used) */
     .seq-num {
       position: absolute;
       inset: 0;
@@ -1512,7 +1531,7 @@
       color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.9);
       pointer-events: none;
     }
-    /* A lit hold during the Play preview — brighter, with a glow pulse */
+    /* A lit hold during the Play preview (dot fallback) — brighter, with a glow pulse */
     .hold-dot.lit {
       filter: brightness(1.5);
       box-shadow: 0 0 0 1px rgba(0,0,0,0.45), 0 0 14px 3px currentColor;
@@ -1523,31 +1542,93 @@
     .hold-dot.lit.finish { color: #ef4444; }
     @keyframes litPulse { from { transform: translate(-50%, -50%) scale(1.35); } to { transform: translate(-50%, -50%) scale(1); } }
 
-    /* Circuit detail Play panel */
-    #view-circuit-detail .board-wrap { width: 100%; max-width: 680px; margin: 0 auto; }
-    #view-circuit-detail .board-graphic { width: 100%; height: auto; border-radius: 10px; }
-    .circuit-play-panel { padding: 16px 2px 8px; }
-    .cc-hint { font-size: 12px; line-height: 1.5; color: var(--text-muted); text-align: center; margin: 14px 0 0; }
-
-    /* Preview speed stepper (0.1s steps) */
-    .circuit-speed {
-      display: flex; align-items: center; justify-content: center; gap: 12px;
-      margin-top: 14px;
-    }
-    .circuit-speed-label { font-size: 13px; color: var(--text-muted); font-weight: 600; }
-    .circuit-speed-btn {
-      width: 38px; height: 38px; flex: none;
-      border-radius: 9px; border: 1px solid var(--border);
-      background: var(--surface); color: var(--text);
-      font-size: 20px; font-weight: 700; line-height: 1; cursor: pointer;
-      touch-action: manipulation;
-    }
-    .circuit-speed-btn:active { background: var(--surface2); transform: scale(0.95); }
-    .circuit-speed-val {
-      min-width: 48px; text-align: center;
-      font-size: 16px; font-weight: 800; color: var(--accent-hover);
+    /* Move-order tags on the traced outlines (circuitLayerHtml): a small pill in
+       the role's colour, hanging off the bottom edge of its hold. */
+    .seq-tag-layer { position: absolute; inset: 0; pointer-events: none; }
+    .seq-tag {
+      position: absolute;
+      transform: translate(-50%, -15%);
+      min-width: 15px;
+      padding: 1px 4px;
+      border-radius: 999px;
+      border: 1.5px solid;
+      background: rgba(10,10,10,0.82);
+      color: #fff;
+      font-size: 9px; font-weight: 800; line-height: 1.2;
+      text-align: center; white-space: nowrap;
       font-variant-numeric: tabular-nums;
     }
+    .seq-tag.start  { border-color: #22c55e; }
+    .seq-tag.int    { border-color: #3b82f6; }
+    .seq-tag.finish { border-color: #ef4444; }
+    body.board-fs .seq-tag { font-size: 12px; padding: 1px 6px; }
+
+    /* Circuit detail: the title block + board are centred in the pinned area (as
+       #detail-content), and the Play panel is held at the bottom, so the board
+       sits in the same place on every circuit. */
+    #circuit-detail-content {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .circuit-stage {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    /* Play panel: a round play/stop button, what's playing, and the speed slider
+       (Slow on the left, Fast on the right). */
+    .circuit-play-panel {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 10px 12px 12px;
+      padding: 12px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .circuit-play-btn {
+      width: 52px; height: 52px; flex: none;
+      border-radius: 50%;
+      border: 1px solid var(--accent);
+      background: var(--accent); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      box-shadow: 0 4px 14px rgba(236,72,153,0.35);
+      transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+    }
+    .circuit-play-btn svg { width: 24px; height: 24px; }
+    .circuit-play-btn:not(.playing) svg { margin-left: 3px; }   /* optical centre of the triangle */
+    .circuit-play-btn:active { transform: scale(0.94); }
+    .circuit-play-btn.playing { background: var(--surface2); border-color: var(--border); color: var(--text); box-shadow: none; }
+    .circuit-play-body { flex: 1; min-width: 0; }
+    .circuit-play-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .circuit-play-status {
+      min-width: 0;
+      font-size: 14px; font-weight: 700;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-variant-numeric: tabular-nums;
+    }
+    .circuit-speed-val {
+      flex: none;
+      font-size: 13px; font-weight: 700; color: var(--accent-hover);
+      font-variant-numeric: tabular-nums;
+    }
+    .circuit-speed-row {
+      display: flex; align-items: center; gap: 10px;
+      margin-top: 6px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .circuit-speed { flex: 1; min-width: 0; height: 28px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 
     /* Circuit create — board + option rows */
     #view-circuit-create .board-graphic { width: 100%; height: auto; display: block; border-radius: 10px; }

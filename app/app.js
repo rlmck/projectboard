@@ -13,21 +13,26 @@
     if (e.touches.length > 1) e.preventDefault();
   }, { passive: false });
 
-  // ── Pull-to-refresh (Problems list only) ──────────────────────────────────────
+  // ── Pull-to-refresh (the Problems and Circuits lists) ────────────────────────
   // The browser's own pull-to-refresh is off everywhere (overscroll-behavior in
-  // styles.css). On the list, a downward drag that starts at the top of the page
-  // opens .list-pull; letting go past PULL_TRIGGER re-fetches the list in place.
-  // A mostly sideways drag (the grade tabs scroll horizontally) is left alone.
+  // styles.css). On either list, a downward drag that starts at the top of the
+  // page opens its .list-pull; letting go past PULL_TRIGGER re-fetches that list
+  // in place. A mostly sideways drag (the grade tabs scroll horizontally) is left alone.
   const PULL_TRIGGER = 64;   // px of indicator height needed to refresh
   const PULL_MAX = 96;       // the indicator stops growing here
   const PULL_HOLD = 52;      // height it holds while refreshing
-  const listPull = document.getElementById('list-pull');
+  const PULL_LISTS = {
+    list:     { el: document.getElementById('list-pull'),    refresh: () => refreshProblems(), what: 'problems' },
+    circuits: { el: document.getElementById('circuit-pull'), refresh: () => refreshCircuits(), what: 'circuits' },
+  };
+  let pullList = PULL_LISTS.list;   // the list being pulled
   let pullStart = null;      // { x, y } of the touch, while a pull might begin
   let pulling = false;
   let pullDist = 0;
   let pullBusy = false;
 
   function setPull(h) {
+    const listPull = pullList.el;
     pullDist = h;
     listPull.style.height = h + 'px';
     listPull.style.setProperty('--pull', Math.min(1, h / PULL_TRIGGER));
@@ -36,21 +41,23 @@
 
   document.addEventListener('touchstart', e => {
     pullStart = null;
-    if (pullBusy || currentView !== 'list' || e.touches.length !== 1 || window.scrollY > 0) return;
-    if (!e.target.closest('#view-list') || e.target.closest('input')) return;
+    const target = PULL_LISTS[currentView];
+    if (pullBusy || pulling || !target || e.touches.length !== 1 || window.scrollY > 0) return;
+    if (!e.target.closest('#view-' + currentView) || e.target.closest('input')) return;
+    pullList = target;
     pullStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   }, { passive: true });
 
   document.addEventListener('touchmove', e => {
     if (!pullStart) return;
-    if (e.touches.length !== 1) { pullStart = null; if (pulling) { pulling = false; listPull.classList.remove('dragging'); setPull(0); } return; }
+    if (e.touches.length !== 1) { pullStart = null; if (pulling) { pulling = false; pullList.el.classList.remove('dragging'); setPull(0); } return; }
     const dx = e.touches[0].clientX - pullStart.x;
     const dy = e.touches[0].clientY - pullStart.y;
     if (!pulling) {
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
       if (dy <= 0 || Math.abs(dx) > Math.abs(dy) || window.scrollY > 0) { pullStart = null; return; }
       pulling = true;
-      listPull.classList.add('dragging');
+      pullList.el.classList.add('dragging');
     }
     if (e.cancelable) e.preventDefault();
     // Resistance: the indicator moves at half the finger's speed.
@@ -61,6 +68,7 @@
     pullStart = null;
     if (!pulling) return;
     pulling = false;
+    const listPull = pullList.el;
     listPull.classList.remove('dragging');
     if (pullDist < PULL_TRIGGER) { setPull(0); return; }
     pullBusy = true;
@@ -68,10 +76,10 @@
     setPull(PULL_HOLD);
     // Hold the spinner briefly so a fast response still reads as a refresh.
     try {
-      await Promise.all([refreshProblems(), new Promise(r => setTimeout(r, 500))]);
+      await Promise.all([pullList.refresh(), new Promise(r => setTimeout(r, 500))]);
     } catch (err) {
       console.warn('list refresh failed', err);
-      showToast('Couldn’t refresh problems', 'error');
+      showToast(`Couldn’t refresh ${pullList.what}`, 'error');
     } finally {
       listPull.classList.remove('refreshing');
       setPull(0);
@@ -103,88 +111,95 @@
   });
 
   // Grade tabs — simple tap selects one grade, tap-and-hold builds a multi-select.
-  const gradeTabsEl = document.getElementById('grade-tabs');
-
-  // Re-render the tabs + list, preserving the strip's horizontal scroll.
-  function refreshGradeFilter() {
-    const scroll = gradeTabsEl.scrollLeft;
-    buildGradeTabs();
-    gradeTabsEl.scrollLeft = scroll;
-    renderList();
-  }
-
+  // The Problems and Circuits strips behave the same; each passes its own set of
+  // selected grades and its own re-render.
+  //
   // Simple tap — meaning depends on how many grades are selected:
   //   • single-select (0–1 active) → switch to just this grade; tapping the active
   //     grade again clears back to "All".
   //   • multi-select  (2+ active)  → toggle this grade in/out. Dropping back to
   //     one grade returns to single-select, so the next tap switches again.
-  function tapGrade(g) {
+  function tapGrade(grades, g) {
     if (g === 'all') {
-      activeGrades.clear();
-    } else if (activeGrades.size >= 2) {        // multi-select: tap toggles
-      if (activeGrades.has(g)) activeGrades.delete(g);
-      else activeGrades.add(g);
-    } else if (activeGrades.has(g)) {            // tapping the active grade → All
-      activeGrades.clear();
+      grades.clear();
+    } else if (grades.size >= 2) {               // multi-select: tap toggles
+      if (grades.has(g)) grades.delete(g);
+      else grades.add(g);
+    } else if (grades.has(g)) {                  // tapping the active grade → All
+      grades.clear();
     } else {                                     // single-select: tap switches
-      activeGrades.clear();
-      activeGrades.add(g);
+      grades.clear();
+      grades.add(g);
     }
-    refreshGradeFilter();
   }
 
   // Tap-and-hold: the way to grow a selection — adds this grade (entering
   // multi-select from a single grade). On an already-selected grade it removes
   // it, unless it's the only one left (then keep it). "All" just clears.
-  function toggleGrade(g) {
-    if (g === 'all') activeGrades.clear();
-    else if (activeGrades.has(g)) { if (activeGrades.size > 1) activeGrades.delete(g); }
-    else activeGrades.add(g);
-    refreshGradeFilter();
+  function holdGrade(grades, g) {
+    if (g === 'all') grades.clear();
+    else if (grades.has(g)) { if (grades.size > 1) grades.delete(g); }
+    else grades.add(g);
   }
 
-  let holdTimer = null, holdStartX = 0, holdStartY = 0, suppressTabClick = false;
   const HOLD_MS = 450;
+  function wireGradeTabs(el, grades, refresh) {
+    let holdTimer = null, holdStartX = 0, holdStartY = 0, suppressTabClick = false;
 
-  gradeTabsEl.addEventListener('touchstart', e => {
-    const tab = e.target.closest('.grade-tab');
-    if (!tab || e.touches.length !== 1) return;
-    suppressTabClick = false;
-    holdStartX = e.touches[0].clientX;
-    holdStartY = e.touches[0].clientY;
-    const g = tab.dataset.grade;
-    clearTimeout(holdTimer);
-    holdTimer = setTimeout(() => {
-      holdTimer = null;
-      suppressTabClick = true;                 // swallow the click that follows touchend
-      if (navigator.vibrate) navigator.vibrate(15);
-      toggleGrade(g);
-    }, HOLD_MS);
-  }, { passive: true });
+    el.addEventListener('touchstart', e => {
+      const tab = e.target.closest('.grade-tab');
+      if (!tab || e.touches.length !== 1) return;
+      suppressTabClick = false;
+      holdStartX = e.touches[0].clientX;
+      holdStartY = e.touches[0].clientY;
+      const g = tab.dataset.grade;
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => {
+        holdTimer = null;
+        suppressTabClick = true;                 // swallow the click that follows touchend
+        if (navigator.vibrate) navigator.vibrate(15);
+        holdGrade(grades, g);
+        refresh();
+      }, HOLD_MS);
+    }, { passive: true });
 
-  // A drag means the user is scrolling the strip, not holding — cancel the hold.
-  gradeTabsEl.addEventListener('touchmove', e => {
-    if (!holdTimer) return;
-    const t = e.touches[0];
-    if (Math.abs(t.clientX - holdStartX) > 10 || Math.abs(t.clientY - holdStartY) > 10) {
-      clearTimeout(holdTimer); holdTimer = null;
-    }
-  }, { passive: true });
+    // A drag means the user is scrolling the strip, not holding — cancel the hold.
+    el.addEventListener('touchmove', e => {
+      if (!holdTimer) return;
+      const t = e.touches[0];
+      if (Math.abs(t.clientX - holdStartX) > 10 || Math.abs(t.clientY - holdStartY) > 10) {
+        clearTimeout(holdTimer); holdTimer = null;
+      }
+    }, { passive: true });
 
-  const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
-  gradeTabsEl.addEventListener('touchend', cancelHold, { passive: true });
-  gradeTabsEl.addEventListener('touchcancel', cancelHold, { passive: true });
+    const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
+    el.addEventListener('touchend', cancelHold, { passive: true });
+    el.addEventListener('touchcancel', cancelHold, { passive: true });
 
-  // Click handles the simple tap (mouse + touch). Skipped right after a hold fired.
-  gradeTabsEl.addEventListener('click', e => {
-    const tab = e.target.closest('.grade-tab');
-    if (!tab) return;
-    if (suppressTabClick) { suppressTabClick = false; return; }
-    tapGrade(tab.dataset.grade);
+    // Click handles the simple tap (mouse + touch). Skipped right after a hold fired.
+    el.addEventListener('click', e => {
+      const tab = e.target.closest('.grade-tab');
+      if (!tab) return;
+      if (suppressTabClick) { suppressTabClick = false; return; }
+      tapGrade(grades, tab.dataset.grade);
+      refresh();
+    });
+
+    // Suppress the long-press context menu on the tabs (mobile + desktop).
+    el.addEventListener('contextmenu', e => e.preventDefault());
+  }
+
+  // Problems: re-render the tabs + list, preserving the strip's horizontal scroll.
+  // (Both sets are only ever mutated in place, never reassigned.)
+  const gradeTabsEl = document.getElementById('grade-tabs');
+  wireGradeTabs(gradeTabsEl, activeGrades, () => {
+    const scroll = gradeTabsEl.scrollLeft;
+    buildGradeTabs();
+    gradeTabsEl.scrollLeft = scroll;
+    renderList();
   });
-
-  // Suppress the long-press context menu on the tabs (mobile + desktop).
-  gradeTabsEl.addEventListener('contextmenu', e => e.preventDefault());
+  // Circuits: renderCircuits rebuilds the tabs itself, keeping their scroll.
+  wireGradeTabs(document.getElementById('circuit-grade-tabs'), activeCircuitGrades, renderCircuits);
 
   // List clicks: heart toggles favourite (without opening), card opens detail.
   document.getElementById('list-container').addEventListener('click', e => {
@@ -293,16 +308,17 @@
     if (e.target.id === 'grade-modal') closeGradeEdit();
   });
 
-  // Swipe left/right on the detail board to step through the filtered deck.
-  // Attached to the stable <main> (detail-content is replaced on every render).
-  // Listeners are passive + never preventDefault, so taps on the header buttons
-  // and the cast/tick actions are unaffected.
-  (function wireDetailSwipe() {
-    const area = document.querySelector('#view-detail main');
+  // Swipe left/right on a detail view to step through its filtered deck (problems
+  // or circuits). Attached to the stable <main> (the content is replaced on every
+  // render). Listeners are passive + never preventDefault, so taps on the header
+  // buttons and the cast/tick actions are unaffected. A drag that starts on the
+  // circuit Play panel belongs to its speed slider, not a swipe.
+  function wireDetailSwipe(selector, step) {
+    const area = document.querySelector(selector);
     if (!area) return;
     let startX = 0, startY = 0, tracking = false;
     area.addEventListener('touchstart', e => {
-      if (e.touches.length !== 1) { tracking = false; return; }
+      if (e.touches.length !== 1 || e.target.closest('.circuit-play-panel')) { tracking = false; return; }
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
       tracking = true;
@@ -315,16 +331,21 @@
       const dy = t.clientY - startY;
       if (Math.abs(dx) < 55) return;                    // too short to be a swipe
       if (Math.abs(dx) < Math.abs(dy) * 1.4) return;    // too vertical
-      swipeToAdjacent(dx < 0 ? 1 : -1);                 // swipe left = next
+      step(dx < 0 ? 1 : -1);                            // swipe left = next
     }, { passive: true });
-  })();
+  }
+  wireDetailSwipe('#view-detail main', swipeToAdjacent);
+  wireDetailSwipe('#view-circuit-detail main', swipeToAdjacentCircuit);
 
-  // Arrow keys step through the deck too (handy for desktop testing).
+  // Arrow keys step through the deck too (handy for desktop testing), except
+  // while a field or slider has focus: its arrows are its own.
   document.addEventListener('keydown', e => {
-    if (currentView !== 'detail') return;
+    const step = currentView === 'detail' ? swipeToAdjacent
+      : currentView === 'circuit-detail' ? swipeToAdjacentCircuit : null;
+    if (!step || (e.target.closest && e.target.closest('input'))) return;
     if (document.getElementById('info-modal').classList.contains('show')) return;
-    if (e.key === 'ArrowRight') swipeToAdjacent(1);
-    else if (e.key === 'ArrowLeft') swipeToAdjacent(-1);
+    if (e.key === 'ArrowRight') step(1);
+    else if (e.key === 'ArrowLeft') step(-1);
   });
 
   // Create — open from list (login required), back returns to list
@@ -351,7 +372,7 @@
   document.getElementById('create-save').addEventListener('click', saveProblem);
 
   // ── Circuits wiring ─────────────────────────────────────────────────────────
-  // List: search + single-select grade tabs + open detail + create.
+  // List: search + open detail + create (the grade tabs are wired with the problems').
   const circuitSearchInput = document.getElementById('circuit-search');
   const circuitSearchClear = document.getElementById('circuit-search-clear');
   circuitSearchInput.addEventListener('input', e => {
@@ -369,13 +390,6 @@
     window.scrollTo(0, 0);
     circuitSearchInput.focus(); // pop the keyboard, ready for a fresh search
   });
-  document.getElementById('circuit-grade-tabs').addEventListener('click', e => {
-    const t = e.target.closest('.grade-tab');
-    if (!t) return;
-    const g = t.dataset.grade;
-    activeCircuitGrade = (g === 'all' || g === activeCircuitGrade) ? '' : g;
-    renderCircuits();
-  });
   document.getElementById('circuit-list-container').addEventListener('click', e => {
     const fav = e.target.closest('.card-fave');
     if (fav) { e.stopPropagation(); toggleCircuitFave(fav.dataset.fave); return; }
@@ -389,11 +403,12 @@
     location.hash = session ? '#circuit-create' : '#auth';
   });
 
-  // Circuit detail: back, delete, (Play wired per-render).
+  // Circuit detail: back, fave, ⋮ menu (Delete, Information); Play is wired per render.
   document.getElementById('circuit-back').addEventListener('click', goBack);
   document.getElementById('circuit-detail-fave').addEventListener('click', () => { if (currentCircuit) toggleCircuitFave(currentCircuit.id); });
   wireOverflowMenu('circuit-menu-btn', 'circuit-menu');
   document.getElementById('circuit-menu-delete').addEventListener('click', openCircuitDelete);
+  document.getElementById('circuit-menu-info').addEventListener('click', openCircuitInfo);
   document.getElementById('circuit-delete-cancel').addEventListener('click', closeCircuitDelete);
   document.getElementById('circuit-delete-confirm').addEventListener('click', doDeleteCircuit);
   document.getElementById('circuit-delete-modal').addEventListener('click', e => {

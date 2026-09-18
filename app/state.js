@@ -41,11 +41,12 @@
   let loaded = false;
   let currentView = 'list';
   let listScroll = 0;
+  let circuitsScroll = 0; // the circuit list's scroll position, kept across a visit to a circuit
   let currentProblem = null;
   let detailTrail = [];  // problem ids swiped through to reach the current one,
                          // oldest first — deleting steps back along it.
   let HOLD_MAP = null;   // hold id -> {x,y} %, from board_config or bundled hold_map.json
-  let HOLD_SHAPES = null; // hold id -> [[x,y],…] % polygon, from board_config (admin) or bundled hold_shapes.json (problem overlay only)
+  let HOLD_SHAPES = null; // hold id -> [[x,y],…] % polygon, from board_config (admin) or bundled hold_shapes.json (problem + circuit overlays, and the #outlines editor)
   let MIRROR_MAP = null; // hold id -> mirror-partner hold id (bundled mirror_map.json); self = centre/no-partner
   let detailMirror = false; // detail view is showing the left/right-mirrored problem
   let BOARD_IMG = 'ProjectBoard.png';   // resolved board image URL (Supabase upload, else bundled)
@@ -85,9 +86,10 @@
   let allCircuits = [];
   let circuitsLoaded = false;
   let circuitsError = null;          // last load error (for the "run db/14" message)
-  let activeCircuitGrade = '';       // single-select grade filter ('' = All)
+  let activeCircuitGrades = new Set(); // grade filter, same tap / tap-and-hold rules as the problem tabs (empty = All)
   let circuitSearch = '';
   let currentCircuit = null;
+  let circuitTrail = [];  // circuit ids swiped through to reach the current one (as detailTrail)
 
   // Create-a-circuit state. The route is one ORDERED sequence (dups allowed);
   // start = the first ccStartCount holds, finish = the last hold.
