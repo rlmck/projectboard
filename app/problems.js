@@ -202,7 +202,6 @@
     shuffleBack = [];
     shuffleFwd = [];
     updateShuffleButton();
-    showToast(shuffleOn ? 'Shuffle on: swipe for a random problem' : 'Shuffle off', 'success');
   }
   function updateShuffleButton() {
     const btn = document.getElementById('detail-shuffle');
