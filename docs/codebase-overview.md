@@ -86,7 +86,7 @@ build.sh  wrangler.jsonc  CLAUDE.md  .gitignore  .gitattributes   (the repo root
 | `CLAUDE.md`, `docs/rollout-plan.md`, `docs/codebase-overview.md` | Docs | no |
 
 Local only (gitignored), on Ross's laptop:
-- `db/`: numbered SQL scripts 01–27, applied by hand in the Supabase SQL editor, indexed in `db/README.md`, plus `db/.env` holding the direct-Postgres URL and the service key. **Never print or commit that file.**
+- `db/`: numbered SQL scripts 01–29, applied by hand in the Supabase SQL editor, indexed in `db/README.md`, plus `db/.env` holding the direct-Postgres URL and the service key. **Never print or commit that file.**
 - `pi/`: the board listener, its systemd unit, a smoke test, `clear_strip.py`, and `problems.csv` (Gareth's problem list, the input to db/03).
 - `docs/*`: `changelog.md`, `project-notes.md`, `CC_Reference_Gareth_Code.md`, `hardware/` photos, and `security-findings.md`.
 - `reference/original-pi-codebase/dtb/`: Gareth's original DTB code, extracted from his SD card. `tools/register_holds.py` and `tools/register_mirror.py` read `dtb/SettingsFolder/holdlist.csv`, `dtb/SettingsFolder/MirrorDic.txt` and `dtb/dicholdlist.txt` from it by path, so it stays where it is.
@@ -275,6 +275,7 @@ RLS is **enabled on every public table**, and it does the row-level gating. Sinc
 - Owner-or-admin update/delete on `circuits`.
 - `problems` DELETE (db/25, db/27): **an admin, or the owner while it isn't a benchmark and nobody else has ticked it**. The owner's own ticks don't count.
 - `problems` UPDATE (db/27): an admin, or the owner while it isn't a benchmark. The app only offers editing to admins. Once benchmarks became the only source of points, an owner re-grading their own benchmark through the API would have been a direct route to points, hence the lock. The trigger `problems_guard_curation` (db/25) pins `is_benchmark`, `stars` and the `setter` snapshot for non-admin API callers, on INSERT as well. It's SECURITY INVOKER and keys off `current_user in ('anon','authenticated')`, so the SQL editor and service role are never restricted.
+- **Row checks (db/29, 19 Sep 2026).** RLS decides *who* may write a row; these CHECKs decide *what* may go in, so a scripted API call can't bypass the app's rules. `problems`: `grade` in the Font ladder or `Project`; `name` 1–60 characters after trimming; `finish_hold` and every start and intermediate a `holdN` id, with 1–2 starts. `circuits`: `grade` in the sport ladder; the same name rule; `hold_sequence` all `holdN` ids and longer than `start_count` (which db/14 already limits to 1–2). A violation returns `23514`. "At least one intermediate" is *not* enforced, because one live problem has none. The tick/like/circuit-like policies all carry `WITH CHECK (user_id = auth.uid())`. **When a ladder changes in `state.js`, change the CHECK too**, or saves of the new grade fail.
 - `profiles`: users can INSERT only `id`+`username` and UPDATE only `username`, via column grants. **`is_admin` can't be written through the API.** Guests can SELECT only `id, username, created_at`.
 
 **Functions** (all `SECURITY DEFINER`, all with `search_path = public` pinned):

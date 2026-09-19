@@ -99,6 +99,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
   ```
   Always use `problemHoldOrder()` + `classifyHolds()`. `saveProblem` re-inverts on the way in, and a lone start is duplicated so there are always two. The Pi listener does the same un-invert. Fixing it for good means a data migration **and** a Pi change together.
 - **A problem's name is UNIQUE and is the cast key** (the Pi looks it up by name). Names are stored clean, with no embedded grade. Name and grade are independent: never strip a grade in `displayName` or rewrite a name in grade-edit.
+- **Grade ladders are also CHECK constraints** (db/29): changing `GRADE_ORDER` or `SPORT_GRADE_ORDER` needs a matching db script, or saves of the new grade fail with `23514`.
 - **Grades are stored lowercase** (`5, 5+, 6a, 6a+ … 7c+, 8a`) and **displayed** as capitalised Font grades via `fontGrade()`. Storage, `GRADE_ORDER`, filters and search all stay lowercase. Unknown grades (2 problems are `Project`) sort last.
 - **Circuits are different:** a separate lowercase sport ladder (`4, 5a … 8b`, never capitalised), stored in **natural climbing order, not inverted**, as one `hold_sequence` with duplicates allowed, plus `start_count` (1–2) and `loops`.
 - **Board orientation: row 1 is at the BOTTOM.** `holdN` is row-major from the bottom-left: `hold1` = A1, `hold19` = S1, `hold20` = A2, `hold247` = S13. `holdN` numbering doesn't map cleanly to visual rows on this hand-set board.
@@ -122,7 +123,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 | Anon key | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA` |
 
 - **Tables, policies and functions:** overview §5. RLS is on everywhere and is the real gate; the app's admin-only UI is just UX.
-- **DB scripts** live in local `db/`, numbered and idempotent, applied by hand in the SQL editor. 01–28 are applied (28 on 12 Sep 2026). The index and warnings are in `db/README.md`. A new script takes the next number.
+- **DB scripts** live in local `db/`, numbered and idempotent, applied by hand in the SQL editor. 01–29 are applied (29, the row checks on `problems`/`circuits`, on 19 Sep 2026). The index and warnings are in `db/README.md`. A new script takes the next number.
 - **Admin** = `profiles.is_admin`. It's set in the Supabase dashboard or in-app through `admin_set_admin()`, which only an existing admin can call and which refuses changing your own flag. **Nobody can promote themselves.**
 - **Who can do what:** browsing and casting need no login. Ticking, favourites and creating need sign-in. Admins edit (grade, holds) and delete any problem; an owner can delete their own problem only while nobody else has ticked it. Details: overview §5–6.
 - **Direct Postgres** for reviews: `db/.env` → `SUPABASE_DB_URL` (session pooler), via `pg8000`. Default to read-only. How to connect: overview §5.
