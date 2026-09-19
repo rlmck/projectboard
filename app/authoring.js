@@ -224,12 +224,19 @@
       // Holds + grade only — never touch name or setter (admin edit; DB enforces
       // admin-only UPDATE via RLS). Same invert-on-save scheme as create.
       const update = { grade: createGrade, ...holdCols };
-      const { error } = await sb.from('problems').update(update).eq('id', editing.id);
+      // .select() so a write RLS silently refused (no error, 0 rows) isn't
+      // mistaken for success.
+      const { data, error } = await sb.from('problems').update(update).eq('id', editing.id).select('id');
       btn.disabled = false; btn.classList.remove('casting');
       if (error) {
         errEl.textContent = error.code === '42501'
           ? 'You don’t have permission to edit problems.'   // not an admin (RLS)
           : error.message;
+        return;
+      }
+      if (!data || !data.length) {
+        errEl.textContent = 'Couldn’t save: you’re no longer an admin, or the problem has been deleted.';
+        recheckAdmin();
         return;
       }
       Object.assign(editing, update);   // update in place (same object lives in allProblems)

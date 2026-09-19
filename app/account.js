@@ -23,40 +23,67 @@
     else myTicks.delete(id);
   }
 
-  // Toggle the current problem's tick. Optimistic: flip the UI first, revert on
-  // failure. The unique(user_id, problem_id) constraint keeps it idempotent.
+  // ── Toggle writes (ticks + favourites) ──────────────────────────────────────
+  // Each toggle flips the UI at once (optimistic), then brings the database into
+  // line. Only one write per item is ever in flight: a tap while one is running
+  // just flips the UI again, and when the write lands the loop sends one more if
+  // the screen now wants the other state. Without this, a double tap sent an
+  // insert and a delete together, and whichever the server ran last won, so the
+  // database could end up ticked while the screen showed unticked.
+  //   key     — one per item and kind ('tick:<id>:<mirrored>', 'fave:<id>', …)
+  //   was     — the state the database held before this tap
+  //   wanted  — reads the state the screen shows now
+  //   write   — (state) => the insert (true) or delete (false) request
+  //   revert  — (dbState, error) => put the UI back to what the database holds
+  //   done    — (dbState) => the success toast, once the loop settles on a change
+  const togglesInFlight = new Set();
+
+  async function settleToggle(key, was, wanted, write, revert, done) {
+    if (togglesInFlight.has(key)) return;   // the running loop picks up the new state
+    togglesInFlight.add(key);
+    let db = was;
+    try {
+      while (session && wanted() !== db) {
+        const target = wanted();
+        const res = await write(target);
+        // 23505 = unique violation: the row already exists, which is the state
+        // we wanted, so it counts as success.
+        if (res.error && res.error.code !== '23505') { revert(db, res.error); return; }
+        db = target;
+      }
+      if (db !== was) done(db);
+    } finally {
+      togglesInFlight.delete(key);
+    }
+  }
+
+  // Toggle the current problem's tick, in the orientation the detail view shows.
   async function toggleTick() {
     if (!session) { showToast('Sign in to track ticks', 'success'); location.hash = '#auth'; return; }
     const p = currentProblem;
     if (!p) return;
     const id = String(p.id);
-    // Tick the orientation currently shown in the detail view.
     const mirrored = !!detailMirror;
-    const orientSet = mirrored ? myTicksMirrored : myTicksNormal;
-    const wasTicked = orientSet.has(id);
-
-    // Optimistic UI.
-    if (wasTicked) orientSet.delete(id); else orientSet.add(id);
-    recomputeAnyTick(id);
-    updateTickButton();
-    renderList();
-
-    const res = wasTicked
-      ? await sb.from('ticks').delete().eq('user_id', session.user.id).eq('problem_id', id).eq('mirrored', mirrored)
-      : await sb.from('ticks').insert({ user_id: session.user.id, problem_id: id, mirrored });
-
-    // 23505 = unique violation → the tick already exists, which is the state we
-    // wanted, so treat it as success rather than rolling back.
-    if (res.error && res.error.code !== '23505') {
-      if (wasTicked) orientSet.add(id); else orientSet.delete(id);   // revert
+    // Read the set afresh each time: loadTicks replaces it on a sign-in event.
+    const orientSet = () => mirrored ? myTicksMirrored : myTicksNormal;
+    const wasTicked = orientSet().has(id);
+    const setTicked = on => {
+      if (on) orientSet().add(id); else orientSet().delete(id);
       recomputeAnyTick(id);
       updateTickButton();
       renderList();
-      showToast('Could not save — check connection', 'error');
-      return;
-    }
-    leaderboardLoaded = false;   // points changed — refresh on next leaderboard/profile view
-    showToast(wasTicked ? 'Removed tick' : 'Ticked ✓', 'success');
+    };
+    setTicked(!wasTicked);   // optimistic
+
+    await settleToggle(`tick:${id}:${mirrored}`, wasTicked, () => orientSet().has(id),
+      on => on
+        ? sb.from('ticks').insert({ user_id: session.user.id, problem_id: id, mirrored })
+        : sb.from('ticks').delete().eq('user_id', session.user.id).eq('problem_id', id).eq('mirrored', mirrored),
+      db => { setTicked(db); showToast('Could not save — check connection', 'error'); },
+      on => {
+        leaderboardLoaded = false;   // points changed — refresh on next leaderboard/profile view
+        showToast(on ? 'Ticked ✓' : 'Removed tick', 'success');
+      });
   }
 
   // ── Favourites (personal "saved" list — private to the signed-in user) ───────
@@ -124,27 +151,24 @@
     else myCircuitFaves = new Set((cf.data || []).map(r => String(r.circuit_id)));
   }
 
-  // Toggle a problem's favourite. Optimistic, revert on failure.
+  // Toggle a problem's favourite (optimistic; see settleToggle).
   async function toggleFave(id) {
     if (!session) { showToast('Sign in to save favourites', 'success'); location.hash = '#auth'; return; }
     id = String(id);
     const was = isFaved(id);
-    if (was) myFaves.delete(id); else myFaves.add(id);
-    updateFaveButton();
-    renderList();
-
-    const res = was
-      ? await sb.from('likes').delete().eq('user_id', session.user.id).eq('problem_id', id)
-      : await sb.from('likes').insert({ user_id: session.user.id, problem_id: id });
-
-    if (res.error && res.error.code !== '23505') {
-      if (was) myFaves.add(id); else myFaves.delete(id);   // revert
+    const setFaved = on => {
+      if (on) myFaves.add(id); else myFaves.delete(id);
       updateFaveButton();
       renderList();
-      showToast('Could not save — check connection', 'error');
-      return;
-    }
-    showToast(was ? 'Removed from favourites' : 'Added to favourites ♥', 'success');
+    };
+    setFaved(!was);
+
+    await settleToggle('fave:' + id, was, () => isFaved(id),
+      on => on
+        ? sb.from('likes').insert({ user_id: session.user.id, problem_id: id })
+        : sb.from('likes').delete().eq('user_id', session.user.id).eq('problem_id', id),
+      db => { setFaved(db); showToast('Could not save — check connection', 'error'); },
+      on => showToast(on ? 'Added to favourites ♥' : 'Removed from favourites', 'success'));
   }
 
   // Toggle a circuit's favourite. Same shape; needs the db/15 circuit_likes table.
@@ -152,24 +176,24 @@
     if (!session) { showToast('Sign in to save favourites', 'success'); location.hash = '#auth'; return; }
     id = String(id);
     const was = isCircuitFaved(id);
-    if (was) myCircuitFaves.delete(id); else myCircuitFaves.add(id);
-    updateCircuitFaveButton();
-    renderCircuits();
-
-    const res = was
-      ? await sb.from('circuit_likes').delete().eq('user_id', session.user.id).eq('circuit_id', id)
-      : await sb.from('circuit_likes').insert({ user_id: session.user.id, circuit_id: id });
-
-    if (res.error && res.error.code !== '23505') {
-      if (was) myCircuitFaves.add(id); else myCircuitFaves.delete(id);   // revert
+    const setFaved = on => {
+      if (on) myCircuitFaves.add(id); else myCircuitFaves.delete(id);
       updateCircuitFaveButton();
       renderCircuits();
-      showToast(favSetupNeeded(res.error)
-        ? 'Favourites need setup — run db/15 in Supabase'
-        : 'Could not save — check connection', 'error');
-      return;
-    }
-    showToast(was ? 'Removed from favourites' : 'Added to favourites ♥', 'success');
+    };
+    setFaved(!was);
+
+    await settleToggle('cfave:' + id, was, () => isCircuitFaved(id),
+      on => on
+        ? sb.from('circuit_likes').insert({ user_id: session.user.id, circuit_id: id })
+        : sb.from('circuit_likes').delete().eq('user_id', session.user.id).eq('circuit_id', id),
+      (db, err) => {
+        setFaved(db);
+        showToast(favSetupNeeded(err)
+          ? 'Favourites need setup — run db/15 in Supabase'
+          : 'Could not save — check connection', 'error');
+      },
+      on => showToast(on ? 'Added to favourites ♥' : 'Removed from favourites', 'success'));
   }
 
   // ── Auth ────────────────────────────────────────────────────────────────────
@@ -217,7 +241,10 @@
       session = s || null;
       if (event === 'PASSWORD_RECOVERY') openPasswordModal();   // recovery that lands after boot
       if (session) { await loadProfile(); await loadTicks(); await loadFaves(); }
-      else { profile = null; myTicks = new Set(); myTicksNormal = new Set(); myTicksMirrored = new Set(); myFaves = new Set(); myCircuitFaves = new Set(); leaderboardLoaded = false; }
+      else {
+        profile = null; myTicks = new Set(); myTicksNormal = new Set(); myTicksMirrored = new Set(); myFaves = new Set(); myCircuitFaves = new Set(); leaderboardLoaded = false;
+        adminUsers = []; adminUsersLoaded = false;   // every member's email: don't keep it after an admin signs out
+      }
       updateFaveControls();
       renderProfile();
       if (loaded) renderList();
@@ -240,6 +267,16 @@
     // New users haven't chosen a name yet: the sign-up trigger (db/26) gives them a
     // placeholder, or no profile at all if the placeholder clashed. Either way, ask.
     if (session && needsDisplayName()) promptDisplayName();
+  }
+
+  // An admin-only write that RLS refused (no error, 0 rows) most likely means this
+  // account was demoted since the profile loaded. Re-read the profile so the admin
+  // controls disappear, and leave an admin screen if we're on one.
+  async function recheckAdmin() {
+    await loadProfile();
+    updateAdminUI();
+    renderProfile();
+    if ((currentView === 'outlines' || currentView === 'admin') && !isAdmin()) router();
   }
 
   // The sign-up trigger's placeholder username. Keep in sync with db/26.
@@ -317,8 +354,15 @@
     if (error) showToast(error.message, 'error');
   }
 
+  // Signs out this device only: 'local' leaves the account's other devices signed
+  // in (the default, 'global', revoked every one of them). supabase-js 2.116 drops
+  // the local session even when the server call fails (offline), which is what
+  // matters here, so judge by whether a session is left, not by the error.
   async function doSignOut() {
-    await sb.auth.signOut();
+    const { error } = await sb.auth.signOut({ scope: 'local' });
+    if (error) console.warn('sign-out request failed', error);
+    const { data } = await sb.auth.getSession();
+    if (data.session) { showToast('Couldn’t sign out — check connection', 'error'); return; }
     showToast('Signed out', 'success');
     location.hash = '#list';
   }

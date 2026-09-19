@@ -727,7 +727,9 @@
     // displayName); changing a climb's grade must not alter its name.
     const update = { grade: editGrade };
 
-    const { error } = await sb.from('problems').update(update).eq('id', p.id);
+    // .select() so a write RLS silently refused (no error, 0 rows) isn't mistaken
+    // for success.
+    const { data, error } = await sb.from('problems').update(update).eq('id', p.id).select('id');
     btn.disabled = false; btn.textContent = prev;
     if (error) {
       errEl.textContent = error.code === '42501'
@@ -735,8 +737,13 @@
         : error.message;
       return;
     }
+    if (!data || !data.length) {
+      errEl.textContent = 'Couldn’t save: you’re no longer an admin, or the problem has been deleted.';
+      recheckAdmin();
+      return;
+    }
 
-    p.grade = editGrade;                 // update in place (same object lives in allProblems)
+    p.grade = editGrade;                // update in place (same object lives in allProblems)
     leaderboardLoaded = false;           // base points depend on grade — refetch the board next view
     closeGradeEdit();
     buildGradeTabs();                    // a new grade may add/remove a filter tab

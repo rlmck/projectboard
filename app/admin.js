@@ -12,6 +12,8 @@
   // SECURITY DEFINER RPCs gated on is_admin() — see db/12_admin_users.sql.
   let adminUsers = [];                // cached rows from admin_list_users()
   let adminUsersLoaded = false;       // true once a fetch has populated adminUsers
+  let adminUsersAt = 0;               // when that fetch landed (the cache lasts ADMIN_USERS_TTL)
+  const ADMIN_USERS_TTL = 60000;
   let pendingDeleteUser = null;       // { id, name } awaiting confirmation
 
   const boardIconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8" cy="8" r="1.4"></circle><circle cx="16" cy="8" r="1.4"></circle><circle cx="8" cy="16" r="1.4"></circle><circle cx="16" cy="16" r="1.4"></circle></svg>';
@@ -33,20 +35,23 @@
       ? 'User management isn’t set up yet — run <b>db/12</b> in the Supabase SQL editor.'
       : 'Couldn’t load users.'}</div>`;
 
-  // Set the admin header's title + whether the reload button shows (list only).
+  // Set the admin header's title + whether the reload button shows (users + user).
   function adminSetHeader(title, showRefresh) {
     document.getElementById('admin-title').textContent = title;
     document.getElementById('admin-refresh').hidden = !showRefresh;
   }
 
-  // Fetch the user list once and cache it; `force` re-fetches (the reload button
-  // and post-delete). Returns { ok, error } so callers can render the right state.
+  // Fetch the user list and cache it for a minute, so drilling list → user → list
+  // doesn't refetch but the counts (Routes set, Sends) never go far out of date;
+  // `force` re-fetches (the reload button). Returns { ok, error } so callers can
+  // render the right state.
   async function ensureAdminUsers(force) {
-    if (adminUsersLoaded && !force) return { ok: true };
+    if (adminUsersLoaded && !force && Date.now() - adminUsersAt < ADMIN_USERS_TTL) return { ok: true };
     const { data, error } = await sb.rpc('admin_list_users');
     if (error) { console.warn('admin_list_users failed', error); return { ok: false, error }; }
     adminUsers = data || [];
     adminUsersLoaded = true;
+    adminUsersAt = Date.now();
     return { ok: true };
   }
 
@@ -103,7 +108,7 @@
   }
 
   async function renderAdminUserDetail(id) {
-    adminSetHeader('User', false);
+    adminSetHeader('User', true);
     const el = document.getElementById('admin-content');
     el.innerHTML = `<div class="spinner"></div>`;
     const res = await ensureAdminUsers(false);
@@ -114,7 +119,7 @@
       el.innerHTML = `<div class="state-msg"><div class="icon">🤷</div>User not found.<br><a class="link" href="#admin/users">Back to users</a></div>`;
       return;
     }
-    adminSetHeader(u.username, false);
+    adminSetHeader(u.username, true);
     const isSelf = String(u.id) === String(profile.id);
     const routes = Number(u.route_count) || 0;
     const sends = Number(u.tick_count) || 0;
@@ -156,9 +161,10 @@
     return currentView === 'admin' && route === 'admin' && (param || '') === sub;
   }
 
+  // The reload button: re-fetch, then re-render whichever screen it was pressed on.
   function adminRefreshUsers() {
     adminUsersLoaded = false;
-    renderAdminUsers();
+    renderAdmin(parseHash().param);
   }
 
   // ── Promote / demote a user (admins only; the RPC re-checks is_admin and
@@ -234,6 +240,8 @@
     }
 
     adminUsers = adminUsers.filter(u => String(u.id) !== String(id));
+    delete profileNames[id];
+    leaderboardLoaded = false;   // their ticks went with them: Ranks and Total points refetch
     closeUserDelete();
     // Their problems lost the owner link (setter_id SET NULL) — refresh the live
     // setter-name map and the list so displayed setters fall back cleanly.

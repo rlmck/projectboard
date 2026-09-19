@@ -80,6 +80,7 @@ build.sh  wrangler.jsonc  CLAUDE.md  .gitignore  .gitattributes   (the repo root
 | `tools/hold_positions.json` | Input to `register_holds.py` (Ross's 187 hand-placed dots) | no |
 | `tools/led_map.json` | Hold → physical LED index; the Pi wiring contract. The app never reads it | no |
 | `tools/make_icons.py`, `tools/make_qr.py` | Icon generator, QR generator | no |
+| `tools/cast-test.html` (+ `.js`, `.css`), `tools/serve.py` | The cast test bench and its no-cache local server (section 11) | no |
 | `print/` | The A5 poster and its QR | no |
 | `CLAUDE.md`, `docs/rollout-plan.md`, `docs/codebase-overview.md` | Docs | no |
 
@@ -202,6 +203,7 @@ Positions are **percentages of the image**, so the overlay scales with it. The r
 - **Favourites:**
   - Problems use the old `likes` table; circuits use `circuit_likes`.
   - Toggles are optimistic, and a duplicate insert error (`23505`) counts as success.
+- **Tick and favourite writes go through `settleToggle()`** (`account.js`, since `pb-v100`). Only one write per item is in flight at a time. A tap while one is running just flips the UI, and when the write lands the loop sends one more if the screen now wants the other state, so rapid taps always end with the database matching the screen. A failed write puts the UI back to what the database holds.
 - **Points** come only from the `leaderboard()` RPC (db/27), the single source of truth. **Only benchmark problems score** (Ross, 11 Sep 2026):
   - base = grade index × 10 (`5` = 10 … `8a` = 150);
   - +50% of base once if the benchmark was sent both ways;
@@ -276,7 +278,7 @@ RLS is **enabled on every public table**, and it does the row-level gating. Sinc
 
 **Functions** (all `SECURITY DEFINER`, all with `search_path = public` pinned):
 - `is_admin()`
-- `admin_list_users()`: returns `id, username, email, is_admin, created_at, route_count, tick_count`. `tick_count` was missing until db/12 step 2 was re-applied on 10 Sep 2026.
+- `admin_list_users()`: returns `id, username, email, is_admin, created_at, route_count, tick_count`. `tick_count` was missing until db/12 step 2 was re-applied on 10 Sep 2026. The app caches it for 60 s (`ADMIN_USERS_TTL`), and the reload button shows on the user list and on each user's screen. Deleting a user also invalidates the leaderboard.
 - `problem_has_other_ticks(pid)`: signed-in users only. It has to be SECURITY DEFINER because ticks RLS hides other users' rows. The db/25 delete policy uses it, and so does the app before it offers Delete to an owner.
 - `admin_delete_user(target)`: refuses yourself and other admins.
 - `admin_set_admin(target, make_admin)`: refuses changing your own flag.
@@ -312,7 +314,9 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 **Session state:**
 - `session`, `profile`, `authReady` (in `state.js`).
-- `onAuthStateChange` reloads the profile, ticks and faves on every event, and clears them on sign-out.
+- `onAuthStateChange` reloads the profile, ticks and faves on every event, and clears them on sign-out (with the cached admin user list, which holds every member's email).
+- **Sign-out is this device only** (`signOut({ scope: 'local' })`, Ross, 19 Sep 2026); the account's other devices stay signed in. supabase-js drops the local session even if the server call fails, so `doSignOut` judges success by whether a session is left.
+- **An admin write that RLS refuses** (grade edit, edit holds: no error, 0 rows) shows an error and calls `recheckAdmin()`, which re-reads the profile so a demoted admin loses the admin controls without a reload.
 - It currently runs its awaits inside the callback, and re-runs on `INITIAL_SESSION` and `TOKEN_REFRESHED` (see the known issues).
 
 **The admin model:**
@@ -466,14 +470,11 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 - the first-run name modal had no autofocus.
 
 **High**
-- **The admin user list is cached for the whole session**, and the reload button is hidden on the user-detail screen. So Routes set and Sends, now correct server-side, can still be stale until you go back to the list and reload.
 - **Network-first fetches have no timeout.** On weak gym Wi-Fi (connected, barely working), loads hang instead of falling back to the cache. Race each fetch against about 3 s.
 
 **Medium**
 - **Auth runs its setup twice at startup** (`initAuth`, then `INITIAL_SESSION`), again on every hourly `TOKEN_REFRESHED`, and awaits inside `onAuthStateChange`, which Supabase warns can deadlock. Filter the events and defer the work with `setTimeout(…, 0)`.
 - **The create and circuit-create boards ignore taps** until `HOLD_MAP` arrives, which happens after the `board_config` round trip. There's no loading state.
-- **Writes blocked by RLS "succeed".** A blocked `delete()`/`update()` returns no error, just 0 rows, so the UI reports success. Problem and circuit delete now check this. Grade edit and edit-holds still don't, which matters for an admin demoted mid-session. Add `.select()` and check the row count.
-- **Deleting a user doesn't refresh the leaderboard.** `doDeleteUser` never sets `leaderboardLoaded = false`, and the cached admin user list (with emails) survives sign-out.
 - **`router()` side effects when data arrives** (section 4.3).
 
 **Minor**
@@ -497,7 +498,6 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 - **Duplication worth consolidating before the next board feature:**
   - three nearest-hold functions (`nearestHold`, `ccNearestHold`, `calNearest`);
   - five near-identical confirm modals;
-  - three optimistic-toggle functions;
   - the anon key and URL in `state.js` and the Pi listener;
   - the icon geometry in five places (`icon.svg`, `make_icons.py`, the poster, and the legacy `index.html`/`404.html`).
 
