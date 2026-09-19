@@ -381,8 +381,9 @@
   }
 
   // Point every static board <img> (create + circuit create) at the
-  // current BOARD_IMG. The detail views' <img> is built per-render, so it reads
-  // BOARD_IMG directly.
+  // current BOARD_IMG. Their markup has no src, so nothing is fetched until
+  // board_config has settled. The detail views' <img> is built per-render, so it
+  // reads BOARD_IMG directly.
   function applyBoardImage() {
     document.querySelectorAll('#create-board .board-graphic, #cc-board .board-graphic').forEach(img => {
       if (img.getAttribute('src') !== BOARD_IMG) img.setAttribute('src', BOARD_IMG);
@@ -468,8 +469,7 @@
       boardConfigVersion = data.updated_at || null;   // the board version hold_shapes.json must match
       if (data.image_path) {
         const ver = data.updated_at ? `?v=${encodeURIComponent(data.updated_at)}` : '';
-        BOARD_IMG = `${SUPA_URL}/storage/v1/object/public/${BOARD_BUCKET}/${data.image_path}${ver}`;
-        applyBoardImage();
+        BOARD_IMG = `${SUPA_URL}/storage/v1/object/public/${BOARD_BUCKET}/${data.image_path}${ver}`;   // applied by the boot chain (app.js)
       }
       if (data.hold_map && typeof data.hold_map === 'object' && Object.keys(data.hold_map).length) {
         HOLD_MAP = data.hold_map;

@@ -68,6 +68,7 @@ FILES=(
 
   # board graphic
   ProjectBoard.png
+  board-fallback.jpg
 
   # Cloudflare static-asset config
   _headers

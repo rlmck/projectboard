@@ -571,10 +571,12 @@
   loadCircuits();     // fetch circuits (Phase 1 entity)
   loadProfileNames(); // id -> username map so setters show the live display name
   // Prefer the admin-saved board (image + hold map) from Supabase; fall back to the
-  // bundled hold_map.json only if no saved map exists.
-  loadBoardConfig().then(() => { loadHoldMap(); loadMirrorMap(); });
+  // bundled hold_map.json only if no saved map exists. The board image is only
+  // chosen once that's settled (applyBoardImage also measures its w/h, which the
+  // shape overlay needs for round fallback dots), so a normal load never downloads
+  // the bundled fallback image just to replace it.
+  loadBoardConfig().then(() => { applyBoardImage(); loadHoldMap(); loadMirrorMap(); });
   loadHoldShapes();     // bundled hold outlines for the problem shape overlay
-  measureBoardAspect(); // board w/h — the shape overlay needs it for round fallback dots
   initAuth();      // restore session, wire auth state, handle Google redirect
 
   // Splash: let the entrance finish (the timeline is in styles.css), then fade

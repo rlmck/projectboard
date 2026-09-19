@@ -50,7 +50,7 @@
   let HOLD_SHAPES = null; // hold id -> [[x,y],…] % polygon, from board_config (admin) or bundled hold_shapes.json (problem + circuit overlays, and the #outlines editor)
   let MIRROR_MAP = null; // hold id -> mirror-partner hold id (bundled mirror_map.json); self = centre/no-partner
   let detailMirror = false; // detail view is showing the left/right-mirrored problem
-  let BOARD_IMG = 'ProjectBoard.png';   // resolved board image URL (Supabase upload, else bundled)
+  let BOARD_IMG = 'board-fallback.jpg'; // resolved board image URL (Supabase upload, else the bundled fallback: ProjectBoard.png as a 260 KB JPEG, same framing)
   let configHasMap = false;             // true once board_config supplied a hold map (suppresses the bundled fallback)
   let configHasMirror = false;          // true once board_config supplied a mirror map (suppresses the bundled fallback)
   let configHasShapes = false;          // true once board_config supplied hold outlines (suppresses the bundled fallback)
