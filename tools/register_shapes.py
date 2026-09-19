@@ -90,14 +90,14 @@ def load_board():
     except Exception as e:
         print(f"(live board_config unavailable: {e}; falling back to bundled)")
 
-    if img_bytes is None:
-        with open(os.path.join(APP, "ProjectBoard.png"), "rb") as f:
+    if img_bytes is None or hold_map is None:
+        # The bundled pair is a snapshot of the live board (tools/snapshot_board.py).
+        with open(os.path.join(APP, "board-fallback.jpg"), "rb") as f:
             img_bytes = f.read()
-        print("bundled image: app/ProjectBoard.png")
-    if hold_map is None:
         with open(os.path.join(APP, "hold_map.json")) as f:
             hold_map = json.load(f)
-        print("bundled map: app/hold_map.json")
+        version = (hold_map.pop("__meta", None) or {}).get("board_updated_at")
+        print(f"bundled snapshot: app/board-fallback.jpg + app/hold_map.json (board {version})")
 
     img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
     if img is None:

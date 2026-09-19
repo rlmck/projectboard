@@ -1,5 +1,11 @@
 """
-register_mirror.py
+register_mirror.py -- RETIRED as the source of app/mirror_map.json (19 Sep 2026).
+
+The live mirror map (board_config.mirror_map) has since been edited and differs
+from Gareth's table in 7 entries (e.g. I12 now pairs with I11). app/mirror_map.json
+is a snapshot of the live one (tools/snapshot_board.py), so this script now writes
+tools/mirror_map_gareth.json and can never overwrite it. Kept as the record of how
+Gareth's table was repaired; the notes below describe it as it was.
 
 Builds mirror_map.json: holdN -> mirror-partner holdN for The Hangout symmetry
 board, so the PWA can show (and the Pi can later cast) the left/right-mirrored
@@ -89,6 +95,7 @@ def main():
     gareth = load_gareth_map()
     with open(os.path.join(APP, "hold_map.json"), encoding="utf-8") as f:
         hm = json.load(f)
+    hm.pop("__meta", None)                                       # the snapshot's version stamp
     pos = {int(k[4:]): (v["x"], v["y"]) for k, v in hm.items()}   # holdN -> (x,y)
     axis = sum(pos[n][0] for n in AXIS_HOLDS) / len(AXIS_HOLDS)
 
@@ -152,7 +159,7 @@ def main():
     assert set(partner) == VSET, "every valid hold must have an entry"
 
     out = {f"hold{n}": f"hold{partner[n]}" for n in sorted(VALID)}
-    with open(os.path.join(APP, "mirror_map.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(HERE, "mirror_map_gareth.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2)
 
     # ---- report ----
@@ -180,7 +187,7 @@ def main():
     for d, n in big:
         if partner[n] > n:
             print(f"  hold{n}({grid_name(n)}) <-> hold{partner[n]}({grid_name(partner[n])})  d={d:.1f}")
-    print(f"\nWrote app/mirror_map.json ({len(out)} holds)")
+    print(f"\nWrote tools/mirror_map_gareth.json ({len(out)} holds)")
 
 
 if __name__ == "__main__":

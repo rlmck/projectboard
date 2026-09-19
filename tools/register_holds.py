@@ -1,5 +1,12 @@
 """
-register_holds.py -- built the BACKUP hold map, app/hold_map.json (10 June 2026).
+register_holds.py -- built the ORIGINAL backup hold map (10 June 2026). RETIRED.
+
+Since 19 Sep 2026 the backup in app/ is a snapshot of the live board
+(tools/snapshot_board.py: the live photo and its map), and the drawing this
+script maps onto (app/ProjectBoard.png) is no longer shipped. So it now writes
+tools/hold_map_drawing.json instead, and can never overwrite app/hold_map.json.
+It's kept as the record of how the drawing's map was made; the notes below
+describe it as it was.
 
 You shouldn't need to run this. The real hold map lives in the database
 (board_config.hold_map); the app no longer edits positions. This script
@@ -181,7 +188,7 @@ print()
 order = sorted(n for n in positions if n not in SAME_HOLD) + [n for n in SAME_HOLD if n in positions]
 hold_map = {f"hold{n}": {"x": round(positions[n][0], 2), "y": round(positions[n][1], 2)}
             for n in order}
-with open(os.path.join(APP, "hold_map.json"), "w", encoding="utf-8", newline="\n") as f:
+with open(os.path.join(HERE, "hold_map_drawing.json"), "w", encoding="utf-8", newline="\n") as f:
     json.dump(hold_map, f, indent=2)
     f.write("\n")
 
@@ -195,4 +202,4 @@ for n in example:
     else:
         print(f"  hold{n:<4} -- no dot assigned")
 print()
-print(f"Wrote app/hold_map.json ({len(hold_map)} holds)")
+print(f"Wrote tools/hold_map_drawing.json ({len(hold_map)} holds)")

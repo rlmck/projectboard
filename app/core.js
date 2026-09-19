@@ -127,9 +127,10 @@
     return cls;
   }
 
-  // A hold's left/right mirror partner (mirror_map.json). Self for centre-line
-  // holds and the lone hold with no real partner (I12) — so mirroring leaves them
-  // in place. Falls back to the hold itself if the map hasn't loaded.
+  // A hold's left/right mirror partner (board_config.mirror_map, else the bundled
+  // mirror_map.json). Self for centre-line holds and any hold without a real
+  // partner, so mirroring leaves them in place. Falls back to the hold itself if
+  // the map hasn't loaded.
   function mirrorHold(h) {
     return (MIRROR_MAP && MIRROR_MAP[h]) || h;
   }
@@ -166,10 +167,13 @@
   // always-correct dot overlay until the shapes are re-traced and published.
   let hsMaskSeq = 0;
   function shapesUsable() {
-    if (!HOLD_SHAPES || !HOLD_MAP || !configHasMap) return false;
+    if (!HOLD_SHAPES || !HOLD_MAP) return false;
     const meta = HOLD_SHAPES.__meta;
     if (!meta || !meta.board_updated_at) return false;
-    if (meta.board_updated_at !== boardConfigVersion) return false;
+    // The outlines must belong to the board the map in use came from: the live
+    // board, or (offline) the one the bundled snapshot was taken from.
+    const mapVersion = configHasMap ? boardConfigVersion : bundledMapVersion;
+    if (meta.board_updated_at !== mapVersion) return false;
     return Object.keys(HOLD_SHAPES).length > 1;      // more than just __meta
   }
 

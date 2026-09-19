@@ -50,11 +50,12 @@
   let HOLD_SHAPES = null; // hold id -> [[x,y],…] % polygon, from board_config (admin) or bundled hold_shapes.json (problem + circuit overlays, and the #outlines editor)
   let MIRROR_MAP = null; // hold id -> mirror-partner hold id (bundled mirror_map.json); self = centre/no-partner
   let detailMirror = false; // detail view is showing the left/right-mirrored problem
-  let BOARD_IMG = 'board-fallback.jpg'; // resolved board image URL (Supabase upload, else the bundled fallback: ProjectBoard.png as a 260 KB JPEG, same framing)
+  let BOARD_IMG = 'board-fallback.jpg'; // resolved board image URL (Supabase upload, else the bundled fallback: a snapshot of the live photo)
   let configHasMap = false;             // true once board_config supplied a hold map (suppresses the bundled fallback)
   let configHasMirror = false;          // true once board_config supplied a mirror map (suppresses the bundled fallback)
   let configHasShapes = false;          // true once board_config supplied hold outlines (suppresses the bundled fallback)
   let boardConfigVersion = null;        // board_config.updated_at — the board the live map/image belong to
+  let bundledMapVersion = null;         // hold_map.json's __meta.board_updated_at — the live board it's a snapshot of (tools/snapshot_board.py)
   let boardAspect = 0;                  // board image naturalWidth/naturalHeight (0 = not measured yet)
   const BOARD_BUCKET = 'board';         // Supabase Storage bucket holding the uploaded board image
   let session = null;    // Supabase auth session (null = guest)

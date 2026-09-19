@@ -31,3 +31,5 @@ public/
 # Python bytecode from tools/
 __pycache__/
 *.pyc
+tools/hold_map_drawing.json
+tools/mirror_map_gareth.json

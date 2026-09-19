@@ -151,8 +151,9 @@
     detailMirror = !detailMirror;
     updateMirrorButton();
     if (currentView === 'detail') renderDetail(currentProblem.id);
-    // The only hold with no real partner is I12 — flag if this problem uses it.
-    if (detailMirror && problemHoldOrder(currentProblem).includes('hold218')) {
+    // I12 had no real partner in the original mirror table; the live one pairs it
+    // with I11 (hold199). Flag it only if the map in use really leaves it in place.
+    if (detailMirror && mirrorHold('hold218') === 'hold218' && problemHoldOrder(currentProblem).includes('hold218')) {
       showToast('I12 has no mirror — left in place', 'success');
     }
   }
@@ -404,13 +405,20 @@
   }
 
   // ── Load hold position map (bundled fallback for the board overlay) ──────────
-  // board_config (loadBoardConfig) is the source of truth; this bundled file is the first-paint / offline fallback. Don't clobber a
-  // map that already came from board_config.
+  // board_config (loadBoardConfig) is the source of truth; this bundled file is the
+  // offline fallback, a snapshot of the live map (tools/snapshot_board.py). Don't
+  // clobber a map that already came from board_config. Its __meta records the board
+  // version it was taken from; it comes out here, before anything iterates the holds.
   async function loadHoldMap() {
     if (configHasMap) return;
     try {
       const res = await fetch('hold_map.json', { cache: 'no-cache' });
-      if (res.ok && !configHasMap) HOLD_MAP = await res.json();
+      if (res.ok && !configHasMap) {
+        const map = await res.json();
+        bundledMapVersion = (map.__meta && map.__meta.board_updated_at) || null;
+        delete map.__meta;
+        HOLD_MAP = map;
+      }
     } catch (err) {
       console.warn('hold_map.json load failed — board overlay disabled', err);
     }
