@@ -147,7 +147,7 @@
       if (String(editingProblemId) !== String(editId)) {
         const p = allProblems.find(x => String(x.id) === String(editId));
         if (!p) {   // not loaded yet (deep link / refresh) — bounce to its detail, which loads it
-          location.replace(location.pathname + '#detail/' + encodeURIComponent(editId));
+          redirectRoute('#detail/' + encodeURIComponent(editId));
           return;
         }
         seedEdit(p);
@@ -240,7 +240,7 @@
       renderList();
       showToast('Problem updated ✓', 'success');
       // Replace the #create entry with the problem's (re-rendered) detail.
-      location.replace('#detail/' + encodeURIComponent(id));
+      redirectRoute('#detail/' + encodeURIComponent(id));
       return;
     }
 
@@ -271,7 +271,7 @@
     showToast('Problem created ✓', 'success');
     // Replace the #create history entry with the new problem's detail, so Back
     // from there returns to the list (not into the create form).
-    location.replace('#detail/' + encodeURIComponent(data.id));
+    redirectRoute('#detail/' + encodeURIComponent(data.id));
   }
 
   // ── Hold outlines editor (#outlines, admin) ──────────────────────────────────

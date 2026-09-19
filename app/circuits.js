@@ -276,7 +276,7 @@
     const next = deck[idx + dir];
     if (!next) return;                                   // stop at the ends
     circuitTrail.push(currentCircuit.id);               // deleting `next` comes back here
-    history.replaceState(null, '', '#circuit/' + encodeURIComponent(next.id));
+    history.replaceState(history.state, '', '#circuit/' + encodeURIComponent(next.id));
     closeInfo();
     renderCircuitDetail(next.id);
   }
@@ -577,5 +577,5 @@
     renderCircuits();
     resetCircuitCreate();
     showToast('Circuit created ✓', 'success');
-    location.replace('#circuit/' + encodeURIComponent(data.id));
+    redirectRoute('#circuit/' + encodeURIComponent(data.id));
   }

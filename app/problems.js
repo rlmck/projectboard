@@ -170,7 +170,7 @@
     // Replace the hash (don't push history) so Back still returns to the list,
     // then render in place — the view stays put, only its content swaps.
     detailTrail.push(currentProblem.id);   // deleting `next` comes back here
-    history.replaceState(null, '', '#detail/' + encodeURIComponent(next.id));
+    history.replaceState(history.state, '', '#detail/' + encodeURIComponent(next.id));
     closeInfo();
     renderDetail(next.id);
   }

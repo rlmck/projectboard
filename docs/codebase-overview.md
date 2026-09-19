@@ -157,6 +157,8 @@ Hash routing; `router()` switches on `parseHash()` (`route/param`).
 
 **Route guards only bounce once `authReady` is true**, which `initAuth` sets after the session **and the profile** have loaded (since `pb-v92`; before, an admin route judged `is_admin` from a profile that hadn't arrived). Before that, `#create` lets a cold deep link through; the admin routes (`#outlines`, `#admin`) show nothing until auth is known, so a non-admin never sees them, and `initAuth` re-runs `router()` then. Signing out while on an admin screen routes away from it.
 
+**History and the in-app Back.** Every entry the app creates is stamped `{ pb: 1 }` in `history.state` (`stampNewEntry` on `hashchange`); the entry the app was opened on is stamped `{ pb: 0 }` at boot (`stampOpeningEntry`). `goBack()` only calls `history.back()` from a `pb: 1` entry. From the opening entry it replaces the route with the view's parent (`backParentHash()`: the list, `#circuits`, `#admin` or `#profile`), so Back from a shared link never leaves the site. Because of the stamps, **never `replaceState(null, …)` or `location.replace(hash)` in app code**: use `replaceRoute(hash)` (routes now) or `redirectRoute(hash)` (routes on the next tick, for redirects issued from inside `router()`), or pass `history.state` through. `parseHash()` keeps a malformed `%`-escape raw rather than throwing, and the boot block's first `router()` is wrapped so a routing error can't stop the loaders. All `localStorage` access outside the outline editor goes through `lsGet`/`lsSet` (`core.js`), which swallow the `SecurityError` thrown where site data is blocked, and the boot block runs before the install/welcome code in `app.js`.
+
 ⚠️ **`router()` doubles as the "data arrived, re-render" hook.** Loaders call it, and so does `refreshBoardViews()`. It has side effects: `setView` exits fullscreen and closes the info modal, and the `auth` case resets the form to sign-in. Prefer calling the specific render function over `router()` when adding a loader.
 
 ### 4.4 The board overlay pipeline
@@ -294,7 +296,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 **Sign-in methods:**
 - **Google OAuth.** `signInWithOAuth({provider:'google', options:{redirectTo: location.origin + location.pathname}})`.
   - supabase-js v2's default **implicit** flow returns tokens in the URL hash.
-  - `initAuth()` calls `getSession()` to consume them, then `location.replace('#list')`.
+  - `initAuth()` calls `getSession()` to consume them, then `redirectRoute('#list')` if the tokens are still in the hash.
   - `parseHash()` never routes to an `access_token`/`error=` hash.
   - A failed sign-in comes back with `error`/`error_description` in the hash (or the query string). `takeOAuthError()` in `account.js` strips it and shows "Sign-in failed: …". It used to be dropped silently.
 - **Email + password.** Email confirmation is **off**, and there's **no forgot-password flow** (section 12).
@@ -461,13 +463,10 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 
 **High**
 - **The admin user list is cached for the whole session**, and the reload button is hidden on the user-detail screen. So Routes set and Sends, now correct server-side, can still be stale until you go back to the list and reload.
-- **The app sticks on the splash screen if `localStorage` access throws.** It's read unguarded at the top level of `app.js`, before boot. Some Android webviews have storage turned off, and so do browsers set to block site data. The `supabase-js`-from-a-CDN version of this hang was fixed on 10 Sep 2026 by vendoring the library.
 - **Network-first fetches have no timeout.** On weak gym Wi-Fi (connected, barely working), loads hang instead of falling back to the cache. Race each fetch against about 3 s.
 
 **Medium**
 - **Auth runs its setup twice at startup** (`initAuth`, then `INITIAL_SESSION`), again on every hourly `TOKEN_REFRESHED`, and awaits inside `onAuthStateChange`, which Supabase warns can deadlock. Filter the events and defer the work with `setTimeout(…, 0)`.
-- **`goBack()` uses `history.length > 1`**, so Back from a deep link opened in a tab with prior history leaves the app.
-- **`parseHash()` calls `decodeURIComponent` unguarded.** A truncated shared link (`…%2`) throws on every navigation and leaves the app stuck.
 - **The create and circuit-create boards ignore taps** until `HOLD_MAP` arrives, which happens after the `board_config` round trip. There's no loading state.
 - **The cast button** stays `disabled`/`.sent` for 2 s even after you swipe to the next problem. Worse, the name is captured at tap time, so a swipe during the up-to-6 s location wait casts the *previous* problem.
 - **Writes blocked by RLS "succeed".** A blocked `delete()`/`update()` returns no error, just 0 rows, so the UI reports success. Problem and circuit delete now check this. Grade edit and edit-holds still don't, which matters for an admin demoted mid-session. Add `.select()` and check the row count.

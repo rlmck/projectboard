@@ -554,6 +554,43 @@
     return false;
   }
 
+  // ── Boot ──────────────────────────────────────────────────────────────────────
+  // Runs before the install/welcome section below, so nothing that goes wrong in
+  // there can stop the app routing, loading its data or clearing the splash.
+  stampOpeningEntry();     // history stamps for the in-app Back (core.js)
+  window.addEventListener('hashchange', stampNewEntry);
+  window.addEventListener('hashchange', router);
+  // A routing error must not stop the loaders and initAuth below from starting.
+  try { router(); } catch (err) { console.error('initial route failed', err); }   // list shows its loading spinner
+  loadProblems();     // fetch, then render + re-route
+  loadCircuits();     // fetch circuits (Phase 1 entity)
+  loadProfileNames(); // id -> username map so setters show the live display name
+  // Prefer the admin-saved board (image + hold map) from Supabase; fall back to the
+  // bundled hold_map.json only if no saved map exists.
+  loadBoardConfig().then(() => { loadHoldMap(); loadMirrorMap(); });
+  loadHoldShapes();     // bundled hold outlines for the problem shape overlay
+  measureBoardAspect(); // board w/h — the shape overlay needs it for round fallback dots
+  initAuth();      // restore session, wire auth state, handle Google redirect
+
+  // Splash: let the entrance finish (the timeline is in styles.css), then fade
+  // out and remove from the DOM. With reduced motion there's no sequence to
+  // watch, so it goes early.
+  // transitionend BUBBLES, and .splash-stage transitions its own transform on
+  // the way out, so the removal has to check that it was the overlay's fade that
+  // ended. The timer is the backstop for a browser that never fires it at all
+  // (a background tab, say) — remove() on a detached node is a no-op.
+  const splash = document.getElementById('splash');
+  if (splash) {
+    const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    setTimeout(() => {
+      splash.classList.add('hide');
+      splash.addEventListener('transitionend', e => {
+        if (e.target === splash && e.propertyName === 'opacity') splash.remove();
+      });
+      setTimeout(() => splash.remove(), 900);
+    }, calm ? 900 : 1800);
+  }
+
   // ── PWA: service worker + install (Add to Home Screen) ───────────────────────
   if ('serviceWorker' in navigator) {
     // Was the page already controlled at load? If not, the first controllerchange
@@ -638,7 +675,7 @@
 
   const isStandalone = () =>
     window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-  const dismissed = () => localStorage.getItem(DISMISS_KEY) === '1';
+  const dismissed = () => lsGet(DISMISS_KEY) === '1';
 
   // Which install story applies to this device:
   //   'standalone'     — already running as the installed app
@@ -671,7 +708,7 @@
   }
 
   const welcomeShown = (installCtx === 'android-prompt' || installCtx === 'ios' || installCtx === 'in-app') &&
-    (arrivedFrom === 'qr' || arrivedFrom === 'moved' || localStorage.getItem(WELCOME_KEY) !== '1');
+    (arrivedFrom === 'qr' || arrivedFrom === 'moved' || lsGet(WELCOME_KEY) !== '1');
   let androidPromptLate = false;   // true once ~3s pass with no beforeinstallprompt
 
   function showInstallBanner() { installBanner.classList.add('show'); }
@@ -718,15 +755,15 @@
   installAdd.addEventListener('click', promptInstall);
 
   document.getElementById('install-dismiss').addEventListener('click', () => {
-    localStorage.setItem(DISMISS_KEY, '1');
+    lsSet(DISMISS_KEY, '1');
     hideInstallBanner();
   });
 
   window.addEventListener('appinstalled', () => {
     deferredPrompt = null;
     hideInstallBanner();
-    localStorage.setItem(DISMISS_KEY, '1');
-    localStorage.setItem(WELCOME_KEY, '1');
+    lsSet(DISMISS_KEY, '1');
+    lsSet(WELCOME_KEY, '1');
     if (welcome.classList.contains('show')) showWelcomePanel('installed');
   });
 
@@ -781,7 +818,7 @@
   });
 
   document.getElementById('welcome-continue').addEventListener('click', () => {
-    localStorage.setItem(WELCOME_KEY, '1');
+    lsSet(WELCOME_KEY, '1');
     closeWelcome();
   });
 
@@ -791,36 +828,4 @@
       '<b>Install this app:</b> tap the Share icon, then “Add to Home Screen”.';
     installAdd.style.display = 'none';
     showInstallBanner();
-  }
-
-  // ── Boot ──────────────────────────────────────────────────────────────────────
-  window.addEventListener('hashchange', router);
-  router();        // show initial view (list shows its loading spinner)
-  loadProblems();     // fetch, then render + re-route
-  loadCircuits();     // fetch circuits (Phase 1 entity)
-  loadProfileNames(); // id -> username map so setters show the live display name
-  // Prefer the admin-saved board (image + hold map) from Supabase; fall back to the
-  // bundled hold_map.json only if no saved map exists.
-  loadBoardConfig().then(() => { loadHoldMap(); loadMirrorMap(); });
-  loadHoldShapes();     // bundled hold outlines for the problem shape overlay
-  measureBoardAspect(); // board w/h — the shape overlay needs it for round fallback dots
-  initAuth();      // restore session, wire auth state, handle Google redirect
-
-  // Splash: let the entrance finish (the timeline is in styles.css), then fade
-  // out and remove from the DOM. With reduced motion there's no sequence to
-  // watch, so it goes early.
-  // transitionend BUBBLES, and .splash-stage transitions its own transform on
-  // the way out, so the removal has to check that it was the overlay's fade that
-  // ended. The timer is the backstop for a browser that never fires it at all
-  // (a background tab, say) — remove() on a detached node is a no-op.
-  const splash = document.getElementById('splash');
-  if (splash) {
-    const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    setTimeout(() => {
-      splash.classList.add('hide');
-      splash.addEventListener('transitionend', e => {
-        if (e.target === splash && e.propertyName === 'opacity') splash.remove();
-      });
-      setTimeout(() => splash.remove(), 900);
-    }, calm ? 900 : 1800);
   }

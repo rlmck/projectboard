@@ -20,6 +20,17 @@
     toastTimer = setTimeout(() => { t.className = ''; }, 2800);
   }
 
+  // ── localStorage, guarded ────────────────────────────────────────────────────
+  // The accessor itself throws (SecurityError) where site data is blocked: cookies
+  // blocked for the site, some webviews, some private modes. Nothing stored here is
+  // essential, so a failed read is "not set" and a failed write is dropped.
+  function lsGet(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  }
+  function lsSet(key, value) {
+    try { localStorage.setItem(key, value); } catch (e) {}
+  }
+
   // ── Small render helpers ─────────────────────────────────────────────────────
   function starsHtml(n) {
     n = Math.max(0, Math.min(3, Number(n) || 0));
@@ -357,7 +368,11 @@
     if (raw.includes('access_token') || raw.includes('error=')) return { route: 'list', param: '' };
     const idx = raw.indexOf('/');
     if (idx === -1) return { route: raw, param: '' };
-    return { route: raw.slice(0, idx), param: decodeURIComponent(raw.slice(idx + 1)) };
+    // A malformed escape (a link cut short by a chat app, "#detail/abc%") makes
+    // decodeURIComponent throw; keep the raw text, which then simply isn't found.
+    let param = raw.slice(idx + 1);
+    try { param = decodeURIComponent(param); } catch (e) {}
+    return { route: raw.slice(0, idx), param };
   }
 
   // Close any open ⋮ overflow menu (detail / circuit-detail headers).
@@ -420,16 +435,16 @@
       case 'create':
         // Only bounce guests once we actually know the auth state — otherwise a
         // cold reload/deep-link on #create would kick a signed-in user to #auth.
-        if (authReady && !session) { location.replace(location.pathname + '#auth'); break; }
+        if (authReady && !session) { redirectRoute('#auth'); break; }
         // #create/<id> = admin "Edit holds" on an existing problem. Editing is
         // admin-only (DB enforces it too); bounce non-admins to that problem's detail.
-        if (param && authReady && !isAdmin()) { location.replace(location.pathname + '#detail/' + encodeURIComponent(param)); break; }
+        if (param && authReady && !isAdmin()) { redirectRoute('#detail/' + encodeURIComponent(param)); break; }
         initCreateView(param);
         setView('create');
         break;
       case 'calibrate':
         // The old recalibrate tool's address; the outline editor replaced it.
-        location.replace(location.pathname + '#outlines');
+        redirectRoute('#outlines');
         break;
       case 'outlines':
         // Admin-only tool. Nothing is shown until auth (and the profile) is known —
@@ -437,7 +452,7 @@
         // for a moment on a cold deep link. setView first: the editor measures its
         // stage, which has no size while the view is hidden.
         if (!authReady) break;
-        if (!isAdmin()) { location.replace(location.pathname + '#list'); break; }
+        if (!isAdmin()) { redirectRoute('#list'); break; }
         setView('outlines');
         initOutlines();
         break;
@@ -445,7 +460,7 @@
         // Admin-only hub (Trace Holds + user management). Same gate as #outlines:
         // wait for auth + profile, then bounce non-admins.
         if (!authReady) break;
-        if (!isAdmin()) { location.replace(location.pathname + '#list'); break; }
+        if (!isAdmin()) { redirectRoute('#list'); break; }
         setView('admin');
         renderAdmin(param);
         break;
@@ -457,7 +472,7 @@
         setView('circuit-detail'); renderCircuitDetail(param); break;
       case 'circuit-create':
         // Login required, same pattern as #create — only bounce once auth is known.
-        if (authReady && !session) { location.replace(location.pathname + '#auth'); break; }
+        if (authReady && !session) { redirectRoute('#auth'); break; }
         initCircuitCreate();
         setView('circuit-create');
         break;
@@ -478,14 +493,53 @@
   // location.hash would push a dead entry Back could return to, and a fragment
   // jump can scroll the document to the top, losing the list's scroll position.
   function replaceRoute(hash) {
-    history.replaceState(null, '', hash);
+    history.replaceState(history.state, '', hash);
     router();
+  }
+
+  // The same swap for a redirect: what location.replace(hash) did, minus the
+  // fragment jump and without wiping this entry's stamp (below). The route runs on
+  // the next tick, as a real hashchange would, so a redirect issued from inside
+  // router() isn't overtaken by the rest of the case that issued it.
+  function redirectRoute(hash) {
+    history.replaceState(history.state, '', hash);
+    setTimeout(() => window.dispatchEvent(new Event('hashchange')), 0);
+  }
+
+  // ── History stamps ───────────────────────────────────────────────────────────
+  // Every history entry the app creates is stamped { pb: 1 }; the entry the app was
+  // opened on is stamped { pb: 0 }. Only a pb:1 entry is sure to have one of ours
+  // behind it; behind a pb:0 entry may be another site (a shared link opened in a
+  // tab with history), so the in-app Back mustn't step back from it. Stamps live
+  // in history.state, so they survive reloads and back/forward. Every in-app
+  // replaceState passes history.state through to keep them.
+  function stampOpeningEntry() {
+    if (!history.state || history.state.pb === undefined) {
+      history.replaceState({ ...(history.state || {}), pb: 0 }, '', location.href);
+    }
+  }
+  // On hashchange: an unstamped entry is a new one (a link, a tap, a typed URL),
+  // pushed on top of one of ours. Back/forward land on entries already stamped.
+  function stampNewEntry() {
+    if (!history.state || history.state.pb === undefined) {
+      history.replaceState({ ...(history.state || {}), pb: 1 }, '', location.href);
+    }
+  }
+
+  // Where the in-app Back goes when there's no in-app entry to step back to.
+  function backParentHash() {
+    const { route, param } = parseHash();
+    if (route === 'circuit' || route === 'circuit-create') return '#circuits';
+    if (route === 'create' && param) return '#detail/' + encodeURIComponent(param);
+    if (route === 'outlines' || (route === 'admin' && param)) return '#admin';
+    if (route === 'admin') return '#profile';
+    return '#list';
   }
 
   function goBack() {
     // In fullscreen, Back closes the fullscreen first rather than leaving the view.
     if (fsMode) { exitBoardFs(); return; }
-    if (history.length > 1) history.back();
-    else location.hash = '#list';
+    if (history.state && history.state.pb === 1) history.back();
+    else replaceRoute(backParentHash());
   }
 

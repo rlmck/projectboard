@@ -210,7 +210,7 @@
     if (currentView === 'detail') { updateTickButton(); updateFaveButton(); }
     if (currentView === 'circuits') renderCircuits();
     if (currentView === 'circuit-detail') updateCircuitFaveButton();
-    if (location.hash.includes('access_token')) location.replace(location.pathname + '#list');
+    if (location.hash.includes('access_token')) redirectRoute('#list');
     else router();              // re-evaluate the route now auth is known (gates #create for guests)
 
     sb.auth.onAuthStateChange(async (event, s) => {
