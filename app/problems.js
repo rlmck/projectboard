@@ -501,33 +501,58 @@
   }
 
   // ── Load the id -> username map (so setters show the live display name) ───────
+  // The saved copy is applied first, synchronously, so setters already show their
+  // names when the saved lists render (boot calls this before loadProblems).
   async function loadProfileNames() {
+    if (!Object.keys(profileNames).length) {
+      const saved = savedList('names');
+      if (saved) profileNames = saved.rows;
+    }
     const { data, error } = await sb.from('profiles').select('id, username');
     if (error) { console.warn('profile names load failed', error); return; }
     profileNames = Object.fromEntries((data || []).map(r => [r.id, r.username]));
+    saveList('names', profileNames);
     if (loaded) renderList();                       // refresh setters once names arrive
-    if (currentView === 'detail') router();
+    if (currentView === 'detail') renderDetail(parseHash().param);
     if (currentView === 'circuits') renderCircuits();
     else if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
   }
 
   // ── Load problems ─────────────────────────────────────────────────────────────
+  function showProblems(rows) {
+    allProblems = rows;
+    loaded = true;
+    buildGradeTabs();
+    renderList();
+  }
+
+  // The saved list (if there is one) shows at once; the fresh one replaces it when
+  // it arrives. If the fetch fails, the saved list stays, with the offline note.
   async function loadProblems() {
+    const saved = !loaded && savedList('problems');
+    if (saved) {
+      showProblems(saved.rows);
+      router();                  // a cold #detail/<id> can open from the saved list
+    }
     const { data, error } = await sb.from('problems').select('*');
 
     if (error) {
+      console.warn('problems load failed', error);
+      if (saved) { setOfflineNote('list-offline', saved.t); return; }
       document.getElementById('list-container').innerHTML =
         `<div class="state-msg"><div class="icon">⚠️</div>Failed to load problems.<br><small style="opacity:.6">${escHtml(error.message)}</small></div>`;
       document.getElementById('count').textContent = '';
       return;
     }
 
-    allProblems = data || [];
-    loaded = true;
-    buildGradeTabs();
-    renderList();
-    // Re-run the router in case we booted straight into #detail/<id>.
-    router();
+    saveList('problems', data || []);
+    setOfflineNote('list-offline', 0);
+    showProblems(data || []);
+    // Re-run the router in case we booted straight into #detail/<id>. If the saved
+    // list already routed, just re-render the detail in place: router() has side
+    // effects (it closes the info sheet, exits fullscreen) the user would notice.
+    if (!saved) router();
+    else if (currentView === 'detail') renderDetail(parseHash().param);
   }
 
   // Pull-to-refresh on the list (wired in app.js). Unlike loadProblems it doesn't
@@ -541,10 +566,9 @@
       session ? loadFaves() : null,
     ]);
     if (res.error) { showToast('Couldn’t refresh problems', 'error'); return; }
-    allProblems = res.data || [];
-    loaded = true;
-    buildGradeTabs();
-    renderList();
+    saveList('problems', res.data || []);
+    setOfflineNote('list-offline', 0);
+    showProblems(res.data || []);
   }
 
   // ── Ticks (personal sends — private to the signed-in user) ───────────────────

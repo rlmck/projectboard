@@ -130,12 +130,13 @@ These are plain `<script>` tags, not ES modules. There's no build step and no fr
 | `leaderboard.js` | `#leaderboard` view; `userPoints()` for the profile |
 | `app.js` | **Loaded last.** All event wiring, service-worker registration and update handling, the install flow (welcome overlay + banner), and **boot** |
 
-### 4.2 Boot sequence (end of `app.js`)
-1. `hashchange` → `router`, then `router()` once for the initial view.
+### 4.2 Boot sequence (the Boot block in `app.js`, before the install code)
+1. Stamp the opening history entry, `hashchange` → `stampNewEntry` + `router`, then `router()` once for the initial view (wrapped, so a routing error can't stop the rest).
 2. Start these in parallel:
-   - `loadProblems()`: re-runs `router()` when data lands, so a cold `#detail/<id>` deep link renders.
+   - `loadProfileNames()` first: the id → username map behind live setter names (its saved copy applies synchronously, so the saved lists render with names).
+   - `loadProblems()`: runs `router()` when data lands, so a cold `#detail/<id>` deep link renders.
    - `loadCircuits()`
-   - `loadProfileNames()`: the id → username map behind live setter names.
+   - **Saved lists** (since `pb-v104`): every successful load of problems, circuits and setter names is saved on the device (`saveList`/`savedList` in `core.js`). At start-up the saved copy renders at once while the fresh one loads (weak Wi-Fi), and the fresh one replaces it in place: `loadProblems` then re-renders the detail rather than re-running `router()`, whose side effects the user would see. If the fetch fails, the saved copy stays and a note above the list says when it was saved (`#list-offline`, `#circuit-offline`); pull-to-refresh or the browser's `online` event fetches again. With nothing saved, offline still shows "Failed to load problems". Ticks and favourites aren't saved, so offline the ✓ flags and the Favourites pill are empty. `privacy.html` mentions the saved copy.
    - `loadBoardConfig()`, **then** `loadHoldMap()` + `loadMirrorMap()`. They run in sequence so the bundled fallbacks never overwrite the live map.
    - `loadHoldShapes()` and `measureBoardAspect()`.
    - `initAuth()`.
@@ -250,7 +251,7 @@ Nothing records casts in the database: the old `board_state` table was never use
 - **Android:** one `beforeinstallprompt` is shared by the welcome's Install button and the small banner (`promptInstall()`).
 - **iOS:** share-sheet steps.
 - **In-app browsers:** "open in Safari/Chrome" plus Copy link.
-- **localStorage keys:** `pb-welcome-seen`, `pb-install-dismissed`, plus the Supabase session. **Don't rename these**: renaming the welcome key shows the welcome to every existing user again.
+- **localStorage keys:** `pb-welcome-seen`, `pb-install-dismissed`, the saved lists `pb-saved-problems` / `pb-saved-circuits` / `pb-saved-names` (§4.2), `pb-outline-draft` (admin), plus the Supabase session. All access goes through `lsGet`/`lsSet`. **Don't rename these**: renaming the welcome key shows the welcome to every existing user again.
 
 ## 5. Data model (live, 10 Sep 2026)
 

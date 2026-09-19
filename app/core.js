@@ -31,6 +31,41 @@
     try { localStorage.setItem(key, value); } catch (e) {}
   }
 
+  // ── Saved lists (offline) ────────────────────────────────────────────────────
+  // The last problems, circuits and setter names that loaded, kept on this device.
+  // At start-up they show at once while the fresh copy loads (weak gym Wi-Fi), and
+  // if the fetch fails they stay up with a note (offline, Supabase down). All of it
+  // is public data, so nothing needs clearing on sign-out. { t, rows }.
+  const SAVED_KEYS = { problems: 'pb-saved-problems', circuits: 'pb-saved-circuits', names: 'pb-saved-names' };
+  function saveList(kind, rows) {
+    lsSet(SAVED_KEYS[kind], JSON.stringify({ t: Date.now(), rows }));
+  }
+  function savedList(kind) {
+    try {
+      const v = JSON.parse(lsGet(SAVED_KEYS[kind]) || 'null');
+      return v && v.rows && typeof v.t === 'number' ? v : null;
+    } catch (e) { return null; }
+  }
+
+  function savedWhen(t) {
+    const mins = Math.round((Date.now() - t) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins} min ago`;
+    const d = new Date(t);
+    return d.toDateString() === new Date().toDateString()
+      ? 'at ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+      : 'on ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  }
+
+  // The note above a list that says it's the saved copy. t = when it was saved;
+  // 0 hides the note (the fresh list is showing).
+  function setOfflineNote(id, t) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.hidden = !t;
+    if (t) el.textContent = `Offline: showing the list saved ${savedWhen(t)}. Pull down to try again.`;
+  }
+
   // ── Small render helpers ─────────────────────────────────────────────────────
   function starsHtml(n) {
     n = Math.max(0, Math.min(3, Number(n) || 0));

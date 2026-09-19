@@ -68,20 +68,31 @@
     return circuitLayerHtml(roles, labels, { dim: true });
   }
 
-  async function loadCircuits() {
-    const { data, error } = await sb.from('circuits').select('*');
-    if (error) {
-      circuitsError = error;
-      console.warn('circuits load failed', error);
-      if (currentView === 'circuits') renderCircuits();
-      else if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
-      return;
-    }
-    allCircuits = data || [];
+  function showCircuits(rows) {
+    allCircuits = rows;
     circuitsLoaded = true;
     circuitsError = null;
     if (currentView === 'circuits') renderCircuits();
     else if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
+  }
+
+  // As loadProblems: the saved list shows at once, the fresh one replaces it, and a
+  // failed fetch keeps the saved one with the offline note.
+  async function loadCircuits() {
+    const saved = !circuitsLoaded && savedList('circuits');
+    if (saved) showCircuits(saved.rows);
+    const { data, error } = await sb.from('circuits').select('*');
+    if (error) {
+      console.warn('circuits load failed', error);
+      if (saved) { setOfflineNote('circuit-offline', saved.t); return; }
+      circuitsError = error;
+      if (currentView === 'circuits') renderCircuits();
+      else if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
+      return;
+    }
+    saveList('circuits', data || []);
+    setOfflineNote('circuit-offline', 0);
+    showCircuits(data || []);
   }
 
   // Pull-to-refresh on the circuit list (wired in app.js), as refreshProblems:
@@ -92,6 +103,8 @@
       session ? loadFaves() : null,
     ]);
     if (res.error) { showToast('Couldn’t refresh circuits', 'error'); return; }
+    saveList('circuits', res.data || []);
+    setOfflineNote('circuit-offline', 0);
     allCircuits = res.data || [];
     circuitsLoaded = true;
     circuitsError = null;

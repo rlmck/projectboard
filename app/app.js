@@ -567,9 +567,17 @@
   window.addEventListener('hashchange', router);
   // A routing error must not stop the loaders and initAuth below from starting.
   try { router(); } catch (err) { console.error('initial route failed', err); }   // list shows its loading spinner
-  loadProblems();     // fetch, then render + re-route
-  loadCircuits();     // fetch circuits (Phase 1 entity)
-  loadProfileNames(); // id -> username map so setters show the live display name
+  loadProfileNames(); // id -> username map so setters show the live display name (first, so the saved lists below render with names)
+  loadProblems();     // saved list at once, then fetch, render + re-route
+  loadCircuits();     // the same for circuits
+  // Back online after showing a saved list (or nothing): fetch the fresh ones.
+  window.addEventListener('online', () => {
+    if (!loaded) loadProblems();
+    else if (!document.getElementById('list-offline').hidden) refreshProblems().catch(() => {});
+    if (!circuitsLoaded) loadCircuits();
+    else if (!document.getElementById('circuit-offline').hidden) refreshCircuits().catch(() => {});
+    loadProfileNames();
+  });
   // Prefer the admin-saved board (image + hold map) from Supabase; fall back to the
   // bundled hold_map.json only if no saved map exists. The board image is only
   // chosen once that's settled (applyBoardImage also measures its w/h, which the

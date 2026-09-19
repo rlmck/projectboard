@@ -458,6 +458,15 @@
       padding-bottom: calc(20px + env(safe-area-inset-bottom));
     }
 
+    /* The note above a list showing its saved (offline) copy. */
+    .offline-note {
+      margin: 0 0 10px; padding: 8px 12px;
+      border: 1px solid var(--border); border-radius: 9px;
+      background: var(--surface2); color: var(--text-muted);
+      font-size: 13px; line-height: 1.4;
+    }
+    .offline-note[hidden] { display: none; }
+
     /* ── Problem cards (list) ────────────────────────────────────────── */
     .problem-list { display: flex; flex-direction: column; gap: 8px; }
 
