@@ -57,7 +57,7 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 **The layout:**
 ```
 app/      the website: exactly the files that are deployed, flat. build.sh copies it into public/.
-tools/    generators and dev tools (never deployed)
+tools/    generators, dev tools and the cast test bench (never deployed)
 print/    the A5 poster and QR (never deployed)
 docs/     codebase-overview.md + rollout-plan.md (the rest is local only)
 build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs them from there
@@ -132,23 +132,22 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 ## The cast contract
 
 ```javascript
-await channel.send({
-  type: 'broadcast',
-  event: 'cast_problem',
-  payload: { problem_name: 'Good Bug', mirror: true }   // mirror only when the mirrored view is shown
-});
-// channel: 'board:HangoutPortland', created with config: { broadcast: { ack: true } }
+await channel.httpSend('cast_problem',
+  { problem_name: 'Good Bug', mirror: true },   // mirror only when the mirrored view is shown
+  { timeout: 10000 });
+// channel: sb.channel('board:HangoutPortland'), never subscribed: the app holds no socket
 ```
 
-- `castByName()` in `problems.js` is the only cast path. It runs the geofence check first (lenient; admins bypass). **Reuse that gate for the circuit cast.**
-- The ack means the **Realtime server** got the broadcast, not the Pi. There's no end-to-end confirmation, so never report board-level success.
+- `castByName()` in `problems.js` is the only cast path. It runs the geofence check first (lenient; admins bypass), then sends only if the caller's `stillShowing()` says the tapped problem and orientation are still on screen. **Reuse both for the circuit cast.**
+- `httpSend` resolving means the **Realtime server** accepted the broadcast, not the Pi. There's no end-to-end confirmation, so never report board-level success.
+- **Test casting without the Pi:** `python tools/serve.py`, open `http://localhost:8000/tools/cast-test.html`. It lists every cast on the channel, and *Run checks* drives the local app through the cast cases using fake problem names.
 - The Pi listener (`pi/board_listener.py`, local) looks the name up in the `problems` table, applies the mirror map, un-inverts, and lights the LEDs.
 
 ---
 
 ## Status
 
-**The app** has four tabs (Problems · Circuits · Ranks · Profile) and 11 views; the full route list is in overview §4.3. SW `CACHE` is `pb-v98`. The problem detail bar has a **shuffle** toggle (left of the tick, `shuffleStep()` in `problems.js`): with it on, swiping forward jumps to a random unseen problem in the filtered deck, and swiping back retraces the path (`shuffleBack`/`shuffleFwd`, reset on entering the detail view). It's in-memory only, and circuits don't have it. The splash plays a short CSS-only entrance (the mark draws out from its vertex, a ring of holds casts across the wall, the wordmark settles); the timeline and the `prefers-reduced-motion` fallback are commented at the top of `styles.css`, and `app.js` only adds `.hide`. Hold outlines are drawn as smooth curves: the roundness is set in the outline editor and published as `hold_shapes.__meta.smooth`; `SHAPE_SMOOTH` (0.7) in `core.js` is the default for a set without one. The outline editor (`#outlines`, admin, in `authoring.js`) is built for a phone: pinch/pan, drag points with a magnifier, edge handles to add points, a nudge pad, a live app preview, a localStorage draft (`pb-outline-draft`), and **Publish** writes `board_config.hold_shapes` only, never `updated_at`. It hides the bottom nav and handles every gesture on its stage itself (`touch-action: none`). Pinch and double-tap zoom are disabled app-wide (viewport meta + `html { touch-action }` + an iOS gesture guard at the top of `app.js`), and so is text selection outside inputs (`body { user-select: none }`; `.welcome-url` stays selectable for the in-app-browser copy fallback). The browser's pull-to-refresh is off app-wide (`overscroll-behavior-y: none`, except on iOS, which keeps its bounce and has no pull-to-refresh as an installed app); only the Problems and Circuits lists have one, their own (`.list-pull`, wired in `app.js` via `PULL_LISTS`, calling `refreshProblems()` / `refreshCircuits()`), which re-fetches in place. **Circuits look and behave like problems** (18 Sep 2026): the same grade tabs (tap = one, hold = several), cards with the New badge, a pinned detail view you swipe through, traced outlines over a dimmed board, and an Information item in the ⋮ menu. What's circuit-only is the move-number tags on the holds (`seqTagsHtml`) and the Play panel under the board, whose speed is a Slow → Fast slider (0.2–3.0 s per move, in 0.1 s steps). Keep the two sides in step when either changes.
+**The app** has four tabs (Problems · Circuits · Ranks · Profile) and 11 views; the full route list is in overview §4.3. SW `CACHE` is `pb-v99`. The problem detail bar has a **shuffle** toggle (left of the tick, `shuffleStep()` in `problems.js`): with it on, swiping forward jumps to a random unseen problem in the filtered deck, and swiping back retraces the path (`shuffleBack`/`shuffleFwd`, reset on entering the detail view). It's in-memory only, and circuits don't have it. The splash plays a short CSS-only entrance (the mark draws out from its vertex, a ring of holds casts across the wall, the wordmark settles); the timeline and the `prefers-reduced-motion` fallback are commented at the top of `styles.css`, and `app.js` only adds `.hide`. Hold outlines are drawn as smooth curves: the roundness is set in the outline editor and published as `hold_shapes.__meta.smooth`; `SHAPE_SMOOTH` (0.7) in `core.js` is the default for a set without one. The outline editor (`#outlines`, admin, in `authoring.js`) is built for a phone: pinch/pan, drag points with a magnifier, edge handles to add points, a nudge pad, a live app preview, a localStorage draft (`pb-outline-draft`), and **Publish** writes `board_config.hold_shapes` only, never `updated_at`. It hides the bottom nav and handles every gesture on its stage itself (`touch-action: none`). Pinch and double-tap zoom are disabled app-wide (viewport meta + `html { touch-action }` + an iOS gesture guard at the top of `app.js`), and so is text selection outside inputs (`body { user-select: none }`; `.welcome-url` stays selectable for the in-app-browser copy fallback). The browser's pull-to-refresh is off app-wide (`overscroll-behavior-y: none`, except on iOS, which keeps its bounce and has no pull-to-refresh as an installed app); only the Problems and Circuits lists have one, their own (`.list-pull`, wired in `app.js` via `PULL_LISTS`, calling `refreshProblems()` / `refreshCircuits()`), which re-fetches in place. **Circuits look and behave like problems** (18 Sep 2026): the same grade tabs (tap = one, hold = several), cards with the New badge, a pinned detail view you swipe through, traced outlines over a dimmed board, and an Information item in the ⋮ menu. What's circuit-only is the move-number tags on the holds (`seqTagsHtml`) and the Play panel under the board, whose speed is a Slow → Fast slider (0.2–3.0 s per move, in 0.1 s steps). Keep the two sides in step when either changes.
 
 **Next:**
 - **Circuits Phase 2:** the cast screen (5 s countdown + beeps, speed in 0.1 s steps, loop toggle, big STOP), `cast_circuit`/`stop` broadcasts, writing `circuit_logs` (which also activates the circuits "Exclude Done" pill), and the Pi listener update. Spec: `docs/project-notes.md`.

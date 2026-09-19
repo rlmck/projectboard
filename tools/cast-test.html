@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cast Test</title>
+<link rel="stylesheet" href="cast-test.css">
+</head>
+<body>
+  <header>
+    <h1>Cast test</h1>
+    <p>Listens on <code>board:HangoutPortland</code> for <code>cast_problem</code>, exactly as the Pi does.
+       Not deployed. Run <code>python tools/serve.py</code> from the repo root (it turns caching off) and open
+       <code>http://localhost:8000/tools/cast-test.html</code>.</p>
+  </header>
+
+  <section>
+    <h2>1 · Listener <span id="listen-state" class="pill">connecting…</span></h2>
+    <p class="hint">Leave this open and cast from the app on your phone: every cast that reaches the
+       Realtime server shows up here, with the payload the Pi would get.</p>
+    <table>
+      <thead><tr><th>Time</th><th>Problem</th><th>Mirror</th><th>Payload</th></tr></thead>
+      <tbody id="log"><tr class="empty"><td colspan="4">Nothing received yet</td></tr></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>2 · Automated checks</h2>
+    <p class="hint">Loads the local app (<code>../app/</code>) in the frame below, adds two fake problems
+       (<code>~cast-test-A</code>, <code>~cast-test-B</code>) and drives the cast button. The casts are real
+       broadcasts on the live channel, but no problem has those names, so the Pi ignores them.
+       Location is stubbed, so it never asks for permission.</p>
+    <button id="run" type="button">Run checks</button>
+    <ol id="results"></ol>
+    <iframe id="app" title="The app under test"></iframe>
+  </section>
+
+  <script src="../app/supabase-js-2.116.0.js"></script>
+  <script src="cast-test.js"></script>
+</body>
+</html>

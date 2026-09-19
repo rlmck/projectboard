@@ -217,11 +217,13 @@ Positions are **percentages of the image**, so the overlay scales with it. The r
 - **Circuit Play preview:** a round play/stop button, "Move n of N" (plus the lap on a looping circuit), and a speed slider running Slow → Fast (the slider value is the step time flipped end to end; 0.2–3.0 s per move in 0.1 s steps, kept for the session). It lights a 4-hold window over the dimmed board. A swipe that starts on the panel is ignored, so dragging the slider never changes circuit.
 
 ### 4.7 Casting
-`castByName(name, btn, mirror)` in `problems.js` is the only cast path.
+`castByName(name, btn, mirror, stillShowing)` in `problems.js` is the only cast path.
 1. **Geofence** (`ensureCastLocation`; centre and radius in `GYM_GEOFENCE`). A nudge for honest users, not access control: it's deliberately lenient, so it never blocks someone at the wall because of a poor GPS fix, and admins bypass it. The exact rules are in the code.
-2. **Broadcast:** `channel.send({type:'broadcast', event:'cast_problem', payload:{problem_name, mirror?}})` on `board:HangoutPortland`.
-   - The channel is created with `broadcast.ack`, and anything but `'ok'` shows "Cast failed".
-   - The ack means **the Realtime server** got it, not the Pi. There's no end-to-end confirmation.
+   - **The location wait can take seconds**, so the name and orientation are fixed at the tap and re-checked afterwards. If the screen has moved on (a swipe, the mirror flipped, the view left: the caller's `stillShowing()`), nothing is sent and the toast says "Cast cancelled". `castTarget` tracks the cast that owns the shared header button; `renderDetail` releases the button when the problem or orientation changes, and a newer tap replaces an older one (only the newer one is sent). The Phase-2 circuit cast should pass its own `stillShowing`.
+2. **Broadcast:** `channel.httpSend('cast_problem', {problem_name, mirror?}, {timeout: 10000})` on `board:HangoutPortland`: one REST POST (since `pb-v99`).
+   - **The app never subscribes**, so it holds no WebSocket (before `pb-v99`, every open app kept one joined all the time, and `send()` would have fallen back to REST anyway when it dropped). Subscribers get the same event and payload as before.
+   - `httpSend` resolves once the Realtime server has accepted the broadcast (202) and rejects otherwise; a rejection shows "Cast failed". That means **the Realtime server** got it, not the Pi. There's no end-to-end confirmation.
+   - **Testing without the Pi:** `python tools/serve.py`, then open `http://localhost:8000/tools/cast-test.html` (section 11).
 3. **The Pi** (`pi/board_listener.py`, local):
    - It subscribes with the anon key and looks the name up in `problems`.
    - It applies the mirror table and un-inverts, then lights green starts, blue intermediates and a red finish.
@@ -416,6 +418,8 @@ All of these live in `tools/`. The Python scripts find their files relative to t
 | `register_leds.py` | Gareth's wiring → `tools/led_map.json` (asserts all 247 cells) | n/a |
 | `make_icons.py` | `app/icon.svg` geometry → 4 PNG icons in `app/` (Pillow). **The geometry is duplicated by hand**: keep it in step with `icon.svg` | Pillow |
 | `make_qr.py` | `https://symmetryboard.co.uk/scan` → `print/qr-scan.svg` (level Q) | segno |
+| `cast-test.html` (+ `.js`, `.css`) | The cast test bench. **Listener:** subscribes to `board:HangoutPortland` like the Pi and lists every `cast_problem` with its payload, so casts from a phone can be checked without the LEDs. **Run checks:** loads the local `app/` in an iframe, adds two fake problems (`~cast-test-A`/`-B`, names the Pi can't match), stubs the location check with a delay, and verifies what reaches the channel: plain and mirrored casts, a swipe or mirror flip during "Locating" sends nothing, tap-swipe-tap sends only the second, a double tap sends once, a failed send frees the button, and no socket is held open. The broadcasts are real, on the live channel. It unregisters the local service worker first | `serve.py` |
+| `serve.py` | Serves the repo root on `localhost:8000` with `Cache-Control: no-store`. Plain `python -m http.server` lets the browser cache scripts heuristically, so a test run can use old code | Python |
 | In-app `#outlines` | The hold-outline editor, built for a phone (Admin → Trace Holds; replaced both `#calibrate` and the desktop `trace_holds.html` on 16 Sep 2026). Header buttons: **zoom to this hold** and **Preview** (a toggle that draws every hold with core.js's own `holdShapeLayerHtml` while editing carries on, view and selection untouched; the note's Colour button cycles blue/green/red). Pinch to zoom (up to an 8000 px-wide board) and pan (one finger on empty board pans too); tap a hold to select it, double-tap to zoom to it; drag a point (a magnifier shows it above the finger); tap or drag the circle on an edge to add a point; drag inside to move the whole outline; a nudge pad moves the selected point, or the whole outline, by 0.05% (holding repeats). ⋮ menu: whole board, next hold with no outline, hide others, redraw, revert hold, load the shipped `hold_shapes.json`, discard all (undoable). Round slider = `__meta.smooth`. Edits are kept as a localStorage draft (`pb-outline-draft`, per board version) until published. **Publish** updates `board_config.hold_shapes` only (never `updated_at`) and checks the returned rows. It refuses outlines whose `__meta.board_updated_at` doesn't match the live board. Desktop: wheel zoom, arrows nudge, Delete, ctrl+Z/Y, n/p, f, 0, right-click deletes a point | admin |
 
 **Hold positions, the board photo and mirror pairs can no longer be edited in the app** (Ross, 16 Sep 2026). If the board is ever re-mapped (in the database), bumping `updated_at` drops every client to dots until the outlines are re-traced against it and published.
@@ -447,7 +451,7 @@ All of these live in `tools/`. The Python scripts find their files relative to t
 - **Circuits Phase 2 isn't built:** casting, countdown, `circuit_logs`, and wiring up the circuits "Exclude Done" pill. Phase 3 (circuit leaderboards) isn't built either.
 - **Problem name/setter editing isn't built** (admins can edit holds and grade).
 - **No offline mode beyond the shell** (section 7).
-- **The Supabase plan tier** isn't recorded anywhere. If it's Free, the project pauses after 7 days without API activity (e.g. a gym closure), and Realtime is capped at 200 concurrent connections. Every open app holds one socket for the cast channel.
+- **The Supabase plan tier** isn't recorded anywhere. If it's Free, the project pauses after 7 days without API activity (e.g. a gym closure), and Realtime is capped at 200 concurrent connections. Since `pb-v99` the app holds no socket (casts are REST), so only the Pi uses one.
 
 ## 13. Known issues (bugs and debt)
 
@@ -468,7 +472,6 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 **Medium**
 - **Auth runs its setup twice at startup** (`initAuth`, then `INITIAL_SESSION`), again on every hourly `TOKEN_REFRESHED`, and awaits inside `onAuthStateChange`, which Supabase warns can deadlock. Filter the events and defer the work with `setTimeout(…, 0)`.
 - **The create and circuit-create boards ignore taps** until `HOLD_MAP` arrives, which happens after the `board_config` round trip. There's no loading state.
-- **The cast button** stays `disabled`/`.sent` for 2 s even after you swipe to the next problem. Worse, the name is captured at tap time, so a swipe during the up-to-6 s location wait casts the *previous* problem.
 - **Writes blocked by RLS "succeed".** A blocked `delete()`/`update()` returns no error, just 0 rows, so the UI reports success. Problem and circuit delete now check this. Grade edit and edit-holds still don't, which matters for an admin demoted mid-session. Add `.select()` and check the row count.
 - **Deleting a user doesn't refresh the leaderboard.** `doDeleteUser` never sets `leaderboardLoaded = false`, and the cached admin user list (with emails) survives sign-out.
 - **`router()` side effects when data arrives** (section 4.3).

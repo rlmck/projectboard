@@ -11,15 +11,13 @@
   );
 
   // ── Realtime channel for casting (unchanged contract: board:HangoutPortland) ──
-  // broadcast.ack makes channel.send() wait for the Realtime server to confirm
-  // receipt and resolve with the real status ('ok' | 'error' | 'timed out');
-  // without it, send() resolves 'ok' the instant it pushes, so a dropped socket
-  // (weak gym Wi-Fi) would falsely report a successful cast. The broadcast event
-  // the Pi receives is unchanged — ack is only between the app and the server.
-  const channel = sb.channel('board:HangoutPortland', {
-    config: { broadcast: { ack: true } }
-  });
-  channel.subscribe();
+  // Never subscribed: the app only sends, so it holds no WebSocket. A cast goes
+  // out with channel.httpSend(), one REST POST that resolves once the Realtime
+  // server has accepted the broadcast (202) and rejects otherwise, so a dead
+  // connection can't report a false success. Subscribers (the Pi) receive the
+  // same event and payload as they did from the old socket send. If a feature
+  // ever needs to RECEIVE (Phase 2 status from the Pi), subscribe on that view only.
+  const channel = sb.channel('board:HangoutPortland');
 
   // ── Grade ordering (boulder problems) ────────────────────────────────────────
   // Stored / matched lowercase (these strings are the DB values); displayed as

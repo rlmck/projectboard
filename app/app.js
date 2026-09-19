@@ -261,8 +261,13 @@
   document.getElementById('board-fs-close').addEventListener('click', exitBoardFs);
 
   // Detail actions (live in the header; operate on the current problem)
+  // The name and orientation are fixed at the tap; the cast is only sent if they're
+  // still what's on screen once the location check returns (it can take seconds).
   document.getElementById('detail-cast').addEventListener('click', e => {
-    if (currentProblem) castByName(currentProblem.name, e.currentTarget, detailMirror);
+    if (!currentProblem) return;
+    const name = currentProblem.name, mirror = detailMirror;
+    castByName(name, e.currentTarget, mirror, () =>
+      currentView === 'detail' && !!currentProblem && currentProblem.name === name && detailMirror === mirror);
   });
   document.getElementById('detail-mirror').addEventListener('click', toggleDetailMirror);
   document.getElementById('detail-tick').addEventListener('click', toggleTick);

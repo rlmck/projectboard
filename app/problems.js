@@ -103,6 +103,13 @@
     // Moving to a different problem resets the mirror toggle to normal orientation.
     if (!currentProblem || String(currentProblem.id) !== String(p.id)) detailMirror = false;
     currentProblem = p;
+    // A cast in progress for something else (the problem before a swipe, or the
+    // other orientation) lets go of the shared header button; castByName then
+    // drops it when its location check returns.
+    if (castTarget && (castTarget.name !== p.name || castTarget.mirror !== detailMirror)) {
+      castTarget = null;
+      resetCastButton(document.getElementById('detail-cast'));
+    }
     updateTickButton();
     updateFaveButton();
     updateMirrorButton();
@@ -294,11 +301,36 @@
   }
 
   // ── Cast a problem (broadcast contract unchanged) ─────────────────────────────
-  async function castByName(name, btn, mirror = false) {
+  // The cast the cast button is showing (Locating / Sending / Sent), as
+  // { name, mirror }, or null. A newer tap replaces it, and renderDetail clears it
+  // when the problem or orientation on screen changes, which is how a cast still
+  // waiting on the location check learns it has been left behind.
+  let castTarget = null;
+
+  function resetCastButton(btn) {
+    btn.classList.remove('casting', 'sent');
+    btn.disabled = false;
+  }
+
+  // stillShowing (optional): checked after the location wait, which can take
+  // seconds; if it says the thing tapped is no longer on screen (a swipe, the
+  // mirror flipped, the view left) nothing is sent. Otherwise the wall would
+  // light the problem you swiped away from.
+  async function castByName(name, btn, mirror = false, stillShowing = null) {
     if (!name) return;
     // Icon-only cast buttons keep their icon; text buttons swap to status text.
     const isIcon = btn.classList.contains('cast-icon-btn');
     const prev = btn.innerHTML;
+    const target = { name, mirror };
+    castTarget = target;
+    const mine = () => castTarget === target;
+    const restore = () => {
+      if (!mine()) return;          // a newer cast owns the button now
+      castTarget = null;
+      resetCastButton(btn);
+      if (!isIcon) btn.innerHTML = prev;
+    };
+    btn.classList.remove('sent');
     btn.classList.add('casting');
     btn.disabled = true;
     if (!isIcon) btn.innerHTML = 'Locating';
@@ -306,10 +338,14 @@
     // Geofence gate — only blocks on a fix that's confidently away from the gym
     // (admins bypass; missing/uncertain fixes are allowed). May briefly wait for GPS.
     const fence = await ensureCastLocation();
+    if (!mine() || (stillShowing && !stillShowing())) {
+      const superseded = castTarget !== null && !mine();
+      restore();
+      if (!superseded) showToast('Cast cancelled — the problem changed', 'error');
+      return;
+    }
     if (!fence.ok) {
-      btn.classList.remove('casting');
-      btn.disabled = false;
-      if (!isIcon) btn.innerHTML = prev;
+      restore();
       showToast('Casting only works at the gym', 'error');
       return;
     }
@@ -319,28 +355,17 @@
     if (mirror) payload.mirror = true;
 
     try {
-      // send() resolves (never throws) with 'ok' | 'error' | 'timed out'. With
-      // broadcast.ack on, this reflects whether the Realtime server actually
-      // received the cast, so treat anything but 'ok' as a failure.
-      const status = await channel.send({
-        type: 'broadcast',
-        event: 'cast_problem',
-        payload
-      });
-      if (status !== 'ok') throw new Error(`broadcast ${status}`);
+      // One REST POST (no socket, see state.js). Resolves once the Realtime server
+      // has accepted the broadcast; rejects on an error status or a timeout.
+      await channel.httpSend('cast_problem', payload, { timeout: 10000 });
+      showToast(`${mirror ? 'Mirror cast' : 'Cast'}: ${name}`, 'success');
+      if (!mine()) return;          // swiped on while sending: that button isn't ours
       btn.classList.remove('casting');
       btn.classList.add('sent');
       if (!isIcon) btn.innerHTML = 'Sent';
-      showToast(`${mirror ? 'Mirror cast' : 'Cast'}: ${name}`, 'success');
-      setTimeout(() => {
-        if (!isIcon) btn.innerHTML = prev;
-        btn.classList.remove('sent');
-        btn.disabled = false;
-      }, 2000);
+      setTimeout(restore, 2000);
     } catch (err) {
-      btn.classList.remove('casting');
-      btn.disabled = false;
-      if (!isIcon) btn.innerHTML = prev;
+      restore();
       showToast('Cast failed — check connection', 'error');
       console.error(err);
     }
