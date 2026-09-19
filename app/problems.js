@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, app. This file: problem list, detail, swipe, info, cast, board loaders, tick/delete/grade/benchmark buttons.
+// state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file: problem list, detail, swipe, info, cast, board loaders, tick/delete/grade/benchmark buttons.
 
   // ── List: filter + sort ──────────────────────────────────────────────────────
   function visibleProblems() {

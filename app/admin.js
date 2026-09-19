@@ -27,13 +27,8 @@
   }
   const userInitial = name => (String(name || '?').trim()[0] || '?').toUpperCase();
 
-  // Surface "the db/12 RPCs aren't deployed yet" distinctly from a real failure.
-  const rpcMissing = err =>
-    !!err && (err.code === '42883' || err.code === 'PGRST202' || /Could not find the function|does not exist/i.test(err.message || ''));
-  const usersErrorHtml = err => `<div class="state-msg"><div class="icon">⚠️</div>${
-    rpcMissing(err)
-      ? 'User management isn’t set up yet — run <b>db/12</b> in the Supabase SQL editor.'
-      : 'Couldn’t load users.'}</div>`;
+  // The error itself (with its code) is in the console; ensureAdminUsers logs it.
+  const usersErrorHtml = () => `<div class="state-msg"><div class="icon">⚠️</div>Couldn’t load users.</div>`;
 
   // Set the admin header's title + whether the reload button shows (users + user).
   function adminSetHeader(title, showRefresh) {
@@ -198,9 +193,8 @@
     const { error } = await sb.rpc('admin_set_admin', { target: id, make_admin: make });
     btn.disabled = false; btn.textContent = prev;
     if (error) {
-      errEl.textContent = rpcMissing(error)
-        ? 'Not set up yet — run db/13 in Supabase.'
-        : (error.message || 'Couldn’t update — check connection.');
+      console.warn('admin_set_admin failed', error);
+      errEl.textContent = error.message || 'Couldn’t update — check connection.';
       return;
     }
 
@@ -233,9 +227,8 @@
     const { error } = await sb.rpc('admin_delete_user', { target: id });
     btn.disabled = false; btn.textContent = prev;
     if (error) {
-      errEl.textContent = rpcMissing(error)
-        ? 'Not set up yet — run db/12 in Supabase.'
-        : (error.message || 'Delete failed — check connection.');
+      console.warn('admin_delete_user failed', error);
+      errEl.textContent = error.message || 'Delete failed — check connection.';
       return;
     }
 

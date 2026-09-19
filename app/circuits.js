@@ -158,10 +158,7 @@
     if (!circuitsLoaded) {
       if (circuitsError) {
         countEl.textContent = '';
-        container.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>${
-          circuitsTableMissing(circuitsError)
-            ? 'Circuits aren’t set up yet — run <b>db/14</b> in the Supabase SQL editor.'
-            : 'Failed to load circuits.'}</div>`;
+        container.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>Failed to load circuits.</div>`;   // error logged in loadCircuits
       }
       return;
     }
@@ -199,10 +196,7 @@
     if (!circuitsLoaded) {
       currentCircuit = null;
       if (circuitsError) {
-        wrap.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>${
-          circuitsTableMissing(circuitsError)
-            ? 'Circuits aren’t set up yet — run <b>db/14</b> in Supabase.'
-            : 'Couldn’t load circuits.'}<br><a class="link" href="#circuits">Back to circuits</a></div>`;
+        wrap.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>Couldn’t load circuits.<br><a class="link" href="#circuits">Back to circuits</a></div>`;
       } else {
         wrap.innerHTML = `<div class="spinner"></div>`;
       }
@@ -566,8 +560,7 @@
     btn.disabled = false; btn.classList.remove('casting');
     if (error) {
       errEl.textContent =
-        circuitsTableMissing(error) ? 'Circuits aren’t set up yet — run db/14 in Supabase.'
-        : error.code === '42501' ? 'You don’t have permission to create circuits yet.'
+        error.code === '42501' ? 'You don’t have permission to create circuits yet.'
         : error.code === '23505' ? 'That name is taken — pick another.'
         : error.message;
       return;

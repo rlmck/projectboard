@@ -107,11 +107,6 @@
     return String.fromCharCode(65 + (n - 1) % 19) + (Math.floor((n - 1) / 19) + 1);
   }
 
-  function holdChips(arr, cls) {
-    if (!Array.isArray(arr)) arr = (arr === null || arr === undefined) ? [] : [arr];
-    return arr.map(h => `<span class="chip ${cls}" title="${escAttr(h)}">${escHtml(holdNum(h))}</span>`).join('');
-  }
-
   // The Supabase migration assigned start_holds/finish_hold back-to-front vs the
   // original DTB order (proven against test.csv + the joe smells 2.0 cast). Rebuild
   // Gareth's true order — finish first, then intermediates, then the two starts —

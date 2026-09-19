@@ -1154,8 +1154,4 @@
   const canEditCircuit = c =>
     !!(c && profile && (profile.is_admin || (session && c.setter_id === session.user.id)));
 
-  // Surface "db/14 isn't applied yet" distinctly from a real failure.
-  const circuitsTableMissing = err =>
-    !!err && (err.code === '42P01' || err.code === 'PGRST205' ||
-      /Could not find the table|relation .* does not exist|schema cache/i.test(err.message || ''));
 

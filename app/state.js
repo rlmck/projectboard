@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, app. This file: Supabase client + channel, grade ladders, and all shared mutable state.
+// state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file: Supabase client + channel, grade ladders, and all shared mutable state.
 
   // ── Supabase client ──────────────────────────────────────────────────────────
   const { createClient } = supabase;
@@ -86,7 +86,7 @@
 
   let allCircuits = [];
   let circuitsLoaded = false;
-  let circuitsError = null;          // last load error (for the "run db/14" message)
+  let circuitsError = null;          // last load error (the list shows "Failed to load circuits")
   let activeCircuitGrades = new Set(); // grade filter, same tap / tap-and-hold rules as the problem tabs (empty = All)
   let circuitSearch = '';
   let currentCircuit = null;
@@ -102,7 +102,7 @@
   // ── Leaderboard ─────────────────────────────────────────────────────────────
   let leaderboard = [];          // [{ rank, user_id, username, points, sends }] from the leaderboard() RPC
   let leaderboardLoaded = false;
-  let leaderboardError = null;   // last load error (for the "run db/23" message)
+  let leaderboardError = null;   // last load error (Ranks shows "Couldn’t load the leaderboard")
 
   const isTicked = id => myTicks.has(String(id));
   // "Fully done" = sent in BOTH the normal and mirrored orientation (the Exclude Done filter).

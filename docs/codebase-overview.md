@@ -310,7 +310,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 **Profile creation:**
 - A Postgres trigger on `auth.users` (`on_auth_user_created` → `handle_new_user()`, db/26) inserts the `profiles` row at sign-up. The username is a placeholder: `climber-` + the first 8 hex characters of the user id. The insert is `on conflict do nothing`, so a clash can never block a sign-up; it just leaves the user with no profile.
 - `loadProfile()` → `needsDisplayName()` treats **a placeholder name or a missing profile** as "no name chosen". Either way it opens the **mandatory** name modal: no Cancel, no Escape, and the field starts empty. `saveDisplayName()` then UPDATEs the placeholder row, or INSERTs if there was none, and refuses names that look like placeholders.
-- The placeholder pattern is duplicated in `PLACEHOLDER_NAME` in `account.js` and in db/26. **Keep the two in sync.**
+- The placeholder pattern is duplicated in `PLACEHOLDER_NAME` in `account.js` and in db/26. **Keep the two in sync**; the comment beside `PLACEHOLDER_NAME` quotes the trigger's expression so the two can be compared without the SQL.
 - Before 10 Sep 2026 the trigger used the email prefix. That blocked sign-up whenever two prefixes matched, and made part of the email address the user's public name.
 - Users rename themselves from Profile.
 
@@ -319,7 +319,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 - `onAuthStateChange` reloads the profile, ticks and faves on every event, and clears them on sign-out (with the cached admin user list, which holds every member's email).
 - **Sign-out is this device only** (`signOut({ scope: 'local' })`, Ross, 19 Sep 2026); the account's other devices stay signed in. supabase-js drops the local session even if the server call fails, so `doSignOut` judges success by whether a session is left.
 - **An admin write that RLS refuses** (grade edit, edit holds: no error, 0 rows) shows an error and calls `recheckAdmin()`, which re-reads the profile so a demoted admin loses the admin controls without a reload.
-- It currently runs its awaits inside the callback, and re-runs on `INITIAL_SESSION` and `TOKEN_REFRESHED` (see the known issues).
+- The `onAuthStateChange` callback itself is synchronous (since `pb-v102`): it ignores `INITIAL_SESSION` (initAuth has just loaded everything) and `TOKEN_REFRESHED` (only the token changes), and hands every other event to `onAuthChanged()` on a `setTimeout(…, 0)`, because supabase-js holds its auth lock while the callback runs. A cold start makes one read each of `profiles`, `ticks`, `likes`, `circuit_likes`.
 
 **The admin model:**
 - Admin = `profiles.is_admin`.
@@ -471,10 +471,7 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 - a problem delete blocked by RLS reported success;
 - the first-run name modal had no autofocus.
 
-**High**
-
 **Medium**
-- **Auth runs its setup twice at startup** (`initAuth`, then `INITIAL_SESSION`), again on every hourly `TOKEN_REFRESHED`, and awaits inside `onAuthStateChange`, which Supabase warns can deadlock. Filter the events and defer the work with `setTimeout(…, 0)`.
 - **The create and circuit-create boards ignore taps** until `HOLD_MAP` arrives, which happens after the `board_config` round trip. There's no loading state.
 - **`router()` side effects when data arrives** (section 4.3).
 
@@ -482,17 +479,11 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 - **UI polish:**
   - The toast (z-index 200) renders behind modals (300).
   - Escape doesn't close the edit-choice or board-saved modals.
-- **Races:**
-  - A fast double tap on tick or fave can leave the UI out of step with the DB; there's no in-flight lock.
 - **Correctness nits:**
   - `escAttr` doesn't escape `<`/`>`.
   - `loadHoldMap`/`loadMirrorMap` check their guard before the `await`. That's only safe because of the boot ordering.
-  - `doSignOut` ignores errors and uses the default *global* scope, which signs you out of every device.
   - The in-app **Copy link** drops the `#detail/…` hash.
-- **Stale or dead code:**
-  - `holdChips()` is never called.
-  - The "run db/NN in Supabase" messages will never fire now that every script is applied.
-  - 8 of the 9 script headers omit `leaderboard.js` from the stated load order.
+- **Bundled data:**
   - The bundled `hold_map.json` lacks `hold218` (I12), and **it can't simply be added** (checked 19 Sep 2026). The bundled image is a drawing that isn't a faithful copy of the wall around I12: the photo has I12 in the middle row and K13 (`hold239`) in the row above, but the drawing has no hold in K13's spot, and the bundled map puts `hold239` on the drawn hold where the real I12 is. Copying the live coordinates is wrong too (different framing). Fixing it needs a decision: re-label that drawn hold as `hold218` and drop K13 from the fallback, or redraw. Only matters offline or when `board_config` fails.
 - **Missing site polish:** no custom 404 page.
 - **Duplication worth consolidating before the next board feature:**

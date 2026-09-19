@@ -47,10 +47,7 @@
     if (!el) return;
 
     if (leaderboardError) {
-      el.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>${
-        rpcMissing(leaderboardError)
-          ? 'Leaderboard isn’t set up yet — run <b>db/23</b> in the Supabase SQL editor.'
-          : 'Couldn’t load the leaderboard.'}</div>`;
+      el.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>Couldn’t load the leaderboard.</div>`;   // error logged in loadLeaderboard
       return;
     }
     if (!leaderboardLoaded) { el.innerHTML = `<div class="spinner"></div>`; return; }

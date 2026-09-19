@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, app. This file: the signed-in user's data: ticks, favourites, auth, profile.
+// state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file: the signed-in user's data: ticks, favourites, auth, profile.
 
   // Load the signed-in user's ticks into myTicks; clear for guests. RLS limits
   // the rows to this user, so we never see anyone else's sends.
@@ -91,10 +91,6 @@
   // (needs db/15). Both mirror the ticks pattern: optimistic toggle, revert on
   // failure, idempotent via the (user, item) primary key.
 
-  // db/15 not applied → circuit_likes missing (42P01/schema cache); likes has had
-  // its policy since db/01, so a problem fave failing that way is unexpected.
-  const favSetupNeeded = err => !!err && (err.code === '42501' || circuitsTableMissing(err));
-
   function updateFaveButton() {
     const btn = document.getElementById('detail-fave');
     if (!btn) return;
@@ -147,7 +143,7 @@
     ]);
     if (pf.error) console.warn('favourites load failed', pf.error);
     else myFaves = new Set((pf.data || []).map(r => String(r.problem_id)));
-    if (cf.error) { if (!circuitsTableMissing(cf.error)) console.warn('circuit favourites load failed', cf.error); }
+    if (cf.error) console.warn('circuit favourites load failed', cf.error);
     else myCircuitFaves = new Set((cf.data || []).map(r => String(r.circuit_id)));
   }
 
@@ -189,9 +185,8 @@
         : sb.from('circuit_likes').delete().eq('user_id', session.user.id).eq('circuit_id', id),
       (db, err) => {
         setFaved(db);
-        showToast(favSetupNeeded(err)
-          ? 'Favourites need setup — run db/15 in Supabase'
-          : 'Could not save — check connection', 'error');
+        console.warn('circuit favourite failed', err);
+        showToast('Could not save — check connection', 'error');
       },
       on => showToast(on ? 'Added to favourites ♥' : 'Removed from favourites', 'success'));
   }
@@ -237,23 +232,35 @@
     if (location.hash.includes('access_token')) redirectRoute('#list');
     else router();              // re-evaluate the route now auth is known (gates #create for guests)
 
-    sb.auth.onAuthStateChange(async (event, s) => {
+    sb.auth.onAuthStateChange((event, s) => {
       session = s || null;
-      if (event === 'PASSWORD_RECOVERY') openPasswordModal();   // recovery that lands after boot
-      if (session) { await loadProfile(); await loadTicks(); await loadFaves(); }
-      else {
-        profile = null; myTicks = new Set(); myTicksNormal = new Set(); myTicksMirrored = new Set(); myFaves = new Set(); myCircuitFaves = new Set(); leaderboardLoaded = false;
-        adminUsers = []; adminUsersLoaded = false;   // every member's email: don't keep it after an admin signs out
-      }
-      updateFaveControls();
-      renderProfile();
-      if (loaded) renderList();
-      if (currentView === 'detail') { updateTickButton(); updateFaveButton(); }
-      if (currentView === 'circuits') renderCircuits();
-      if (currentView === 'circuit-detail') updateCircuitFaveButton();
-      // Signed out (or lost admin) while on an admin screen: route away from it.
-      if ((currentView === 'outlines' || currentView === 'admin') && !isAdmin()) router();
+      // INITIAL_SESSION fires the moment this is registered and repeats what
+      // initAuth has just loaded; TOKEN_REFRESHED (hourly) only swaps the token.
+      // Neither changes who is signed in, so neither reloads anything.
+      if (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') return;
+      // supabase-js runs this callback while holding its auth lock, and a Supabase
+      // query awaited in here would wait on that lock, so do the work after it returns.
+      setTimeout(() => onAuthChanged(event), 0);
     });
+  }
+
+  // A real change of who's signed in (SIGNED_IN, SIGNED_OUT, USER_UPDATED,
+  // PASSWORD_RECOVERY): reload or clear the user's data and re-render.
+  async function onAuthChanged(event) {
+    if (event === 'PASSWORD_RECOVERY') openPasswordModal();   // recovery that lands after boot
+    if (session) { await loadProfile(); await loadTicks(); await loadFaves(); }
+    else {
+      profile = null; myTicks = new Set(); myTicksNormal = new Set(); myTicksMirrored = new Set(); myFaves = new Set(); myCircuitFaves = new Set(); leaderboardLoaded = false;
+      adminUsers = []; adminUsersLoaded = false;   // every member's email: don't keep it after an admin signs out
+    }
+    updateFaveControls();
+    renderProfile();
+    if (loaded) renderList();
+    if (currentView === 'detail') { updateTickButton(); updateFaveButton(); }
+    if (currentView === 'circuits') renderCircuits();
+    if (currentView === 'circuit-detail') updateCircuitFaveButton();
+    // Signed out (or lost admin) while on an admin screen: route away from it.
+    if ((currentView === 'outlines' || currentView === 'admin') && !isAdmin()) router();
   }
 
   async function loadProfile() {
@@ -279,7 +286,8 @@
     if ((currentView === 'outlines' || currentView === 'admin') && !isAdmin()) router();
   }
 
-  // The sign-up trigger's placeholder username. Keep in sync with db/26.
+  // The sign-up trigger's placeholder username. Keep in sync with db/26, whose
+  // handle_new_user() inserts 'climber-' || left(replace(new.id::text, '-', ''), 8).
   const PLACEHOLDER_NAME = /^climber-[0-9a-f]{8}$/i;
   const needsDisplayName = () => !profile || PLACEHOLDER_NAME.test(profile.username || '');
 
