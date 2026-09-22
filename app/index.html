@@ -684,8 +684,35 @@
   </div>
 </div>
 
-<!-- Fullscreen board close button (shown only while a board is fullscreen) -->
-<button id="board-fs-close" type="button" aria-label="Exit fullscreen">✕</button>
+<!-- Fullscreen board viewer controls (shown only while a board is fullscreen;
+     the camera, gestures and wiring are in core.js / app.js) -->
+<div id="board-fs-ui">
+  <button id="board-fs-close" type="button" aria-label="Exit fullscreen">✕</button>
+  <button id="board-fs-map" type="button" aria-label="Show the whole board">
+    <img id="board-fs-map-img" alt="" />
+    <span class="fs-map-view"></span>
+  </button>
+  <div id="board-fs-hint" aria-live="polite"></div>
+  <div id="board-fs-bar">
+    <button class="fs-btn" id="fs-prev" type="button" aria-label="Previous">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 5 8 12 15 19"></polyline></svg>
+    </button>
+    <div class="fs-title">
+      <span class="fs-name" id="fs-name"></span>
+      <span class="fs-meta" id="fs-meta"></span>
+    </div>
+    <button class="fs-btn" id="fs-mirror" type="button" aria-label="Mirror the problem" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"></line><polyline points="8 8 4 12 8 16"></polyline><polyline points="16 8 20 12 16 16"></polyline></svg>
+    </button>
+    <button class="fs-btn" id="fs-frame" type="button" aria-label="Show the whole board">
+      <svg class="fs-ico-board" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="8" cy="9" r="1"></circle><circle cx="15" cy="8" r="1"></circle><circle cx="11" cy="14" r="1"></circle><circle cx="17" cy="15" r="1"></circle></svg>
+      <svg class="fs-ico-route" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"></path><circle cx="12" cy="12" r="3"></circle></svg>
+    </button>
+    <button class="fs-btn" id="fs-next" type="button" aria-label="Next">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 5 16 12 9 19"></polyline></svg>
+    </button>
+  </div>
+</div>
 
 <div id="toast"></div>
 

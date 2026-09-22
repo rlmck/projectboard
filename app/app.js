@@ -248,18 +248,29 @@
   document.getElementById('back-btn').addEventListener('click', goBack);
 
   // ── Fullscreen board ──────────────────────────────────────────────────────────
-  // Expand button (on any board) → fullscreen, the board stretched to fill the
-  // screen and turned sideways on an upright phone (see bestFsMode in core.js).
-  // Capture phase + stopPropagation so a tap on the button over an interactive
-  // board (create / circuit-create) doesn't also cycle/append a hold.
+  // Expand button (on any board) → the fullscreen viewer (core.js). Capture
+  // phase + stopPropagation so a tap on the button over an interactive board
+  // (create / circuit-create) doesn't also cycle/append a hold.
   ['pointerdown', 'click'].forEach(type => {
     document.addEventListener(type, e => {
       if (!e.target.closest('.board-expand-btn')) return;
       e.stopPropagation();
-      if (type === 'click') { e.preventDefault(); enterBoardFs('best'); }
+      if (type === 'click') { e.preventDefault(); enterBoardFs(); }
     }, true);
   });
   document.getElementById('board-fs-close').addEventListener('click', exitBoardFs);
+  // The viewer's bar: step along the deck, mirror, route ↔ whole board. The
+  // minimap goes to the whole board.
+  document.getElementById('fs-prev').addEventListener('click', () => fsStep(-1));
+  document.getElementById('fs-next').addEventListener('click', () => fsStep(1));
+  document.getElementById('fs-mirror').addEventListener('click', toggleDetailMirror);
+  document.getElementById('fs-frame').addEventListener('click', () => {
+    fsSetFrame(fsFrame === 'route' ? 'board' : 'route');
+  });
+  document.getElementById('board-fs-map').addEventListener('click', () => fsSetFrame('board'));
+  document.addEventListener('keydown', e => {
+    if (fsOpen && e.key === 'Escape') exitBoardFs();
+  });
 
   // Detail actions (live in the header; operate on the current problem)
   // The name and orientation are fixed at the tap; the cast is only sent if they're
@@ -319,13 +330,15 @@
   // or circuits). Attached to the stable <main> (the content is replaced on every
   // render). Listeners are passive + never preventDefault, so taps on the header
   // buttons and the cast/tick actions are unaffected. A drag that starts on the
-  // circuit Play panel belongs to its speed slider, not a swipe.
+  // circuit Play panel belongs to its speed slider, not a swipe. Off while the
+  // fullscreen viewer is open (it has its own swipe).
   function wireDetailSwipe(selector, step) {
     const area = document.querySelector(selector);
     if (!area) return;
     let startX = 0, startY = 0, tracking = false;
     area.addEventListener('touchstart', e => {
-      if (e.touches.length !== 1 || e.target.closest('.circuit-play-panel')) { tracking = false; return; }
+      // The fullscreen viewer handles its own gestures (drag pans there).
+      if (fsOpen || e.touches.length !== 1 || e.target.closest('.circuit-play-panel')) { tracking = false; return; }
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
       tracking = true;

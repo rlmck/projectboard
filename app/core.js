@@ -285,23 +285,15 @@
     return holdShapeLayerHtml(classifyHolds(order), opts);
   }
 
-  // Map a pointer's client coords to board-relative percentages. Accounts for the
-  // rotated fullscreen mode, where the board-wrap is CSS-rotated 90° about its
-  // centre — its getBoundingClientRect is then the axis-aligned bounding box, not
-  // the element's own frame, which would break the naive (clientX - r.left)/r.width
-  // maths. We use the rect *centre* (rotation-invariant) plus offsetWidth/Height
-  // (the layout box, unaffected by transforms) and invert the rotation. Returns
-  // { x, y } percentages plus w/h = the board's own pixel size (for distance
-  // thresholds). When NOT rotated this is identical to the old inline maths.
+  // Map a pointer's client coords to board-relative percentages. Returns { x, y }
+  // percentages plus w/h = the board's own pixel size (for distance thresholds).
+  // The fullscreen viewer zooms by resizing the board-wrap and pans it with a
+  // translate, both of which getBoundingClientRect reports, so the plain maths
+  // holds there too.
   function boardPct(boardEl, clientX, clientY) {
     const r = boardEl.getBoundingClientRect();
-    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    const w = boardEl.offsetWidth, h = boardEl.offsetHeight;
-    let dx = clientX - cx, dy = clientY - cy;
-    if (document.body.classList.contains('board-fs-rotated')) {
-      [dx, dy] = [dy, -dx];                       // inverse of a 90° CW rotation
-    }
-    return { x: (dx + w / 2) / w * 100, y: (dy + h / 2) / h * 100, w, h };
+    const w = r.width || 1, h = r.height || 1;
+    return { x: (clientX - r.left) / w * 100, y: (clientY - r.top) / h * 100, w, h };
   }
 
   // Floating "expand to fullscreen" button drawn over a board. Used by the inline
@@ -314,50 +306,147 @@
       '<line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg></button>';
   }
 
-  // ── Fullscreen board mode ──────────────────────────────────────────────────────
-  // Two ways in: the expand button on any board view, and turning a touch device to
-  // landscape on the read-only detail views (create is excluded — a fullscreen
-  // board would cover their form + save controls). Both hide the header + bottom
-  // nav. The board is STRETCHED to fill the whole screen (Ross, 22 Sep 2026: the
-  // photo is ~1.22:1 and a phone on its side ~2:1, so the alternatives were black
-  // bars or cropping holds off). The expand button shows it upright ('natural'), or
-  // CSS-rotated a quarter turn ('rotated') when the board is wider than tall on a
-  // phone held upright, which keeps the stretch as small as it can be. It also asks
-  // the browser for real fullscreen, hiding the status bar and browser bar where
-  // that's allowed (Android, desktop; iPhone Safari only allows it for video, so
-  // there it's the in-page fullscreen alone). The board-wrap is positioned fixed
-  // and sized via the --fs-bw/--fs-bh CSS vars (computed here); its overlay is
-  // %-positioned and the outline svg is a stretched 0..100 viewBox, so both stretch
-  // with the photo and stay on the holds.
+  // ── Fullscreen board viewer ────────────────────────────────────────────────────
+  // The board photo (~1.22:1) never matches a phone's shape, so rather than
+  // stretch or rotate it, fullscreen is a camera over the board:
+  //   - It opens framed on the ROUTE: the holds of the problem or circuit on
+  //     screen, zoomed to fill the space between the close button and the bar.
+  //     Problems run up the wall, so an upright phone suits them. It glides there
+  //     from the board's place on the page.
+  //   - Pinch or drag to look around (wheel on desktop). Double-tap, or the bar's
+  //     frame button, switches between the route and the whole board. A minimap
+  //     (top-left) shows where you are whenever part of the board is off-screen;
+  //     tap it for the whole board.
+  //   - Round the board, a blurred copy of the photo fills the screen instead of
+  //     black bars.
+  //   - The bar along the bottom names the problem, steps to the previous/next one
+  //     (the camera glides to the new route), and mirrors it. A single tap hides
+  //     or shows the bar and buttons.
+  //   - The expand button also asks for the browser's real fullscreen, which hides
+  //     the status and browser bars on Android and desktop (iPhone Safari only
+  //     allows that for video, so there it's the in-page viewer alone).
+  // Two ways in: the expand button on any board view, and turning a touch device
+  // to landscape on the read-only detail views (fsAuto; turning back closes it).
+  // On create views taps still set holds: there's no tap-to-hide or double-tap,
+  // and a drag or pinch never counts as a tap.
+  // Zoom resizes the board-wrap itself (its overlays are %-positioned and scale
+  // with it, while outlines, dots and move tags keep their pixel sizes) and pan is
+  // a translate, so boardPct needs nothing special.
   const AUTO_FS_VIEWS = new Set(['detail', 'circuit-detail']);
-  let fsMode = null;            // null | 'natural' | 'rotated'
+  const FS_MAX_ZOOM = 4;        // relative to the whole board fitting the screen
+  const FS_ROUTE_ZOOM = 3;      // the route framing never zooms further than this
+  let fsOpen = false;
   let fsAuto = false;           // entered by turning the phone (turning back exits)
   let fsNative = false;         // we put the page into the browser's own fullscreen
-  let fsAspect = 1;             // board width / height (intrinsic), for bestFsMode
+  let fsAspect = 1;             // board width / height (intrinsic)
+  let fsWrap = null;            // the board-wrap being shown (re-renders replace it)
+  let fsBackdrop = null;        // the blurred board behind it
+  let fsObserver = null;        // adopts the new board-wrap after a re-render
+  let fsBase = { w: 0, h: 0 };  // the board's size when it just fits the screen
+  let fsCam = { k: 1, tx: 0, ty: 0 };   // zoom (× fsBase) and top-left offset, px
+  let fsFrame = 'route';        // 'route' | 'board' | 'free' (after a pinch or drag)
   let wakeLock = null;
   const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
   const landscapeMQ = window.matchMedia('(orientation: landscape)');
+  const fsReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   function activeBoardWrap() {
     const v = document.getElementById('view-' + currentView);
     return v ? v.querySelector('.board-wrap') : null;
   }
+  // The read-only views, where taps belong to the viewer (not to hold editing).
+  function fsReadOnly() { return AUTO_FS_VIEWS.has(currentView); }
 
-  // Size the fullscreen board to fill the viewport exactly (stretched). Natural is
-  // the viewport's own width × height; rotated runs the board's width down the
-  // phone's long axis, so its box is the viewport turned a quarter.
-  // An expand-button fullscreen re-picks its way up on every resize, so a phone that
-  // auto-rotates to landscape shows the board upright instead of still turned.
-  function sizeBoardFs() {
-    if (!fsMode) return;
-    if (!fsAuto) {
-      fsMode = bestFsMode(fsAspect);
-      document.body.classList.toggle('board-fs-rotated', fsMode === 'rotated');
-    }
+  // The size at which the whole board just fits the screen.
+  function fsMeasure() {
+    const vw = window.innerWidth, vh = window.innerHeight, a = fsAspect || 1;
+    const w = Math.min(vw, vh * a);
+    fsBase = { w, h: w / a };
+  }
+
+  // Keep the camera sensible: zoom within bounds, and the board either centred
+  // (when it fits that way) or covering the screen edge to edge (no pulling it
+  // off into empty space).
+  function fsClampCam({ k, tx, ty }) {
     const vw = window.innerWidth, vh = window.innerHeight;
-    const rot = fsMode === 'rotated';
-    document.body.style.setProperty('--fs-bw', (rot ? vh : vw) + 'px');
-    document.body.style.setProperty('--fs-bh', (rot ? vw : vh) + 'px');
+    k = Math.max(1, Math.min(FS_MAX_ZOOM, k));
+    const W = fsBase.w * k, H = fsBase.h * k;
+    tx = W <= vw ? (vw - W) / 2 : Math.min(0, Math.max(vw - W, tx));
+    ty = H <= vh ? (vh - H) / 2 : Math.min(0, Math.max(vh - H, ty));
+    return { k, tx, ty };
+  }
+
+  function fsApply(cam, animate) {
+    fsCam = fsClampCam(cam);
+    if (!fsWrap) return;
+    fsWrap.classList.toggle('fs-anim', !!animate && !fsReducedMotion.matches);
+    fsWrap.style.width = (fsBase.w * fsCam.k) + 'px';
+    fsWrap.style.transform = `translate3d(${fsCam.tx}px, ${fsCam.ty}px, 0)`;
+    fsUpdateMap();
+  }
+
+  // The route on screen as a box in board percentages, or null (create views,
+  // no mapped holds).
+  function fsRouteBox() {
+    if (!HOLD_MAP) return null;
+    let holds = [];
+    if (currentView === 'detail' && currentProblem) {
+      holds = problemHoldOrder(currentProblem).map(h => detailMirror ? mirrorHold(h) : h);
+    } else if (currentView === 'circuit-detail' && currentCircuit) {
+      holds = circuitSeq(currentCircuit);
+    }
+    const pts = holds.map(h => HOLD_MAP[h]).filter(Boolean);
+    if (!pts.length) return null;
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+  }
+
+  // The camera for a framing: the whole board, or the route filling the space
+  // left by the close button (top) and the bar (bottom), with room round the
+  // outermost holds for their outlines.
+  function fsFrameCam(frame) {
+    const box = frame === 'route' ? fsRouteBox() : null;
+    if (!box) return { k: 1, tx: 0, ty: 0 };
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const padT = Math.min(64, vh * 0.1), padB = Math.min(96, vh * 0.2), padX = 16;
+    const mX = 6, mY = 6 * (fsAspect || 1);              // % margins, equal on screen
+    const x0 = Math.max(0, box.x0 - mX), x1 = Math.min(100, box.x1 + mX);
+    const y0 = Math.max(0, box.y0 - mY), y1 = Math.min(100, box.y1 + mY);
+    const bw = (x1 - x0) / 100 * fsBase.w, bh = (y1 - y0) / 100 * fsBase.h;
+    const availW = vw - 2 * padX, availH = vh - padT - padB;
+    const k = Math.max(1, Math.min(FS_ROUTE_ZOOM, availW / bw, availH / bh));
+    const cx = (x0 + x1) / 200 * fsBase.w * k, cy = (y0 + y1) / 200 * fsBase.h * k;
+    return { k, tx: padX + availW / 2 - cx, ty: padT + availH / 2 - cy };
+  }
+
+  function fsSetFrame(frame, animate = true) {
+    fsFrame = frame;
+    fsApply(fsFrameCam(frame), animate);
+    fsUpdateBar();
+  }
+
+  // Re-fit after a resize (turning the phone, the browser entering fullscreen).
+  // A camera the user has moved stays put, just kept within bounds.
+  function sizeBoardFs() {
+    if (!fsOpen) return;
+    fsMeasure();
+    if (fsFrame === 'free') fsApply(fsCam, false);
+    else fsApply(fsFrameCam(fsFrame), fsWrap && fsWrap.classList.contains('fs-anim'));
+  }
+
+  // Take on a board-wrap: lift it into the viewer, with the blurred backdrop just
+  // behind it (a sibling, so the two share a stacking context). `from` is the
+  // camera to start from, so the move to the new framing is animated.
+  function fsAdopt(wrap, from) {
+    fsWrap = wrap;
+    wrap.parentNode.insertBefore(fsBackdrop, wrap);
+    const img = wrap.querySelector('.board-graphic');
+    if (img && img.naturalWidth) fsAspect = img.naturalWidth / img.naturalHeight;
+    fsMeasure();
+    fsFrame = fsRouteBox() ? 'route' : 'board';
+    fsApply(from, false);
+    void wrap.offsetWidth;                                // commit the start frame
+    fsSetFrame(fsFrame, true);
   }
 
   async function acquireWakeLock() {
@@ -368,47 +457,237 @@
     if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
   }
 
-  // The expand button's pick: turn a wide board sideways on an upright screen, so
-  // the long edges line up and the stretch is as small as it can be. Otherwise
-  // upright. (Rotating is only ever done on an upright screen: the rotated layout
-  // and its close button assume the OS is in portrait.)
-  function bestFsMode(aspect) {
-    return window.innerHeight > window.innerWidth && aspect > 1 ? 'rotated' : 'natural';
-  }
-
-  // mode: 'natural' | 'rotated' | 'best' (the expand button). auto marks an entry
-  // made by turning the phone. The browser's fullscreen needs a user gesture, so
-  // it's only asked for from the expand button (auto entries come from an
-  // orientation change or a route, which aren't gestures).
-  function enterBoardFs(mode, auto = false) {
+  // auto marks an entry made by turning the phone. The browser's fullscreen
+  // needs a user gesture, so it's only asked for from the expand button (auto
+  // entries come from an orientation change or a route, which aren't gestures).
+  function enterBoardFs(auto = false) {
     const wrap = activeBoardWrap();
-    if (!wrap || fsMode) return;
+    if (!wrap || fsOpen) return;
     const r = wrap.getBoundingClientRect();
     const img = wrap.querySelector('.board-graphic');
     fsAspect = (img && img.naturalWidth) ? img.naturalWidth / img.naturalHeight
              : (r.width && r.height ? r.width / r.height : 1);
-    fsMode = mode === 'best' ? bestFsMode(fsAspect) : mode;
+    fsOpen = true;
     fsAuto = auto;
+    if (!fsBackdrop) {
+      fsBackdrop = document.createElement('div');
+      fsBackdrop.className = 'fs-backdrop';
+      fsBackdrop.innerHTML = '<div class="fs-ambient"></div>';
+    }
+    fsBackdrop.firstChild.style.backgroundImage = `url("${String(BOARD_IMG).replace(/["\\]/g, '\\$&')}")`;
+    document.getElementById('board-fs-map-img').setAttribute('src', BOARD_IMG);
+    document.body.classList.remove('fs-ui-hidden');
     document.body.classList.add('board-fs');
-    if (fsMode === 'rotated') document.body.classList.add('board-fs-rotated');
-    sizeBoardFs();
+    fsMeasure();
+    // Start where the board sat on the page, then glide to the route.
+    fsAdopt(wrap, { k: r.width / (fsBase.w || 1), tx: r.left, ty: r.top });
+    fsObserver = new MutationObserver(() => {
+      const w = activeBoardWrap();
+      if (fsOpen && w && w !== fsWrap) fsAdopt(w, fsCam);
+    });
+    fsObserver.observe(document.getElementById('view-' + currentView), { childList: true, subtree: true });
+    fsShowHint();
     acquireWakeLock();
     if (!auto) requestNativeFs();
   }
 
   function exitBoardFs() {
-    if (!fsMode) return;
-    fsMode = null;
+    if (!fsOpen) return;
+    fsOpen = false;
     fsAuto = false;
-    document.body.classList.remove('board-fs', 'board-fs-rotated');
-    document.body.style.removeProperty('--fs-bw');
-    document.body.style.removeProperty('--fs-bh');
+    if (fsObserver) { fsObserver.disconnect(); fsObserver = null; }
+    if (fsBackdrop) fsBackdrop.remove();
+    if (fsWrap) {
+      fsWrap.classList.remove('fs-anim');
+      fsWrap.style.removeProperty('width');
+      fsWrap.style.removeProperty('transform');
+    }
+    fsWrap = null;
+    clearTimeout(fsTapTimer);
+    document.body.classList.remove('board-fs', 'fs-ui-hidden');
     releaseWakeLock();
     exitNativeFs();
   }
 
-  // The browser's own fullscreen (the Fullscreen API; webkit-prefixed on older
-  // Safari/iPad). Unsupported or refused is fine: the in-page fullscreen stands.
+  // ── The viewer's bar, minimap and hint ─────────────────────────────────────────
+  function fsUpdateBar() {
+    if (!fsOpen) return;
+    const name = document.getElementById('fs-name'), meta = document.getElementById('fs-meta');
+    const prev = document.getElementById('fs-prev'), next = document.getElementById('fs-next');
+    const mirror = document.getElementById('fs-mirror'), frameBtn = document.getElementById('fs-frame');
+    const isProblem = currentView === 'detail' && currentProblem;
+    const isCircuit = currentView === 'circuit-detail' && currentCircuit;
+    if (isProblem) {
+      name.textContent = displayName(currentProblem);
+      meta.textContent = [fontGrade(currentProblem.grade) || '—', detailMirror ? 'Mirrored' : ''].filter(Boolean).join(' · ');
+    } else if (isCircuit) {
+      const n = circuitSeq(currentCircuit).length;
+      name.textContent = circuitName(currentCircuit);
+      meta.textContent = `${currentCircuit.grade || '—'} · ${n} move${n === 1 ? '' : 's'}`;
+    } else {
+      name.textContent = 'Tap holds to set them';
+      meta.textContent = 'Pinch or drag to look around';
+    }
+    prev.hidden = next.hidden = !(isProblem || isCircuit);
+    mirror.hidden = !isProblem;
+    mirror.classList.toggle('active', !!(isProblem && detailMirror));
+    mirror.setAttribute('aria-pressed', isProblem && detailMirror ? 'true' : 'false');
+    frameBtn.hidden = !fsRouteBox();
+    const toRoute = fsFrame !== 'route';
+    frameBtn.classList.toggle('to-route', toRoute);
+    frameBtn.setAttribute('aria-label', toRoute ? (isCircuit ? 'Zoom to the circuit' : 'Zoom to the problem') : 'Show the whole board');
+  }
+
+  // Minimap: shown whenever part of the board is off-screen, with a box for what's
+  // in view.
+  function fsUpdateMap() {
+    const map = document.getElementById('board-fs-map');
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const W = fsBase.w * fsCam.k, H = fsBase.h * fsCam.k;
+    const cropped = W > vw + 1 || H > vh + 1;
+    map.classList.toggle('show', fsOpen && cropped);
+    if (!cropped) return;
+    const l = Math.max(0, -fsCam.tx / W), t = Math.max(0, -fsCam.ty / H);
+    const r = Math.min(1, (vw - fsCam.tx) / W), b = Math.min(1, (vh - fsCam.ty) / H);
+    map.style.setProperty('--map-ar', String(fsAspect || 1));
+    const box = map.querySelector('.fs-map-view');
+    box.style.left = (l * 100) + '%';
+    box.style.top = (t * 100) + '%';
+    box.style.width = ((r - l) * 100) + '%';
+    box.style.height = ((b - t) * 100) + '%';
+  }
+
+  // A one-line hint the first few times the viewer opens.
+  let fsHintTimer = 0;
+  function fsShowHint() {
+    let seen = 0;
+    try { seen = +localStorage.getItem('pb-fs-hints') || 0; localStorage.setItem('pb-fs-hints', String(seen + 1)); } catch (e) {}
+    if (seen >= 3) return;
+    const hint = document.getElementById('board-fs-hint');
+    hint.textContent = fsReadOnly() ? 'Pinch to zoom · double-tap for the whole board' : 'Pinch to zoom · tap holds to set them';
+    hint.classList.add('show');
+    clearTimeout(fsHintTimer);
+    fsHintTimer = setTimeout(() => hint.classList.remove('show'), 2600);
+  }
+
+  // ── Viewer gestures ────────────────────────────────────────────────────────────
+  // Pointer events on the board and the backdrop: one finger pans, two pinch
+  // (about their midpoint). On the read-only views a tap hides/shows the bar and a
+  // double-tap switches route ↔ whole board; a quick sideways swipe steps to the
+  // next/previous problem when the board isn't wider than the screen (otherwise
+  // a drag pans). After any drag or pinch the click that follows is swallowed,
+  // so it never sets a hold on the create boards.
+  const fsPtrs = new Map();     // pointerId -> { x, y }
+  let fsGest = null;            // the gesture in progress, from its start
+  let fsMoved = false, fsMulti = false;
+  let fsSwallowClick = false;
+  let fsLastTap = 0, fsTapTimer = 0;
+  let fsDownAt = 0;
+  let fsGest0 = { x: 0, y: 0 };  // where the first finger went down
+
+  function fsIsBoardTarget(t) {
+    if (!fsOpen || !t || !t.closest) return false;
+    if (t.closest('button, a, input')) return false;
+    return !!(t.closest('.fs-backdrop') || (fsWrap && fsWrap.contains(t)));
+  }
+  function fsGestStart() {
+    const pts = [...fsPtrs.values()];
+    const c = pts.length > 1 ? { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 } : { ...pts[0] };
+    const d = pts.length > 1 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0;
+    fsGest = { cam: { ...fsCam }, c, d, n: pts.length };
+  }
+
+  document.addEventListener('pointerdown', e => {
+    if (!fsIsBoardTarget(e.target)) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (!fsPtrs.size) { fsMoved = false; fsMulti = false; fsDownAt = Date.now(); fsGest0 = { x: e.clientX, y: e.clientY }; }
+    fsPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (fsPtrs.size > 1) fsMulti = true;
+    if (fsWrap) fsWrap.classList.remove('fs-anim');
+    fsGestStart();
+  }, true);
+
+  document.addEventListener('pointermove', e => {
+    if (!fsOpen || !fsPtrs.has(e.pointerId)) return;
+    fsPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const pts = [...fsPtrs.values()];
+    if (!fsMoved && Math.hypot(pts[0].x - fsGest0.x, pts[0].y - fsGest0.y) < 8 && pts.length < 2) return;
+    fsMoved = true;
+    const g = fsGest;
+    let cam;
+    if (pts.length > 1 && g.n > 1) {
+      const c = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      const k = Math.max(1, Math.min(FS_MAX_ZOOM, g.cam.k * Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) / (g.d || 1)));
+      const s = k / g.cam.k;               // keep the board point under the midpoint there
+      cam = { k, tx: c.x - (g.c.x - g.cam.tx) * s, ty: c.y - (g.c.y - g.cam.ty) * s };
+    } else {
+      cam = { k: g.cam.k, tx: g.cam.tx + pts[0].x - g.c.x, ty: g.cam.ty + pts[0].y - g.c.y };
+    }
+    fsFrame = 'free';
+    fsApply(cam, false);
+  }, true);
+
+  function fsPointerEnd(e) {
+    if (!fsPtrs.has(e.pointerId)) return;
+    const upAt = { x: e.clientX, y: e.clientY };
+    fsPtrs.delete(e.pointerId);
+    if (fsPtrs.size) { fsGestStart(); return; }        // a finger lifted mid-pinch
+    fsUpdateBar();
+    if (fsMoved || fsMulti) {
+      fsSwallowClick = true;
+      setTimeout(() => { fsSwallowClick = false; }, 400);
+      // A quick sideways swipe on a board no wider than the screen steps along.
+      const dx = upAt.x - fsGest0.x, dy = upAt.y - fsGest0.y;
+      const cantPan = fsBase.w * fsCam.k <= window.innerWidth + 1;
+      if (!fsMulti && fsReadOnly() && cantPan && e.type === 'pointerup' && Date.now() - fsDownAt < 600
+          && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.4) fsStep(dx < 0 ? 1 : -1);
+      return;
+    }
+    if (!fsReadOnly() || e.type !== 'pointerup') return;   // create: the click sets a hold
+    const now = Date.now();
+    if (now - fsLastTap < 300) {                           // double-tap
+      fsLastTap = 0;
+      clearTimeout(fsTapTimer);
+      fsSetFrame(fsFrame === 'route' && fsRouteBox() ? 'board' : (fsRouteBox() ? 'route' : 'board'));
+      return;
+    }
+    fsLastTap = now;
+    clearTimeout(fsTapTimer);
+    fsTapTimer = setTimeout(() => document.body.classList.toggle('fs-ui-hidden'), 300);
+  }
+  document.addEventListener('pointerup', fsPointerEnd, true);
+  document.addEventListener('pointercancel', fsPointerEnd, true);
+  document.addEventListener('click', e => {
+    if (fsSwallowClick && fsIsBoardTarget(e.target)) { fsSwallowClick = false; e.stopPropagation(); e.preventDefault(); }
+  }, true);
+
+  // A mouse drag on the photo would start the browser's own image drag (which
+  // cancels the pointer stream), so that's off in the viewer.
+  document.addEventListener('dragstart', e => {
+    if (fsIsBoardTarget(e.target)) e.preventDefault();
+  }, true);
+
+  // Wheel (desktop): zoom about the cursor.
+  document.addEventListener('wheel', e => {
+    if (!fsIsBoardTarget(e.target)) return;
+    e.preventDefault();
+    const k = Math.max(1, Math.min(FS_MAX_ZOOM, fsCam.k * Math.exp(-e.deltaY * 0.0015)));
+    const s = k / fsCam.k;
+    fsFrame = 'free';
+    fsApply({ k, tx: e.clientX - (e.clientX - fsCam.tx) * s, ty: e.clientY - (e.clientY - fsCam.ty) * s }, false);
+    fsUpdateBar();
+  }, { passive: false });
+
+  // Previous/next problem or circuit, as the detail swipe does. The re-render is
+  // picked up by fsObserver, which glides the camera to the new route.
+  function fsStep(dir) {
+    if (currentView === 'detail') swipeToAdjacent(dir);
+    else if (currentView === 'circuit-detail') swipeToAdjacentCircuit(dir);
+  }
+
+  // ── The browser's own fullscreen ───────────────────────────────────────────────
+  // The Fullscreen API (webkit-prefixed on older Safari/iPad). Unsupported or
+  // refused is fine: the in-page viewer stands.
   function nativeFsElement() {
     return document.fullscreenElement || document.webkitFullscreenElement || null;
   }
@@ -433,30 +712,26 @@
     } catch (e) {}
   }
   // Leaving the browser's fullscreen some other way (Android back gesture, Esc on
-  // desktop) closes the board's fullscreen too, so it's never left half-open.
+  // desktop) closes the viewer too, so it's never left half-open.
   ['fullscreenchange', 'webkitfullscreenchange'].forEach(type => {
     document.addEventListener(type, () => {
       if (fsNative && !nativeFsElement()) { fsNative = false; exitBoardFs(); }
     });
   });
 
-  // Turning a touch device to landscape on a detail view auto-enters natural FS;
-  // returning to portrait exits it. A fullscreen opened with the expand button is
-  // left open either way, and re-fitted (sizeBoardFs).
+  // Turning a touch device to landscape on a detail view opens the viewer;
+  // returning to portrait closes it. One opened with the expand button stays open
+  // either way, and re-fits (sizeBoardFs, on resize).
   function onOrientationChange() {
     if (landscapeMQ.matches) {
-      if (!fsMode && isTouchDevice && AUTO_FS_VIEWS.has(currentView)) enterBoardFs('natural', true);
-      else if (fsMode) sizeBoardFs();
-    } else {
-      if (fsMode && fsAuto) exitBoardFs();
-      else if (fsMode) sizeBoardFs();
-    }
+      if (!fsOpen && isTouchDevice && AUTO_FS_VIEWS.has(currentView)) enterBoardFs(true);
+    } else if (fsOpen && fsAuto) exitBoardFs();
   }
   landscapeMQ.addEventListener('change', onOrientationChange);
   window.addEventListener('resize', sizeBoardFs);
   // Re-acquire the wake lock when the tab returns to the foreground (the OS drops it).
   document.addEventListener('visibilitychange', () => {
-    if (fsMode && document.visibilityState === 'visible' && !wakeLock) acquireWakeLock();
+    if (fsOpen && document.visibilityState === 'visible' && !wakeLock) acquireWakeLock();
   });
 
   // ── Routing ──────────────────────────────────────────────────────────────────
@@ -519,7 +794,7 @@
 
     // Auto-enter natural fullscreen if a touch device is already landscape on a
     // read-only board view (e.g. navigating/swiping while held sideways).
-    if (isTouchDevice && landscapeMQ.matches && AUTO_FS_VIEWS.has(name)) enterBoardFs('natural', true);
+    if (isTouchDevice && landscapeMQ.matches && AUTO_FS_VIEWS.has(name)) enterBoardFs(true);
   }
 
   function router() {
@@ -636,7 +911,7 @@
 
   function goBack() {
     // In fullscreen, Back closes the fullscreen first rather than leaving the view.
-    if (fsMode) { exitBoardFs(); return; }
+    if (fsOpen) { exitBoardFs(); return; }
     if (history.state && history.state.pb === 1) history.back();
     else replaceRoute(backParentHash());
   }
