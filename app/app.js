@@ -248,14 +248,15 @@
   document.getElementById('back-btn').addEventListener('click', goBack);
 
   // ── Fullscreen board ──────────────────────────────────────────────────────────
-  // Expand button (on any board) → rotated landscape fullscreen. Capture phase +
-  // stopPropagation so a tap on the button over an interactive board (create /
-  // circuit-create) doesn't also cycle/append a hold.
+  // Expand button (on any board) → fullscreen, the board stretched to fill the
+  // screen and turned sideways on an upright phone (see bestFsMode in core.js).
+  // Capture phase + stopPropagation so a tap on the button over an interactive
+  // board (create / circuit-create) doesn't also cycle/append a hold.
   ['pointerdown', 'click'].forEach(type => {
     document.addEventListener(type, e => {
       if (!e.target.closest('.board-expand-btn')) return;
       e.stopPropagation();
-      if (type === 'click') { e.preventDefault(); enterBoardFs('rotated'); }
+      if (type === 'click') { e.preventDefault(); enterBoardFs('best'); }
     }, true);
   });
   document.getElementById('board-fs-close').addEventListener('click', exitBoardFs);

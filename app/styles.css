@@ -1190,11 +1190,13 @@
     }
 
     /* ── Fullscreen board mode ───────────────────────────────────────────
-       Expand button enters a rotated landscape fullscreen on any board; a touch
-       device turned to landscape auto-enters a natural (un-rotated) fullscreen on
-       the read-only detail views. The board-wrap is positioned fixed and sized in
-       JS via --fs-bw (so the %-positioned overlay, which scales with the wrap,
-       stays aligned). A full-viewport black backdrop sits behind it. */
+       Expand button enters fullscreen on any board, upright or rotated (a wide
+       board on an upright phone; core.js bestFsMode); a touch device turned to
+       landscape auto-enters a natural (un-rotated) fullscreen on the read-only
+       detail views. The board-wrap is positioned fixed and sized in JS via
+       --fs-bw/--fs-bh to fill the screen exactly, the photo STRETCHED to match
+       (the %-positioned overlay and the 0..100 outline svg stretch with it, so
+       they stay on the holds). A full-viewport black backdrop sits behind it. */
     .board-expand-btn {
       position: absolute; top: 8px; right: 8px; z-index: 5;
       width: 36px; height: 36px; border-radius: 9px;
@@ -1238,7 +1240,8 @@
        stacking context). The shadow rides the rotate transform and isn't clipped
        (the wrap is fixed, so ancestor overflow:hidden doesn't apply). */
     body.board-fs .view.active .board-wrap {
-      position: fixed; z-index: 200; height: auto;
+      position: fixed; z-index: 200;
+      height: var(--fs-bh, 100vh) !important;
       /* !important beats the ID-specificity sizing the detail views set on
          .board-wrap (#view-detail / #view-circuit-detail width:100% + max-width),
          which would otherwise pin the wrap to the viewport width in both
@@ -1248,7 +1251,11 @@
       background: #000; border-radius: 0; overflow: visible;
       box-shadow: 0 0 0 100vmax #000;
     }
-    body.board-fs .view.active .board-graphic { width: 100%; height: auto; border-radius: 0; }
+    /* Fill the wrap exactly, stretched (object-fit's default, fill). !important
+       beats the detail views' ID-specific height:auto. */
+    body.board-fs .view.active .board-graphic {
+      width: 100% !important; height: 100% !important; object-fit: fill; border-radius: 0;
+    }
     /* natural: centre in the viewport */
     body.board-fs:not(.board-fs-rotated) .view.active .board-wrap {
       top: 50%; left: 50%; transform: translate(-50%, -50%);

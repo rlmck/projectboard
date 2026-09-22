@@ -315,15 +315,25 @@
   }
 
   // ── Fullscreen board mode ──────────────────────────────────────────────────────
-  // Two ways in: the expand button enters a CSS-rotated landscape fullscreen on any
-  // board view; turning a touch device to landscape auto-enters a natural (un-rotated)
-  // fullscreen on the read-only detail views (create is excluded — a
-  // fullscreen board would cover their form + save controls). Both hide the header +
-  // bottom nav. The board-wrap is positioned fixed and sized via the --fs-bw CSS var
-  // (computed here), and its %-positioned overlay scales with it, so dots stay aligned.
+  // Two ways in: the expand button on any board view, and turning a touch device to
+  // landscape on the read-only detail views (create is excluded — a fullscreen
+  // board would cover their form + save controls). Both hide the header + bottom
+  // nav. The board is STRETCHED to fill the whole screen (Ross, 22 Sep 2026: the
+  // photo is ~1.22:1 and a phone on its side ~2:1, so the alternatives were black
+  // bars or cropping holds off). The expand button shows it upright ('natural'), or
+  // CSS-rotated a quarter turn ('rotated') when the board is wider than tall on a
+  // phone held upright, which keeps the stretch as small as it can be. It also asks
+  // the browser for real fullscreen, hiding the status bar and browser bar where
+  // that's allowed (Android, desktop; iPhone Safari only allows it for video, so
+  // there it's the in-page fullscreen alone). The board-wrap is positioned fixed
+  // and sized via the --fs-bw/--fs-bh CSS vars (computed here); its overlay is
+  // %-positioned and the outline svg is a stretched 0..100 viewBox, so both stretch
+  // with the photo and stay on the holds.
   const AUTO_FS_VIEWS = new Set(['detail', 'circuit-detail']);
   let fsMode = null;            // null | 'natural' | 'rotated'
-  let fsAspect = 1;             // board width / height (intrinsic)
+  let fsAuto = false;           // entered by turning the phone (turning back exits)
+  let fsNative = false;         // we put the page into the browser's own fullscreen
+  let fsAspect = 1;             // board width / height (intrinsic), for bestFsMode
   let wakeLock = null;
   const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
   const landscapeMQ = window.matchMedia('(orientation: landscape)');
@@ -333,17 +343,21 @@
     return v ? v.querySelector('.board-wrap') : null;
   }
 
-  // Size the fullscreen board so its long edge fits the viewport, preserving aspect.
-  // Natural fills width×height; rotated fits the board's width down the phone's long
-  // axis (the whole point of rotating a wide board on a portrait phone).
+  // Size the fullscreen board to fill the viewport exactly (stretched). Natural is
+  // the viewport's own width × height; rotated runs the board's width down the
+  // phone's long axis, so its box is the viewport turned a quarter.
+  // An expand-button fullscreen re-picks its way up on every resize, so a phone that
+  // auto-rotates to landscape shows the board upright instead of still turned.
   function sizeBoardFs() {
     if (!fsMode) return;
-    const wrap = activeBoardWrap();
-    const img = wrap && wrap.querySelector('.board-graphic');
-    if (img && img.naturalWidth && img.naturalHeight) fsAspect = img.naturalWidth / img.naturalHeight;
-    const vw = window.innerWidth, vh = window.innerHeight, a = fsAspect || 1;
-    const bw = fsMode === 'rotated' ? Math.min(vh, vw * a) : Math.min(vw, vh * a);
-    document.body.style.setProperty('--fs-bw', bw + 'px');
+    if (!fsAuto) {
+      fsMode = bestFsMode(fsAspect);
+      document.body.classList.toggle('board-fs-rotated', fsMode === 'rotated');
+    }
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const rot = fsMode === 'rotated';
+    document.body.style.setProperty('--fs-bw', (rot ? vh : vw) + 'px');
+    document.body.style.setProperty('--fs-bh', (rot ? vw : vh) + 'px');
   }
 
   async function acquireWakeLock() {
@@ -354,37 +368,87 @@
     if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
   }
 
-  function enterBoardFs(mode) {
+  // The expand button's pick: turn a wide board sideways on an upright screen, so
+  // the long edges line up and the stretch is as small as it can be. Otherwise
+  // upright. (Rotating is only ever done on an upright screen: the rotated layout
+  // and its close button assume the OS is in portrait.)
+  function bestFsMode(aspect) {
+    return window.innerHeight > window.innerWidth && aspect > 1 ? 'rotated' : 'natural';
+  }
+
+  // mode: 'natural' | 'rotated' | 'best' (the expand button). auto marks an entry
+  // made by turning the phone. The browser's fullscreen needs a user gesture, so
+  // it's only asked for from the expand button (auto entries come from an
+  // orientation change or a route, which aren't gestures).
+  function enterBoardFs(mode, auto = false) {
     const wrap = activeBoardWrap();
     if (!wrap || fsMode) return;
     const r = wrap.getBoundingClientRect();
     const img = wrap.querySelector('.board-graphic');
     fsAspect = (img && img.naturalWidth) ? img.naturalWidth / img.naturalHeight
              : (r.width && r.height ? r.width / r.height : 1);
-    if (img && !img.naturalWidth) img.addEventListener('load', sizeBoardFs, { once: true });
-    fsMode = mode;
+    fsMode = mode === 'best' ? bestFsMode(fsAspect) : mode;
+    fsAuto = auto;
     document.body.classList.add('board-fs');
-    if (mode === 'rotated') document.body.classList.add('board-fs-rotated');
+    if (fsMode === 'rotated') document.body.classList.add('board-fs-rotated');
     sizeBoardFs();
     acquireWakeLock();
+    if (!auto) requestNativeFs();
   }
 
   function exitBoardFs() {
     if (!fsMode) return;
     fsMode = null;
+    fsAuto = false;
     document.body.classList.remove('board-fs', 'board-fs-rotated');
     document.body.style.removeProperty('--fs-bw');
+    document.body.style.removeProperty('--fs-bh');
     releaseWakeLock();
+    exitNativeFs();
   }
 
+  // The browser's own fullscreen (the Fullscreen API; webkit-prefixed on older
+  // Safari/iPad). Unsupported or refused is fine: the in-page fullscreen stands.
+  function nativeFsElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+  function requestNativeFs() {
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req || nativeFsElement()) return;
+    fsNative = true;
+    try {
+      const p = req.call(el, { navigationUI: 'hide' });
+      if (p && p.catch) p.catch(() => { fsNative = false; });
+    } catch (e) { fsNative = false; }
+  }
+  function exitNativeFs() {
+    if (!fsNative) return;
+    fsNative = false;             // first, so the fullscreenchange below is ignored
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (!nativeFsElement() || !exit) return;
+    try {
+      const p = exit.call(document);
+      if (p && p.catch) p.catch(() => {});
+    } catch (e) {}
+  }
+  // Leaving the browser's fullscreen some other way (Android back gesture, Esc on
+  // desktop) closes the board's fullscreen too, so it's never left half-open.
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach(type => {
+    document.addEventListener(type, () => {
+      if (fsNative && !nativeFsElement()) { fsNative = false; exitBoardFs(); }
+    });
+  });
+
   // Turning a touch device to landscape on a detail view auto-enters natural FS;
-  // returning to portrait exits it. A user-invoked rotated FS is left alone.
+  // returning to portrait exits it. A fullscreen opened with the expand button is
+  // left open either way, and re-fitted (sizeBoardFs).
   function onOrientationChange() {
     if (landscapeMQ.matches) {
-      if (!fsMode && isTouchDevice && AUTO_FS_VIEWS.has(currentView)) enterBoardFs('natural');
+      if (!fsMode && isTouchDevice && AUTO_FS_VIEWS.has(currentView)) enterBoardFs('natural', true);
       else if (fsMode) sizeBoardFs();
     } else {
-      if (fsMode === 'natural') exitBoardFs();
+      if (fsMode && fsAuto) exitBoardFs();
       else if (fsMode) sizeBoardFs();
     }
   }
@@ -455,7 +519,7 @@
 
     // Auto-enter natural fullscreen if a touch device is already landscape on a
     // read-only board view (e.g. navigating/swiping while held sideways).
-    if (isTouchDevice && landscapeMQ.matches && AUTO_FS_VIEWS.has(name)) enterBoardFs('natural');
+    if (isTouchDevice && landscapeMQ.matches && AUTO_FS_VIEWS.has(name)) enterBoardFs('natural', true);
   }
 
   function router() {

@@ -238,11 +238,12 @@ Positions are **percentages of the image**, so the overlay scales with it. The r
 Nothing records casts in the database: the old `board_state` table was never used and was dropped in db/24. **Casting is open to guests by design** (decided 10 Sep 2026), with the geofence kept as the gate.
 
 ### 4.8 Fullscreen board
-- **Implementation:** CSS pseudo-fullscreen, because iOS has no element Fullscreen API. Body classes `board-fs`/`board-fs-rotated` switch it on. The active `.board-wrap` becomes `position:fixed`, sized by the JS-computed `--fs-bw` variable, and the backdrop is a giant `box-shadow`.
+- **Implementation:** CSS pseudo-fullscreen, because iPhone Safari has no element Fullscreen API. Body classes `board-fs`/`board-fs-rotated` switch it on. The active `.board-wrap` becomes `position:fixed`, sized by the JS-computed `--fs-bw`/`--fs-bh` variables, and the backdrop is a giant `box-shadow`.
+- **The board is stretched to fill the screen** (since `pb-v105`, Ross's choice on 22 Sep 2026). The photo is ~1.22:1 and a phone on its side ~2:1, so the only other options were black bars or cropping holds off. The `.hold-dot` overlay is %-positioned and the outline svg is a `0..100` viewBox with `preserveAspectRatio="none"`, so both stretch with the photo and stay on the holds; `boardPct()` works in percentages, so taps on the create boards still land.
 - **Two ways in:**
-  - The expand button → **rotated** landscape on any board.
-  - Turning a touch device to landscape → **natural** fullscreen, on the two detail views only.
-- **Details:** a wake lock is held while fullscreen is open. The width/max-width rules are `!important` to beat the detail views' ID-specificity rules.
+  - The expand button, on any board → `bestFsMode()`: **rotated** (a quarter turn) for a wide board on an upright screen, else **natural**, which keeps the stretch as small as it can be. It re-picks on every resize, so a phone that auto-rotates to landscape shows the board upright rather than still turned, and turning the phone never closes it. It also asks for the browser's real fullscreen (Fullscreen API, `navigationUI: 'hide'`), hiding the status and browser bars on Android and desktop; leaving that (Android back, Esc) closes the board's fullscreen too.
+  - Turning a touch device to landscape → **natural** fullscreen, on the two detail views only (`fsAuto`), closed again by turning back. No browser fullscreen here: it needs a user gesture.
+- **Details:** a wake lock is held while fullscreen is open. The width/height rules are `!important` to beat the detail views' ID-specificity rules. Swiping to the next problem or circuit stays in fullscreen (it re-renders in place); any route change (`setView`) closes it.
 
 ### 4.9 The install flow (welcome overlay)
 `installContext()` returns `standalone | in-app | ios | android-prompt | desktop`.
