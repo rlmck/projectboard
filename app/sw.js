@@ -20,7 +20,7 @@
 // Bump CACHE on EVERY deploy that changes app code or data (CLAUDE.md): the new
 // worker's precache is then one consistent version, and old caches are cleared.
 
-const CACHE = 'pb-v106';
+const CACHE = 'pb-v107';
 // The app shell is precached as './' only (Cloudflare 307s /index.html -> /; the
 // navigate branch below keeps the shell under './'). precache() makes any other
 // redirected entry, such as privacy.html, safe to serve offline.

@@ -189,44 +189,66 @@
   </main>
 </section>
 
-<!-- ══ CREATE VIEW ════════════════════════════════════════════════════ -->
+<!-- ══ CREATE VIEW ════════════════════════════════════════════════════
+     Laid out like the problem view (pinned, same title block, the board in the
+     same place): the name is typed in place as the title, the grade is the
+     badge, and the board dims the wall so the holds stand out. -->
 <section id="view-create" class="view">
   <header class="topbar detail-bar">
     <button class="icon-btn" id="create-back" aria-label="Back">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
     </button>
-    <div class="detail-bar-title" id="create-title">Create problem</div>
+    <div class="detail-bar-title" id="create-title">New problem</div>
     <div class="detail-actions">
+      <button class="icon-btn" id="create-undo" aria-label="Undo" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      </button>
       <button class="icon-btn" id="create-reset" aria-label="Clear all holds">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
       </button>
       <button class="icon-btn save-icon-btn" id="create-save" aria-label="Save problem">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
       </button>
     </div>
   </header>
   <main>
-    <div class="board-wrap" id="create-board">
-      <img class="board-graphic" alt="The Hangout symmetry board" />
-      <div class="hold-layer" id="create-hold-layer"></div>
-      <button class="board-expand-btn" type="button" aria-label="Fullscreen board">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
-      </button>
+    <div id="create-content">
+      <div class="detail-head-info">
+        <input class="detail-name create-name" id="create-name" type="text" placeholder="Name your problem"
+               maxlength="60" autocomplete="off" autocapitalize="words" enterkeyhint="done" aria-label="Problem name" />
+        <div class="detail-meta">
+          <button class="grade-badge create-grade-btn" id="create-grade-btn" type="button" aria-haspopup="dialog">Grade</button>
+          <span class="meta-setter" id="create-setter"></span>
+        </div>
+      </div>
+
+      <div class="board-wrap" id="create-board">
+        <img class="board-graphic" alt="The Hangout symmetry board" />
+        <div class="hold-layer" id="create-hold-layer"></div>
+        <button class="board-expand-btn" type="button" aria-label="Fullscreen board">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+        </button>
+      </div>
     </div>
 
-    <div class="create-panel">
-      <p class="create-tip">Tap holds to build your problem. The first two are the <b class="c-start">start</b>, the rest are <b class="c-int">holds</b>. In the top quarter of the board there are no starts — tap a hold there again to make it the <b class="c-finish">finish</b> (one finish only; the rest can be holds for a top traverse). Tap a hold again to change it.</p>
-      <div class="create-counts" id="create-counts"></div>
-
-      <input class="fld" id="create-name" type="text" placeholder="Problem name" maxlength="60" autocomplete="off" />
-
-      <div class="create-grade-label">Grade</div>
-      <div class="grade-tabs create-grades" id="create-grades"></div>
-
-      <div class="auth-error" id="create-error"></div>
+    <!-- Progress, pinned below the board: what's set, and what to tap next. -->
+    <div class="create-status">
+      <div class="create-steps" id="create-steps"></div>
+      <div class="create-next" id="create-next"></div>
     </div>
   </main>
 </section>
+
+<!-- Grade picker for the create view (a sheet, like the info sheet) -->
+<div class="modal-overlay" id="create-grade-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="create-grade-title">
+    <div class="modal-header">
+      <div class="modal-title" id="create-grade-title">Grade</div>
+      <button class="modal-close" id="create-grade-close" aria-label="Close">✕</button>
+    </div>
+    <div class="grade-grid" id="create-grades"></div>
+  </div>
+</div>
 
 <!-- ══ TRACE HOLDS VIEW (admins — fine-tune each hold's traced outline) ══ -->
 <section id="view-outlines" class="view">

@@ -672,7 +672,8 @@
        this. Keep the height in step with .detail-name (1.35rem at line-height
        1.2), its 7px margin and --meta-line. */
     #view-detail .detail-head-info,
-    #view-circuit-detail .detail-head-info {
+    #view-circuit-detail .detail-head-info,
+    #view-create .detail-head-info {
       --meta-line: 20px;        /* tallest meta item: 12px text + 2px padding + 1px border each side */
       height: calc(12px + (1.35rem * 1.2) + 7px + var(--meta-line) + 10px);
       display: flex;
@@ -688,7 +689,9 @@
     #view-detail .detail-name,
     #view-detail .detail-meta,
     #view-circuit-detail .detail-name,
-    #view-circuit-detail .detail-meta { flex-shrink: 0; }
+    #view-circuit-detail .detail-meta,
+    #view-create .detail-name,
+    #view-create .detail-meta { flex-shrink: 0; }
     /* A long name starts on the line above. Two lines is the ceiling, so even a
        pathological name can't climb up behind the sticky header. */
     #view-detail .detail-name,
@@ -706,7 +709,8 @@
        The setter name is the one item allowed to give (ellipsis), so the badges —
        the "both sides" one included — always stay whole. */
     #view-detail .detail-meta,
-    #view-circuit-detail .detail-meta {
+    #view-circuit-detail .detail-meta,
+    #view-create .detail-meta {
       flex-wrap: nowrap;
       min-height: var(--meta-line);
       gap: 8px;                 /* 2px tighter than the list's: buys a badge's worth of room */
@@ -714,9 +718,11 @@
     /* Badges keep their size, and one constant line box for every item, so a glyph
        that falls back to a different font (the badge's tick) can't grow the row. */
     #view-detail .detail-meta > *,
-    #view-circuit-detail .detail-meta > * { flex: 0 0 auto; line-height: 14px; }
+    #view-circuit-detail .detail-meta > *,
+    #view-create .detail-meta > * { flex: 0 0 auto; line-height: 14px; }
     #view-detail .detail-meta .meta-setter,
-    #view-circuit-detail .detail-meta .meta-setter {
+    #view-circuit-detail .detail-meta .meta-setter,
+    #view-create .detail-meta .meta-setter {
       flex: 0 1 auto;
       min-width: 0;
       white-space: nowrap;
@@ -910,7 +916,8 @@
     /* The detail views (problem and circuit) are pinned to the viewport — no page
        scrolling. Fixed positioning takes them out of body flow so nothing can scroll. */
     #view-detail.active,
-    #view-circuit-detail.active {
+    #view-circuit-detail.active,
+    #view-create.active {
       position: fixed;
       inset: 0;
       display: flex;
@@ -919,7 +926,8 @@
     }
     /* main = everything between the sticky header and the bottom nav */
     #view-detail main,
-    #view-circuit-detail main {
+    #view-circuit-detail main,
+    #view-create main {
       flex: 1;
       min-height: 0;
       padding: 0;
@@ -941,7 +949,8 @@
       pointer-events: none;
     }
     .board-hint span { color: var(--accent-hover); font-weight: 700; }
-    #detail-content {
+    #detail-content,
+    #create-content {
       flex: 1;
       min-height: 0;
       display: flex;
@@ -952,24 +961,95 @@
        wide. The overlay is %-positioned and the board-wrap matches the image box,
        so dots still land on every hold. */
     #view-detail .board-graphic,
-    #view-circuit-detail .board-graphic {
+    #view-circuit-detail .board-graphic,
+    #view-create .board-graphic {
       width: 100%;
       height: auto;
     }
 
-    /* ── Create view ─────────────────────────────────────────────────── */
-    /* Create scrolls normally (form below the board). The board keeps its
-       natural aspect ratio so hold_map.json percentages land on each hold. */
-    #view-create .board-graphic { width: 100%; height: auto; display: block; border-radius: 10px; }
+    /* ── Create view ─────────────────────────────────────────────────────
+       Pinned and laid out like the problem view (the shared rules above), so
+       the board sits in the same place. The name is an input styled as the
+       title, the grade is the badge. The wall is dimmed like the problem view
+       with every hold left bright (holdShapeLayerHtml lightAll). */
     #create-board { cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
     #create-hold-layer { pointer-events: none; }
-    /* Only assigned holds get a dot, reusing the shared .start/.int/.finish colours. */
 
-    /* Create form: trim the shared nav-reserve padding so a form that nearly
-       fits doesn't leave a band of empty scroll below it. */
-    #view-create main {
-      padding-bottom: calc(var(--nav-h) + 8px + env(safe-area-inset-bottom));
+    /* The name: the problem view's title, typed in place. */
+    .create-name {
+      display: block; width: 100%; min-width: 0;
+      background: transparent; border: 0; border-radius: 0; padding: 0;
+      color: var(--text); font-family: inherit;
+      caret-color: var(--accent);
+      -webkit-user-select: text; user-select: text;
     }
+    #view-create .create-name {
+      /* one line (an input), so the title block keeps the detail view's height */
+      height: calc(1.35rem * 1.2); max-height: none; overflow: hidden;
+    }
+    .create-name::placeholder { color: #5a5a66; }
+    .create-name:focus { outline: none; }
+    .create-name:focus::placeholder { color: #45454f; }
+    .create-name:disabled { opacity: 1; color: var(--text); -webkit-text-fill-color: var(--text); }
+
+    /* The grade badge is the grade picker. Unset, it's an outlined prompt. */
+    .create-grade-btn { font-family: inherit; cursor: pointer; touch-action: manipulation; }
+    .create-grade-btn::after { content: " ▾"; font-size: 10px; opacity: 0.8; }
+    .create-grade-btn.unset {
+      background: transparent; border-style: dashed; color: var(--accent-hover);
+    }
+
+    /* The finish zone, marked on the board: a faint red wash over the top band
+       with a dashed edge and a label. */
+    .finish-zone {
+      position: absolute; left: 0; right: 0; top: 0;
+      background: linear-gradient(to bottom, rgba(239,68,68,0.07), rgba(239,68,68,0.02));
+      border-bottom: 1.5px dashed rgba(248,113,113,0.7);
+      pointer-events: none;
+    }
+    .finish-zone span {
+      position: absolute; left: 8px; bottom: 4px;
+      font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+      color: #fca5a5; text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+    }
+
+    /* Progress, pinned under the board (in the space the problem view leaves
+       empty there): start · holds · finish, then what to tap next. */
+    .create-status {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      padding: 10px 14px 12px;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      pointer-events: none;
+    }
+    .create-steps { display: flex; gap: 6px; }
+    .create-step {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 10px; border-radius: 999px;
+      font-size: 12px; font-weight: 700; color: var(--text-muted);
+      background: var(--surface); border: 1px solid var(--border);
+      transition: color 0.2s, border-color 0.2s, background 0.2s;
+    }
+    .create-step i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: 0.5; }
+    .create-step.c-start i { background: #22c55e; }
+    .create-step.c-int i { background: #3b82f6; }
+    .create-step.c-finish i { background: #ef4444; }
+    .create-step.done { color: var(--text); }
+    .create-step.done i { opacity: 1; }
+    .create-step.c-start.done  { border-color: rgba(34,197,94,0.55);  background: rgba(34,197,94,0.10); }
+    .create-step.c-int.done    { border-color: rgba(59,130,246,0.55); background: rgba(59,130,246,0.10); }
+    .create-step.c-finish.done { border-color: rgba(239,68,68,0.55);  background: rgba(239,68,68,0.10); }
+    .create-next { font-size: 13px; color: var(--text-muted); text-align: center; }
+    .create-next.ready { color: var(--accent-hover); font-weight: 700; }
+    /* Short screens: the steps alone. */
+    @media (max-height: 640px) { .create-next { display: none; } }
+
+    /* Undo greys out when there's nothing to undo. */
+    #create-undo:disabled { opacity: 0.35; pointer-events: none; }
+
+    /* The grade sheet: every grade as a tappable chip. */
+    .grade-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 8px; }
+    .grade-grid .grade-tab { padding: 10px 0; font-size: 15px; text-align: center; }
+
     /* Circuit-create form is taller (it scrolls), so keep a small breathing gap
        between the last field and the bottom nav. */
     #view-circuit-create main {
@@ -983,20 +1063,6 @@
     .c-int { color: #60a5fa; }
     .c-finish { color: #f87171; }
 
-    .create-counts { display: flex; gap: 8px; margin-bottom: 4px; }
-    .create-counts span {
-      flex: 1;
-      text-align: center;
-      font-size: 13px;
-      font-weight: 700;
-      padding: 8px 6px;
-      border-radius: 9px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-    }
-    .create-counts .c-start  { border-color: rgba(34,197,94,0.4); }
-    .create-counts .c-int    { border-color: rgba(59,130,246,0.4); }
-    .create-counts .c-finish { border-color: rgba(239,68,68,0.4); }
     .create-grade-label {
       font-size: 12px; font-weight: 700; text-transform: uppercase;
       letter-spacing: 0.08em; color: var(--text-muted); margin: 14px 0 8px;
@@ -1141,7 +1207,8 @@
        positions from hold_map.json land correctly on each hold. */
     .board-wrap { position: relative; }
     #view-detail .board-wrap,
-    #view-circuit-detail .board-wrap { width: 100%; }
+    #view-circuit-detail .board-wrap,
+    #view-create .board-wrap { width: 100%; }
     #view-detail .board-wrap .board-graphic,
     #view-circuit-detail .board-wrap .board-graphic { height: auto; }
     .hold-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }

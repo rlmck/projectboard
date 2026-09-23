@@ -239,14 +239,16 @@
 
   // roles: { holdId -> 'start' | 'int' | 'finish' }. `mirror` pulls each hold's
   // position AND shape from its mirror partner (roles preserved). `dim` adds the
-  // darken-the-rest mask (detail views); create/edit passes dim:false so the whole
-  // board stays visible. `fresh` (a hold id) marks the hold the circuit Play
-  // preview has just lit, which pulses once. A used hold with no traced polygon
-  // falls back to a dot.
+  // darken-the-rest mask (detail views). `lightAll` (with dim) cuts EVERY hold out
+  // of that mask, not just the used ones: the wall dims to the detail view's
+  // level while every hold stays bright (create/edit, where any hold can be
+  // tapped). `fresh` (a hold id) marks the hold the circuit Play preview has
+  // just lit, which pulses once. A used hold with no traced polygon falls back
+  // to a dot.
   // The mask lives in its OWN svg so the outline svg can carry a plain CSS
   // drop-shadow: a CSS filter on an svg *child* resolves its lengths in the
   // stretched viewBox units, but on the outermost svg it resolves in CSS pixels.
-  function holdShapeLayerHtml(roles, { mirror = false, dim = false, fresh = null } = {}) {
+  function holdShapeLayerHtml(roles, { mirror = false, dim = false, lightAll = false, fresh = null } = {}) {
     if (!shapesUsable()) return null;
     const maskId = 'hsmask-' + (++hsMaskSeq);
     // viewBox is 0..100 on both axes with preserveAspectRatio:none, so a <circle>
@@ -269,6 +271,14 @@
         outlines.push(`<ellipse ${e} class="hs ${role}"/>`);
       }
     });
+    if (dim && lightAll) {
+      holes.length = 0;
+      Object.keys(HOLD_MAP).forEach(key => {
+        const pts = HOLD_SHAPES[key], pos = HOLD_MAP[key];
+        if (pts && pts.length >= 3) holes.push(`<path d="${smoothShapePath(pts)}" fill="#000"/>`);
+        else if (pos && typeof pos.x === 'number') holes.push(`<ellipse cx="${pos.x}" cy="${pos.y}" rx="${rx}" ry="${ry}" fill="#000"/>`);
+      });
+    }
     const dimSvg = dim
       ? `<svg class="hold-shape-layer hs-dim" viewBox="0 0 100 100" preserveAspectRatio="none">`
         + `<mask id="${maskId}" maskUnits="userSpaceOnUse"><rect width="100" height="100" fill="#fff"/>${holes.join('')}</mask>`
@@ -333,7 +343,8 @@
   // with it, while outlines, dots and move tags keep their pixel sizes) and pan is
   // a translate, so boardPct needs nothing special.
   const AUTO_FS_VIEWS = new Set(['detail', 'circuit-detail']);
-  const FS_MAX_ZOOM = 4;        // relative to the whole board fitting the screen
+  const FS_MAX_ZOOM = 5;        // relative to the whole board fitting the screen
+  const FS_PINCH_GAIN = 1.8;    // pinch sensitivity: zoom = (finger spread ratio)^gain
   const FS_ROUTE_ZOOM = 3;      // the route framing never zooms further than this
   let fsOpen = false;
   let fsAuto = false;           // entered by turning the phone (turning back exits)
@@ -524,6 +535,12 @@
       const n = circuitSeq(currentCircuit).length;
       name.textContent = circuitName(currentCircuit);
       meta.textContent = `${currentCircuit.grade || '—'} · ${n} move${n === 1 ? '' : 's'}`;
+    } else if (currentView === 'create') {
+      // Building a problem: its name so far and the holds set.
+      const typed = (document.getElementById('create-name').value || '').trim();
+      const n = role => Object.values(createRoles).filter(r => r === role).length;
+      name.textContent = typed || (editingProblemId ? 'Edit problem' : 'New problem');
+      meta.textContent = `${n('start')} start · ${n('int')} holds · ${n('finish')} finish`;
     } else {
       name.textContent = 'Tap holds to set them';
       meta.textContent = 'Pinch or drag to look around';
@@ -560,8 +577,8 @@
   // A one-line hint the first few times the viewer opens.
   let fsHintTimer = 0;
   function fsShowHint() {
-    let seen = 0;
-    try { seen = +localStorage.getItem('pb-fs-hints') || 0; localStorage.setItem('pb-fs-hints', String(seen + 1)); } catch (e) {}
+    const seen = +lsGet('pb-fs-hints') || 0;
+    lsSet('pb-fs-hints', String(seen + 1));
     if (seen >= 3) return;
     const hint = document.getElementById('board-fs-hint');
     hint.textContent = fsReadOnly() ? 'Pinch to zoom · double-tap for the whole board' : 'Pinch to zoom · tap holds to set them';
@@ -572,7 +589,8 @@
 
   // ── Viewer gestures ────────────────────────────────────────────────────────────
   // Pointer events on the board and the backdrop: one finger pans, two pinch
-  // (about their midpoint). On the read-only views a tap hides/shows the bar and a
+  // (about their midpoint, amplified by FS_PINCH_GAIN so a small spread zooms a
+  // long way). On the read-only views a tap hides/shows the bar and a
   // double-tap switches route ↔ whole board; a quick sideways swipe steps to the
   // next/previous problem when the board isn't wider than the screen (otherwise
   // a drag pans). After any drag or pinch the click that follows is swallowed,
@@ -617,7 +635,8 @@
     let cam;
     if (pts.length > 1 && g.n > 1) {
       const c = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
-      const k = Math.max(1, Math.min(FS_MAX_ZOOM, g.cam.k * Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) / (g.d || 1)));
+      const spread = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) / (g.d || 1);
+      const k = Math.max(1, Math.min(FS_MAX_ZOOM, g.cam.k * Math.pow(spread, FS_PINCH_GAIN)));
       const s = k / g.cam.k;               // keep the board point under the midpoint there
       cam = { k, tx: c.x - (g.c.x - g.cam.tx) * s, ty: c.y - (g.c.y - g.cam.ty) * s };
     } else {
@@ -671,7 +690,7 @@
   document.addEventListener('wheel', e => {
     if (!fsIsBoardTarget(e.target)) return;
     e.preventDefault();
-    const k = Math.max(1, Math.min(FS_MAX_ZOOM, fsCam.k * Math.exp(-e.deltaY * 0.0015)));
+    const k = Math.max(1, Math.min(FS_MAX_ZOOM, fsCam.k * Math.exp(-e.deltaY * 0.0025)));
     const s = k / fsCam.k;
     fsFrame = 'free';
     fsApply({ k, tx: e.clientX - (e.clientX - fsCam.tx) * s, ty: e.clientY - (e.clientY - fsCam.ty) * s }, false);
@@ -766,6 +785,7 @@
 
     // The info modal belongs to the two detail views (problem and circuit).
     if (name !== 'detail' && name !== 'circuit-detail') closeInfo();
+    if (name !== 'create') closeCreateGrade();
     // The circuit Play preview only runs on the circuit detail view.
     if (name !== 'circuit-detail') stopCircuitPlay(false);
 

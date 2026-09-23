@@ -3,9 +3,14 @@
 // state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file: create-a-problem, the hold outlines editor (#outlines), and circuit helpers.
 
   // ── Create a problem ──────────────────────────────────────────────────────────
-  // Holds keep their physical role in createRoles; the board shows every hold as a
-  // faint dot (reference) and colours the assigned ones. On save we build the
-  // canonical display order and store it INVERTED so the existing renderer
+  // The create view is laid out like the problem view: pinned, the same title
+  // block (the name is typed in place as the title, the grade is the badge, tap
+  // it for the grade sheet) and the board in the same place. The wall is dimmed
+  // to the problem view's level with every hold left bright, the finish zone is
+  // marked on the board, and a strip under the board shows what's set and what
+  // to tap next, instead of a paragraph of rules.
+  // Holds keep their physical role in createRoles. On save we build the canonical
+  // display order and store it INVERTED so the existing renderer
   // (problemHoldOrder) un-inverts it back to the right colours — see CLAUDE.md.
 
   const holdsWithRole = role => Object.keys(createRoles).filter(h => createRoles[h] === role);
@@ -32,29 +37,67 @@
     return !!(HOLD_MAP && HOLD_MAP[h]) && HOLD_MAP[h].y <= topZoneThreshold();
   }
 
-  // Draw a coloured dot for each assigned hold (only assigned ones — no faint
-  // reference dots) and refresh the running count summary.
+  // Where to draw the finish zone's edge on the board (a % from the top): midway
+  // between the lowest hold inside the zone and the highest one below it, so the
+  // line never cuts through a hold.
+  function finishZoneEdge() {
+    if (!HOLD_MAP) return null;
+    const t = topZoneThreshold();
+    let lastIn = -Infinity, firstOut = Infinity;
+    for (const h in HOLD_MAP) {
+      const y = HOLD_MAP[h].y;
+      if (typeof y !== 'number') continue;
+      if (y <= t) lastIn = Math.max(lastIn, y);
+      else firstOut = Math.min(firstOut, y);
+    }
+    return (isFinite(lastIn) && isFinite(firstOut)) ? (lastIn + firstOut) / 2 : null;
+  }
+
+  // Draw the board (dimmed wall, bright holds, the assigned ones outlined in their
+  // role colour, the finish zone marked) and refresh the progress strip.
   function applyCreateRoles() {
     const layer = document.getElementById('create-hold-layer');
     if (layer) {
-      // Shaped outlines (no dim — the board must stay fully visible/tappable while
-      // building a route, so #view-create .hs adds a translucent role-coloured fill
-      // and a thicker stroke); falls back to dots when shapes aren't usable.
-      const svg = holdShapeLayerHtml(createRoles, { mirror: false, dim: false });
-      layer.innerHTML = (svg != null) ? svg : Object.keys(createRoles).map(h => {
+      const svg = holdShapeLayerHtml(createRoles, { mirror: false, dim: true, lightAll: true });
+      const edge = finishZoneEdge();
+      const zone = edge == null ? ''
+        : `<div class="finish-zone" style="height:${edge}%"><span>Finish zone</span></div>`;
+      // Without traced outlines (an old board version), fall back to dots. The
+      // zone goes last so its edge and label sit above the dimming.
+      layer.innerHTML = ((svg != null) ? svg : Object.keys(createRoles).map(h => {
         const pos = HOLD_MAP && HOLD_MAP[h];
         if (!pos) return '';
         return `<div class="hold-dot ${createRoles[h]}" style="left:${pos.x}%;top:${pos.y}%"></div>`;
-      }).join('');
+      }).join('')) + zone;
     }
+    updateCreateStatus();
+  }
+
+  // The strip under the board: three steps (start, holds, finish), each ticked
+  // off when it's right, and one line saying what to do next.
+  function updateCreateStatus() {
     const s = holdsWithRole('start').length, i = holdsWithRole('int').length, f = holdsWithRole('finish').length;
-    const counts = document.getElementById('create-counts');
-    if (counts) {
-      counts.innerHTML =
-        `<span class="c-start">${s} start</span>` +
-        `<span class="c-int">${i} hold${i === 1 ? '' : 's'}</span>` +
-        `<span class="c-finish">${f} finish</span>`;
-    }
+    const steps = document.getElementById('create-steps');
+    const next = document.getElementById('create-next');
+    if (!steps || !next) return;
+    const step = (cls, n, label, done) =>
+      `<span class="create-step ${cls}${done ? ' done' : ''}"><i></i>${n} ${label}</span>`;
+    steps.innerHTML =
+      step('c-start', s, 'start', s >= 1 && s <= 2) +
+      step('c-int', i, i === 1 ? 'hold' : 'holds', i >= 1) +
+      step('c-finish', f, 'finish', f === 1);
+    const name = (document.getElementById('create-name').value || '').trim();
+    next.textContent =
+      !s ? 'Tap a start hold, low on the wall'
+      : !i ? 'Now tap the holds in between'
+      : !f ? 'Tap a finish-zone hold twice to finish'
+      : !name ? 'Name it at the top'
+      : !createGrade ? 'Tap Grade to pick one'
+      : 'Ready — tap ✓ to save';
+    next.classList.toggle('ready', !!(s && i && f && name && createGrade));
+    const undo = document.getElementById('create-undo');
+    if (undo) undo.disabled = !createUndo.length;
+    if (fsOpen) fsUpdateBar();   // the fullscreen bar shows the same counts
   }
 
   // Nearest hold to a tap (in pixel space, since x/y are % of different axes).
@@ -72,6 +115,17 @@
     return Math.sqrt(bestD) <= w * 0.06 ? best : null;   // ~half a hold spacing
   }
 
+  // Remember the holds as they are, for Undo (capped; it's a phone).
+  function pushCreateUndo() {
+    createUndo.push({ ...createRoles });
+    if (createUndo.length > 60) createUndo.shift();
+  }
+  function undoCreate() {
+    if (!createUndo.length) return;
+    createRoles = createUndo.pop();
+    applyCreateRoles();
+  }
+
   // Tap to cycle a hold's role:
   //   • top-zone hold (top 25% of the board), no finish set yet → hold (blue) →
   //     finish (red) → off. Once a finish exists, the other top holds cycle
@@ -81,6 +135,7 @@
   //   • any other hold → start (green) → hold (blue) → off, where a fresh tap
   //     starts green while fewer than two starts exist, otherwise blue.
   function cycleHold(h) {
+    pushCreateUndo();
     const cur = createRoles[h];
     if (inTopZone(h)) {
       if (cur === 'finish') {
@@ -101,9 +156,33 @@
     applyCreateRoles();
   }
 
+  // ── Name, grade and setter (the title block) ────────────────────────────────
+  function updateCreateHead() {
+    const btn = document.getElementById('create-grade-btn');
+    btn.textContent = createGrade ? fontGrade(createGrade) : 'Grade';
+    btn.classList.toggle('unset', !createGrade);
+    btn.setAttribute('aria-label', createGrade ? `Grade ${fontGrade(createGrade)}, tap to change` : 'Pick a grade');
+    const editing = editingProblemId && allProblems.find(p => String(p.id) === String(editingProblemId));
+    document.getElementById('create-setter').textContent =
+      'by ' + (editing ? setterName(editing) : ((profile && profile.username) || 'you'));
+    updateCreateStatus();
+  }
+
   function buildCreateGrades() {
     document.getElementById('create-grades').innerHTML =
       gradeTabButtons(GRADE_ORDER, g => g === createGrade, fontGrade);
+    updateCreateHead();
+  }
+
+  function openCreateGrade() {
+    buildCreateGrades();
+    document.getElementById('create-grade-modal').classList.add('show');
+  }
+  function closeCreateGrade() { document.getElementById('create-grade-modal').classList.remove('show'); }
+  function pickCreateGrade(g) {
+    createGrade = g;
+    buildCreateGrades();
+    closeCreateGrade();
   }
 
   function setCreateTitle(t) {
@@ -112,11 +191,10 @@
   }
 
   function resetCreate() {
-    createRoles = {}; createGrade = ''; editingProblemId = null;
+    createRoles = {}; createGrade = ''; editingProblemId = null; createUndo = [];
     const nameEl = document.getElementById('create-name');
     if (nameEl) { nameEl.value = ''; nameEl.disabled = false; }
-    document.getElementById('create-error').textContent = '';
-    setCreateTitle('Create problem');
+    setCreateTitle('New problem');
     buildCreateGrades();
     applyCreateRoles();
   }
@@ -131,11 +209,11 @@
     const order = problemHoldOrder(p);
     const cls = classifyHolds(order);
     createRoles = {};
+    createUndo = [];
     order.forEach(h => { createRoles[h] = cls[h]; });
     createGrade = p.grade || '';
     const nameEl = document.getElementById('create-name');
     if (nameEl) { nameEl.value = p.name || ''; nameEl.disabled = true; }
-    document.getElementById('create-error').textContent = '';
     setCreateTitle('Edit problem');
   }
 
@@ -159,19 +237,32 @@
     applyCreateRoles();
   }
 
-  // The header reset (bin) button. In edit mode it reverts to the problem's saved
-  // holds + grade (discard your edits); in create mode it clears the form.
+  // The header bin. In edit mode it reverts to the problem's saved holds + grade
+  // (discard your edits); in create mode it clears the holds. Either way Undo
+  // brings the holds back.
   function onCreateReset() {
+    const before = { ...createRoles };
     if (editingProblemId) {
       const p = allProblems.find(x => String(x.id) === String(editingProblemId));
-      if (p) { seedEdit(p); buildCreateGrades(); applyCreateRoles(); return; }
+      if (p) {
+        seedEdit(p);
+        createUndo = [before];
+        buildCreateGrades(); applyCreateRoles(); return;
+      }
     }
-    resetCreate();
+    if (!Object.keys(createRoles).length) return;
+    pushCreateUndo();
+    createRoles = {};
+    applyCreateRoles();
+  }
+
+  // A save that's missing something says so in a toast and takes you to it.
+  function createMissing(msg, then) {
+    showToast(msg, 'error');
+    if (then) then();
   }
 
   async function saveProblem() {
-    const errEl = document.getElementById('create-error');
-    errEl.textContent = '';
     if (!session) { location.hash = '#auth'; return; }
 
     // In edit mode we're updating this existing row (holds + grade only).
@@ -179,28 +270,28 @@
       ? allProblems.find(p => String(p.id) === String(editingProblemId))
       : null;
     if (editingProblemId && !editing) {   // lost the row (e.g. deleted elsewhere)
-      errEl.textContent = 'Couldn’t find that problem — go back and reopen it.';
+      createMissing('Couldn’t find that problem — go back and reopen it.');
       return;
     }
 
-    const name = document.getElementById('create-name').value.trim();
+    const nameEl = document.getElementById('create-name');
+    const name = nameEl.value.trim();
     const starts = holdsWithRole('start');
     const ints = holdsWithRole('int');
     const fins = holdsWithRole('finish');
 
-    if (!name) { errEl.textContent = 'Give your problem a name.'; return; }
-    if (!createGrade) { errEl.textContent = 'Pick a grade.'; return; }
-    if (starts.length < 1) { errEl.textContent = 'Add at least one start hold.'; return; }
-    if (ints.length < 1) { errEl.textContent = 'Add at least one intermediate hold.'; return; }
-    if (fins.length !== 1) { errEl.textContent = 'Add exactly one finish hold.'; return; }
+    if (starts.length < 1) return createMissing('Add a start hold.');
+    if (ints.length < 1) return createMissing('Add at least one hold between start and finish.');
+    if (fins.length !== 1) return createMissing('Add a finish hold (tap a finish-zone hold twice).');
+    if (!name) return createMissing('Give your problem a name.', () => nameEl.focus());
+    if (!createGrade) return createMissing('Pick a grade.', openCreateGrade);
 
     // Names must be unique — they're how a problem is cast (the DB also enforces a
     // UNIQUE constraint on name). Pre-check case-insensitively, excluding the problem
     // being edited (its own name is unchanged — the field is locked in edit mode).
     const newName = name.toLowerCase();
     if (allProblems.some(p => p !== editing && String(p.name || '').trim().toLowerCase() === newName)) {
-      errEl.textContent = 'That name is taken — pick another.';
-      return;
+      return createMissing('That name is taken — pick another.', () => nameEl.focus());
     }
 
     // Canonical display order D = [start, start, …intermediates, finish].
@@ -229,13 +320,12 @@
       const { data, error } = await sb.from('problems').update(update).eq('id', editing.id).select('id');
       btn.disabled = false; btn.classList.remove('casting');
       if (error) {
-        errEl.textContent = error.code === '42501'
+        return createMissing(error.code === '42501'
           ? 'You don’t have permission to edit problems.'   // not an admin (RLS)
-          : error.message;
-        return;
+          : error.message);
       }
       if (!data || !data.length) {
-        errEl.textContent = 'Couldn’t save: you’re no longer an admin, or the problem has been deleted.';
+        createMissing('Couldn’t save: you’re no longer an admin, or the problem has been deleted.');
         recheckAdmin();
         return;
       }
@@ -264,11 +354,10 @@
     const { data, error } = await sb.from('problems').insert(row).select().single();
     btn.disabled = false; btn.classList.remove('casting');
     if (error) {
-      errEl.textContent =
+      return createMissing(
         error.code === '42501' ? 'You don’t have permission to create problems yet.'   // RLS INSERT policy missing
         : error.code === '23505' ? 'That name is taken — pick another.'                // unique-name backstop
-        : error.message;
-      return;
+        : error.message);
     }
 
     allProblems.push(data);

@@ -381,12 +381,22 @@
     if (h) cycleHold(h);
   });
 
-  // Grade picker (single select).
+  document.getElementById('create-undo').addEventListener('click', undoCreate);
+
+  // The name is typed in place as the title; Enter just closes the keyboard.
+  const createNameInput = document.getElementById('create-name');
+  createNameInput.addEventListener('input', updateCreateStatus);
+  createNameInput.addEventListener('keydown', e => { if (e.key === 'Enter') createNameInput.blur(); });
+
+  // Grade: the badge opens a sheet of grades; a tap picks one and closes it.
+  document.getElementById('create-grade-btn').addEventListener('click', openCreateGrade);
   document.getElementById('create-grades').addEventListener('click', e => {
     const t = e.target.closest('.grade-tab');
-    if (!t) return;
-    createGrade = createGrade === t.dataset.grade ? '' : t.dataset.grade;
-    buildCreateGrades();
+    if (t) pickCreateGrade(t.dataset.grade);
+  });
+  document.getElementById('create-grade-close').addEventListener('click', closeCreateGrade);
+  document.getElementById('create-grade-modal').addEventListener('click', e => {
+    if (e.target.id === 'create-grade-modal') closeCreateGrade();
   });
 
   document.getElementById('create-save').addEventListener('click', saveProblem);

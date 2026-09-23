@@ -79,6 +79,7 @@
   let createRoles = {};        // hold id -> 'start' | 'int' | 'finish'
   let createGrade = '';        // selected grade
   let editingProblemId = null; // when set, the create view is editing this problem (admin) instead of creating
+  let createUndo = [];         // earlier createRoles snapshots, newest last (the create view's Undo)
 
   // ── Circuits ──────────────────────────────────────────────────────────────────
   // Sport grades (lowercase French), a different ladder from boulder problems.
