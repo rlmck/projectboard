@@ -34,9 +34,9 @@ A PWA for the symmetry board at The Hangout, Portland (near Weymouth, UK). The b
      └──Realtime broadcast────▶ channel board:HangoutPortland, event cast_problem
                                      │
                                      ▼
-                         Raspberry Pi 3B, pi/board_listener.py (local, gitignored)
+                         Raspberry Pi 4 (being rebuilt, Oct 2026; spec in local docs/pi4-led-audit.md)
                            reads the problem's holds from the problems table
-                           → WS2801 LED strip over SPI
+                           → WS2801 LED strip over SPI; also runs the PWA in a kiosk on the wall touchscreen
 
  rlmck.github.io/projectboard ── GitHub Pages ◀── legacy branch (moved page + tombstone SW)
 ```
@@ -87,8 +87,8 @@ build.sh  wrangler.jsonc  CLAUDE.md  .gitignore  .gitattributes   (the repo root
 
 Local only (gitignored), on Ross's laptop:
 - `db/`: numbered SQL scripts 01–29, applied by hand in the Supabase SQL editor, indexed in `db/README.md`, plus `db/.env` holding the direct-Postgres URL and the service key. **Never print or commit that file.**
-- `pi/`: the board listener, its systemd unit, a smoke test, `clear_strip.py`, and `problems.csv` (Gareth's problem list, the input to db/03).
-- `docs/*`: `changelog.md`, `project-notes.md`, `CC_Reference_Gareth_Code.md`, `hardware/` photos, and `security-findings.md`.
+- `pi/`: the June 2026 listener for the old Pi 3, its systemd unit, a smoke test, `clear_strip.py`, and `problems.csv` (Gareth's problem list, the input to db/03). **Superseded:** the Pi 4 rebuild starts fresh from `docs/pi4-led-audit.md`.
+- `docs/*`: `changelog.md`, `project-notes.md`, `pi4-led-audit.md` (the Pi 4 / LED spec), `CC_Reference_Gareth_Code.md`, `hardware/` photos, and `security-findings.md`.
 - `reference/original-pi-codebase/dtb/`: Gareth's original DTB code, extracted from his SD card. `tools/register_holds.py` and `tools/register_mirror.py` read `dtb/SettingsFolder/holdlist.csv`, `dtb/SettingsFolder/MirrorDic.txt` and `dtb/dicholdlist.txt` from it by path, so it stays where it is.
 - `.claude/settings.local.json`: Claude Code's per-machine settings.
 - **Archived outside the repo** in `Documents\ProjectBoard-archive\` (see its `README.txt`); nothing depends on any of it:
@@ -186,7 +186,7 @@ Positions are **percentages of the image**, so the overlay scales with it. The r
 - **Holds are stored INVERTED.** The migration wrote `start_holds`/`finish_hold` back to front. The true order is `[finish_hold, ...intermediate_holds, ...start_holds]`: the first two are starts (green, low), the last is the finish (red, high). Use `problemHoldOrder()` + `classifyHolds()`.
   - `saveProblem` inverts on the way back in, so reads and writes share one scheme.
   - A lone start is duplicated so there are always two start entries.
-  - The Pi listener does the same un-invert.
+  - This order is exactly Gareth's original list, so the Pi side reads it the same way.
   - Fixing this for good means a data migration **plus** a Pi change in lockstep.
 - **Names are UNIQUE and are the cast key.** The Pi looks a problem up by `problem_name`. Names are stored clean (no embedded grade), and grade edits never touch the name.
 - **Grades are stored lowercase** (`5, 5+, 6a … 8a`) and **displayed** capitalised via `fontGrade()`. Unknown grades sort last: 2 problems are graded `Project`.
@@ -228,12 +228,14 @@ Positions are **percentages of the image**, so the overlay scales with it. The r
    - **The app never subscribes**, so it holds no WebSocket (before `pb-v99`, every open app kept one joined all the time, and `send()` would have fallen back to REST anyway when it dropped). Subscribers get the same event and payload as before.
    - `httpSend` resolves once the Realtime server has accepted the broadcast (202) and rejects otherwise; a rejection shows "Cast failed". That means **the Realtime server** got it, not the Pi. There's no end-to-end confirmation.
    - **Testing without the Pi:** `python tools/serve.py`, then open `http://localhost:8000/tools/cast-test.html` (section 11).
-3. **The Pi** (`pi/board_listener.py`, local):
-   - It subscribes with the anon key and looks the name up in `problems`.
-   - It applies the mirror table and un-inverts, then lights green starts, blue intermediates and a red finish.
-   - LED index = column-major serpentine (`led_map.json` / `register_leds.py`).
-   - When the listener is rebuilt, feed it the **live** mirror map (`board_config.mirror_map`), not Gareth's raw `MirrorDic.txt`.
-   - As of June 2026 the software was verified up to the data leg, and the physical LED output was being debugged as a hardware fault. Check `docs/project-notes.md` for the current state.
+3. **The Pi** is being rebuilt on a **new Pi 4** (Oct 2026; Gareth's Pi 3B is gone). The spec is the local `docs/pi4-led-audit.md`:
+   - The listener subscribes with the anon key and looks the name up in `problems`.
+   - It uses `problemHoldOrder()`'s order (which equals Gareth's) and lights green starts, blue intermediates and a red finish.
+   - LED index = column-major serpentine (`led_map.json` / `register_leds.py`; the formula is in the audit §3). WS2801 on SPI0 at 1 MHz, mode 0, RGB.
+   - Feed it the **live** mirror map (`board_config.mirror_map`), not Gareth's raw `MirrorDic.txt`.
+   - The relays (BCM 23/24, active-low) must be switched on at boot. They're believed to power the LEDs and the wall touchscreen.
+   - The same Pi drives the **wall touchscreen**: the PWA in a Chromium kiosk, planned as browse and cast only. The cast geofence lets a cast through when there's no location, so the kiosk can cast.
+   - The June 2026 Pi 3 listener in `pi/` is history, not the basis.
 
 Nothing records casts in the database: the old `board_state` table was never used and was dropped in db/24. **Casting is open to guests by design** (decided 10 Sep 2026), with the geofence kept as the gate.
 
@@ -502,7 +504,7 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 - **Duplication worth consolidating before the next board feature:**
   - three nearest-hold functions (`nearestHold`, `ccNearestHold`, `calNearest`);
   - five near-identical confirm modals;
-  - the anon key and URL in `state.js` and the Pi listener;
+  - the anon key and URL in `state.js` and (once rebuilt) the Pi listener;
   - the icon geometry in five places (`icon.svg`, `make_icons.py`, the poster, and the legacy `index.html`/`404.html`).
 
 ## 14. Rebrand checklist (the "Project Board" name and the logo)
