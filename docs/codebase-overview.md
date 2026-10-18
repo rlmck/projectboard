@@ -9,7 +9,7 @@
 - **Security findings:** `docs/security-findings.md`. It's **local only and never committed**, because the repo is public. If you don't have it, you're not on Ross's laptop; ask before touching RLS, grants, casting or sign-up.
 - **Also local only, on Ross's laptop:** `docs/changelog.md` (the feature-by-feature history that used to fill CLAUDE.md), `docs/project-notes.md` (hardware, the Pi, the original DTB system, the Circuits Phase 2 spec) and `db/README.md` (the index of every DB script).
 
-> **Nickname accounts went live on 18 Oct 2026** (`pb-v108`, db/30 applied, the Edge Function deployed). Sections 2, 5, 6, 8, 12 and 15 describe them. The 7 existing accounts were moved across (placeholder email, new passphrase, Google data removed) by the local `db/30_go_live.py`; a pre-switch backup is in `Documents\ProjectBoard-archive\pre-db30-backup-2026-10-18\`. `db/30_rollback.sql` restores the schema. Still to do: CAPTCHA isn't enforced until the Turnstile secret is pasted into Supabase. The investigation behind it is `auth_audit.md` (repo root, local).
+> **Nickname accounts went live on 18 Oct 2026** (`pb-v108`, db/30 applied, the Edge Function deployed). Sections 2, 5, 6, 8, 12 and 15 describe them. The 7 existing accounts were moved across (placeholder email, new passphrase, Google data removed) by the local `db/30_go_live.py`; a pre-switch backup is in `Documents\ProjectBoard-archive\pre-db30-backup-2026-10-18\`. `db/30_rollback.sql` restores the schema. CAPTCHA (Turnstile) is on and the Google provider is off (18 Oct 2026). The investigation behind it is `auth_audit.md` (repo root, local).
 
 ---
 
@@ -382,7 +382,7 @@ Behind the scenes: `signUp({ email: 'u-<16 base32>@users.invalid', password, opt
 | Service | What's configured | Notes |
 |---|---|---|
 | Cloudflare | Worker `projectboard` (git-connected, build `bash build.sh`, deploy `npx wrangler deploy`, non-production branch builds on); custom domain `symmetryboard.co.uk`; Registrar; Web Analytics (cookieless, auto-injected, so the CSP must allow its beacon); Email Routing `hello@symmetryboard.co.uk` → Ross's Gmail; `www` → apex redirect (done 10 Sep 2026) | ⬜ **turn on SSL/TLS → Edge Certificates → Always Use HTTPS**: `http://symmetryboard.co.uk` still serves the site over plain HTTP (no service worker, no geolocation) |
-| Supabase | Project `uqirowyfqwiceyjznosl` (London): DB, Auth (nickname + passphrase on the Email provider with placeholder addresses, confirmation off, CAPTCHA via Turnstile), Storage `board`, Realtime, the Edge Function `admin-reset-passphrase` | ✅ db/30 + function live 18 Oct 2026; ⬜ CAPTCHA (paste the Turnstile secret), turn the Google provider off |
+| Supabase | Project `uqirowyfqwiceyjznosl` (London): DB, Auth (nickname + passphrase on the Email provider with placeholder addresses, confirmation off, CAPTCHA via Turnstile), Storage `board`, Realtime, the Edge Function `admin-reset-passphrase` | ✅ db/30 + function live, CAPTCHA on, Google provider off (18 Oct 2026). Keep the Email provider on: the placeholder addresses run on it |
 | Cloudflare Turnstile | Widget for the sign-in / sign-up robot check; site key `0x4AAAAAAFaUU-JF4RC7asVt` (public, in `account.js`); the secret key is only in Supabase | ✅ widget created 18 Oct 2026 |
 | Google Cloud | The old Google sign-in OAuth client: **retired** with nickname accounts | ⬜ delete the client (plan.md step 16) |
 | GitHub | Public repo `rlmck/projectboard`; Pages source = `legacy` / root | never delete `legacy`, never make the repo private, **never rename the repo** |
