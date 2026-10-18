@@ -62,7 +62,7 @@
     <img class="welcome-icon" src="icon.svg" alt="" />
     <h1 class="welcome-title" id="welcome-title">Project<span> Board</span></h1>
     <p class="welcome-pitch" id="welcome-pitch">The Hangout's symmetry board: browse problems, light them up, tick your sends.</p>
-    <p class="welcome-pitch" id="welcome-moved" hidden>Install it from this page, then delete the old icon from your home screen. Your account, ticks and favourites are safe — just sign in again.</p>
+    <p class="welcome-pitch" id="welcome-moved" hidden>Install it from this page, then delete the old icon from your home screen. Accounts now use a nickname instead of an email, so you’ll need to create a new account.</p>
 
     <!-- Android: the browser's own install prompt, with a manual fallback -->
     <div class="welcome-panel" data-panel="android" hidden>
@@ -342,29 +342,71 @@
   </div>
 </section>
 
-<!-- ══ AUTH VIEW ══════════════════════════════════════════════════════ -->
+<!-- ══ AUTH VIEW ══════════════════════════════════════════════════════
+     Nickname + passphrase accounts (db/30, account.js). Three steps in one card:
+       signin       nickname + passphrase + robot check
+       signup       step 1: pick a nickname (live check, Suggest one)
+       signup-save  step 2: save the generated passphrase, then Create account
+     No email anywhere: Supabase gets a placeholder address the app makes up.
+     One form, so Enter submits and password managers see the fields. -->
 <section id="view-auth" class="view">
   <main class="centered">
-    <div class="shell-card">
+    <form class="shell-card auth-card" id="auth-form" novalidate>
       <div class="shell-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
       </div>
       <div class="shell-title" id="auth-title">Sign in</div>
-      <div class="shell-sub">Accounts let you set problems and track your sends. Browsing and casting work without one.</div>
-      <button class="btn-block btn-google" id="auth-google">
-        <svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-        Continue with Google
-      </button>
-      <div class="auth-divider"><span>or</span></div>
-      <input class="fld" id="auth-email" type="email" placeholder="Email" autocomplete="email" />
-      <input class="fld" id="auth-password" type="password" placeholder="Password" autocomplete="current-password" />
-      <!-- Shown in sign-in mode only, and only once PASSWORD_RESET_ENABLED is on (account.js) -->
-      <div class="auth-forgot" id="auth-forgot" hidden><a id="auth-forgot-link" role="button" tabindex="0">Forgot password?</a></div>
-      <div class="auth-error" id="auth-error"></div>
-      <button class="btn-block btn-primary" id="auth-submit">Sign in</button>
-      <div class="auth-toggle"><span id="auth-toggle-text">New here?</span> <a id="auth-toggle-link">Create an account</a></div>
-      <button class="btn-block btn-ghost" id="auth-back">Back to problems</button>
-    </div>
+      <div class="shell-sub" id="auth-sub">Accounts let you set problems and track your sends. Browsing and casting work without one.</div>
+
+      <!-- Sign in -->
+      <div class="auth-step" id="auth-step-signin">
+        <input class="fld" id="signin-nick" type="text" placeholder="Nickname" maxlength="20"
+               autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" />
+        <div class="fld-wrap">
+          <input class="fld" id="signin-pass" type="password" placeholder="Passphrase (four words)"
+                 autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" />
+          <button class="fld-show" id="signin-show" type="button" aria-pressed="false">Show</button>
+        </div>
+        <p class="auth-note">Lost your passphrase? Ask a member of staff: they can give you a new one.</p>
+      </div>
+
+      <!-- Sign up, step 1: the nickname -->
+      <div class="auth-step" id="auth-step-nick" hidden>
+        <p class="auth-rule"><b>Use a nickname, not your real name.</b> Don’t use your email, phone number or social media name.</p>
+        <div class="nick-row">
+          <input class="fld" id="signup-nick" type="text" placeholder="Nickname" maxlength="20"
+                 autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" />
+          <button class="btn-ghost nick-suggest" id="signup-suggest" type="button">Suggest one</button>
+        </div>
+        <div class="nick-check" id="signup-nick-check" aria-live="polite"></div>
+        <p class="auth-note">3 to 20 letters, numbers, _ or -. If you set a problem, your nickname is shown on it.</p>
+        <p class="auth-note">By creating an account you agree to use a nickname, not your real name. <a class="link" href="privacy.html">Privacy</a></p>
+      </div>
+
+      <!-- Sign up, step 2: save the passphrase -->
+      <div class="auth-step" id="auth-step-save" hidden>
+        <!-- For the phone's password manager: it can offer to save the pair. -->
+        <input class="sr-only" id="signup-user-field" type="text" autocomplete="username" tabindex="-1" aria-hidden="true" readonly />
+        <input class="sr-only" id="signup-pass-field" type="password" autocomplete="new-password" tabindex="-1" aria-hidden="true" readonly />
+        <p class="auth-note">Your nickname: <b id="signup-nick-show"></b></p>
+        <div class="pass-card">
+          <div class="pass-words" id="signup-pass-show"></div>
+          <button class="btn-ghost pass-copy" id="signup-copy" type="button">Copy</button>
+        </div>
+        <p class="pass-warn">This is your passphrase. Write it down or save it somewhere safe now: it won’t be shown again. <b>If you lose your passphrase and no admin can reset it, your account is gone.</b></p>
+        <label class="check-row">
+          <input type="checkbox" id="signup-saved" />
+          <span>I’ve saved my passphrase somewhere safe</span>
+        </label>
+      </div>
+
+      <!-- Cloudflare Turnstile (the robot check) for sign-in and step 2 -->
+      <div class="auth-captcha" id="auth-captcha"></div>
+      <div class="auth-error" id="auth-error" aria-live="polite"></div>
+      <button class="btn-block btn-primary" id="auth-submit" type="submit">Sign in</button>
+      <div class="auth-toggle"><span id="auth-toggle-text">New here?</span> <a id="auth-toggle-link" role="button" tabindex="0">Create an account</a></div>
+      <button class="btn-block btn-ghost" id="auth-back" type="button">Back to problems</button>
+    </form>
   </main>
 </section>
 
@@ -627,37 +669,85 @@
   </div>
 </div>
 
-<!-- ══ DISPLAY NAME MODAL (first sign-in + edit) ══════════════════════ -->
+<!-- ══ CHANGE NICKNAME MODAL (Profile) ════════════════════════════════ -->
 <div class="modal-overlay" id="name-modal">
-  <div class="modal" role="dialog" aria-modal="true" aria-label="Choose a display name">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Change nickname">
     <div class="modal-header">
-      <div class="modal-title" id="name-modal-title">Choose a display name</div>
+      <div class="modal-title">Change nickname</div>
     </div>
     <div class="name-body">
-      <p class="shell-sub" style="margin:0 0 12px">This is the name shown on problems you set and on the leaderboard. It must be unique — you can change it later.</p>
-      <input class="fld" id="name-input" type="text" placeholder="Display name" maxlength="32" autocomplete="off" />
+      <p class="shell-sub" style="margin:0 0 12px">Use a nickname, not your real name. It’s shown on problems you set, and on Ranks if you’ve turned that on. 3 to 20 letters, numbers, _ or -.</p>
+      <input class="fld" id="name-input" type="text" placeholder="Nickname" maxlength="20" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" />
+      <div class="nick-check" id="name-check" aria-live="polite"></div>
       <div class="auth-error" id="name-error"></div>
       <div class="modal-actions">
-        <button class="btn-block btn-ghost" id="name-cancel" hidden>Cancel</button>
+        <button class="btn-block btn-ghost" id="name-cancel">Cancel</button>
         <button class="btn-block btn-primary" id="name-save">Save</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ══ NEW PASSWORD MODAL (after following a password-reset email link) ═ -->
-<div class="modal-overlay" id="password-modal">
-  <div class="modal" role="dialog" aria-modal="true" aria-label="Set a new password">
+<!-- ══ DELETE MY ACCOUNT MODAL (Profile) ══════════════════════════════ -->
+<div class="modal-overlay" id="account-delete-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Delete my account">
     <div class="modal-header">
-      <div class="modal-title">Set a new password</div>
+      <div class="modal-title">Delete your account?</div>
     </div>
     <div class="name-body">
-      <p class="shell-sub" style="margin:0 0 12px">You followed a password-reset link, so you're signed in. Choose a new password for next time.</p>
-      <input class="fld" id="password-input" type="password" placeholder="New password" autocomplete="new-password" />
-      <div class="auth-error" id="password-error"></div>
+      <p class="shell-sub" style="margin:0 0 10px">This deletes your account, your ticks, your favourites and your points, straight away. It can’t be undone.</p>
+      <p class="shell-sub" style="margin:0 0 16px"><b>Problems and circuits you set stay on the board, with your nickname</b>, so other climbers can keep climbing them.</p>
+      <div class="auth-error" id="account-delete-error"></div>
       <div class="modal-actions">
-        <button class="btn-block btn-ghost" id="password-cancel">Later</button>
-        <button class="btn-block btn-primary" id="password-save">Save</button>
+        <button class="btn-block btn-ghost" id="account-delete-cancel">Cancel</button>
+        <button class="btn-block btn-danger" id="account-delete-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ RENAME USER MODAL (admins) ═════════════════════════════════════ -->
+<div class="modal-overlay" id="user-rename-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Rename user">
+    <div class="modal-header">
+      <div class="modal-title">Rename <span id="user-rename-name"></span></div>
+    </div>
+    <div class="name-body">
+      <input class="fld" id="user-rename-input" type="text" placeholder="New nickname" maxlength="20" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" />
+      <div class="nick-check" id="user-rename-check" aria-live="polite"></div>
+      <div class="auth-error" id="user-rename-error"></div>
+      <div class="modal-actions">
+        <button class="btn-block btn-ghost" id="user-rename-cancel">Cancel</button>
+        <button class="btn-block btn-primary" id="user-rename-save">Rename</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ NEW PASSPHRASE MODAL (admins) ══════════════════════════════════
+     Two stages: confirm, then the new passphrase, shown once. -->
+<div class="modal-overlay" id="user-reset-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="New passphrase">
+    <div class="modal-header">
+      <div class="modal-title" id="user-reset-title">New passphrase?</div>
+    </div>
+    <div class="name-body">
+      <div id="user-reset-ask">
+        <p class="shell-sub" style="margin:0 0 16px">Give <b id="user-reset-name"></b> a new passphrase? Their old one stops working, and they’re signed out on every device. Only do this when you’re sure it’s them: check their recent activity with them first.</p>
+        <div class="auth-error" id="user-reset-error"></div>
+        <div class="modal-actions">
+          <button class="btn-block btn-ghost" id="user-reset-cancel">Cancel</button>
+          <button class="btn-block btn-primary" id="user-reset-confirm">Generate</button>
+        </div>
+      </div>
+      <div id="user-reset-done" hidden>
+        <div class="pass-card">
+          <div class="pass-words" id="user-reset-pass"></div>
+          <button class="btn-ghost pass-copy" id="user-reset-copy" type="button">Copy</button>
+        </div>
+        <p class="pass-warn"><b>Read it to them now. It won’t be shown again.</b> They sign in with their nickname and this passphrase.</p>
+        <p class="shell-sub" id="user-reset-note" style="margin:0 0 12px" hidden></p>
+        <button class="btn-block btn-primary" id="user-reset-close">Done</button>
       </div>
     </div>
   </div>
@@ -670,7 +760,7 @@
       <div class="modal-title">Delete user?</div>
     </div>
     <div class="name-body">
-      <p class="shell-sub" style="margin:0 0 16px">Permanently delete <b id="user-delete-name"></b>? This removes their account and sign-in. Problems they set are kept — the setter is just cleared. This can’t be undone.</p>
+      <p class="shell-sub" style="margin:0 0 16px">Permanently delete <b id="user-delete-name"></b>? This removes their account, ticks and favourites. Problems and circuits they set stay on the board with their nickname. This can’t be undone.</p>
       <div class="auth-error" id="user-delete-error"></div>
       <div class="modal-actions">
         <button class="btn-block btn-ghost" id="user-delete-cancel">Cancel</button>

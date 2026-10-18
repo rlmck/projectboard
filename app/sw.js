@@ -20,7 +20,7 @@
 // Bump CACHE on EVERY deploy that changes app code or data (CLAUDE.md): the new
 // worker's precache is then one consistent version, and old caches are cleared.
 
-const CACHE = 'pb-v107';
+const CACHE = 'pb-v108';
 // The app shell is precached as './' only (Cloudflare 307s /index.html -> /; the
 // navigate branch below keeps the shell under './'). precache() makes any other
 // redirected entry, such as privacy.html, safe to serve offline.
@@ -47,7 +47,8 @@ const ASSETS = [
   './board-fallback.jpg',
   './hold_map.json',
   './hold_shapes.json',
-  './mirror_map.json'
+  './mirror_map.json',
+  './eff_large_wordlist.json'   // the passphrase words (sign-up), see tools/make_wordlist.py
 ];
 
 const NAV_TIMEOUT = 5000;     // ms the network gets to answer a page before the cache does

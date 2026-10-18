@@ -223,8 +223,7 @@
   function openInfo() {
     const p = currentProblem;
     if (!p) return;
-    const comment = String(p.comment || '').trim();
-    const showComment = comment && !/^no comments?\.?$/i.test(comment);
+    // No comments section: comments are switched off (db/30, plan.md D4).
     const stars = Math.max(0, Math.min(3, Number(p.stars) || 0));
     document.getElementById('info-title').textContent = 'Problem info';   // the circuit sheet shares this modal
 
@@ -236,10 +235,6 @@
       <div class="info-row">
         <div class="info-label">Rating</div>
         <div class="info-value">${starsHtml(stars)} &nbsp;${stars}/3</div>
-      </div>
-      <div class="info-row">
-        <div class="info-label">Comments</div>
-        <div class="info-value">${showComment ? escHtml(comment) : 'No comments yet.'}</div>
       </div>
     `;
     document.getElementById('info-modal').classList.add('show');
@@ -500,15 +495,17 @@
     }
   }
 
-  // ── Load the id -> username map (so setters show the live display name) ───────
+  // ── Load the id -> nickname map (so setters show the live nickname) ───────────
   // The saved copy is applied first, synchronously, so setters already show their
   // names when the saved lists render (boot calls this before loadProblems).
+  // profiles isn't readable by others any more (db/30): setter_names() returns the
+  // nicknames of accounts that set a problem or circuit, and nobody else's.
   async function loadProfileNames() {
     if (!Object.keys(profileNames).length) {
       const saved = savedList('names');
       if (saved) profileNames = saved.rows;
     }
-    const { data, error } = await sb.from('profiles').select('id, username');
+    const { data, error } = await sb.rpc('setter_names');
     if (error) { console.warn('profile names load failed', error); return; }
     profileNames = Object.fromEntries((data || []).map(r => [r.id, r.username]));
     saveList('names', profileNames);

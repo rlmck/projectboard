@@ -4,8 +4,7 @@
 - turn on Cloudflare **Always Use HTTPS** (plain `http://` still serves the site);
 - print the poster;
 - swap your own icons (C2 steps 4–5);
-- set up email sending (see `docs/codebase-overview.md` section 12, "Email setup");
-- if not already done, check Google sign-in on symmetryboard.co.uk itself, including from an iPhone home-screen install.
+- ~~set up email sending~~ and ~~check Google sign-in~~: **retired 18 Oct 2026**. Accounts became nickname + passphrase with no email and no Google (see `plan.md` and `docs/codebase-overview.md` section 6). The Google items below are history.
 
 The `www` redirect and removing github.io from Supabase were done on 10 Sep 2026.
 
@@ -227,6 +226,6 @@ The old URL **keeps being served by GitHub Pages permanently**, but from an orph
 - ✅ **`trace_holds.html` on the public host:** resolved on 10 Sep 2026. It was dropped from the `build.sh` allowlist and is run locally (`python -m http.server` in the repo root, then open `/tools/trace_holds.html`; it moved to `tools/` on 11 Sep 2026). The `build.sh` allowlist is now 28 files: `trace_holds.html` out, the vendored `supabase-js-2.116.0.js` in.
 
 ## Pre-launch gaps (not part of this plan; separate tasks)
-- **"Forgot password" and email confirmation:** the app side is built (10 Sep 2026) but switched off until custom SMTP is live. Supabase's built-in email only delivers to project team members. Setup steps: `docs/codebase-overview.md` section 12, "Email setup".
+- ~~**"Forgot password" and email confirmation**~~: retired 18 Oct 2026 with nickname accounts (no email). A lost passphrase is reset by an admin.
 - The **geofence centre** is still unverified on-site.
 - The manifest's `"orientation": "portrait"` locks the installed Android app to portrait, which stops the landscape auto-fullscreen on detail views from ever triggering there.

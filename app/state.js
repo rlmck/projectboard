@@ -60,7 +60,7 @@
   const BOARD_BUCKET = 'board';         // Supabase Storage bucket holding the uploaded board image
   let session = null;    // Supabase auth session (null = guest)
   let authReady = false; // true once the session AND (if signed in) the profile are known — route guards wait for it
-  let profile = null;    // { id, username, is_admin } for the signed-in user
+  let profile = null;    // { id, username, is_admin, is_public } for the signed-in user
   let profileNames = {}; // account id -> current username (for live setter names)
   let myTicks = new Set();         // problem_ids ticked in ANY orientation (the ✓ flag + "Total ticks")
   let myTicksNormal = new Set();   // problem_ids sent in the normal orientation
@@ -73,7 +73,9 @@
   let circuitFavesOnly = false;   // circuit list filter: only favourited circuits
   let circuitLoopOnly = false;    // circuit list filter: only looping circuits
   let circuitExcludeDone = false; // circuit list filter: inert until Phase 2 completion logging exists
-  let authMode = 'signin'; // 'signin' | 'signup' for the #auth form
+  let authMode = 'signin'; // the #auth step: 'signin' | 'signup' (pick a nickname) | 'signup-save' (save the passphrase)
+  let signupNick = '';     // sign-up: the nickname from step 1, held until the account is created
+  let signupPass = '';     // sign-up: the generated passphrase. Memory only; cleared on leaving step 2
 
   // ── Create-a-problem state ───────────────────────────────────────────────────
   let createRoles = {};        // hold id -> 'start' | 'int' | 'finish'

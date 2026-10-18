@@ -531,6 +531,19 @@
   document.getElementById('user-admin-modal').addEventListener('click', e => {
     if (e.target.id === 'user-admin-modal') closeAdminChange();
   });
+  document.getElementById('user-rename-cancel').addEventListener('click', closeUserRename);
+  document.getElementById('user-rename-save').addEventListener('click', doUserRename);
+  document.getElementById('user-rename-input').addEventListener('keydown', e => { if (e.key === 'Enter') doUserRename(); });
+  document.getElementById('user-rename-modal').addEventListener('click', e => {
+    if (e.target.id === 'user-rename-modal') closeUserRename();
+  });
+  // The new-passphrase sheet closes only from its buttons (or Escape): a stray tap
+  // on the overlay mustn't hide a passphrase that's shown once.
+  document.getElementById('user-reset-cancel').addEventListener('click', closeUserReset);
+  document.getElementById('user-reset-confirm').addEventListener('click', doUserReset);
+  document.getElementById('user-reset-close').addEventListener('click', closeUserReset);
+  document.getElementById('user-reset-copy').addEventListener('click', e =>
+    copyText(document.getElementById('user-reset-pass').textContent, document.getElementById('user-reset-pass'), e.currentTarget));
 
   // Leaderboard (#leaderboard): force a refresh from the RPC.
   document.getElementById('leaderboard-refresh').addEventListener('click', () => {
@@ -544,23 +557,33 @@
   document.getElementById('info-modal').addEventListener('click', e => {
     if (e.target.id === 'info-modal') closeInfo();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closePasswordModal(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closeNameModal(); closeAccountDelete(); closeUserRename(); closeUserReset(); } });
 
-  // Auth view actions
+  // Auth view (#auth): sign in, and sign-up's two steps, in one form (account.js).
+  document.getElementById('auth-form').addEventListener('submit', authSubmit);
   document.getElementById('auth-back').addEventListener('click', () => { location.hash = '#list'; });
-  document.getElementById('auth-google').addEventListener('click', authGoogle);
-  document.getElementById('auth-submit').addEventListener('click', authEmail);
-  document.getElementById('auth-password').addEventListener('keydown', e => { if (e.key === 'Enter') authEmail(); });
-  document.getElementById('auth-toggle-link').addEventListener('click', () => setAuthMode(authMode === 'signup' ? 'signin' : 'signup'));
-  const forgotLink = document.getElementById('auth-forgot-link');
-  forgotLink.addEventListener('click', authForgot);
-  forgotLink.addEventListener('keydown', e => { if (e.key === 'Enter') authForgot(); });
-  document.getElementById('password-save').addEventListener('click', savePassword);
-  document.getElementById('password-cancel').addEventListener('click', closePasswordModal);
-  document.getElementById('password-input').addEventListener('keydown', e => { if (e.key === 'Enter') savePassword(); });
+  const authToggleLink = document.getElementById('auth-toggle-link');
+  authToggleLink.addEventListener('click', authToggle);
+  authToggleLink.addEventListener('keydown', e => { if (e.key === 'Enter') authToggle(); });
+  document.getElementById('signin-show').addEventListener('click', toggleShowPass);
+  document.getElementById('signup-suggest').addEventListener('click', suggestNickname);
+  getNickChecker('signup', 'signup-nick', 'signup-nick-check');   // the live check as you type
+  document.getElementById('signup-copy').addEventListener('click', e =>
+    copyText(signupPass, document.getElementById('signup-pass-show'), e.currentTarget));
+  document.getElementById('signup-saved').addEventListener('change', updateAuthSubmit);
+
+  // Profile: change nickname, delete my account
   document.getElementById('name-save').addEventListener('click', saveDisplayName);
   document.getElementById('name-cancel').addEventListener('click', closeNameModal);
   document.getElementById('name-input').addEventListener('keydown', e => { if (e.key === 'Enter') saveDisplayName(); });
+  document.getElementById('name-modal').addEventListener('click', e => {
+    if (e.target.id === 'name-modal') closeNameModal();
+  });
+  document.getElementById('account-delete-cancel').addEventListener('click', closeAccountDelete);
+  document.getElementById('account-delete-confirm').addEventListener('click', doDeleteAccount);
+  document.getElementById('account-delete-modal').addEventListener('click', e => {
+    if (e.target.id === 'account-delete-modal') closeAccountDelete();
+  });
 
   // True while the user has in-progress create-form state that a hard reload
   // would silently discard (tapped holds + typed name/grade live only in memory).
@@ -568,6 +591,8 @@
   // zoom, the selection and the undo history, so it waits too.
   function hasUnsavedWork() {
     if (currentView === 'outlines' && olDirty()) return true;
+    // Sign-up step 2: a reload would swap the passphrase being saved for a new one.
+    if (currentView === 'auth' && authMode === 'signup-save') return true;
     if (currentView === 'create') {
       if (Object.keys(createRoles).length) return true;
       if (createGrade) return true;
@@ -609,7 +634,7 @@
   // the bundled fallback image just to replace it.
   loadBoardConfig().then(() => { applyBoardImage(); loadHoldMap(); loadMirrorMap(); });
   loadHoldShapes();     // bundled hold outlines for the problem shape overlay
-  initAuth();      // restore session, wire auth state, handle Google redirect
+  initAuth();      // restore the session and wire auth state
 
   // Splash: let the entrance finish (the timeline is in styles.css), then fade
   // out and remove from the DOM. With reduced motion there's no sequence to

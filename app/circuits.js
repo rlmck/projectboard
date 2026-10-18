@@ -295,7 +295,7 @@
     if (!c) return;
     const n = circuitSeq(c).length;
     const starts = Math.min(c.start_count || 1, n);
-    const comment = String(c.comment || '').trim();
+    // No comments section: comments are switched off (db/30, plan.md D4).
     document.getElementById('info-title').textContent = 'Circuit info';
     document.getElementById('info-body').innerHTML = `
       <div class="info-row">
@@ -310,10 +310,6 @@
       <div class="info-row">
         <div class="info-label">Play preview</div>
         <div class="info-value">Lights four holds at a time and moves up the route one hold per step${c.loops ? ', looping until you stop it' : ''}. Set how long each step lasts with the speed slider.</div>
-      </div>
-      <div class="info-row">
-        <div class="info-label">Comments</div>
-        <div class="info-value">${comment ? escHtml(comment) : 'No comments yet.'}</div>
       </div>
     `;
     document.getElementById('info-modal').classList.add('show');

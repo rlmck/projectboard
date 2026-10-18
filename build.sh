@@ -66,6 +66,9 @@ FILES=(
   mirror_map.json
   hold_shapes.json
 
+  # passphrase wordlist for sign-up (EFF large wordlist, CC BY; tools/make_wordlist.py)
+  eff_large_wordlist.json
+
   # board graphic
   ProjectBoard.png
   board-fallback.jpg

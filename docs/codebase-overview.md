@@ -9,6 +9,8 @@
 - **Security findings:** `docs/security-findings.md`. It's **local only and never committed**, because the repo is public. If you don't have it, you're not on Ross's laptop; ask before touching RLS, grants, casting or sign-up.
 - **Also local only, on Ross's laptop:** `docs/changelog.md` (the feature-by-feature history that used to fill CLAUDE.md), `docs/project-notes.md` (hardware, the Pi, the original DTB system, the Circuits Phase 2 spec) and `db/README.md` (the index of every DB script).
 
+> **Nickname accounts (built 18 Oct 2026, `pb-v108`): NOT LIVE until Ross works through `plan.md` §7.** Sections 2, 5, 6, 8, 12 and 15 below describe the new design. Until `db/30_nickname_accounts.sql` is applied, the live database still has the db/26–29 state (Google + email, public `profiles`), and `db/30_rollback.sql` restores exactly that. The investigation behind it is `auth_audit.md` (repo root, local).
+
 ---
 
 ## 1. What it is
@@ -29,7 +31,7 @@ A PWA for the symmetry board at The Hangout, Portland (near Weymouth, UK). The b
  phone (PWA) ──static files──▶ Cloudflare Workers (static assets, built from main/dev)
      │
      ├──REST / Auth / Storage──▶ Supabase (project uqirowyfqwiceyjznosl, London)
-     │                             Postgres + RLS · Auth (Google, email) · Storage bucket "board"
+     │                             Postgres + RLS · Auth (nickname + passphrase) · Storage · one Edge Function
      │
      └──Realtime broadcast────▶ channel board:HangoutPortland, event cast_problem
                                      │
@@ -41,9 +43,10 @@ A PWA for the symmetry board at The Hangout, Portland (near Weymouth, UK). The b
  rlmck.github.io/projectboard ── GitHub Pages ◀── legacy branch (moved page + tombstone SW)
 ```
 
-There is **no server code**:
+There is **almost no server code**:
 - The front end is static files.
 - Every privileged action is gated in Postgres, by RLS and by `SECURITY DEFINER` functions that check `is_admin()`.
+- **One exception:** the Supabase Edge Function `admin-reset-passphrase` (`supabase/functions/`, deployed by hand with the Supabase CLI, never by `build.sh`). Setting another account's password needs the service-role key, which must never reach the browser, so it lives only there (section 6).
 - The Pi is a plain Realtime subscriber that uses the public anon key.
 
 ## 3. Repository map
@@ -123,11 +126,11 @@ These are plain `<script>` tags, not ES modules. There's no build step and no fr
 | `state.js` | Supabase client + cast channel; grade ladders (`GRADE_ORDER`, `SPORT_GRADE_ORDER`, `gradeRank`, `fontGrade`); **all shared mutable state** (`allProblems`, `session`, `profile`, `HOLD_MAP`, `myTicks*`, filters, create/circuit state, leaderboard cache) |
 | `core.js` | Escaping, toast, name/setter/search helpers, hold order + role classification, dot and shape overlays, `boardPct` hit-testing, fullscreen controller, **routing** (`parseHash`, `setView`, `router`, `goBack`) |
 | `problems.js` | Problem list/filters/cards, detail, swipe, info modal, **geofence + `castByName`**, board data loaders (`loadBoardConfig`, `loadHoldMap`, `loadMirrorMap`, `loadHoldShapes`), problem loading, tick button, admin delete + grade edit |
-| `admin.js` | `#admin` hub: user list/detail, promote/demote, delete user (RPCs) |
-| `account.js` | Ticks, favourites, filter-pill sync, **auth** (`initAuth`, email, Google, sign-out), display-name modal, profile page |
+| `admin.js` | `#admin` hub: user list (nickname search) and detail (recent ticks), rename, new passphrase (the Edge Function), promote/demote, delete user |
+| `account.js` | Ticks, favourites, filter-pill sync, **auth** (nickname + passphrase sign-in and two-step sign-up, Turnstile, the nickname checker, passphrase generation, sign-out), change-nickname modal, profile page (Ranks switch, delete my account) |
 | `authoring.js` | Create/edit problem (tap-to-cycle roles, finish zone, invert-on-save), the hold-outline editor (`#outlines`: pinch/pan, drag/add/delete points, nudge, roundness, preview, draft, **Publish**), circuit helpers |
 | `circuits.js` | Circuits list, detail (swipe, info sheet), the Play-preview engine, create, delete |
-| `leaderboard.js` | `#leaderboard` view; `userPoints()` for the profile |
+| `leaderboard.js` | `#leaderboard` view (opted-in climbers, plus a hidden climber's private note); `userPoints()` for the profile |
 | `app.js` | **Loaded last.** All event wiring, service-worker registration and update handling, the install flow (welcome overlay + banner), and **boot** |
 
 ### 4.2 Boot sequence (the Boot block in `app.js`, before the install code)
@@ -272,33 +275,39 @@ RLS is **enabled on every public table**, and it does the row-level gating. Sinc
 
 | Table | Purpose | Key facts |
 |---|---|---|
-| `problems` | boulder problems | `name` UNIQUE; holds stored inverted; `setter_id` → auth.users **ON DELETE SET NULL** (routes outlive accounts); `setter` text snapshot; `is_benchmark`, `stars` (both admin-curated, guarded by trigger), `comment`, `feet_mode` (always `any`) |
+| `problems` | boulder problems | `name` UNIQUE; holds stored inverted; `setter_id` → auth.users **ON DELETE SET NULL** (routes outlive accounts); `setter` text snapshot (refreshed to the current nickname when the account is deleted, db/30); `is_benchmark`, `stars` (both admin-curated, guarded by trigger), `comment` (**off** since db/30: nobody writes it through the API, the app doesn't show it), `feet_mode` (always `any`) |
 | `ticks` | sends | UNIQUE `(user_id, problem_id, mirrored)`; cascades from both user and problem; `attempts/notes/grade_vote/stars` unused |
 | `likes` | problem favourites | PK `(user_id, problem_id)`; own rows only |
-| `circuits` | circuits | `name` UNIQUE; `hold_sequence text[]` in natural order; `start_count`, `loops`; `setter_id` SET NULL |
+| `circuits` | circuits | `name` UNIQUE; `hold_sequence text[]` in natural order; `start_count`, `loops`; `setter_id` SET NULL; `setter` snapshot (db/30: filled only when the owner's account is deleted); `comment` off, as for problems |
 | `circuit_likes` | circuit favourites | own rows only |
 | `circuit_logs` | Phase-2 completion logs | own insert/select; empty |
-| `profiles` | public identity | `id` = auth.users.id (CASCADE); `username` unique (also case-insensitively); `is_admin` (guests can't read it) |
+| `profiles` | identity | `id` = auth.users.id (CASCADE); `username` = the nickname: 3–20 `[A-Za-z0-9_-]`, unique ignoring case, checked by `nickname_check()`; `is_admin`; `is_public` (the Ranks opt-in, default off). **Readable only by its owner** (db/30) |
+| `admin_actions` | admin log (db/30) | `admin_id`, `target_id`, `action` (`reset_passphrase`, `rename`, `delete_user`, `make_admin`, `remove_admin`); no FKs, ids only; admins read, nobody writes through the API |
+| `nickname_blocklist` | reserved + offensive words (db/30) | `word`, `kind`, `match_by` (`part` / `contains`); no API access at all |
 | `board_config` | the live board | one row, `wall='HangoutPortland'`: `hold_map`, `mirror_map`, `hold_shapes`, `image_path`, `updated_at`; public read, admin write |
 | `holds`, `sessions` | vestigial | empty (`board_state` was dropped in db/24) |
 
 **Policies in short:**
-- Public read on `problems`, `circuits`, `profiles`, `board_config`.
+- Public read on `problems`, `circuits`, `board_config`. **`profiles` is own-row only** (db/30): setter names come from `setter_names()`, Ranks from `leaderboard()`, the admin list from `admin_list_users()`.
 - Own-rows-only on `ticks`, `likes`, `circuit_likes`, `sessions`.
 - Insert-as-yourself (`setter_id = auth.uid()`) on `problems` and `circuits`.
 - Owner-or-admin update/delete on `circuits`.
 - `problems` DELETE (db/25, db/27): **an admin, or the owner while it isn't a benchmark and nobody else has ticked it**. The owner's own ticks don't count.
 - `problems` UPDATE (db/27): an admin, or the owner while it isn't a benchmark. The app only offers editing to admins. Once benchmarks became the only source of points, an owner re-grading their own benchmark through the API would have been a direct route to points, hence the lock. The trigger `problems_guard_curation` (db/25) pins `is_benchmark`, `stars` and the `setter` snapshot for non-admin API callers, on INSERT as well. It's SECURITY INVOKER and keys off `current_user in ('anon','authenticated')`, so the SQL editor and service role are never restricted.
 - **Row checks (db/29, 19 Sep 2026).** RLS decides *who* may write a row; these CHECKs decide *what* may go in, so a scripted API call can't bypass the app's rules. `problems`: `grade` in the Font ladder or `Project`; `name` 1–60 characters after trimming; `finish_hold` and every start and intermediate a `holdN` id, with 1–2 starts. `circuits`: `grade` in the sport ladder; the same name rule; `hold_sequence` all `holdN` ids and longer than `start_count` (which db/14 already limits to 1–2). A violation returns `23514`. "At least one intermediate" is *not* enforced, because one live problem has none. The tick/like/circuit-like policies all carry `WITH CHECK (user_id = auth.uid())`. **When a ladder changes in `state.js`, change the CHECK too**, or saves of the new grade fail.
-- `profiles`: users can INSERT only `id`+`username` and UPDATE only `username`, via column grants. **`is_admin` can't be written through the API.** Guests can SELECT only `id, username, created_at`.
+- `profiles` (db/30): no INSERT through the API (only the sign-up trigger creates profiles); users UPDATE only `username` and `is_public` on their own row, via column grants. **`is_admin` can't be written through the API.** Guests can't read it at all. Every new or changed `username` goes through the `profiles_nickname_guard` trigger (→ `nickname_check()`), plus the `profiles_nickname_format` CHECK.
+- `auth.users` (db/30): the `auth_users_placeholder_only` trigger refuses any email that isn't `u-<16 base32>@users.invalid` and any phone number, so no real contact detail can be stored, even through `updateUser`.
 
 **Functions** (all `SECURITY DEFINER`, all with `search_path = public` pinned):
 - `is_admin()`
-- `admin_list_users()`: returns `id, username, email, is_admin, created_at, route_count, tick_count`. `tick_count` was missing until db/12 step 2 was re-applied on 10 Sep 2026. The app caches it for 60 s (`ADMIN_USERS_TTL`), and the reload button shows on the user list and on each user's screen. Deleting a user also invalidates the leaderboard.
+- `admin_list_users()`: returns `id, username, is_admin, is_public, created_at, route_count, tick_count` (no email since db/30). The app caches it for 60 s (`ADMIN_USERS_TTL`), and the reload button shows on the user list and on each user's screen. Deleting a user also invalidates the leaderboard.
+- `admin_user_activity(target)`, `admin_rename_user(target, new_name)` (admins may use reserved words), `delete_my_account()` (refuses only the last admin), `admin_revoke_sessions(target)` (**service_role only**: the Edge Function), all db/30.
+- `nickname_problem(n)` (anon + authenticated, the app's live check) over `nickname_check(n, ignore_id)` (no API access): returns NULL or one of `length`, `chars`, `contact`, `reserved`, `offensive`, `taken`. The same codes come back as the message of a refused save (SQLSTATE `23514`).
+- `login_email(nick)` (anon): the placeholder email for a nickname, never a real one. `setter_names()` (anon): nicknames of accounts that set something.
 - `problem_has_other_ticks(pid)`: signed-in users only. It has to be SECURITY DEFINER because ticks RLS hides other users' rows. The db/25 delete policy uses it, and so does the app before it offers Delete to an owner.
-- `admin_delete_user(target)`: refuses yourself and other admins.
-- `admin_set_admin(target, make_admin)`: refuses changing your own flag.
-- `leaderboard()`: granted to `anon`.
+- `admin_delete_user(target)`: refuses yourself and other admins; writes the nickname onto their problems and circuits first (db/30).
+- `admin_set_admin(target, make_admin)`: refuses changing your own flag. Both log to `admin_actions`.
+- `leaderboard()`: granted to `anon`. Since db/30 it lists only climbers with `is_public`, ranked among themselves (`listed = true`), plus the caller's own row if they're hidden (`listed = false`, `rank` NULL).
 - `handle_new_user()`: the sign-up trigger (section 6).
 - `problems_guard_curation()`: a trigger function; this one is *not* a definer function.
 
@@ -313,39 +322,38 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 ## 6. Auth
 
-**Sign-in methods:**
-- **Google OAuth.** `signInWithOAuth({provider:'google', options:{redirectTo: location.origin + location.pathname}})`.
-  - supabase-js v2's default **implicit** flow returns tokens in the URL hash.
-  - `initAuth()` calls `getSession()` to consume them, then `redirectRoute('#list')` if the tokens are still in the hash.
-  - `parseHash()` never routes to an `access_token`/`error=` hash.
-  - A failed sign-in comes back with `error`/`error_description` in the hash (or the query string). `takeOAuthError()` in `account.js` strips it and shows "Sign-in failed: …". It used to be dropped silently.
-- **Email + password.** Email confirmation is **off**, and there's **no forgot-password flow** (section 12).
+**Nickname + passphrase accounts** (db/30, `pb-v108`; plan.md). Under-18s use the app, so an account holds no personal data: no email, no real name, no photo. **Google sign-in, email sign-up and password reset are gone.**
 
-**Profile creation:**
-- A Postgres trigger on `auth.users` (`on_auth_user_created` → `handle_new_user()`, db/26) inserts the `profiles` row at sign-up. The username is a placeholder: `climber-` + the first 8 hex characters of the user id. The insert is `on conflict do nothing`, so a clash can never block a sign-up; it just leaves the user with no profile.
-- `loadProfile()` → `needsDisplayName()` treats **a placeholder name or a missing profile** as "no name chosen". Either way it opens the **mandatory** name modal: no Cancel, no Escape, and the field starts empty. `saveDisplayName()` then UPDATEs the placeholder row, or INSERTs if there was none, and refuses names that look like placeholders.
-- The placeholder pattern is duplicated in `PLACEHOLDER_NAME` in `account.js` and in db/26. **Keep the two in sync**; the comment beside `PLACEHOLDER_NAME` quotes the trigger's expression so the two can be compared without the SQL.
-- Before 10 Sep 2026 the trigger used the email prefix. That blocked sign-up whenever two prefixes matched, and made part of the email address the user's public name.
-- Users rename themselves from Profile.
+**Sign-up** (`#auth`, two steps, `account.js`):
+1. **Pick a nickname.** "Use a nickname, not your real name." A **Suggest one** button (`NICK_ADJ` × `NICK_ANIMAL`, e.g. `Crimpy_Otter`; every pair was checked to pass the rules) and a live check (`nickChecker()` → `nickname_problem()`).
+2. **Save your passphrase.** Four words from the EFF large wordlist (`app/eff_large_wordlist.json`, from `tools/make_wordlist.py`), picked with `crypto.getRandomValues` and rejection sampling (≈51.7 bits), joined with hyphens. Shown once, with Copy, the warning *"If you lose your passphrase and no admin can reset it, your account is gone"*, an "I've saved it" checkbox and Turnstile. **The account is only created on Create account.**
+
+Behind the scenes: `signUp({ email: 'u-<16 base32>@users.invalid', password, options: { data: { nickname }, captchaToken } })`. `.invalid` never receives mail, and nothing is ever sent: **Confirm email, reset and every security notification must stay off** (Supabase only checks an address's format at sign-up; its domain/MX checks run only when mail is sent; audit §10a). The trigger `handle_new_user()` (db/30) validates the nickname and inserts the profile with **no** `on conflict`, so a clash fails the whole sign-up; Supabase shows only "Database error saving new user", so the app asks `nickname_problem()` why.
+
+**Keep in sync:** the placeholder pattern lives in `account.js` (`PLACEHOLDER_DOMAIN`, `placeholderEmail()`) and in db/30 (`auth_users_placeholder_only()`, `login_email()`).
+
+**Sign-in:** nickname + passphrase + Turnstile. `login_email(nick)` → `signInWithPassword`. The passphrase is normalised first (lower case, spaces/underscores → hyphens). An unknown nickname and a wrong passphrase get the same message.
+
+**Turnstile** (Cloudflare's robot check): Supabase's CAPTCHA protection covers **password sign-in as well as sign-up** (GoTrue only skips it for refresh, PKCE and id-token grants), so both forms carry it. The site key is in `account.js` (`TURNSTILE_SITE_KEY`, public); the secret key lives only in the Supabase dashboard. The script loads only when `#auth` opens. CSP: `script-src` and `frame-src https://challenges.cloudflare.com`.
+
+**Lost passphrase:** an admin opens the account (`#admin/user/<id>`), checks its **recent activity** with the person, and taps **Generate new passphrase**. That calls the Edge Function `admin-reset-passphrase` with the admin's own session; it checks the caller is an admin, sets four new words, deletes the account's sessions (signed out everywhere; an access token already issued lasts up to an hour), logs `reset_passphrase`, and returns the words **once**. The service-role key exists only inside the function.
+
+**Profile:** the nickname (Change nickname, the same rules), **Show me on Ranks** (default off; covers Ranks only, setter names are always shown), points, ticks, hardest send, Sign out, and **Delete my account and all my data** (`delete_my_account()`: account, ticks, favourites and points go; problems and circuits stay with the nickname; the last admin is refused).
 
 **Session state:**
-- `session`, `profile`, `authReady` (in `state.js`).
-- `onAuthStateChange` reloads the profile, ticks and faves on every event, and clears them on sign-out (with the cached admin user list, which holds every member's email).
-- **Sign-out is this device only** (`signOut({ scope: 'local' })`, Ross, 19 Sep 2026); the account's other devices stay signed in. supabase-js drops the local session even if the server call fails, so `doSignOut` judges success by whether a session is left.
+- `session`, `profile` (`id, username, is_admin, is_public`), `authReady` (in `state.js`); `authMode`, `signupNick`, `signupPass` for the sign-up steps (the passphrase is memory-only and cleared on leaving step 2; a service-worker update waits while step 2 is open).
+- `onAuthStateChange` reloads the profile, ticks and faves on every event, and clears them on sign-out (with the cached admin member list).
+- **Sign-out is this device only** (`signOut({ scope: 'local' })`, Ross, 19 Sep 2026). supabase-js drops the local session even if the server call fails, so `doSignOut` judges success by whether a session is left.
 - **An admin write that RLS refuses** (grade edit, edit holds: no error, 0 rows) shows an error and calls `recheckAdmin()`, which re-reads the profile so a demoted admin loses the admin controls without a reload.
-- The `onAuthStateChange` callback itself is synchronous (since `pb-v102`): it ignores `INITIAL_SESSION` (initAuth has just loaded everything) and `TOKEN_REFRESHED` (only the token changes), and hands every other event to `onAuthChanged()` on a `setTimeout(…, 0)`, because supabase-js holds its auth lock while the callback runs. A cold start makes one read each of `profiles`, `ticks`, `likes`, `circuit_likes`.
+- The `onAuthStateChange` callback itself is synchronous (since `pb-v102`): it ignores `INITIAL_SESSION` and `TOKEN_REFRESHED`, and hands every other event to `onAuthChanged()` on a `setTimeout(…, 0)`, because supabase-js holds its auth lock while the callback runs.
 
 **The admin model:**
-- Admin = `profiles.is_admin`.
-- Set it in the Supabase dashboard, or in-app through `admin_set_admin`. **Nobody can promote themselves.**
-- Promotion takes effect server-side immediately; the promoted user sees the admin UI on their next load.
+- Admin = `profiles.is_admin`. Set it in the SQL editor, or in-app through `admin_set_admin`. **Nobody can promote themselves.**
+- Admins can rename anyone (`admin_rename_user`, reserved words allowed), reset a passphrase (the Edge Function), promote/demote and delete members. **Every one of those is logged** in `admin_actions` (`select * from admin_actions order by created_at desc;` in the SQL editor; there's no in-app viewer).
 - Admins bypass the geofence. **On staging too, which shares the live DB.**
+- "Add user" in the Supabase dashboard no longer works (it sends no nickname). Accounts only come from the app.
 
-**Supabase Auth config** (dashboard):
-- Site URL `https://symmetryboard.co.uk`.
-- Redirect URLs: `https://symmetryboard.co.uk/**`, the staging URL, and `http://127.0.0.1:8123/**` (added 12 Sep 2026 for the desktop trace tool, which was retired on 16 Sep 2026; the entry can be removed). github.io was removed on 10 Sep 2026.
-
-**Google Auth Platform:** app name "Project Board", published. Brand verification is optional.
+**Supabase Auth config** (dashboard, plan.md manual step 7): Email provider on, **Confirm email off**, minimum password length 15, Google off, sign-ups on, anonymous sign-ins off, manual linking off, security notifications off, CAPTCHA on (Turnstile secret). Site URL `https://symmetryboard.co.uk`.
 
 ## 7. Service worker and caching (`sw.js`, `CACHE = 'pb-v78'` on 11 Sep 2026)
 
@@ -374,8 +382,9 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 | Service | What's configured | Notes |
 |---|---|---|
 | Cloudflare | Worker `projectboard` (git-connected, build `bash build.sh`, deploy `npx wrangler deploy`, non-production branch builds on); custom domain `symmetryboard.co.uk`; Registrar; Web Analytics (cookieless, auto-injected, so the CSP must allow its beacon); Email Routing `hello@symmetryboard.co.uk` → Ross's Gmail; `www` → apex redirect (done 10 Sep 2026) | ⬜ **turn on SSL/TLS → Edge Certificates → Always Use HTTPS**: `http://symmetryboard.co.uk` still serves the site over plain HTTP (no service worker, no geolocation) |
-| Supabase | Project `uqirowyfqwiceyjznosl` (London): DB, Auth (Google + email, confirmation off, built-in SMTP), Storage `board`, Realtime | ⬜ custom SMTP + "Confirm email" (section 12, Email setup) |
-| Google Cloud | Google Auth Platform OAuth client (used by Supabase), branding "Project Board", privacy URL, published | ⬜ check sign-in on production, including from an iPhone home-screen install |
+| Supabase | Project `uqirowyfqwiceyjznosl` (London): DB, Auth (nickname + passphrase on the Email provider with placeholder addresses, confirmation off, CAPTCHA via Turnstile), Storage `board`, Realtime, the Edge Function `admin-reset-passphrase` | ⬜ plan.md §7 (apply db/30, deploy the function, Auth settings, CAPTCHA) |
+| Cloudflare Turnstile | Widget for the sign-in / sign-up robot check; site key `0x4AAAAAAFaUU-JF4RC7asVt` (public, in `account.js`); the secret key is only in Supabase | ✅ widget created 18 Oct 2026 |
+| Google Cloud | The old Google sign-in OAuth client: **retired** with nickname accounts | ⬜ delete the client (plan.md step 16) |
 | GitHub | Public repo `rlmck/projectboard`; Pages source = `legacy` / root | never delete `legacy`, never make the repo private, **never rename the repo** |
 
 ## 9. Build and deploy pipeline
@@ -447,26 +456,8 @@ All of these live in `tools/`. The Python scripts find their files relative to t
 
 ## 12. Known gaps (product, not bugs)
 
-- **Password reset and email confirmation are waiting on email setup.** Supabase's built-in mailer only delivers to project team members. The app side is built:
-  - a "Forgot password?" link on sign-in, hidden while `PASSWORD_RESET_ENABLED = false` in `account.js`;
-  - the "Set a new password" modal a reset link opens (always on);
-  - `emailRedirectTo` on sign-up, so a confirmation link returns to the right site.
-
-  Until the steps below are done, a user who forgets their password has to email Ross.
-
-  **Email setup** (Ross does steps 1–4 and 6 in the dashboards; the code steps are 5 and 7):
-  1. **Resend** (resend.com, free tier: 3,000 emails/month): add the domain `symmetryboard.co.uk`, region **EU (Ireland)**. Let Resend configure Cloudflare DNS automatically, or add the records it lists: DKIM on `resend._domainkey`, SPF + MX on the `send` subdomain. They don't touch the apex MX that Email Routing uses. Wait for "Verified".
-  2. **Resend → API Keys:** create a key with *sending access* for that domain only.
-  3. **Supabase → Authentication → Emails → SMTP Settings → enable custom SMTP:**
-     - sender `noreply@symmetryboard.co.uk`, name `Project Board`;
-     - host `smtp.resend.com`, port `465`;
-     - username `resend`, password = the API key.
-  4. **Supabase → Authentication → Emails → Templates:** brand the "Reset password" and "Confirm signup" emails (subject and body say Project Board).
-  5. **Code:** set `PASSWORD_RESET_ENABLED = true`, add Resend (EU) to the processors in `privacy.html`, bump `CACHE`. Then on staging, request a reset for a non-team address and complete it.
-  6. **Supabase → Authentication → Sign In / Providers → Email → turn on "Confirm email".** Existing accounts are already marked confirmed.
-  7. Merge to `main`, and update this section.
-
-  Dashboard menu names drift; the settings themselves are standard.
+- **No self-service passphrase change or recovery.** By design (no email): a lost passphrase needs an admin (section 6), and if no admin can help, the account is gone. Email setup (Resend/SMTP) is no longer planned.
+- **The gym's name and contact are placeholders** in `privacy.html` (`[GYM NAME]`, `[GYM CONTACT]`).
 - **The geofence centre is unverified on-site.** If it's off by more than the radius, members standing at the wall get "Casting only works at the gym". Admins would never notice, because they bypass the gate. Verify it with a non-admin phone at the board.
 - **`manifest.json` has `"orientation": "portrait"`.** On Android installs this locks portrait, so the landscape auto-fullscreen on detail views never fires there; the expand button still works. iOS ignores the manifest orientation.
 - **Circuits Phase 2 isn't built:** casting, countdown, `circuit_logs`, and wiring up the circuits "Exclude Done" pill. Phase 3 (circuit leaderboards) isn't built either.
@@ -554,7 +545,9 @@ The domain `symmetryboard.co.uk` doesn't contain the brand, so **a name change d
   - `42501` = RLS denial. It's raised when a *new* row fails a policy check (an insert, an upsert, or an update's `WITH CHECK`). An update or delete whose `USING` clause hides the row raises nothing and just returns 0 rows.
 - **Admin status is cached** in `profile` for the session; a demoted admin keeps the admin UI until they reload.
 - **Supabase auth storage is keyed by project ref** (`sb-uqirowyfqwiceyjznosl-auth-token`), not by domain. Moving origin logs everyone out, which is why the move needed "sign in again".
-- **The staging URL contains the Worker name.** Renaming the Worker breaks staging Google sign-in until Supabase's redirect list is updated.
+- **The staging URL contains the Worker name.** Renaming the Worker breaks the Edge Function's CORS for staging (its `ALLOWED_ORIGINS`) and Turnstile there (the widget's hostname list).
+- **Nickname errors arrive as SQLSTATE `23514` with the bare code** (`taken`, `offensive`…) as the message; `nickSaveError()` maps them. A sign-up refused by the database only says "Database error saving new user".
+- **`sb.functions` is a getter** in supabase-js: it returns a new client each time, so stub `Object.getPrototypeOf(sb.functions).invoke` when testing, not `sb.functions.invoke`.
 - **Pages builds:** a Pages source change through the GitHub API doesn't trigger a build; request one explicitly.
 - **`docs/` is gitignored** except `rollout-plan.md` and this file. Anything else you write there stays local.
 

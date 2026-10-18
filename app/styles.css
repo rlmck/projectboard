@@ -834,6 +834,13 @@
     }
     .lb-points { font-weight: 800; }
     .lb-sends { font-size: 12px; color: var(--text-muted); }
+    /* Ranks is opt-in: a hidden climber's own points, seen only by them */
+    .lb-private {
+      font-size: 13px; line-height: 1.5; color: var(--text-muted);
+      background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius);
+      padding: 12px 14px; margin: 0 0 10px;
+    }
+    .lb-private b { color: var(--text); }
 
     .detail-comment {
       background: var(--surface);
@@ -895,20 +902,57 @@
     }
     .info-value { font-size: 15px; line-height: 1.5; color: var(--text); }
 
-    /* ── Auth ─────────────────────────────────────────────────────────── */
-    .btn-google {
-      display: flex; align-items: center; justify-content: center; gap: 10px;
-      background: #fff; color: #1f1f1f; font-weight: 700; border: none;
-    }
-    .btn-google svg { width: 18px; height: 18px; flex: none; }
-    .auth-divider { display: flex; align-items: center; gap: 10px; margin: 16px 0 6px; color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
-    .auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+    /* ── Auth (nickname + passphrase: sign in, sign-up steps 1 and 2) ── */
+    .auth-card { max-width: 380px; }
+    .auth-step[hidden], .auth-captcha[hidden] { display: none; }
     .auth-toggle { font-size: 13px; color: var(--text-muted); margin: 14px 0 2px; }
     .auth-toggle a { color: var(--accent-hover); font-weight: 700; text-decoration: none; cursor: pointer; }
     .auth-error { color: #f87171; font-size: 13px; min-height: 18px; margin: 6px 0 2px; }
-    #name-modal .name-body, #password-modal .name-body { padding: 4px 18px 20px; }
-    .auth-forgot { text-align: right; font-size: 13px; margin: -2px 0 0; }
-    .auth-forgot a { color: var(--accent-hover); font-weight: 600; cursor: pointer; }
+    #name-modal .name-body { padding: 4px 18px 20px; }
+    .auth-note { font-size: 13px; color: var(--text-muted); line-height: 1.5; margin: 2px 0 10px; text-align: left; }
+    .auth-note b { color: var(--text); }
+    .auth-rule {
+      font-size: 13px; line-height: 1.5; text-align: left; margin: 0 0 12px;
+      color: var(--text); background: var(--surface2); border: 1px solid var(--border);
+      border-left: 3px solid var(--accent); border-radius: 8px; padding: 10px 12px;
+    }
+    /* Passphrase field with a Show/Hide button inside it */
+    .fld-wrap { position: relative; }
+    .fld-wrap .fld { padding-right: 64px; }
+    .fld-show {
+      position: absolute; right: 6px; top: 6px; height: 32px; padding: 0 10px;
+      background: transparent; border: none; color: var(--accent-hover);
+      font-size: 13px; font-weight: 700; cursor: pointer; touch-action: manipulation;
+    }
+    /* Nickname field + "Suggest one" */
+    .nick-row { display: flex; gap: 8px; align-items: flex-start; }
+    .nick-row .fld { flex: 1; min-width: 0; }
+    .nick-suggest { flex: none; margin-top: 0; height: 46px; padding: 0 12px; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .nick-check { font-size: 13px; color: #f87171; min-height: 18px; margin: -4px 0 6px; text-align: left; }
+    .nick-check.ok { color: #4ade80; }
+    /* The passphrase, shown once: big, selectable, with Copy */
+    .pass-card {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--surface2); border: 1px solid var(--accent); border-radius: 12px;
+      padding: 14px; margin: 4px 0 12px;
+    }
+    .pass-words {
+      flex: 1; min-width: 0; text-align: left;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 19px; font-weight: 700; line-height: 1.35; word-break: break-word;
+      user-select: text; -webkit-user-select: text;
+    }
+    .pass-copy { flex: none; margin-top: 0; padding: 9px 12px; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .pass-warn { font-size: 13px; line-height: 1.5; color: var(--gold); text-align: left; margin: 0 0 12px; }
+    .pass-warn b { color: var(--gold); }
+    .check-row { display: flex; align-items: flex-start; gap: 10px; text-align: left; font-size: 14px; font-weight: 600; margin: 0 0 12px; cursor: pointer; }
+    .check-row input { width: 20px; height: 20px; flex: none; margin: 1px 0 0; accent-color: var(--accent); }
+    .auth-captcha { min-height: 65px; margin: 4px 0; }
+    /* Visually hidden, still there for password managers */
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+    }
 
     /* ── Board graphic ───────────────────────────────────────────────── */
     .board-graphic { width: 100%; display: block; }
@@ -1561,6 +1605,8 @@
     .profile-edit { width: 32px; height: 32px; color: var(--text-muted); }
     .profile-edit svg { width: 16px; height: 16px; }
     .profile-edit:active { color: var(--text); }
+    /* "Delete my account and all my data", at the foot of Profile */
+    .profile-delete { margin-top: 28px; color: #f87171; border-color: rgba(248,113,113,0.4); }
 
     /* ── Admin hub (#admin) ──────────────────────────────────────────── */
     #admin-content { padding: 12px 16px 24px; max-width: 520px; margin: 0 auto; }
@@ -1626,10 +1672,22 @@
       font-size: 1.15rem; font-weight: 800;
       display: flex; align-items: center; justify-content: center; gap: 8px;
     }
-    .user-detail-email { color: var(--text-muted); font-size: 13px; margin-top: 4px; }
     .user-detail-actions { margin-top: 24px; }
     .user-detail-actions .btn-block + .btn-block { margin-top: 10px; }
     .user-detail-note { color: var(--text-muted); font-size: 13px; text-align: center; line-height: 1.5; margin-top: 12px; }
+    .user-badge.public { background: rgba(74,222,128,0.12); border-color: rgba(74,222,128,0.45); color: #86efac; }
+    .admin-search { margin-bottom: 12px; }
+    /* A user's recent ticks (#admin/user/<id>) */
+    .user-activity-label { margin: 18px 0 8px; }
+    .activity-list { display: flex; flex-direction: column; gap: 6px; }
+    .activity-row {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 12px; font-size: 14px;
+    }
+    .activity-name { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .activity-mirror { color: #60a5fa; font-size: 12px; font-weight: 700; }
+    .activity-date { flex: none; color: var(--text-muted); font-size: 12px; }
 
     /* ── Circuits ────────────────────────────────────────────────────── */
     /* List-card meta extras */

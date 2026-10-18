@@ -1,9 +1,12 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
 // state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file:
-// the public all-time points leaderboard (the leaderboard() RPC is the single source of
-// truth for the scoring formula — see db/27). Only benchmark problems score, so the
-// RPC lists only climbers with points, and "sends" counts benchmark sends.
+// the points leaderboard (the leaderboard() RPC is the single source of truth for the
+// scoring formula — see db/27). Only benchmark problems score, so the RPC lists only
+// climbers with points, and "sends" counts benchmark sends.
+// Ranks is opt-in (db/30): only climbers who turned on "Show me on Ranks" are listed
+// (listed = true). A signed-in climber who hasn't also gets their own row back
+// (listed = false, no rank), shown to them alone as a private note.
 
   // Fetch the ranking from the leaderboard() RPC and cache it. Cheap to call: it
   // no-ops once loaded unless forced (e.g. the reload button, or after a tick
@@ -18,11 +21,17 @@
     return { ok: true };
   }
 
+  // The signed-in user's own row, listed or not.
+  function myLeaderboardRow() {
+    if (!session) return null;
+    return leaderboard.find(r => String(r.user_id) === String(session.user.id)) || null;
+  }
+
   // The signed-in user's total points, read back from the cached ranking (so the
-  // profile and the leaderboard never disagree). null if not loaded / not present.
+  // profile and the leaderboard never disagree). null if signed out; 0 if no points.
   function userPoints() {
     if (!session) return null;
-    const row = leaderboard.find(r => String(r.user_id) === String(session.user.id));
+    const row = myLeaderboardRow();
     return row ? row.points : 0;
   }
 
@@ -51,9 +60,14 @@
       return;
     }
     if (!leaderboardLoaded) { el.innerHTML = `<div class="spinner"></div>`; return; }
-    if (!leaderboard.length) {
-      el.innerHTML = `<div class="state-msg"><div class="icon">🏆</div>No points yet — send a benchmark to get on the board.</div>`;
+    const listed = leaderboard.filter(r => r.listed);
+    const mine = myLeaderboardRow();
+    const note = mine && !mine.listed
+      ? `<p class="lb-private">You have <b>${mine.points} points</b> from ${mine.sends} send${mine.sends !== 1 ? 's' : ''}. Only you can see this. Turn on <b>Show me on Ranks</b> in your Profile to appear here.</p>`
+      : '';
+    if (!listed.length) {
+      el.innerHTML = note + `<div class="state-msg"><div class="icon">🏆</div>No one on Ranks yet. Send a benchmark, then turn on “Show me on Ranks” in your Profile.</div>`;
       return;
     }
-    el.innerHTML = `<div class="problem-list">${leaderboard.map(leaderboardRowHtml).join('')}</div>`;
+    el.innerHTML = note + `<div class="problem-list">${listed.map(leaderboardRowHtml).join('')}</div>`;
   }
