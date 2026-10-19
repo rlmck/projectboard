@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file: escape/toast/render helpers, hold + board-overlay helpers, and hash routing.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file: escape/toast/render helpers, hold + board-overlay helpers, and hash routing.
 
   // ── Escape helpers ───────────────────────────────────────────────────────────
   function escHtml(s) {
@@ -36,7 +36,7 @@
   // At start-up they show at once while the fresh copy loads (weak gym Wi-Fi), and
   // if the fetch fails they stay up with a note (offline, Supabase down). All of it
   // is public data, so nothing needs clearing on sign-out. { t, rows }.
-  const SAVED_KEYS = { problems: 'pb-saved-problems', circuits: 'pb-saved-circuits', names: 'pb-saved-names' };
+  const SAVED_KEYS = { problems: 'pb-saved-problems', circuits: 'pb-saved-circuits', names: 'pb-saved-names', challenges: 'pb-saved-challenges' };
   function saveList(kind, rows) {
     lsSet(SAVED_KEYS[kind], JSON.stringify({ t: Date.now(), rows }));
   }
@@ -788,8 +788,10 @@
     if (name !== 'create') closeCreateGrade();
     // The circuit Play preview only runs on the circuit detail view.
     if (name !== 'circuit-detail') stopCircuitPlay(false);
+    // The challenge clock only ticks on its own view (the attempt itself is kept).
+    if (name !== 'challenge') leaveChallenge();
 
-    ['list','detail','create','outlines','admin','auth','profile','circuits','circuit-detail','circuit-create','leaderboard'].forEach(v => {
+    ['list','detail','create','outlines','admin','auth','profile','circuits','circuit-detail','circuit-create','challenge','leaderboard'].forEach(v => {
       document.getElementById('view-' + v).classList.toggle('active', v === name);
     });
 
@@ -798,7 +800,7 @@
     document.getElementById('bottom-nav').style.display = (name === 'auth' || name === 'outlines') ? 'none' : 'flex';
 
     // Active nav highlight.
-    const navFor = { list: 'list', detail: 'list', create: 'list', outlines: 'profile', admin: 'profile', profile: 'profile', auth: 'profile', circuits: 'circuits', 'circuit-detail': 'circuits', 'circuit-create': 'circuits', leaderboard: 'leaderboard' }[name] || 'list';
+    const navFor = { list: 'list', detail: 'list', create: 'list', outlines: 'profile', admin: 'profile', profile: 'profile', auth: 'profile', circuits: 'circuits', 'circuit-detail': 'circuits', 'circuit-create': 'circuits', challenge: 'circuits', leaderboard: 'leaderboard' }[name] || 'list';
     document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.nav === navFor));
 
     const keep = name === 'list' ? listScroll : name === 'circuits' ? circuitsScroll : null;
@@ -869,6 +871,10 @@
         initCircuitCreate();
         setView('circuit-create');
         break;
+      case 'challenge':
+        // Open to guests (rules + a sign-in prompt); setView first so the clock's
+        // wake lock and body class are set up on a visible view.
+        setView('challenge'); renderChallenge(param); break;
       case 'leaderboard':
         setView('leaderboard');
         renderLeaderboard();                                  // spinner / cached rows
@@ -923,6 +929,10 @@
   function backParentHash() {
     const { route, param } = parseHash();
     if (route === 'circuit' || route === 'circuit-create') return '#circuits';
+    if (route === 'challenge') {
+      const ch = challengeById(param);
+      return ch ? '#circuit/' + encodeURIComponent(ch.circuit_id) : '#circuits';
+    }
     if (route === 'create' && param) return '#detail/' + encodeURIComponent(param);
     if (route === 'outlines' || (route === 'admin' && param)) return '#admin';
     if (route === 'admin') return '#profile';

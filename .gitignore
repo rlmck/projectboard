@@ -34,3 +34,6 @@ __pycache__/
 *.pyc
 tools/hold_map_drawing.json
 tools/mirror_map_gareth.json
+
+# Supabase CLI working files (local only)
+supabase/.temp/

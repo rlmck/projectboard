@@ -20,6 +20,14 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - Points only for benchmark climbs. **Done** (db/27, Sep 2026).
 - Pi-side code is rewritten from scratch for the Pi 4.
 - Commit and push are separate steps, each needing Ross's explicit confirmation (19 Oct 2026; replaces the old push-straight-to-live rule). The claude.ai chat commits to `main`.
+- **Pat Burner challenge** (19 Oct 2026), a timed competition on the existing "Pat Burner" circuit, timed on the phone (no LEDs, casting or Pi):
+  - 3 sets × 3 reps, each rep to failure (count-up clock, tap Fell), 30 s between reps, 5 min between sets, 10 s get-ready, Web Audio beeps.
+  - Score = total seconds held; ending early still saves and scores (a rep in progress counts up to that moment).
+  - Leaderboard = each user's best attempt, earlier attempt wins a tie, all-time, nickname only, opt-in through "Show me on Ranks". Compare up to 3 opted-in climbers rep by rep. No mirrored runs.
+  - Generic `challenges` table with the protocol as data; only the Pat Burner is seeded. A circuit used by a challenge is admin-only to edit and can't be deleted; attempts survive.
+  - Self-reported scores; admins can delete an attempt (logged). Reps capped at 1200 s; an attempt saved offline can be retried for 14 days.
+  - Old Symmetry results are not migrated: the board starts fresh.
+- The Supabase MCP server (read-only, this project only) may be used to check live schema and data; results never go into repo files, and migrations are still applied by Ross in the SQL editor (19 Oct 2026, CLAUDE.md Session rules).
 
 ## Workstreams (in priority order)
 1. PWA account rework: **done 18 Oct 2026.** Left: delete the local passphrase hand-out file once all 7 migrated accounts have signed in.
@@ -29,6 +37,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 5. Fresh Pi listener built to the contract, replacing the mock.
 
 ## Waiting on
+- Ross: apply `db/31_challenges.sql` (local `db/`) in the Supabase SQL editor, then work through the Pat Burner test checklist. Until then the app shows no challenge.
 - Pi 4 donation (handover)
 - On install day: photos of the green sockets in the box; identifying the 16-wire harness (two 8-way plugs).
 - An on-site check of the cast geofence centre (non-admin phone, by the board and at the far end of the gym).
@@ -38,6 +47,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - Wall-screen mode for the touchscreen kiosk: browse and cast only, "Get the app" QR, Ranks read-only, back to the list when idle (after the LEDs work).
 - Circuits Phase 2: the cast screen, `cast_circuit`/`stop` broadcasts, `circuit_logs`.
 - Problem name/setter editing (changes the cast key: see the contract's open questions).
+- ~~Pat Burner challenge~~ **built 19 Oct 2026** (`pb-v110`, db/31 waiting to be applied). Later, if wanted: more challenges (add a row to `challenges`), monthly boards, the metronome, casting the circuit at Start once Circuits Phase 2 exists.
 
 ## Open questions
 Details in `docs/cast-contract.md` → "Open questions".
@@ -51,5 +61,16 @@ Details in `docs/cast-contract.md` → "Open questions".
 
 ## Session log
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-10-19, Claude Code (Pat Burner challenge).**
+  - **Background:** looked at Ross's old Symmetry app (local, not in this repo) for how the Pat Burner competition worked.
+  - **Built:**
+    - local `db/31_challenges.sql` (`challenges`, `challenge_attempts`, the circuit lock, `challenge_leaderboard()`, `challenge_compare()`, `admin_delete_attempt()`, `admin_actions.subject_id`), checked in PGlite with 80 behaviour checks;
+    - `app/challenge.js` (a tenth script: the `#challenge` view, phone timer, saving with retry, Ranks tab, compare chart, admin delete);
+    - smaller changes in `core.js`, `state.js`, `circuits.js`, `authoring.js`, `account.js`, `leaderboard.js`, `app.js`, `index.html`, `styles.css`;
+    - `privacy.html` covers challenge attempts; SW `pb-v110`;
+    - CLAUDE.md (ten scripts; the read-only Supabase MCP rule) and the overview (§4.6a) updated.
+  - **Left:** Ross applies db/31 and runs the test checklist; then commit and push, each on confirmation.
+  - **New questions:** none.
 
 - **2026-10-19, Claude Code.** Investigated the cast flow end to end (PWA, Supabase, old Pi listener, Gareth's code). Created this file and `docs/cast-contract.md` (plus its `.gitignore` exception); added "Session rules" to CLAUDE.md and replaced working rule 2 (commit and push each need explicit confirmation). Left: answer the contract's open questions; Pi 4 handover. New questions: listed above.

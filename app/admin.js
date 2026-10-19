@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file: admin hub (#admin) - the hold outlines entry point + user management.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file: admin hub (#admin) - the hold outlines entry point + user management.
 
   // ── Admin hub (#admin) — hold outlines + user management ─────────────────────
   // Three sub-screens, all under the one #admin view, driven by the hash param:

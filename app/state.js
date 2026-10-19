@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file: Supabase client + channel, grade ladders, and all shared mutable state.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file: Supabase client + channel, grade ladders, and all shared mutable state.
 
   // ── Supabase client ──────────────────────────────────────────────────────────
   const { createClient } = supabase;
@@ -107,6 +107,15 @@
   let leaderboard = [];          // [{ rank, user_id, username, points, sends }] from the leaderboard() RPC
   let leaderboardLoaded = false;
   let leaderboardError = null;   // last load error (Ranks shows "Couldn’t load the leaderboard")
+  let ranksTab = 'points';       // which board Ranks shows: 'points', or a challenge id
+
+  // ── Challenges (db/31; challenge.js) ─────────────────────────────────────────
+  let allChallenges = [];        // active challenges: { id, circuit_id, name, protocol }
+  let challengesLoaded = false;
+  let challengeBoards = {};      // challenge id -> { rows, loaded, error } from challenge_leaderboard()
+  let challengeMine = {};        // challenge id -> { rows, loaded, error }: the signed-in user's own attempts
+  let challengeRun = null;       // the attempt in progress (also kept on the device, see challenge.js)
+  let compareSel = [];           // Ranks: user ids picked to compare (up to 3)
 
   const isTicked = id => myTicks.has(String(id));
   // "Fully done" = sent in BOTH the normal and mirrored orientation (the Exclude Done filter).

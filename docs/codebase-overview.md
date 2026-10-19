@@ -67,7 +67,7 @@ build.sh  wrangler.jsonc  CLAUDE.md  .gitignore  .gitattributes   (the repo root
 |---|---|---|
 | `app/index.html` | All markup: splash, welcome overlay, 11 view `<section>`s, 8 modals, nav, install banner, toast | yes |
 | `app/styles.css` | All styling (dark theme, `--accent: #ec4899`) | yes |
-| `app/state.js` … `app/app.js` | The nine app scripts (section 4) | yes |
+| `app/state.js` … `app/app.js` | The ten app scripts (section 4) | yes |
 | `app/sw.js`, `app/manifest.json` | Service worker, PWA manifest | yes |
 | `app/privacy.html` | Static privacy page; keep its claims true | yes |
 | `app/supabase-js-2.116.0.js` | **Vendored, pinned** `supabase-js` (npm `dist/umd/supabase.js`, verified against the registry hash). Loaded before `state.js`; defines the global `supabase` | yes (and precached) |
@@ -101,8 +101,8 @@ Local only (gitignored), on Ross's laptop:
 
 ## 4. Front end
 
-### 4.1 Nine classic scripts, one global scope
-Load order, set in `index.html`: **`state` → `core` → `problems` → `admin` → `account` → `authoring` → `circuits` → `leaderboard` → `app`**, after the vendored `supabase-js-2.116.0.js`.
+### 4.1 Ten classic scripts, one global scope
+Load order, set in `index.html`: **`state` → `core` → `problems` → `admin` → `account` → `authoring` → `circuits` → `challenge` → `leaderboard` → `app`**, after the vendored `supabase-js-2.116.0.js`.
 
 **Upgrading `supabase-js`:**
 1. Download the new version's `package/dist/umd/supabase.js` from the npm tarball, and check the tarball against the registry's `dist.integrity`.
@@ -112,12 +112,13 @@ Load order, set in `index.html`: **`state` → `core` → `problems` → `admin`
 Never go back to a floating CDN URL: the CSP also blocks it.
 
 These are plain `<script>` tags, not ES modules. There's no build step and no framework, and every top-level `let`/`const`/`function` is visible to every file. Consequences:
-- **A name may be declared only once across all nine files.** Check with `cd app && cat state.js core.js … app.js > ../all.js && node --check ../all.js` (then delete `all.js`).
+- **A name may be declared only once across all ten files.** Check with `cd app && cat state.js core.js … app.js > ../all.js && node --check ../all.js` (then delete `all.js`).
 - **Order matters for top-level code.** Function bodies can reference later files; top-level statements can't.
 - **Symbols don't always live where you'd expect.** Grep across all `.js` before adding one. Traps:
   - `isAdmin`, `circuitName`, `circuitSeq`, `canEditCircuit` and `circuitsTableMissing` are at the bottom of `authoring.js`.
   - `rpcMissing` (in `admin.js`) is also used by `leaderboard.js`.
   - `gradeTabButtons` (in `problems.js`) is used by circuits and authoring.
+  - `rankLabel` (in `leaderboard.js`) is also used by `challenge.js`; `challengeForCircuit` (in `challenge.js`) by `canEditCircuit` in `authoring.js`; `leaveChallenge` by `setView` in `core.js`.
 - **A new file goes in `app/` and in three places:** the `index.html` script order, the `build.sh` allowlist and the `sw.js` `ASSETS`.
 - **Don't convert to ES modules** without being asked. That's a working rule.
 
@@ -130,7 +131,8 @@ These are plain `<script>` tags, not ES modules. There's no build step and no fr
 | `account.js` | Ticks, favourites, filter-pill sync, **auth** (nickname + passphrase sign-in and two-step sign-up, Turnstile, the nickname checker, passphrase generation, sign-out), change-nickname modal, profile page (Ranks switch, delete my account) |
 | `authoring.js` | Create/edit problem (tap-to-cycle roles, finish zone, invert-on-save), the hold-outline editor (`#outlines`: pinch/pan, drag/add/delete points, nudge, roundness, preview, draft, **Publish**), circuit helpers |
 | `circuits.js` | Circuits list, detail (swipe, info sheet), the Play-preview engine, create, delete |
-| `leaderboard.js` | `#leaderboard` view (opted-in climbers, plus a hidden climber's private note); `userPoints()` for the profile |
+| `challenge.js` | Challenges (db/31, section 4.6a): loading, the circuit-detail link, the `#challenge` view (rules, the timed attempt, summary, save with retry, your best and history), and the challenge boards on Ranks (tabs, compare chart, admin delete) |
+| `leaderboard.js` | `#leaderboard` view: Points (opted-in climbers, plus a hidden climber's private note), or a challenge board picked with the tabs; `userPoints()` for the profile |
 | `app.js` | **Loaded last.** All event wiring, service-worker registration and update handling, the install flow (welcome overlay + banner), and **boot** |
 
 ### 4.2 Boot sequence (the Boot block in `app.js`, before the install code)
@@ -138,7 +140,7 @@ These are plain `<script>` tags, not ES modules. There's no build step and no fr
 2. Start these in parallel:
    - `loadProfileNames()` first: the id → username map behind live setter names (its saved copy applies synchronously, so the saved lists render with names).
    - `loadProblems()`: runs `router()` when data lands, so a cold `#detail/<id>` deep link renders.
-   - `loadCircuits()`
+   - `loadCircuits()`, then `loadChallenges()` (saved copy `pb-saved-challenges`; before db/31 is applied the table is missing and that's just "no challenges").
    - **Saved lists** (since `pb-v104`): every successful load of problems, circuits and setter names is saved on the device (`saveList`/`savedList` in `core.js`). At start-up the saved copy renders at once while the fresh one loads (weak Wi-Fi), and the fresh one replaces it in place: `loadProblems` then re-renders the detail rather than re-running `router()`, whose side effects the user would see. If the fetch fails, the saved copy stays and a note above the list says when it was saved (`#list-offline`, `#circuit-offline`); pull-to-refresh or the browser's `online` event fetches again. With nothing saved, offline still shows "Failed to load problems". Ticks and favourites aren't saved, so offline the ✓ flags and the Favourites pill are empty. `privacy.html` mentions the saved copy.
    - `loadBoardConfig()`, **then** `loadHoldMap()` + `loadMirrorMap()`. They run in sequence so the bundled fallbacks never overwrite the live map.
    - `loadHoldShapes()` and `measureBoardAspect()`.
@@ -158,7 +160,8 @@ Hash routing; `router()` switches on `parseHash()` (`route/param`).
 | `#outlines` | hold-outline editor (bottom nav hidden) | admin; the old `#calibrate` redirects here |
 | `#admin`, `#admin/users`, `#admin/user/<id>` | admin hub drill-down | admin |
 | `#circuits`, `#circuit/<id>`, `#circuit-create` | circuits | built to match the problem side: grade tabs (tap = single, hold = multi-select), pull-to-refresh, a pinned detail with swipe (`circuitTrail`), ⋮ menu (Delete: owner or admin; Information: everyone); create needs sign-in |
-| `#leaderboard` | ranks | public |
+| `#challenge/<id>` | a challenge (section 4.6a) | rules for everyone; Start needs sign-in; the bottom nav hides while an attempt runs |
+| `#leaderboard` | ranks | public; tabs: Points + one per active challenge (`ranksTab`) |
 | `#auth`, `#profile` | sign-in, profile | bottom nav hidden on `#auth` |
 
 **Route guards only bounce once `authReady` is true**, which `initAuth` sets after the session **and the profile** have loaded (since `pb-v92`; before, an admin route judged `is_admin` from a profile that hadn't arrived). Before that, `#create` lets a cold deep link through; the admin routes (`#outlines`, `#admin`) show nothing until auth is known, so a non-admin never sees them, and `initAuth` re-runs `router()` then. Signing out while on an admin screen routes away from it.
@@ -223,6 +226,17 @@ Positions are **percentages of the image**, so the overlay scales with it. The r
 - **Circuits have no completion logging yet.** That's Phase 2. The circuits "Exclude Done" pill is deliberately inert.
 - **Circuit Play preview:** a round play/stop button, "Move n of N" (plus the lap on a looping circuit), and a speed slider running Slow → Fast (the slider value is the step time flipped end to end; 0.2–3.0 s per move in 0.1 s steps, kept for the session). It lights a 4-hold window over the dimmed board. A swipe that starts on the panel is ignored, so dragging the slider never changes circuit.
 
+### 4.6a Challenges (db/31, `challenge.js`, since `pb-v110`)
+A **challenge** is a timed competition on a circuit; its rules are data (`challenges.protocol`). The only one is the **Pat Burner** on the "Pat Burner" circuit: 3 sets × 3 reps, each rep to failure, 30 s between reps, 5 min between sets, a 10 s get-ready. It doesn't use the LEDs, casting or the Pi.
+- **Where:** a link under the circuit's board (`fillCircuitChallenge`) opens `#challenge/<id>`: the rules, Start (signed in), your best and rank, unsaved attempts, your history (tap one for its reps), and a link to its board on Ranks.
+- **The attempt:** "Get ready" countdown → "Climb!" with the clock counting up and a huge **Fell** button → rest countdown → next rep. Beeps are generated with Web Audio (no files; the `AudioContext` is made on the first tap, and any tap in the view unlocks it again after a reload). A screen wake lock is held while it runs, and the bottom nav hides (`body.ch-running`). **End early** needs a second tap within 3 s; ending during a rep counts that rep so far. A rep stops itself at the 1200 s cap.
+- **Timing comes only from timestamps** (`chAdvance`): the attempt stores the phase and when it started, and catches up on every tick, on returning to the foreground, and on reopening the app. A countdown that ran out while the screen was off starts the next rep at the moment it ran out. The attempt is kept in localStorage (`pb-challenge-run`) the whole time, so a reload or a closed app picks it up. Only one attempt runs at a time; one older than 14 days is dropped.
+- **Saving:** Save moves the attempt into `pb-challenge-pending`, then inserts it. Success or `23505` (the phone-made id is already there) removes it; `23514`/`23503` (a broken rule, a retired challenge) drops it with a message; anything else (no signal) keeps it, with a "Try saving again" button. Pending attempts are retried at start-up, on sign-in and when the browser comes back online, but only for the account that made them.
+- **Server side:** the trigger works out `total_seconds` and `ended_early`, and checks the rep count against the protocol, the 14-day window and a finish no more than 5 min ahead; CHECKs cap each rep at 0–1200 s and require the time between start and finish to cover the time held (5 s slack). The phone can't send `total_seconds`, `ended_early` or `user_id` (column grants).
+- **Boards:** `challenge_leaderboard(cid)` = each climber's best attempt (higher total first; on a tie the earlier `completed_at`), opted-in climbers only (`is_public`), top 20, plus the caller's own row (ranked outside the top 20, or private if their switch is off). `challenge_compare(cid, uids)` = up to 3 opted-in climbers' best attempts rep by rep, drawn as an inline SVG line chart (no chart library). Both are callable by guests, like `leaderboard()`. Challenges never score points.
+- **Admin:** a delete button on each board row → `admin_delete_attempt(aid)`, logged in `admin_actions` (`delete_attempt`, `target_id` = the climber, `subject_id` = the attempt). Their next-best attempt takes its place.
+- **The circuit is locked:** while a challenge uses it, only admins can edit it (RLS) and nobody can delete it (`ON DELETE RESTRICT`); the app hides the owner's Delete (`canEditCircuit`) and explains a refused admin delete. A challenge with attempts can't be deleted either: retire it with `is_active = false`.
+
 ### 4.7 Casting
 `castByName(name, btn, mirror, stillShowing)` in `problems.js` is the only cast path.
 1. **Geofence** (`ensureCastLocation`; centre and radius in `GYM_GEOFENCE`). A nudge for honest users, not access control: it's deliberately lenient, so it never blocks someone at the wall because of a poor GPS fix, and admins bypass it. The exact rules are in the code.
@@ -281,8 +295,10 @@ RLS is **enabled on every public table**, and it does the row-level gating. Sinc
 | `circuits` | circuits | `name` UNIQUE; `hold_sequence text[]` in natural order; `start_count`, `loops`; `setter_id` SET NULL; `setter` snapshot (db/30: filled only when the owner's account is deleted); `comment` off, as for problems |
 | `circuit_likes` | circuit favourites | own rows only |
 | `circuit_logs` | Phase-2 completion logs | own insert/select; empty |
+| `challenges` | timed challenges on a circuit (db/31) | `circuit_id` → circuits **ON DELETE RESTRICT**; `name` UNIQUE; `protocol` jsonb (`sets`, `reps`, `rep_rest_s`, `set_rest_s`, `get_ready_s`, CHECKed); `is_active`; public read, no API writes. One row: the Pat Burner |
+| `challenge_attempts` | attempts (db/31) | phone-made `id`; `challenge_id` RESTRICT; `user_id` CASCADE; `started_at`, `completed_at`, `rep_seconds int[]`; `total_seconds` + `ended_early` set by the `challenge_attempts_guard` trigger. Own select + insert (insert only `id, challenge_id, started_at, completed_at, rep_seconds`); no update; delete only via `admin_delete_attempt()` |
 | `profiles` | identity | `id` = auth.users.id (CASCADE); `username` = the nickname: 3–20 `[A-Za-z0-9_-]`, unique ignoring case, checked by `nickname_check()`; `is_admin`; `is_public` (the Ranks opt-in, default off). **Readable only by its owner** (db/30) |
-| `admin_actions` | admin log (db/30) | `admin_id`, `target_id`, `action` (`reset_passphrase`, `rename`, `delete_user`, `make_admin`, `remove_admin`); no FKs, ids only; admins read, nobody writes through the API |
+| `admin_actions` | admin log (db/30) | `admin_id`, `target_id`, `subject_id` (db/31: the thing acted on, e.g. an attempt), `action` (`reset_passphrase`, `rename`, `delete_user`, `make_admin`, `remove_admin`, `delete_attempt`); no FKs, ids only; admins read, nobody writes through the API |
 | `nickname_blocklist` | reserved + offensive words (db/30) | `word`, `kind`, `match_by` (`part` / `contains`); no API access at all |
 | `board_config` | the live board | one row, `wall='HangoutPortland'`: `hold_map`, `mirror_map`, `hold_shapes`, `image_path`, `updated_at`; public read, admin write |
 | `holds`, `sessions` | vestigial | empty (`board_state` was dropped in db/24) |
@@ -307,6 +323,7 @@ RLS is **enabled on every public table**, and it does the row-level gating. Sinc
 - `problem_has_other_ticks(pid)`: signed-in users only. It has to be SECURITY DEFINER because ticks RLS hides other users' rows. The db/25 delete policy uses it, and so does the app before it offers Delete to an owner.
 - `admin_delete_user(target)`: refuses yourself and other admins; writes the nickname onto their problems and circuits first (db/30).
 - `admin_set_admin(target, make_admin)`: refuses changing your own flag. Both log to `admin_actions`.
+- `challenge_leaderboard(cid)`, `challenge_compare(cid, uids)` (anon + authenticated) and `admin_delete_attempt(aid)` (authenticated; checks `is_admin()`, logs): db/31, section 4.6a.
 - `leaderboard()`: granted to `anon`. Since db/30 it lists only climbers with `is_public`, ranked among themselves (`listed = true`), plus the caller's own row if they're hidden (`listed = false`, `rank` NULL).
 - `handle_new_user()`: the sign-up trigger (section 6).
 - `problems_guard_curation()`: a trigger function; this one is *not* a definer function.
@@ -459,7 +476,8 @@ All of these live in `tools/`. The Python scripts find their files relative to t
 - **No self-service passphrase change or recovery.** By design (no email): a lost passphrase needs an admin (section 6), and if no admin can help, the account is gone. Email setup (Resend/SMTP) is no longer planned.
 - **The geofence centre is unverified on-site.** If it's off by more than the radius, members standing at the wall get "Casting only works at the gym". Admins would never notice, because they bypass the gate. Verify it with a non-admin phone at the board.
 - **`manifest.json` has `"orientation": "portrait"`.** On Android installs this locks portrait, so the landscape auto-fullscreen on detail views never fires there; the expand button still works. iOS ignores the manifest orientation.
-- **Circuits Phase 2 isn't built:** casting, countdown, `circuit_logs`, and wiring up the circuits "Exclude Done" pill. Phase 3 (circuit leaderboards) isn't built either.
+- **Circuits Phase 2 isn't built:** casting, countdown, `circuit_logs`, and wiring up the circuits "Exclude Done" pill. Phase 3 (circuit leaderboards) isn't built either. The Pat Burner challenge (section 4.6a) is phone-timed and doesn't use any of it.
+- **Challenge scores are self-reported.** The database sets the total and range-checks the reps, but it can't know whether someone really held on; admins delete suspicious attempts (logged).
 - **Problem name/setter editing isn't built** (admins can edit holds and grade).
 - **No offline mode beyond the shell** (section 7).
 - **The Supabase plan tier** isn't recorded anywhere. If it's Free, the project pauses after 7 days without API activity (e.g. a gym closure), and Realtime is capped at 200 concurrent connections. Since `pb-v99` the app holds no socket (casts are REST), so only the Pi uses one.

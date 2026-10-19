@@ -555,6 +555,19 @@
   </div>
 </div>
 
+<!-- ══ CHALLENGE VIEW (a timed challenge on a circuit; challenge.js) ════ -->
+<section id="view-challenge" class="view">
+  <header class="topbar detail-bar">
+    <button class="icon-btn" id="challenge-back" aria-label="Back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
+    <div class="detail-bar-title" id="challenge-title">Challenge</div>
+  </header>
+  <main>
+    <div id="challenge-content"></div>
+  </main>
+</section>
+
 <!-- ══ ADMIN VIEW (admins — hub for board + user management) ═══════════ -->
 <section id="view-admin" class="view">
   <header class="topbar detail-bar">
@@ -580,6 +593,8 @@
     </button>
   </header>
   <main>
+    <!-- Points + one tab per active challenge (challenge.js renderRanksTabs) -->
+    <div class="filter-pills ranks-tabs" id="ranks-tabs" hidden></div>
     <div id="leaderboard-content"><div class="spinner"></div></div>
   </main>
 </section>
@@ -612,6 +627,34 @@
       <button class="modal-close" id="info-close" aria-label="Close">✕</button>
     </div>
     <div id="info-body"></div>
+  </div>
+</div>
+
+<!-- ══ CHALLENGE COMPARE (Ranks: up to 3 climbers, rep by rep) ═══════════ -->
+<div class="modal-overlay" id="compare-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Compare climbers">
+    <div class="modal-header">
+      <div class="modal-title">Compare</div>
+      <button class="modal-close" id="compare-close" aria-label="Close">✕</button>
+    </div>
+    <div id="compare-body"></div>
+  </div>
+</div>
+
+<!-- ══ DELETE A CHALLENGE ATTEMPT (admins; logged) ═══════════════════════ -->
+<div class="modal-overlay" id="attempt-delete-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Delete attempt">
+    <div class="modal-header">
+      <div class="modal-title">Delete this attempt?</div>
+    </div>
+    <div class="name-body">
+      <p class="shell-sub" style="margin:0 0 16px" id="attempt-delete-text"></p>
+      <div class="auth-error" id="attempt-delete-error"></div>
+      <div class="modal-actions">
+        <button class="btn-block btn-ghost" id="attempt-delete-cancel">Cancel</button>
+        <button class="btn-block btn-danger" id="attempt-delete-confirm">Delete</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -841,6 +884,7 @@
 <script src="account.js"></script>
 <script src="authoring.js"></script>
 <script src="circuits.js"></script>
+<script src="challenge.js"></script>
 <script src="leaderboard.js"></script>
 <script src="app.js"></script>
 </body>

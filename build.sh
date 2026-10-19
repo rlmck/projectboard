@@ -40,6 +40,7 @@ FILES=(
   account.js
   authoring.js
   circuits.js
+  challenge.js
   leaderboard.js
   app.js
 

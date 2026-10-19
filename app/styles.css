@@ -2075,3 +2075,116 @@
     /* Static Privacy link under the (re-rendered) profile content */
     .profile-footer { text-align: center; padding: 28px 0 8px; }
     .profile-footer a { font-size: 13px; color: var(--text-muted); text-decoration: underline; text-underline-offset: 3px; }
+
+    /* ── Challenges (challenge.js, db/31) ────────────────────────────── */
+    /* The link on a circuit's detail view, between the board and the Play panel */
+    .challenge-link {
+      flex-shrink: 0;
+      display: flex; align-items: center; gap: 12px;
+      margin: 10px 12px 0; padding: 10px 14px;
+      background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius);
+      color: var(--text); text-decoration: none;
+      touch-action: manipulation;
+    }
+    .challenge-link:active { background: var(--surface2); }
+    .challenge-link-icon { color: var(--gold); display: flex; }
+    .challenge-link-icon svg { width: 22px; height: 22px; }
+    .challenge-link-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+    .challenge-link-text small { color: var(--text-muted); font-size: 12px; }
+    .challenge-link-go { font-size: 22px; color: var(--accent-hover); }
+
+    .ch-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+      padding: 18px 18px 20px; margin: 8px 0 16px;
+    }
+    .ch-kicker { font-size: 13px; color: var(--text-muted); margin-bottom: 10px; }
+    .ch-rules { padding-left: 20px; margin: 0 0 16px; line-height: 1.55; font-size: 15px; color: #d4d4d4; }
+    .ch-rules li { margin-bottom: 7px; }
+    .ch-rules b { color: var(--text); }
+    .ch-section {
+      font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--text-muted); margin: 20px 2px 8px;
+    }
+    a.btn-block { display: block; text-align: center; text-decoration: none; }
+    .ch-attempt {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px 14px; margin-bottom: 8px;
+    }
+    .ch-attempt.pending { border-style: dashed; border-color: var(--gold); }
+    .ch-attempt-main { display: flex; align-items: baseline; gap: 12px; cursor: pointer; list-style: none; }
+    .ch-attempt-main::-webkit-details-marker { display: none; }
+    .ch-attempt-total { font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums; }
+    .ch-attempt-date { color: var(--text-muted); font-size: 13px; }
+    .ch-attempt-reps, .ch-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .ch-attempt-reps span, .ch-chips span {
+      font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px;
+    }
+    .ch-chips { justify-content: center; min-height: 26px; }
+
+    /* The attempt: one big clock, a huge Fell button. The bottom nav hides so a
+       stray tap can't leave the view. */
+    body.ch-running #bottom-nav { display: none !important; }
+    body.ch-running #view-challenge main { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+    .ch-run { display: flex; flex-direction: column; align-items: center; text-align: center; padding-top: 4px; }
+    .ch-run-top { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 18px; }
+    .ch-held { font-size: 13px; color: var(--text-muted); }
+    .ch-held b { color: var(--text); font-variant-numeric: tabular-nums; }
+    .ch-end {
+      background: transparent; border: 1px solid var(--border); border-radius: 9px;
+      color: var(--text-muted); font-size: 13px; font-weight: 700; padding: 8px 12px;
+      cursor: pointer; touch-action: manipulation;
+    }
+    .ch-end.armed, #ch-discard.armed { border-color: #dc2626; color: #f87171; }
+    .ch-phase { font-size: 22px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+    .ch-phase-rep .ch-phase { color: var(--start); }
+    .ch-phase-rest .ch-phase, .ch-phase-ready .ch-phase { color: var(--gold); }
+    .ch-clock {
+      font-size: clamp(72px, 26vw, 128px); font-weight: 800; line-height: 1.05;
+      font-variant-numeric: tabular-nums; margin: 6px 0 4px;
+    }
+    .ch-where { font-size: 15px; color: var(--text-muted); margin-bottom: 8px; }
+    .ch-fell {
+      width: 100%; min-height: 34vh; margin-top: 18px;
+      border: none; border-radius: 22px;
+      background: #dc2626; color: #fff;
+      font-size: 44px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase;
+      cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+      box-shadow: 0 8px 30px rgba(220,38,38,0.35);
+    }
+    .ch-fell:active { transform: scale(0.98); background: #b91c1c; }
+    .ch-fell-space {
+      width: 100%; min-height: 34vh; margin-top: 18px;
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+      border: 1px dashed var(--border); border-radius: 22px;
+      color: var(--text-muted); font-size: 15px; line-height: 1.5;
+    }
+
+    .ch-summary { text-align: center; }
+    .ch-total { font-size: 64px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .ch-total-sub { color: var(--text-muted); font-size: 14px; margin-bottom: 4px; }
+    .ch-summary .ch-chips { margin-bottom: 18px; }
+
+    /* Ranks: tabs, the challenge board, compare */
+    .ranks-tabs { margin: 0 0 12px; flex-wrap: wrap; }
+    .ch-board-intro { font-size: 13px; color: var(--text-muted); line-height: 1.5; margin: 0 2px 10px; }
+    .ch-row { cursor: pointer; touch-action: manipulation; }
+    .ch-row.selected { border-color: var(--int); box-shadow: inset 3px 0 0 var(--int); }
+    .ch-del { width: 34px; height: 34px; color: #f87171; }
+    .ch-del svg { width: 17px; height: 17px; }
+    .ch-compare-bar {
+      position: sticky; bottom: calc(var(--nav-h) + 10px + env(safe-area-inset-bottom));
+      display: flex; gap: 10px; margin-top: 12px;
+      background: rgba(10,10,10,0.92); padding: 8px 0;
+    }
+    .ch-compare-bar .btn-block { margin-top: 0; }
+    #compare-body { max-height: 70vh; overflow-y: auto; }
+    .ch-chart { width: 100%; height: auto; display: block; }
+    .ch-grid { stroke: var(--border); stroke-width: 1; }
+    .ch-axis { fill: var(--text-muted); font-size: 10px; font-family: inherit; }
+    .ch-chart-caption { font-size: 12px; color: var(--text-muted); margin: 4px 0 12px; }
+    .ch-legend-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+    .ch-legend-row i { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+    .ch-legend-name { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ch-legend-total { font-weight: 800; font-variant-numeric: tabular-nums; }
+    .ch-legend .ch-attempt-reps { margin-top: 6px; }

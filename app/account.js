@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file: the signed-in user's data: ticks, favourites, auth, profile.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file: the signed-in user's data: ticks, favourites, auth, profile.
 
   // Load the signed-in user's ticks into myTicks; clear for guests. RLS limits
   // the rows to this user, so we never see anyone else's sends.
@@ -619,6 +619,7 @@
     if (session) await loadProfile();
     authReady = true;
     if (session) { await loadTicks(); await loadFaves(); }
+    retryChallengeSaves();   // a challenge attempt kept on the phone from last time (challenge.js)
     updateFaveControls();
     renderProfile();
     if (loaded) renderList();   // refresh tick + fave flags (skip if problems still loading)
@@ -649,12 +650,17 @@
       profile = null; myTicks = new Set(); myTicksNormal = new Set(); myTicksMirrored = new Set(); myFaves = new Set(); myCircuitFaves = new Set(); leaderboardLoaded = false;
       adminUsers = []; adminUsersLoaded = false;   // the member list: don't keep it after an admin signs out
     }
+    // Challenge boards and history belong to whoever was signed in.
+    forgetChallengeData();
+    retryChallengeSaves();
     updateFaveControls();
     renderProfile();
     if (loaded) renderList();
     if (currentView === 'detail') { updateTickButton(); updateFaveButton(); }
     if (currentView === 'circuits') renderCircuits();
-    if (currentView === 'circuit-detail') updateCircuitFaveButton();
+    if (currentView === 'circuit-detail') { updateCircuitFaveButton(); document.getElementById('circuit-menu-delete').hidden = !canEditCircuit(currentCircuit); }
+    if (currentView === 'challenge') renderChallengeBody();
+    if (currentView === 'leaderboard') renderLeaderboard();
     // Signed out (or lost admin) while on an admin screen: route away from it.
     if ((currentView === 'outlines' || currentView === 'admin') && !isAdmin()) router();
   }
@@ -760,6 +766,7 @@
     }
     profile.is_public = want;
     leaderboardLoaded = false;
+    forgetChallengeData();   // the challenge boards list opted-in climbers too
     showToast(want ? 'You’re on Ranks' : 'You’re hidden from Ranks', 'success');
   }
 
@@ -832,7 +839,7 @@
           <button class="btn-block btn-ghost" id="profile-signout">Sign out</button>
         </div>
         <div class="cc-option-row">
-          <span class="cc-option-label">Show me on Ranks<br><small>Off: only you can see your points.</small></span>
+          <span class="cc-option-label">Show me on Ranks<br><small>Off: only you can see your points and challenge scores.</small></span>
           <button class="cc-toggle${onRanks ? ' on' : ''}" id="profile-ranks" type="button" aria-pressed="${onRanks}" aria-label="Show me on Ranks"><span class="cc-toggle-knob"></span></button>
         </div>
         <div class="profile-row"><span class="k">Total points</span><span class="v" id="profile-points">${leaderboardLoaded ? userPoints() : '…'}</span></div>

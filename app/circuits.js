@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file: circuits - load, list, detail, swipe, info, Play preview, create, delete.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file: circuits - load, list, detail, swipe, info, Play preview, create, delete.
 //
 // Circuits are built to look and behave like problems: the same cards and grade
 // tabs (tap = one grade, hold = several), pull-to-refresh, a pinned detail view
@@ -249,6 +249,7 @@
         </div>
       </div>
 
+      <div id="circuit-challenge-slot"></div>
       <div class="circuit-play-panel">
         <button class="circuit-play-btn" id="circuit-play-btn" type="button" aria-label="Play preview">${PLAY_ICON}</button>
         <div class="circuit-play-body">
@@ -269,6 +270,7 @@
     speed.value = speedToSlider(playIntervalMs);
     speed.addEventListener('input', () => setPlaySpeed(sliderToSpeed(+speed.value)));
     updateSpeedLabel();
+    fillCircuitChallenge(c);   // the challenge link, if a challenge uses this circuit (challenge.js)
   }
 
   // ── Swipe between circuits (detail view) ──────────────────────────────────────
@@ -441,7 +443,9 @@
     if (error) {
       errEl.textContent = error.code === '42501'
         ? 'You don’t have permission to delete this circuit.'
-        : error.message;
+        : error.code === '23503'
+          ? 'A challenge uses this circuit, so it can’t be deleted.'
+          : error.message;
       return;
     }
     if (!data || !data.length) {

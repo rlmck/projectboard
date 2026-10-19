@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file: create-a-problem, the hold outlines editor (#outlines), and circuit helpers.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file: create-a-problem, the hold outlines editor (#outlines), and circuit helpers.
 
   // ── Create a problem ──────────────────────────────────────────────────────────
   // The create view is laid out like the problem view: pinned, the same title
@@ -1240,7 +1240,9 @@
 
   const circuitName = c => String((c && c.name) || '').trim() || '(unnamed)';
   const circuitSeq  = c => (Array.isArray(c && c.hold_sequence) ? c.hold_sequence : []);
+  // A circuit a challenge uses is admins-only (db/31), so its owner loses Delete.
   const canEditCircuit = c =>
-    !!(c && profile && (profile.is_admin || (session && c.setter_id === session.user.id)));
+    !!(c && profile && (profile.is_admin
+      || (session && c.setter_id === session.user.id && !challengeForCircuit(c.id))));
 
 

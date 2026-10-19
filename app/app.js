@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file: event wiring, PWA service worker + install banner, and boot (loaded LAST).
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file: event wiring, PWA service worker + install banner, and boot (loaded LAST).
 
   // ── No pinch-zoom ─────────────────────────────────────────────────────────────
   // The viewport meta (user-scalable=no) stops it on Android, but iOS Safari and
@@ -547,17 +547,46 @@
 
   // Leaderboard (#leaderboard): force a refresh from the RPC.
   document.getElementById('leaderboard-refresh').addEventListener('click', () => {
+    if (ranksTab !== 'points') {                         // a challenge board: drop it and refetch
+      delete challengeBoards[ranksTab];
+      renderLeaderboard();
+      return;
+    }
     leaderboardLoaded = false;
     renderLeaderboard();                                 // spinner
     loadLeaderboard(true).then(renderLeaderboard);
   });
+  // Ranks tabs: Points, or a challenge's board.
+  document.getElementById('ranks-tabs').addEventListener('click', e => {
+    const b = e.target.closest('[data-tab]');
+    if (!b || b.dataset.tab === ranksTab) return;
+    ranksTab = b.dataset.tab;
+    compareSel = [];
+    renderLeaderboard();
+    if (ranksTab === 'points') loadLeaderboard().then(renderLeaderboard);
+  });
+  // A challenge board: tap rows to pick climbers to compare; admins' delete buttons.
+  document.getElementById('leaderboard-content').addEventListener('click', onChallengeBoardClick);
+  document.getElementById('leaderboard-content').addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.ch-row')) { e.preventDefault(); onChallengeBoardClick(e); }
+  });
+  document.getElementById('compare-close').addEventListener('click', closeCompare);
+  document.getElementById('compare-modal').addEventListener('click', e => { if (e.target.id === 'compare-modal') closeCompare(); });
+  document.getElementById('attempt-delete-cancel').addEventListener('click', closeAttemptDelete);
+  document.getElementById('attempt-delete-confirm').addEventListener('click', doAttemptDelete);
+  document.getElementById('attempt-delete-modal').addEventListener('click', e => { if (e.target.id === 'attempt-delete-modal') closeAttemptDelete(); });
+
+  // Challenge view (#challenge/<id>): back, and one delegated listener for the
+  // rules / clock / summary buttons (challenge.js).
+  document.getElementById('challenge-back').addEventListener('click', goBack);
+  document.getElementById('challenge-content').addEventListener('click', onChallengeClick);
 
   // Info modal: opened from the ⋮ menu (wired above), close via X, overlay tap, or Escape
   document.getElementById('info-close').addEventListener('click', closeInfo);
   document.getElementById('info-modal').addEventListener('click', e => {
     if (e.target.id === 'info-modal') closeInfo();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closeNameModal(); closeAccountDelete(); closeUserRename(); closeUserReset(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closeNameModal(); closeAccountDelete(); closeUserRename(); closeUserReset(); closeCompare(); closeAttemptDelete(); } });
 
   // Auth view (#auth): sign in, and sign-up's two steps, in one form (account.js).
   document.getElementById('auth-form').addEventListener('submit', authSubmit);
@@ -593,6 +622,9 @@
     if (currentView === 'outlines' && olDirty()) return true;
     // Sign-up step 2: a reload would swap the passphrase being saved for a new one.
     if (currentView === 'auth' && authMode === 'signup-save') return true;
+    // A challenge attempt on screen: it's kept on the device, but a reload mid-rep
+    // would cut the clock and the sounds for a moment.
+    if (currentView === 'challenge' && challengeRun) return true;
     if (currentView === 'create') {
       if (Object.keys(createRoles).length) return true;
       if (createGrade) return true;
@@ -619,13 +651,17 @@
   loadProfileNames(); // id -> username map so setters show the live display name (first, so the saved lists below render with names)
   loadProblems();     // saved list at once, then fetch, render + re-route
   loadCircuits();     // the same for circuits
-  // Back online after showing a saved list (or nothing): fetch the fresh ones.
+  loadChallenges();   // and the challenges run on them (challenge.js)
+  // Back online after showing a saved list (or nothing): fetch the fresh ones,
+  // and send any challenge attempt that was kept on the phone.
   window.addEventListener('online', () => {
     if (!loaded) loadProblems();
     else if (!document.getElementById('list-offline').hidden) refreshProblems().catch(() => {});
     if (!circuitsLoaded) loadCircuits();
     else if (!document.getElementById('circuit-offline').hidden) refreshCircuits().catch(() => {});
     loadProfileNames();
+    loadChallenges();
+    retryChallengeSaves();
   });
   // Prefer the admin-saved board (image + hold map) from Supabase; fall back to the
   // bundled hold_map.json only if no saved map exists. The board image is only

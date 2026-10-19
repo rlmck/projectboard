@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, leaderboard, app. This file:
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file:
 // the points leaderboard (the leaderboard() RPC is the single source of truth for the
 // scoring formula — see db/27). Only benchmark problems score, so the RPC lists only
 // climbers with points, and "sends" counts benchmark sends.
@@ -54,6 +54,9 @@
   function renderLeaderboard() {
     const el = document.getElementById('leaderboard-content');
     if (!el) return;
+    // Points, or a challenge's board (challenge.js), chosen by the tabs above.
+    renderRanksTabs();
+    if (ranksTab !== 'points') { renderChallengeBoard(ranksTab); return; }
 
     if (leaderboardError) {
       el.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>Couldn’t load the leaderboard.</div>`;   // error logged in loadLeaderboard
