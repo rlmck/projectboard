@@ -9,7 +9,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - The original system's SD card image (dtb-backup.img) is kept for reference only.
 - board_listener.py will be discarded; Pi-side code starts fresh.
 - LEDs don't work yet, so the app is not fully rolled out to the public.
-- The app itself is live at https://symmetryboard.co.uk (service worker `pb-v109`). Casting sends correctly, but no listener is running, so nothing lights.
+- The app itself is live at https://symmetryboard.co.uk (service worker `pb-v109`; staging has the Pat Burner challenge at `pb-v111`). Casting sends correctly, but no listener is running, so nothing lights.
 
 ## Decisions
 - Remove Google sign-in completely. **Done 18 Oct 2026** (provider off; OAuth client deleted 19 Oct).
@@ -37,7 +37,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 5. Fresh Pi listener built to the contract, replacing the mock.
 
 ## Waiting on
-- Ross: apply `db/31_challenges.sql` (local `db/`) in the Supabase SQL editor, then work through the Pat Burner test checklist. Until then the app shows no challenge.
+- Ross: check the Pat Burner on his phone on staging (`pb-v111`), then it goes to main. (db/31 is applied, 19 Oct 2026.)
 - Pi 4 donation (handover)
 - On install day: photos of the green sockets in the box; identifying the 16-wire harness (two 8-way plugs).
 - An on-site check of the cast geofence centre (non-admin phone, by the board and at the far end of the gym).
@@ -47,7 +47,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - Wall-screen mode for the touchscreen kiosk: browse and cast only, "Get the app" QR, Ranks read-only, back to the list when idle (after the LEDs work).
 - Circuits Phase 2: the cast screen, `cast_circuit`/`stop` broadcasts, `circuit_logs`.
 - Problem name/setter editing (changes the cast key: see the contract's open questions).
-- ~~Pat Burner challenge~~ **built 19 Oct 2026** (`pb-v110`, db/31 waiting to be applied). Later, if wanted: more challenges (add a row to `challenges`), monthly boards, the metronome, casting the circuit at Start once Circuits Phase 2 exists.
+- ~~Pat Burner challenge~~ **built 19 Oct 2026** (`pb-v110`; db/31 applied 19 Oct 2026; the way back from other views `pb-v111`). Later, if wanted: more challenges (add a row to `challenges`), monthly boards, the metronome, casting the circuit at Start once Circuits Phase 2 exists.
 
 ## Open questions
 Details in `docs/cast-contract.md` → "Open questions".
@@ -61,6 +61,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 
 ## Session log
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-10-19, Claude Code (Pat Burner: the way back).**
+  - **Tested on staging** with two throwaway accounts, through the app: a full run, reloads mid-rep and mid-rest, End early, saving with no signal, the Ranks switch, a tie, compare, the circuit lock. All passed; both accounts deleted through the app. Ross checked the admin delete and the circuit delete refusal.
+  - **Changed (`pb-v111`):** leaving the challenge view no longer pauses anything visible: the beeps carry on in every view, and a strip on the bottom nav ("Back to the Pat Burner", with the phase and clock) leads back to the attempt.
+  - **Left:** Ross checks it on his phone on staging; then main, each step on confirmation.
+  - **New questions:** none.
 
 - **2026-10-19, Claude Code (Pat Burner challenge).**
   - **Background:** looked at Ross's old Symmetry app (local, not in this repo) for how the Pat Burner competition worked.

@@ -788,7 +788,7 @@
     if (name !== 'create') closeCreateGrade();
     // The circuit Play preview only runs on the circuit detail view.
     if (name !== 'circuit-detail') stopCircuitPlay(false);
-    // The challenge clock only ticks on its own view (the attempt itself is kept).
+    // A challenge attempt keeps running in other views, with a way back on the nav.
     if (name !== 'challenge') leaveChallenge();
 
     ['list','detail','create','outlines','admin','auth','profile','circuits','circuit-detail','circuit-create','challenge','leaderboard'].forEach(v => {

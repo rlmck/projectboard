@@ -622,9 +622,9 @@
     if (currentView === 'outlines' && olDirty()) return true;
     // Sign-up step 2: a reload would swap the passphrase being saved for a new one.
     if (currentView === 'auth' && authMode === 'signup-save') return true;
-    // A challenge attempt on screen: it's kept on the device, but a reload mid-rep
-    // would cut the clock and the sounds for a moment.
-    if (currentView === 'challenge' && challengeRun) return true;
+    // A challenge attempt (running in any view, or finished on screen): it's kept
+    // on the device, but a reload would silence the beeps until the next tap.
+    if (chRunning() || (currentView === 'challenge' && challengeRun)) return true;
     if (currentView === 'create') {
       if (Object.keys(createRoles).length) return true;
       if (createGrade) return true;
@@ -652,6 +652,7 @@
   loadProblems();     // saved list at once, then fetch, render + re-route
   loadCircuits();     // the same for circuits
   loadChallenges();   // and the challenges run on them (challenge.js)
+  resumeChallenge();  // an attempt left running carries on, in whichever view opened
   // Back online after showing a saved list (or nothing): fetch the fresh ones,
   // and send any challenge attempt that was kept on the phone.
   window.addEventListener('online', () => {

@@ -19,6 +19,10 @@
 // (CH_PENDING_KEY) before it's sent, and stays there until the database has it:
 // no signal means a Retry, never a lost attempt. The phone makes the attempt's id,
 // so a retry of a save that did land is refused as a duplicate (23505) = saved.
+//
+// Leaving the view doesn't stop the attempt: the clock and its beeps carry on in
+// any view, and a strip on top of the bottom nav (#ch-return) shows the phase and
+// leads straight back to it.
 
   const CH_RUN_KEY = 'pb-challenge-run';
   const CH_PENDING_KEY = 'pb-challenge-pending';
@@ -28,7 +32,7 @@
   const CH_TROPHY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8"></path><path d="M12 17v4"></path><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"></path><path d="M17 5h3v2a3 3 0 0 1-3 3"></path><path d="M7 5H4v2a3 3 0 0 0 3 3"></path></svg>';
   const CH_TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
 
-  let chTicker = null;       // the view's clock (setInterval), only while an attempt runs on screen
+  let chTicker = null;       // the clock (setInterval), while an attempt runs, in any view
   let chAudio = null;        // AudioContext, made on the first tap (browsers need a gesture)
   let chWakeLock = null;     // screen wake lock while an attempt runs (separate from the viewer's)
   let chLastBeep = '';       // phase + second last beeped, so a countdown beeps once per second
@@ -90,6 +94,7 @@
     }
     else if (currentView === 'challenge') renderChallenge(parseHash().param);
     else if (currentView === 'leaderboard') renderLeaderboard();
+    if (currentView !== 'challenge') chSyncAway();   // the strip on the nav can name it now
   }
 
   async function loadChallengeBoard(cid, force) {
@@ -145,7 +150,7 @@
     } catch (e) { return null; }
   }
   function chStoreRun() { if (challengeRun) lsSet(CH_RUN_KEY, JSON.stringify(challengeRun)); }
-  function chClearRun() { challengeRun = null; lsSet(CH_RUN_KEY, ''); }
+  function chClearRun() { challengeRun = null; lsSet(CH_RUN_KEY, ''); chSyncAway(); }
 
   const chTotalReps = r => r.proto.sets * r.proto.reps;
   // 0-based index of the rep being climbed (or next up) -> set and rep numbers.
@@ -227,51 +232,100 @@
   // ── The clock ─────────────────────────────────────────────────────────────────
   function chRunning() { return !!(challengeRun && challengeRun.phase !== 'done'); }
 
+  // The ticker and the wake lock run while an attempt does, whichever view is
+  // showing; the bottom nav hides only on the challenge view itself.
   function chStartTicker() {
-    if (chTicker) return;
-    chTicker = setInterval(chTick, 200);
-    document.body.classList.add('ch-running');
+    if (!chTicker) chTicker = setInterval(chTick, 200);
     chAcquireWake();
+    chSyncAway();
   }
   function chStopTicker() {
     if (chTicker) { clearInterval(chTicker); chTicker = null; }
-    document.body.classList.remove('ch-running');
     chReleaseWake();
+    chSyncAway();
   }
 
-  // Called by setView for any other view: stop the clock and the wake lock. The
-  // attempt itself is kept (on the device) and picks up when you come back.
-  function leaveChallenge() { chStopTicker(); }
+  // Called by setView for any other view (before currentView changes): the
+  // attempt carries on, so just give the nav back and show the way back to it.
+  function leaveChallenge() { chSyncAway(false); }
+
+  // The body classes and the strip on the nav. `here` = the challenge view is showing.
+  function chSyncAway(here = currentView === 'challenge') {
+    const r = chLoadRun();
+    document.body.classList.toggle('ch-running', here && chRunning());
+    document.body.classList.toggle('ch-away', !here && !!r);
+    const el = document.getElementById('ch-return');
+    if (!el) return;
+    el.hidden = here || !r;
+    if (el.hidden) return;
+    const ch = challengeById(r.challengeId);
+    el.href = '#challenge/' + encodeURIComponent(r.challengeId);
+    document.getElementById('ch-return-text').textContent = ch ? `Back to the ${ch.name}` : 'Back to your challenge';
+    chUpdateAway(r, Date.now());
+  }
 
   function chTick() {
     const r = challengeRun;
-    if (!r || currentView !== 'challenge') { chStopTicker(); return; }
+    if (!r) { chStopTicker(); return; }
     const now = Date.now();
     const before = r.phase;
+    const here = currentView === 'challenge';
     if (chAdvance(r, now)) {
       chStoreRun();
       // Only sound the change if it happened just now (not while the screen was off).
       if (r.phase === 'rep' && now - r.phaseStart < 1500) chSoundGo();
-      if (r.phase === 'done' && before !== 'done') chSoundDone();
-      renderChallengeBody();
+      if (r.phase === 'done' && before !== 'done') { chSoundDone(); if (!here) chStopTicker(); }
+      if (here) renderChallengeBody(); else chUpdateAway(r, now);
       return;
     }
-    chUpdateClock(r, now);
+    chCountBeep(r, now);
+    if (here) chUpdateClock(r, now); else chUpdateAway(r, now);
+  }
+
+  // Seconds left in a countdown (get ready, rest), or null during a rep.
+  function chLeft(r, now) {
+    if (r.phase !== 'ready' && r.phase !== 'rest') return null;
+    const len = r.phase === 'ready' ? r.proto.get_ready_s : r.restLen;
+    return Math.max(0, Math.ceil((r.phaseStart + len * 1000 - now) / 1000));
+  }
+
+  // 3, 2, 1 before every rep, once per second, in any view.
+  function chCountBeep(r, now) {
+    const left = chLeft(r, now);
+    if (left === null) return;
+    const key = r.phase + r.phaseStart + ':' + left;
+    if (left >= 1 && left <= 3 && chLastBeep !== key) { chLastBeep = key; chSoundCount(); }
   }
 
   // The parts that change every second, without rebuilding the view.
   function chUpdateClock(r, now) {
     const el = document.getElementById('ch-clock');
     if (!el) return;
-    if (r.phase === 'rep') {
-      el.textContent = chClock((now - r.phaseStart) / 1000);
-    } else if (r.phase === 'ready' || r.phase === 'rest') {
-      const len = r.phase === 'ready' ? r.proto.get_ready_s : r.restLen;
-      const left = Math.max(0, Math.ceil((r.phaseStart + len * 1000 - now) / 1000));
-      el.textContent = chClock(left);
-      const key = r.phase + r.phaseStart + ':' + left;
-      if (left >= 1 && left <= 3 && chLastBeep !== key) { chLastBeep = key; chSoundCount(); }
-    }
+    const left = chLeft(r, now);
+    if (r.phase === 'rep') el.textContent = chClock((now - r.phaseStart) / 1000);
+    else if (left !== null) el.textContent = chClock(left);
+  }
+
+  // The strip's phase and clock.
+  function chUpdateAway(r, now) {
+    const el = document.getElementById('ch-return-state');
+    if (!el) return;
+    const left = chLeft(r, now);
+    const text = r.phase === 'done' ? 'Finished: save it'
+      : r.phase === 'rep' ? `Climbing ${chClock((now - r.phaseStart) / 1000)}`
+      : `${r.phase === 'ready' ? 'Get ready' : 'Rest'} ${chClock(left)}`;
+    if (el.textContent !== text) el.textContent = text;
+    document.getElementById('ch-return').dataset.phase = r.phase;
+  }
+
+  // Boot (app.js, after the first route): an attempt left running when the app
+  // was closed carries on, whichever view the app opened on.
+  function resumeChallenge() {
+    const r = chLoadRun();
+    if (!r) return;
+    chAdvance(r, Date.now());
+    chStoreRun();
+    if (r.phase !== 'done') chStartTicker(); else chSyncAway();
   }
 
   // ── The challenge view ────────────────────────────────────────────────────────
@@ -305,7 +359,7 @@
       else { wrap.innerHTML = chRunHtml(run); chUpdateClock(run, Date.now()); chStartTicker(); }
       return;
     }
-    chStopTicker();
+    if (chRunning()) chSyncAway(); else chStopTicker();   // another challenge's attempt keeps going
     wrap.innerHTML = chIntroHtml(ch, run);
     // Fill "your best" and the history once they're in.
     const need = [];
@@ -729,6 +783,12 @@
 
   // Back in the foreground: catch the attempt up, take the wake lock again.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible' || currentView !== 'challenge') return;
-    if (challengeRun) { renderChallengeBody(); if (chRunning()) chAcquireWake(); }
+    if (document.visibilityState !== 'visible' || !challengeRun) return;
+    if (currentView === 'challenge') renderChallengeBody();
+    else if (chRunning()) chTick();
+    if (chRunning()) chAcquireWake();
   });
+
+  // Browsers only allow sound after a tap. After a reload the attempt may carry on
+  // in another view, so any tap anywhere unlocks it while one is running.
+  document.addEventListener('pointerdown', () => { if (chRunning()) chEnsureAudio(); }, true);

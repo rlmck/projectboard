@@ -2126,6 +2126,28 @@
        stray tap can't leave the view. */
     body.ch-running #bottom-nav { display: none !important; }
     body.ch-running #view-challenge main { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+
+    /* An attempt running in another view: a strip on top of the bottom nav leads
+       back to it. The nav grows by the strip's height (--nav-h), so every view's
+       bottom spacing, the toast and the install banner make room for it. */
+    body.ch-away { --nav-h: 100px; }
+    body.ch-away #bottom-nav { padding-top: 40px; }
+    .ch-return {
+      position: absolute; top: 0; left: 0; right: 0; height: 40px;
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 calc(14px + env(safe-area-inset-right)) 0 calc(14px + env(safe-area-inset-left));
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      color: var(--text); text-decoration: none; font-size: 14px;
+      touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    }
+    #ch-return[hidden] { display: none; }
+    .ch-return:active { background: var(--surface2); }
+    .ch-return svg { width: 18px; height: 18px; color: var(--gold); flex: none; }
+    .ch-return-text { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ch-return-state { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--gold); white-space: nowrap; }
+    .ch-return[data-phase="rep"] .ch-return-state { color: var(--start); }
+    .ch-return[data-phase="done"] .ch-return-state { color: var(--accent-hover); }
+    .ch-return-go { font-size: 20px; color: var(--accent-hover); }
     .ch-run { display: flex; flex-direction: column; align-items: center; text-align: center; padding-top: 4px; }
     .ch-run-top { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 18px; }
     .ch-held { font-size: 13px; color: var(--text-muted); }
