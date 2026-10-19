@@ -1,7 +1,7 @@
 # Public rollout: custom domain, Cloudflare Workers, QR → install flow
 
 **Status (10 Sep 2026):** Parts A and B are complete and **live on `main`** (merged `5271860`, production verified). Part C is **cut over**: GitHub Pages now serves the `legacy` branch (`5e6b338`) at the old address, verified end to end on the live sites. **Remaining (Ross):**
-- turn on Cloudflare **Always Use HTTPS** (plain `http://` still serves the site);
+- ~~turn on Cloudflare **Always Use HTTPS**~~: **done 19 Oct 2026** (`http://` → 301 → `https://`);
 - print the poster;
 - swap your own icons (C2 steps 4–5);
 - ~~set up email sending~~ and ~~check Google sign-in~~: **retired 18 Oct 2026**. Accounts became nickname + passphrase with no email and no Google (see `plan.md` and `docs/codebase-overview.md` section 6). The Google items below are history.
@@ -52,7 +52,7 @@ Build settings in the dashboard: build command `bash build.sh`, deploy command `
 1. ✅ Domain `symmetryboard.co.uk` bought at Cloudflare Registrar.
 2. ✅ Cloudflare Worker `projectboard` created, git-connected to `rlmck/projectboard`, production branch `main`, custom domain live.
    - ✅ `www.symmetryboard.co.uk` → apex redirect (10 Sep 2026; verified: 301 to `https://symmetryboard.co.uk/`).
-   - ⬜ **SSL/TLS → Edge Certificates → Always Use HTTPS.** `http://symmetryboard.co.uk/` currently answers 200 over plain HTTP instead of redirecting. `_headers` now sends HSTS, but HSTS only takes effect once a browser has seen HTTPS.
+   - ✅ **SSL/TLS → Edge Certificates → Always Use HTTPS** (on 19 Oct 2026; `http://symmetryboard.co.uk/` now answers 301 → `https://`). `_headers` now sends HSTS, but HSTS only takes effect once a browser has seen HTTPS.
    - ✅ Web Analytics (cookieless, injected automatically, no consent banner needed) — turned on.
    - ✅ Email Routing `hello@symmetryboard.co.uk` → Gmail — set up and tested (10 Sep 2026). The privacy page and Google branding both reference this address.
 3. ✅ **Supabase → Auth → URL Configuration**: Site URL `https://symmetryboard.co.uk`; redirect URL `https://symmetryboard.co.uk/**` added; github.io entry retained.

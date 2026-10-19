@@ -160,7 +160,7 @@ await channel.httpSend('cast_problem',
 
 **Don't build yet:** the feet indicators (B1/B2, parked by Ross), Circuits Phase 3 (PBs, leaderboards), tags, session/logbook tracking beyond ticks, the Flutter migration.
 
-**Waiting on Ross:** for the Pi 4: a photo of the green sockets inside the box, and identifying the 16-wire harness (two 8-way plugs) on install day. Also: Cloudflare *Always Use HTTPS* (overview §8), and checking the geofence centre on-site. (Email/SMTP is no longer needed.)
+**Waiting on Ross:** for the Pi 4: a photo of the green sockets inside the box, and identifying the 16-wire harness (two 8-way plugs) on install day. Also: checking the geofence centre on-site (cast from a non-admin phone by the board and at the far end of the gym), and deleting `Documents\ProjectBoard-archive\passphrases-2026-10-18.txt` (then emptying the Recycle Bin) once all 7 migrated accounts have signed in. Done 19 Oct 2026: Always Use HTTPS on (verified: `http://` → 301 → `https://`), the old Google OAuth client deleted. (Email/SMTP is no longer needed.)
 
 ---
 

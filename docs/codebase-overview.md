@@ -381,10 +381,10 @@ Behind the scenes: `signUp({ email: 'u-<16 base32>@users.invalid', password, opt
 
 | Service | What's configured | Notes |
 |---|---|---|
-| Cloudflare | Worker `projectboard` (git-connected, build `bash build.sh`, deploy `npx wrangler deploy`, non-production branch builds on); custom domain `symmetryboard.co.uk`; Registrar; Web Analytics (cookieless, auto-injected, so the CSP must allow its beacon); Email Routing `hello@symmetryboard.co.uk` → Ross's Gmail; `www` → apex redirect (done 10 Sep 2026) | ⬜ **turn on SSL/TLS → Edge Certificates → Always Use HTTPS**: `http://symmetryboard.co.uk` still serves the site over plain HTTP (no service worker, no geolocation) |
+| Cloudflare | Worker `projectboard` (git-connected, build `bash build.sh`, deploy `npx wrangler deploy`, non-production branch builds on); custom domain `symmetryboard.co.uk`; Registrar; Web Analytics (cookieless, auto-injected, so the CSP must allow its beacon); Email Routing `hello@symmetryboard.co.uk` → Ross's Gmail; `www` → apex redirect (done 10 Sep 2026) | ✅ **Always Use HTTPS** on (19 Oct 2026): `http://symmetryboard.co.uk` answers 301 → `https://` |
 | Supabase | Project `uqirowyfqwiceyjznosl` (London): DB, Auth (nickname + passphrase on the Email provider with placeholder addresses, confirmation off, CAPTCHA via Turnstile), Storage `board`, Realtime, the Edge Function `admin-reset-passphrase` | ✅ db/30 + function live, CAPTCHA on, Google provider off (18 Oct 2026). Keep the Email provider on: the placeholder addresses run on it |
 | Cloudflare Turnstile | Widget for the sign-in / sign-up robot check; site key `0x4AAAAAAFaUU-JF4RC7asVt` (public, in `account.js`); the secret key is only in Supabase | ✅ widget created 18 Oct 2026 |
-| Google Cloud | The old Google sign-in OAuth client: **retired** with nickname accounts | ⬜ delete the client (plan.md step 16) |
+| Google Cloud | The old Google sign-in OAuth client: **retired** with nickname accounts | ✅ client deleted (19 Oct 2026) |
 | GitHub | Public repo `rlmck/projectboard`; Pages source = `legacy` / root | never delete `legacy`, never make the repo private, **never rename the repo** |
 
 ## 9. Build and deploy pipeline
