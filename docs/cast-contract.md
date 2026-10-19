@@ -1,0 +1,146 @@
+# Cast contract
+
+How a cast gets from the app to the LEDs. **This describes what the code does** (as of 19 Oct 2026, app service worker `pb-v109`). Anything the code doesn't settle is under "Open questions"; nothing there is decided. Any change to the channel, event or payload must update this file in the same commit. The repo is public: no secrets here.
+
+## 1. Overview
+
+```
+PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime ──broadcast──▶ Pi listener ──SPI──▶ WS2801 strip
+                                                  (no database write)            (none running yet)
+```
+
+## 2. Transport
+
+| | |
+|---|---|
+| Supabase project | `uqirowyfqwiceyjznosl` (`https://uqirowyfqwiceyjznosl.supabase.co`) |
+| Mechanism | Realtime **Broadcast** (not Postgres Changes, not Presence) |
+| Channel topic | `board:HangoutPortland` (`HangoutPortland` is also `board_config.wall`) |
+| Channel type | public: no `config.private`, no Realtime Authorization policies |
+| Event | `cast_problem` |
+| Persistence | none. Only listeners connected at that moment receive it; nothing is stored or replayed |
+| Database writes per cast | none |
+
+## 3. Payload
+
+```json
+{ "problem_name": "Good Bug" }
+{ "problem_name": "Good Bug", "mirror": true }
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `problem_name` | string | yes | `problems.name` exactly as stored. Unique, 1–60 characters, no grade in it. |
+| `mirror` | boolean, always `true` when present | no | Sent only when the mirrored view is on screen. Absent means not mirrored; the app never sends `false`. |
+
+There are no other fields: no message id, timestamp, sender, hold list, colours or version. A subscriber receives the usual broadcast envelope, `{ "type": "broadcast", "event": "cast_problem", "payload": { … } }`.
+
+## 4. Sender: the PWA
+
+- **Only path:** `castByName(name, btn, mirror, stillShowing)` in `app/problems.js`, called by the cast button on the problem detail view (wired in `app/app.js`). Circuits have no cast yet.
+- **Steps:**
+  1. Geofence check (`ensureCastLocation`). It runs in the app only and is lenient: it blocks only a location fix that is confidently far from the gym. No location, a refused permission or a timeout all let the cast through, and admins skip it.
+  2. If the problem or orientation on screen changed during the location wait, nothing is sent.
+  3. `channel.httpSend('cast_problem', payload, { timeout: 10000 })`: one HTTPS POST to Realtime's broadcast endpoint. `apikey` is the public anon key (`app/state.js`), and `Authorization` carries the user's access token when supabase-js has one. Guests can cast.
+- **What the user sees:** a 202 from Realtime → "Cast: <name>" (or "Mirror cast"). An error or timeout → "Cast failed — check connection". **Success means Supabase accepted the message, not that a Pi received it.**
+- The app never subscribes to the channel and holds no WebSocket.
+- **Other senders:** `tools/cast-test.html` ("Run checks", fake names `~cast-test-A` and `~cast-test-B`). Being a public channel, any client with the anon key can send.
+
+## 5. Listener: the Pi
+
+- **No listener is running.** The Pi side is being rebuilt from scratch on a Raspberry Pi 4. The June 2026 Pi 3 listener is reference only and will be discarded.
+- `tools/cast-test.html` (served by `python tools/serve.py`) subscribes like a listener and logs every cast with its payload.
+- **What a listener can read with the anon key** (public-read RLS):
+  - `problems`: `name`, `start_holds`, `intermediate_holds`, `finish_hold`, `feet_mode`
+  - `board_config` where `wall = 'HangoutPortland'`: `mirror_map`
+  - `circuits`: `hold_sequence`, `start_count`, `loops`
+- **What the old listener did** (a description, not a requirement):
+  - subscribed with the anon key;
+  - on a cast, selected the row `where name = problem_name` and built the order in §6.2;
+  - loaded the mirror map from `board_config` on each connect;
+  - cleared the strip, then lit the holds;
+  - processed casts one at a time;
+  - sent no reply;
+  - switched both relays on at start.
+
+## 6. From a problem to LEDs
+
+### 6.1 Hold ids
+- **Format:** `holdN`. The grid is 19 columns (A–S) × 13 rows, numbered row by row from the **bottom-left**: `hold1` = A1, `hold19` = S1, `hold20` = A2, `hold247` = S13. Row 1 is the bottom of the wall.
+- **Allowed values:** the database CHECK allows `^hold[0-9]{1,3}$`. Live data uses `hold1`–`hold246`. 189 grid cells have real holds.
+
+### 6.2 Order and roles (holds are stored inverted)
+
+```
+order  = [finish_hold] + intermediate_holds + start_holds
+starts = order[0], order[1]   → green
+finish = order[-1]            → red
+others                        → blue
+```
+
+- This is `problemHoldOrder()` and `classifyHolds()` in `app/core.js`, and it equals the original system's hold list.
+- A problem with one start stores it twice.
+- Colours: start green `(0,255,0)`, intermediate blue `(0,0,255)`, finish red `(255,0,0)`. These are from Gareth's `DisplayProblem.py`, and the app's overlay uses the same three.
+
+### 6.3 Mirroring
+- With `mirror: true`, each hold becomes `board_config.mirror_map[hold]`. A hold that is absent from the map, or maps to itself, stays in place.
+- Roles don't change.
+- The live table differs from the original system's `MirrorDic.txt` in 7 entries. The app uses the live table.
+
+### 6.4 Hold → LED index
+Gareth's formula, from `SearchingByProblemName.py`; the same values are in `tools/led_map.json` (generated by `tools/register_leds.py`; checked equal for all 247):
+
+```
+x = (N - 1) % 19          # column, 0 = A
+y = (N - 1) // 19         # row, 0 = row 1 (bottom)
+led = x*13 + y + 1        if x is even   (A, C, E … run up the wall)
+led = x*13 + (13 - y)     if x is odd    (B, D, F … run down)
+```
+
+- Holds 1–247 map one to one onto LEDs 1–247.
+- LED 0 is never used.
+- Strip (from Gareth's code and the original SD image): WS2801 on SPI0 (`/dev/spidev0.0`), 1 MHz, mode 0, MSB first, 3 bytes per pixel in R, G, B order.
+- Gareth's code also drove BCM 23 and 24 LOW at start-up to switch two relays on.
+- **Status: from code only. Not yet verified on the wall with new hardware.**
+
+### 6.5 Feet indicators
+- The original settings file names `hold21` (B2, LED 25) "Orange" and `hold2` (B1, LED 26) "Black". Neither cell has a real hold.
+- They appear in many migrated problems' hold lists (90 contain `hold2`, 83 contain `hold21`). Gareth's code lit them like any other hold (blue).
+- The app doesn't draw them.
+- `problems.feet_mode` is `any` on every row, and nothing reads it.
+
+## 7. Open questions
+
+Nothing below is decided.
+
+1. **Clearing the board:** there's no clear, stop or off event. Gareth's code kept the last problem lit and ran a rainbow after 30 minutes idle. What should the new Pi do?
+2. **Pi offline:** the cast is lost and the app still reports success. Should the app know whether a listener is online (presence or a heartbeat)?
+3. **Acknowledging receipt:** there's no Pi → app message. Is one wanted, and on what channel or event?
+4. **Stale, duplicate and rapid messages:** casts carry no id or timestamp. Debounce or rate-limit on the Pi? What about a cast arriving while one is still being drawn?
+5. **Problem lookup:**
+   - Is the name still the key once problem names can be edited, or should casts carry the id?
+   - What happens for an unknown name?
+   - Exact match, or trimmed?
+6. **Mirroring:** does the Pi fetch `board_config.mirror_map` (and when it refreshes), or does the app send resolved holds?
+7. **Feet indicators:** light `hold2`/`hold21` when listed (as Gareth's code did), or from `feet_mode`?
+   - Which colours?
+   - What do both lights on mean?
+8. **Colours:**
+   - Keep the original green, blue and red?
+   - Any colour for foot holds?
+   - Which role wins when a hold is listed twice?
+9. **Brightness:** cap in software for the 5 V 10 A supply? If so, what budget?
+10. **Hold ids outside 1–247** (allowed by the database): ignore them? Log them?
+11. **Hardware not yet verified:**
+    - Is there a pixel 0?
+    - What is the colour order?
+    - Does the strip start at A1?
+    - Which wire is which in the 16-wire harness?
+    - What does each relay switch?
+12. **Start-up and idle behaviour** of the Pi (relays, the test pattern, what shows before the first cast).
+13. **Circuits:** a design spec (not code) plans `cast_circuit` (`circuit_name`, `interval`, `loop`, `mirror`, a run token) and a `stop` event on the same channel. Nothing implements it.
+14. **The wall kiosk** will cast through the same PWA and channel. Does it need anything different?
+15. **Who may cast:** anyone, by decision. Does the Pi apply any checks of its own?
+
+## Change history
+- **2026-10-19, Claude Code:** first version, written from the code (app `pb-v109`; the old Pi 3 listener and Gareth's code as references).

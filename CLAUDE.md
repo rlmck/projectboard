@@ -26,8 +26,8 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 ## Working rules
 
 1. **Read this file and `docs/codebase-overview.md` at the start of every session.**
-2. **For now, every change goes straight to live (Ross, 11 Sep 2026).** When a task is done: commit on `dev` → push `dev` → fast-forward `main` to `dev` → push `main`, without asking first, then confirm the live `sw.js` shows the new `CACHE`. Keep the two branches level so staging is ready when it's needed again. **This lasts until the app is properly rolled out and the LEDs work.** After that, go back to: Ross tests on a real phone at the staging URL, and `dev` merges to `main` only when he approves. Pushing to `main` deploys to real users, so still run the syntax check before every push.
-   Claude Code web sessions start on an assigned `claude/<slug>` branch and are told not to push elsewhere without permission: treat this rule as that permission, and carry the work through to `dev` and `main` rather than stopping at the session branch. If the live site is unreachable from the session (the environment's network policy blocks it), say so rather than skipping the `CACHE` check silently.
+2. **Commit and push are separate steps, each needing Ross's explicit confirmation (Ross, 19 Oct 2026; this permanently replaces the old push-straight-to-live rule).** When a task is done, show a summary of every change and ask before committing on `dev`. After the commit, ask separately before pushing, and say which branches the push covers (`dev` only for staging, or `main` too). Keep `dev` and `main` level (fast-forward `main` to `dev`); the claude.ai project chat commits to `main` (see Session rules). Pushing to `main` deploys to real users, so run the syntax check before every push, and after a deploy that changes app code or data confirm the live `sw.js` shows the new `CACHE`.
+   Claude Code web sessions start on an assigned `claude/<slug>` branch: carry the work to `dev` and `main` only with the same two confirmations. If the live site is unreachable from the session (the environment's network policy blocks it), say so rather than skipping the `CACHE` check silently.
 3. **One feature per session.** Finish it properly before starting the next.
 4. **Rewrite whole files** rather than providing inline diffs.
 5. **Don't install frameworks** (React, Vue, …) or add a build step without being asked.
@@ -53,6 +53,18 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 
 ---
 
+## Session rules
+
+This repo is the single source of truth shared by Claude Code and the claude.ai project chat, which reads and commits through GitHub (to `main`). The chat can't see local-only files (`docs/*` except the committed ones, `db/`, `pi/`, `reference/`), so `PROJECT_STATUS.md` and `docs/cast-contract.md` must stand on their own.
+
+- **Start of every session:** `git pull` (on `dev`, also `git pull --ff-only origin main` in case the chat committed there), then read `PROJECT_STATUS.md`. Read `docs/cast-contract.md` too if the work touches casting, Supabase Realtime or the Pi.
+- **End of every session:** add a Session log entry to `PROJECT_STATUS.md` (date, Claude Code or chat, what changed, what's left, new questions), and update Current state, Decisions, Waiting on, Open questions and Feature backlog if anything changed.
+- **Any change to the cast channel, event or payload** updates `docs/cast-contract.md` in the same commit, with a Change history line.
+- **`PROJECT_STATUS.md` may be edited from the chat**, so never assume your local copy is current: pull first.
+- **Never record personal data about users** in these files. The repo is public: no personal circumstances, no secrets either, and nothing copied from `docs/security-findings.md`.
+
+---
+
 ## Where things are
 
 **The layout:**
@@ -60,7 +72,7 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 app/      the website: exactly the files that are deployed, flat. build.sh copies it into public/.
 tools/    generators, dev tools and the cast test bench (never deployed)
 print/    the A5 poster and QR (never deployed)
-docs/     codebase-overview.md + rollout-plan.md (the rest is local only)
+docs/     codebase-overview.md + rollout-plan.md + cast-contract.md (the rest is local only)
 build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs them from there
 ```
 
@@ -85,7 +97,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 - **Tools (`tools/`, not deployed):** `snapshot_board.py` (refreshes the fallback board from live), `register_shapes.py`, `register_leds.py`, `make_icons.py`, `make_qr.py`, `cast-test.html` + `serve.py`, `led_map.json` (the Pi wiring contract), and the retired `register_holds.py`/`register_mirror.py` + `hold_positions.json` (history; they can't write into `app/`).
 - **`print/`:** the A5 poster and QR, not deployed. The QR encodes `/scan`; change where it lands in `app/_redirects`, never by reprinting.
 
-**Local only (gitignored):** `db/`, `pi/` (the June 2026 Pi 3 listener and LED tests: superseded, not the basis for the Pi 4 rebuild), `docs/*` except the two committed docs, `reference/original-pi-codebase/dtb/` (Gareth's original code; two register scripts read it by path). Gareth's SD-card image, the rest of its boot partition, the old reverse-engineering and the old LED test scripts are archived outside the repo in `Documents\ProjectBoard-archive\`.
+**Local only (gitignored):** `db/`, `pi/` (the June 2026 Pi 3 listener and LED tests: superseded, not the basis for the Pi 4 rebuild), `docs/*` except the three committed docs, `reference/original-pi-codebase/dtb/` (Gareth's original code; two register scripts read it by path). Gareth's SD-card image, the rest of its boot partition, the old reverse-engineering and the old LED test scripts are archived outside the repo in `Documents\ProjectBoard-archive\`.
 
 **Deploy:** Cloudflare Workers static assets. Push `dev` → a preview build at the staging URL (not promoted). Merge to `main` → production. `build.sh` wipes and rebuilds `public/` from its allowlist of files in `app/`; anything unlisted never ships. Preview locally with `python -m http.server` inside `app/`. Details: overview §9 and `docs/rollout-plan.md`.
 
