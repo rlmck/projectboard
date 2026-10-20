@@ -611,8 +611,8 @@
   // ── Viewer gestures ────────────────────────────────────────────────────────────
   // Pointer events on the board and the backdrop: one finger pans, two pinch
   // (about their midpoint, scaled by FS_PINCH_GAIN). On the read-only views a tap hides/shows the bar and a
-  // double-tap switches route ↔ whole board (except that zooming out to the whole
-  // board closes a viewer that pinching can close); a quick sideways swipe steps to the
+  // double-tap closes a viewer that pinching can close, and otherwise switches
+  // route ↔ whole board; a quick sideways swipe steps to the
   // next/previous problem when the board isn't wider than the screen (otherwise
   // a drag pans). After any drag or pinch the click that follows is swallowed,
   // so it never sets a hold on the create boards.
@@ -699,10 +699,9 @@
     if (now - fsLastTap < 300) {                           // double-tap
       fsLastTap = 0;
       clearTimeout(fsTapTimer);
-      const to = fsFrame === 'route' && fsRouteBox() ? 'board' : (fsRouteBox() ? 'route' : 'board');
-      // Zooming out to the whole board on a detail view means you're done: back to the page.
-      if (to === 'board' && fsCanPinchClose()) fsPinchClose();
-      else fsSetFrame(to);
+      // On a detail view a double-tap always takes you back to the page.
+      if (fsCanPinchClose()) fsPinchClose();
+      else fsSetFrame(fsFrame === 'route' && fsRouteBox() ? 'board' : (fsRouteBox() ? 'route' : 'board'));
       return;
     }
     fsLastTap = now;

@@ -62,7 +62,7 @@ Details in `docs/cast-contract.md` → "Open questions".
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
 - **2026-10-20, Claude Code (no stray scroll; pinch in and out of fullscreen).**
-  - **Changed (`pb-v113`/`pb-v114`, on `dev` only):** pages that fit no longer scroll by a few pixels (12px gap above the nav, no trailing margin on the last item; Profile and the challenge page spaced a little tighter). Fullscreen pinch now follows the fingers 1:1 (gain 1.8 → 1). On a problem or circuit, a pinch on the board opens fullscreen and keeps zooming; pinching all the way back out glides the board back and closes it (not for landscape-opened fullscreen or create views). **`pb-v114`:** a double-tap that would zoom out to the whole board closes fullscreen the same way.
+  - **Changed (`pb-v113`–`pb-v115`, on `dev` only):** pages that fit no longer scroll by a few pixels (12px gap above the nav, no trailing margin on the last item; Profile and the challenge page spaced a little tighter). Fullscreen pinch now follows the fingers 1:1 (gain 1.8 → 1). On a problem or circuit, a pinch on the board opens fullscreen and keeps zooming; pinching all the way back out glides the board back and closes it (not for landscape-opened fullscreen or create views). **`pb-v115`:** on those views a double-tap anywhere closes fullscreen the same way.
   - **Tested:** scroll overflow measured per view at 390×844/763/667; the pinch with simulated touches in Chrome. Not yet on a real phone.
   - **Left:** Ross to check the pinch on his phone on staging (no accidental swipe after a pinch; feel on iOS and Android), then fast-forward `main`.
   - **New questions:** none.
