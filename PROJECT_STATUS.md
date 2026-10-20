@@ -9,7 +9,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - The original system's SD card image (dtb-backup.img) is kept for reference only.
 - board_listener.py will be discarded; Pi-side code starts fresh.
 - LEDs don't work yet, so the app is not fully rolled out to the public.
-- The app itself is live at https://symmetryboard.co.uk (service worker `pb-v111`, 19 Oct 2026), with the Pat Burner challenge live. Casting sends correctly, but no listener is running, so nothing lights.
+- The app itself is live at https://symmetryboard.co.uk (service worker `pb-v112`, 20 Oct 2026), with the Pat Burner challenge live. Casting sends correctly, but no listener is running, so nothing lights.
 
 ## Decisions
 - Remove Google sign-in completely. **Done 18 Oct 2026** (provider off; OAuth client deleted 19 Oct).
@@ -62,8 +62,9 @@ Details in `docs/cast-contract.md` → "Open questions".
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
 - **2026-10-20, Claude Code (button consistency sweep).**
-  - **Changed (`pb-v112`, on `dev` only):** every button now uses the page font (they were drawn in the browser's control font); one radius (`--btn-radius`, 10px) for all buttons and fields; secondary (ghost) buttons use normal text colour, and stacked buttons are always 10px apart; one small-button style (Suggest one, Copy, End early, the install banner); press feedback and a disabled look on every button; sheet close buttons are 36px like the other icon buttons; the nickname sheet lost its extra inset; Profile's header matches Ranks'; the "+" button matches the other icon buttons; the edit-grade sheet and circuit create use the same grade grid as problem create; circuit create saves with a tick (was a floppy disk) and every undo/redo uses the same icon; the outline editor's Preview toggle lights up like Shuffle.
-  - **Left:** Ross to check on his phone on staging, then fast-forward `main`.
+  - **Changed (`pb-v112`):** every button now uses the page font (they were drawn in the browser's control font); one radius (`--btn-radius`, 10px) for all buttons and fields; secondary (ghost) buttons use normal text colour, and stacked buttons are always 10px apart; one small-button style (Suggest one, Copy, End early, the install banner); press feedback and a disabled look on every button; sheet close buttons are 36px like the other icon buttons; the nickname sheet lost its extra inset; Profile's header matches Ranks'; the "+" button matches the other icon buttons; the edit-grade sheet and circuit create use the same grade grid as problem create; circuit create saves with a tick (was a floppy disk) and every undo/redo uses the same icon; the outline editor's Preview toggle lights up like Shuffle.
+  - **Live:** Ross checked it on his phone on staging; `main` fast-forwarded to `dev` (`b603ebe`), live `sw.js` confirmed at `pb-v112`.
+  - **Left:** nothing.
   - **New questions:** none.
 
 - **2026-10-19, Claude Code (Pat Burner: the way back).**
