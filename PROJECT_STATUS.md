@@ -9,7 +9,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - The original system's SD card image (dtb-backup.img) is kept for reference only.
 - board_listener.py will be discarded; Pi-side code starts fresh.
 - LEDs don't work yet, so the app is not fully rolled out to the public.
-- The app itself is live at https://symmetryboard.co.uk (service worker `pb-v112`, 20 Oct 2026), with the Pat Burner challenge live. Casting sends correctly, but no listener is running, so nothing lights.
+- The app itself is live at https://symmetryboard.co.uk (service worker `pb-v115`, 20 Oct 2026), with the Pat Burner challenge live. Casting sends correctly, but no listener is running, so nothing lights.
 
 ## Decisions
 - Remove Google sign-in completely. **Done 18 Oct 2026** (provider off; OAuth client deleted 19 Oct).
@@ -62,9 +62,10 @@ Details in `docs/cast-contract.md` → "Open questions".
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
 - **2026-10-20, Claude Code (no stray scroll; pinch in and out of fullscreen).**
-  - **Changed (`pb-v113`–`pb-v115`, on `dev` only):** pages that fit no longer scroll by a few pixels (12px gap above the nav, no trailing margin on the last item; Profile and the challenge page spaced a little tighter). Fullscreen pinch now follows the fingers 1:1 (gain 1.8 → 1). On a problem or circuit, a pinch on the board opens fullscreen and keeps zooming; pinching all the way back out glides the board back and closes it (not for landscape-opened fullscreen or create views). **`pb-v115`:** on those views a double-tap anywhere closes fullscreen the same way.
+  - **Changed (`pb-v113`–`pb-v115`):** pages that fit no longer scroll by a few pixels (12px gap above the nav, no trailing margin on the last item; Profile and the challenge page spaced a little tighter). Fullscreen pinch now follows the fingers 1:1 (gain 1.8 → 1). On a problem or circuit, a pinch on the board opens fullscreen and keeps zooming; pinching all the way back out glides the board back and closes it (not for landscape-opened fullscreen or create views). **`pb-v115`:** on those views a double-tap anywhere closes fullscreen the same way.
   - **Tested:** scroll overflow measured per view at 390×844/763/667; the pinch with simulated touches in Chrome. Not yet on a real phone.
-  - **Left:** Ross to check the pinch on his phone on staging (no accidental swipe after a pinch; feel on iOS and Android), then fast-forward `main`.
+  - **Live:** Ross checked it on his phone on staging; `main` fast-forwarded to `dev`. The first production build (`0dcea6f`) failed in Cloudflare although the same tree built on `dev`; an empty retry commit (`a9a56ec`) deployed it. Live `sw.js` confirmed at `pb-v115`.
+  - **Left:** nothing.
   - **New questions:** none.
 
 - **2026-10-20, Claude Code (button consistency sweep).**
