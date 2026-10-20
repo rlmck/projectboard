@@ -2,10 +2,13 @@
 
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The cast contract: `docs/cast-contract.md`.
 
-## Current state (as of 2026-10-19)
+## Current state (as of 2026-10-20)
 - Old Pi 3B: unavailable. Not relying on it.
 - Rebuild plan: a donated Raspberry Pi 4 (believed 4GB) from a gym member. Nothing else comes with it (no HAT, relays or PSU), so parts must be bought.
-  - Already in the box behind the board, and reusable: the relay module, the LED power supply (a 5 V 10 A brick) and the wall touchscreen. To buy: a USB-C 5 V 3 A supply for the Pi 4, a 74AHCT125 level shifter, a micro-HDMI to HDMI cable.
+  - **Corrected 20 Oct 2026:** the earlier note that a relay module was "already in the box behind the board" was wrong. Gareth's whole box (Pi 3B, Witty Pi HAT, 2-channel relay board, a small board that looks like a level shifter, and its wiring) left with the old Pi.
+  - Still on the wall (Ross, 20 Oct): the LED strip with **two** LED power supplies (ratings not yet checked), the wall touchscreen with its HDMI cable, and some other cables still to be identified.
+  - Ross already has a USB-C supply for the Pi 4 and an SD card.
+  - Bought 20 Oct 2026 (to match Gareth's setup): a 2-channel 5 V opto-isolated relay module (eBay), a 74AHCT125 level shifter breakout (Amazon), a 200x100x70 mm IP65 junction box, female-female jumpers, 1 m red and 1 m blue 16 AWG wire (blue = negative; black was out of stock), 5x Wago 221-413, 5x 3 A 12-way terminal strips (Maplin Pro), a micro-HDMI to HDMI adapter, a 9 mm M2.5 standoff kit and a Pi 4 heatsink set (The Pi Hut).
 - The original system's SD card image (dtb-backup.img) is kept for reference only.
 - board_listener.py will be discarded; Pi-side code starts fresh.
 - LEDs don't work yet, so the app is not fully rolled out to the public.
@@ -33,12 +36,12 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 1. PWA account rework: **done 18 Oct 2026.** Left: delete the local passphrase hand-out file once all 7 migrated accounts have signed in.
 2. Cast contract finalised in docs/cast-contract.md. First version written 19 Oct 2026 from the code; its open questions need answers.
 3. Mock listener on the laptop for end-to-end cast testing without hardware. (`tools/cast-test.html` already subscribes and logs every cast; it doesn't yet turn a cast into LED indices.)
-4. Hardware: parts list once the Pi 4 is in hand; check LED strip compatibility against the original SD image. (From Gareth's code and the image: WS2801 over SPI0, 1 MHz, mode 0, RGB, 5 V. Still to check on the wall: colour order, pixel 0, the 16-wire harness, what each relay switches.)
+4. Hardware: parts bought 20 Oct 2026 (see Current state). Next: identify the wall-side wiring from Ross's photos, then a wiring guide and a safe first power-on test (worked out in the claude.ai hardware chat). Check LED strip compatibility against the original SD image. (From Gareth's code and the image: WS2801 over SPI0, 1 MHz, mode 0, RGB, 5 V. Still to check on the wall: colour order, pixel 0, the 16-wire harness, what each relay switches.)
 5. Fresh Pi listener built to the contract, replacing the mock.
 
 ## Waiting on
 - Pi 4 donation (handover)
-- On install day: photos of the green sockets in the box; identifying the 16-wire harness (two 8-way plugs).
+- Ross's photos (from 21 Oct): the 16-wire harness (two 8-way plugs, close up, wire colours visible); both LED power supplies' labels and output terminals; the other cables on the wall; and the relay board and level shifter when they arrive (pin labels readable). Then multimeter checks on the harness before anything is connected.
 - An on-site check of the cast geofence centre (non-admin phone, by the board and at the far end of the gym).
 
 ## Feature backlog
@@ -60,6 +63,11 @@ Details in `docs/cast-contract.md` → "Open questions".
 
 ## Session log
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-10-20, chat (hardware parts).**
+  - **Changed:** corrected the hardware notes in Current state (no relay module on the wall; Gareth's box is gone; two LED supplies and the touchscreen with its HDMI cable remain). Recorded the parts Ross bought to rebuild the box to match Gareth's setup.
+  - **Left:** Ross's wall photos (Waiting on), then the wiring guide and first power-on test; then the fresh listener (workstream 5).
+  - **New questions:** what each of the two LED supplies powers and their ratings; which harness wires are 5 V, ground, data and clock; what the second relay switched (possibly the touchscreen's power).
 
 - **2026-10-20, Claude Code (no stray scroll; pinch in and out of fullscreen).**
   - **Changed (`pb-v113`–`pb-v115`):** pages that fit no longer scroll by a few pixels (12px gap above the nav, no trailing margin on the last item; Profile and the challenge page spaced a little tighter). Fullscreen pinch now follows the fingers 1:1 (gain 1.8 → 1). On a problem or circuit, a pinch on the board opens fullscreen and keeps zooming; pinching all the way back out glides the board back and closes it (not for landscape-opened fullscreen or create views). **`pb-v115`:** on those views a double-tap anywhere closes fullscreen the same way.
