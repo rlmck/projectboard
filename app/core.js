@@ -601,7 +601,8 @@
     lsSet('pb-fs-hints', String(seen + 1));
     if (seen >= 3) return;
     const hint = document.getElementById('board-fs-hint');
-    hint.textContent = fsReadOnly() ? 'Pinch to zoom · double-tap for the whole board' : 'Pinch to zoom · tap holds to set them';
+    hint.textContent = fsCanPinchClose() ? 'Pinch to zoom · double-tap or pinch out to close'
+      : fsReadOnly() ? 'Pinch to zoom · double-tap for the whole board' : 'Pinch to zoom · tap holds to set them';
     hint.classList.add('show');
     clearTimeout(fsHintTimer);
     fsHintTimer = setTimeout(() => hint.classList.remove('show'), 2600);
@@ -610,7 +611,8 @@
   // ── Viewer gestures ────────────────────────────────────────────────────────────
   // Pointer events on the board and the backdrop: one finger pans, two pinch
   // (about their midpoint, scaled by FS_PINCH_GAIN). On the read-only views a tap hides/shows the bar and a
-  // double-tap switches route ↔ whole board; a quick sideways swipe steps to the
+  // double-tap switches route ↔ whole board (except that zooming out to the whole
+  // board closes a viewer that pinching can close); a quick sideways swipe steps to the
   // next/previous problem when the board isn't wider than the screen (otherwise
   // a drag pans). After any drag or pinch the click that follows is swallowed,
   // so it never sets a hold on the create boards.
@@ -697,7 +699,10 @@
     if (now - fsLastTap < 300) {                           // double-tap
       fsLastTap = 0;
       clearTimeout(fsTapTimer);
-      fsSetFrame(fsFrame === 'route' && fsRouteBox() ? 'board' : (fsRouteBox() ? 'route' : 'board'));
+      const to = fsFrame === 'route' && fsRouteBox() ? 'board' : (fsRouteBox() ? 'route' : 'board');
+      // Zooming out to the whole board on a detail view means you're done: back to the page.
+      if (to === 'board' && fsCanPinchClose()) fsPinchClose();
+      else fsSetFrame(to);
       return;
     }
     fsLastTap = now;
