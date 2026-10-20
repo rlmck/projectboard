@@ -61,6 +61,11 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-10-20, Claude Code (button consistency sweep).**
+  - **Changed (`pb-v112`, on `dev` only):** every button now uses the page font (they were drawn in the browser's control font); one radius (`--btn-radius`, 10px) for all buttons and fields; secondary (ghost) buttons use normal text colour, and stacked buttons are always 10px apart; one small-button style (Suggest one, Copy, End early, the install banner); press feedback and a disabled look on every button; sheet close buttons are 36px like the other icon buttons; the nickname sheet lost its extra inset; Profile's header matches Ranks'; the "+" button matches the other icon buttons; the edit-grade sheet and circuit create use the same grade grid as problem create; circuit create saves with a tick (was a floppy disk) and every undo/redo uses the same icon; the outline editor's Preview toggle lights up like Shuffle.
+  - **Left:** Ross to check on his phone on staging, then fast-forward `main`.
+  - **New questions:** none.
+
 - **2026-10-19, Claude Code (Pat Burner: the way back).**
   - **Tested on staging** with two throwaway accounts, through the app: a full run, reloads mid-rep and mid-rest, End early, saving with no signal, the Ranks switch, a tie, compare, the circuit lock. All passed; both accounts deleted through the app. Ross checked the admin delete and the circuit delete refusal.
   - **Changed (`pb-v111`):** leaving the challenge view no longer pauses anything visible: the beeps carry on in every view, and a strip on the bottom nav ("Back to the Pat Burner", with the phase and clock) leads back to the attempt.

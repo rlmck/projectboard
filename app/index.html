@@ -264,10 +264,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
       </button>
       <button class="icon-btn" id="ol-undo" aria-label="Undo" disabled>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
       </button>
       <button class="icon-btn" id="ol-redo" aria-label="Redo" disabled>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 14 20 9 15 4"></polyline><path d="M4 20v-7a4 4 0 0 1 4-4h12"></path></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 14 20 9 15 4"></polyline><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"></path></svg>
       </button>
       <div class="menu-wrap">
         <button class="icon-btn" id="ol-menu-btn" aria-label="More options" aria-haspopup="true" aria-expanded="false">
@@ -412,8 +412,8 @@
 
 <!-- ══ PROFILE VIEW ═══════════════════════════════════════════════════ -->
 <section id="view-profile" class="view">
-  <header class="topbar">
-    <div class="header-title">Profile</div>
+  <header class="topbar detail-bar">
+    <div class="detail-bar-title">Profile</div>
   </header>
   <main>
     <div id="profile-content"></div>
@@ -493,13 +493,13 @@
     <div class="detail-bar-title">Create circuit</div>
     <div class="detail-actions">
       <button class="icon-btn" id="cc-undo" aria-label="Undo last hold">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
       </button>
       <button class="icon-btn" id="cc-reset" aria-label="Clear all holds">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
       </button>
       <button class="icon-btn save-icon-btn" id="cc-save" aria-label="Save circuit">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
       </button>
     </div>
   </header>
@@ -531,7 +531,7 @@
       <input class="fld" id="cc-name" type="text" placeholder="Circuit name" maxlength="60" autocomplete="off" />
 
       <div class="create-grade-label">Grade</div>
-      <div class="grade-tabs create-grades" id="cc-grades"></div>
+      <div class="grade-grid" id="cc-grades"></div>
 
       <div class="auth-error" id="cc-error"></div>
     </div>
@@ -691,7 +691,7 @@
     </div>
     <div class="name-body">
       <p class="shell-sub" style="margin:0 0 12px">Set the grade for <b id="grade-problem-name"></b>.</p>
-      <div class="grade-tabs grade-edit-options" id="grade-edit-options"></div>
+      <div class="grade-grid grade-edit-options" id="grade-edit-options"></div>
       <div class="auth-error" id="grade-error"></div>
       <div class="modal-actions">
         <button class="btn-block btn-ghost" id="grade-cancel">Cancel</button>

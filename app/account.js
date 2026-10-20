@@ -845,7 +845,7 @@
         <div class="profile-row"><span class="k">Total points</span><span class="v" id="profile-points">${leaderboardLoaded ? userPoints() : '…'}</span></div>
         <div class="profile-row"><span class="k">Total ticks</span><span class="v">${total}</span></div>
         <div class="profile-row"><span class="k">Hardest send</span><span class="v">${hardestHtml}</span></div>
-        ${profile.is_admin ? `<a class="btn-block btn-ghost" href="#admin" style="display:block;text-align:center;text-decoration:none;margin-top:18px">Admin tools</a>` : ''}
+        ${profile.is_admin ? `<a class="btn-block btn-ghost profile-admin" href="#admin">Admin tools</a>` : ''}
         <button class="btn-block btn-ghost profile-delete" id="profile-delete">Delete my account and all my data</button>`;
       document.getElementById('profile-signout').addEventListener('click', doSignOut);
       document.getElementById('profile-edit-name').addEventListener('click', openNameModal);

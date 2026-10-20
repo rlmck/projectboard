@@ -18,6 +18,7 @@
       --text: #f5f5f5;
       --text-muted: #9a9a9a;
       --radius: 12px;
+      --btn-radius: 10px;     /* every rectangular button and field */
       --shadow: 0 4px 24px rgba(0,0,0,0.4);
       --nav-h: 60px;
     }
@@ -40,6 +41,9 @@
        browser's long-press-to-copy link, which sets its own user-select: all). */
     body { user-select: none; -webkit-user-select: none; }
     input, textarea { user-select: text; -webkit-user-select: text; }
+    /* Form controls don't inherit the page font by default, so every button
+       would otherwise be drawn in the browser's own control font. */
+    button, input, select, textarea { font-family: inherit; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: var(--bg);
@@ -281,29 +285,6 @@
                10px calc(16px + env(safe-area-inset-left));
     }
 
-    .header-title {
-      font-size: 1.1rem;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 10px;
-    }
-
-    .header-title .dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: var(--cast);
-      box-shadow: 0 0 8px var(--cast);
-      animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-
     .search-row { display: flex; gap: 8px; align-items: center; }
     .search-wrap { position: relative; flex: 1; }
 
@@ -321,7 +302,7 @@
       width: 100%;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--btn-radius);
       color: var(--text);
       font-size: 15px;
       padding: 9px 12px;
@@ -370,8 +351,6 @@
 
     /* "+" create button in the list search row */
     .add-btn {
-      width: 40px;
-      height: 40px;
       color: var(--accent);
       border-color: var(--accent);
     }
@@ -583,7 +562,7 @@
       background: var(--cast);
       color: #fff;
       border: none;
-      border-radius: 8px;
+      border-radius: var(--btn-radius);
       font-size: 13px;
       font-weight: 700;
       padding: 10px 15px;
@@ -611,7 +590,7 @@
       border: 1px solid var(--border);
       color: var(--text);
       width: 38px; height: 38px;
-      border-radius: 9px;
+      border-radius: var(--btn-radius);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -622,10 +601,12 @@
     }
     .icon-btn:active { background: var(--surface2); transform: scale(0.95); }
     .icon-btn svg { width: 20px; height: 20px; }
+    .icon-btn:disabled { opacity: 0.35; pointer-events: none; cursor: default; }
 
     .detail-bar-title {
       flex: 1;
       min-width: 0;
+      line-height: 38px;        /* an icon button's height, so a title-only bar (Profile) matches the rest */
       font-size: 1rem;
       font-weight: 700;
       white-space: nowrap;
@@ -751,7 +732,7 @@
     /* Mirror toggle lit — the board overlay is showing the mirrored problem */
     #detail-mirror.active { color: #60a5fa; border-color: #3b82f6; background: rgba(59,130,246,0.16); }
     /* Shuffle on — swiping forward picks a random problem */
-    #detail-shuffle.active { color: var(--accent-hover); border-color: var(--accent); background: rgba(236,72,153,0.14); }
+    #detail-shuffle.active, #ol-preview-btn.on { color: var(--accent-hover); border-color: var(--accent); background: rgba(236,72,153,0.14); }
     /* Seven buttons in the detail bar: tighten the gaps on the narrowest phones */
     @media (max-width: 359px) { #view-detail .detail-actions { gap: 5px; } }
 
@@ -885,14 +866,16 @@
       background: var(--surface2);
       border: 1px solid var(--border);
       color: var(--text);
-      width: 32px; height: 32px;
-      border-radius: 8px;
+      width: 36px; height: 36px; flex-shrink: 0;
+      border-radius: var(--btn-radius);
       cursor: pointer;
-      font-size: 17px;
+      font-size: 16px;
       line-height: 1;
       display: flex; align-items: center; justify-content: center;
       touch-action: manipulation;
+      transition: background 0.15s, transform 0.1s;
     }
+    .modal-close:active { background: var(--border); transform: scale(0.95); }
     .info-row { margin-bottom: 18px; }
     .info-row:last-child { margin-bottom: 0; }
     .info-label {
@@ -907,8 +890,8 @@
     .auth-step[hidden], .auth-captcha[hidden] { display: none; }
     .auth-toggle { font-size: 13px; color: var(--text-muted); margin: 14px 0 2px; }
     .auth-toggle a { color: var(--accent-hover); font-weight: 700; text-decoration: none; cursor: pointer; }
+    #auth-back { margin-top: 10px; }
     .auth-error { color: #f87171; font-size: 13px; min-height: 18px; margin: 6px 0 2px; }
-    #name-modal .name-body { padding: 4px 18px 20px; }
     .auth-note { font-size: 13px; color: var(--text-muted); line-height: 1.5; margin: 2px 0 10px; text-align: left; }
     .auth-note b { color: var(--text); }
     .auth-rule {
@@ -927,7 +910,7 @@
     /* Nickname field + "Suggest one" */
     .nick-row { display: flex; gap: 8px; align-items: flex-start; }
     .nick-row .fld { flex: 1; min-width: 0; }
-    .nick-suggest { flex: none; margin-top: 0; height: 46px; padding: 0 12px; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .nick-suggest { flex: none; height: 46px; padding: 0 14px; }
     .nick-check { font-size: 13px; color: #f87171; min-height: 18px; margin: -4px 0 6px; text-align: left; }
     .nick-check.ok { color: #4ade80; }
     /* The passphrase, shown once: big, selectable, with Copy */
@@ -942,7 +925,7 @@
       font-size: 19px; font-weight: 700; line-height: 1.35; word-break: break-word;
       user-select: text; -webkit-user-select: text;
     }
-    .pass-copy { flex: none; margin-top: 0; padding: 9px 12px; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .pass-copy { flex: none; }
     .pass-warn { font-size: 13px; line-height: 1.5; color: var(--gold); text-align: left; margin: 0 0 12px; }
     .pass-warn b { color: var(--gold); }
     .check-row { display: flex; align-items: flex-start; gap: 10px; text-align: left; font-size: 14px; font-weight: 600; margin: 0 0 12px; cursor: pointer; }
@@ -1087,9 +1070,6 @@
     /* Short screens: the steps alone. */
     @media (max-height: 640px) { .create-next { display: none; } }
 
-    /* Undo greys out when there's nothing to undo. */
-    #create-undo:disabled { opacity: 0.35; pointer-events: none; }
-
     /* The grade sheet: every grade as a tappable chip. */
     .grade-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 8px; }
     .grade-grid .grade-tab { padding: 10px 0; font-size: 15px; text-align: center; }
@@ -1111,12 +1091,10 @@
       font-size: 12px; font-weight: 700; text-transform: uppercase;
       letter-spacing: 0.08em; color: var(--text-muted); margin: 14px 0 8px;
     }
-    .create-grades { margin-top: 0; flex-wrap: wrap; }
 
     /* Save action lives in the header (furthest right) as an accent-coloured icon. */
     .save-icon-btn { background: var(--accent); border-color: var(--accent); color: #fff; }
     .save-icon-btn:active { background: var(--accent-hover); }
-    .save-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* ── Hold outlines editor (#outlines, admin) ──────────────────────────
        Pinned to the viewport like the detail view: header, a stage the board is
@@ -1131,10 +1109,8 @@
       display: flex; flex-direction: column; overflow: hidden;
     }
     #view-outlines .topbar { flex: none; }
-    #view-outlines .icon-btn:disabled { opacity: 0.35; cursor: default; }
     /* No title in this header, so the back button sits left and the tools right. */
     #view-outlines .detail-actions { gap: 6px; }
-    #ol-preview-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
     .ol-stage {
       flex: 1; min-height: 0; position: relative; overflow: hidden;
       background: #050505; touch-action: none; cursor: default;
@@ -1204,7 +1180,7 @@
     }
     .ol-note-btn {
       flex: none; pointer-events: auto; cursor: pointer; touch-action: manipulation;
-      background: var(--accent); color: #fff; border: none; border-radius: 8px;
+      background: var(--accent); color: #fff; border: none; border-radius: var(--btn-radius);
       padding: 6px 12px; font-size: 13px; font-weight: 700;
     }
     #ol-note[hidden], #ol-loupe[hidden], #ol-note-btn[hidden] { display: none; }
@@ -1217,16 +1193,19 @@
     .ol-row + .ol-row { margin-top: 8px; }
     .ol-jump {
       flex: 1; min-width: 0; height: 38px; padding: 0 10px;
-      background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 9px;
+      background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--btn-radius);
       font: inherit; font-size: 15px; font-weight: 600;
     }
     .ol-pad { display: flex; gap: 6px; }
     .ol-pad .icon-btn { touch-action: none; }
     .ol-btn {
       flex: 1; min-width: 0; height: 38px; padding: 0 10px;
-      background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 9px;
+      background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--btn-radius);
       font-size: 14px; font-weight: 700; cursor: pointer; touch-action: manipulation; white-space: nowrap;
+      transition: transform 0.1s, background 0.15s;
     }
+    .ol-btn:active { transform: scale(0.97); background: var(--border); }
+    .ol-publish:active { background: var(--accent-hover); }
     .ol-btn:disabled { opacity: 0.4; cursor: default; }
     .ol-publish { background: var(--accent); border-color: var(--accent); color: #fff; }
     .ol-publish:disabled { background: var(--surface2); border-color: var(--border); color: var(--text-muted); opacity: 1; }
@@ -1309,7 +1288,7 @@
        and a translate (the pan). Its overlays are %-positioned, so they follow. */
     .board-expand-btn {
       position: absolute; top: 8px; right: 8px; z-index: 5;
-      width: 36px; height: 36px; border-radius: 9px;
+      width: 36px; height: 36px; border-radius: var(--btn-radius);
       display: flex; align-items: center; justify-content: center;
       background: rgba(10,10,10,0.55); border: 1px solid rgba(255,255,255,0.25);
       color: #fff; cursor: pointer; -webkit-tap-highlight-color: transparent;
@@ -1501,7 +1480,7 @@
       width: 100%;
       background: var(--surface2);
       border: 1px solid var(--border);
-      border-radius: 9px;
+      border-radius: var(--btn-radius);
       color: var(--text);
       font-size: 15px;
       padding: 12px;
@@ -1512,7 +1491,7 @@
     .btn-block {
       width: 100%;
       border: none;
-      border-radius: 10px;
+      border-radius: var(--btn-radius);
       padding: 14px;
       font-size: 15px;
       font-weight: 700;
@@ -1521,10 +1500,27 @@
       transition: transform 0.1s, opacity 0.2s, background 0.15s;
     }
     .btn-block:active { transform: scale(0.98); }
+    .btn-block:disabled { opacity: 0.5; cursor: not-allowed; }
+    /* Stacked buttons are always 10px apart, whichever kinds they are. */
+    .btn-block + .btn-block { margin-top: 10px; }
+    a.btn-block { display: block; text-align: center; text-decoration: none; }
     .btn-primary { background: var(--accent); color: #fff; }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary:active { background: var(--accent-hover); }
     .btn-danger { background: #dc2626; color: #fff; }
-    .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-danger:active { background: #b91c1c; }
+    /* Secondary: outlined, in the normal text colour (muted text read as disabled). */
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-ghost:active { background: var(--surface2); }
+
+    /* Small buttons (Suggest one, Copy, End early, the install banner's): one size and shape. */
+    .nick-suggest, .pass-copy, .ch-end, .install-btn {
+      border-radius: var(--btn-radius);
+      padding: 9px 14px;
+      font-size: 13px; font-weight: 700; line-height: 1.2;
+      cursor: pointer; touch-action: manipulation; white-space: nowrap;
+      transition: transform 0.1s, background 0.15s;
+    }
+    .nick-suggest:active, .pass-copy:active, .ch-end:active, .install-btn:active { transform: scale(0.96); }
 
     /* Admin-only header buttons hide via the hidden attribute (overrides icon-btn's flex) */
     .admin-only[hidden] { display: none; }
@@ -1571,7 +1567,7 @@
     .menu-item.danger { color: #f87171; }
 
     /* Grade chips inside the edit-grade modal */
-    .grade-edit-options { flex-wrap: wrap; margin: 0 0 6px; }
+    .grade-edit-options { margin: 0 0 6px; }
 
     /* Side-by-side modal buttons (cancel / confirm) */
     .modal-actions { display: flex; gap: 10px; }
@@ -1579,7 +1575,6 @@
     /* Edit-choice chooser: two stacked full-width options (grade vs holds). */
     .edit-choice-actions { display: flex; flex-direction: column; gap: 10px; }
     .edit-choice-actions .btn-block { margin-top: 0; }
-    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); margin-top: 10px; }
     .link { color: var(--accent-hover); text-decoration: none; font-weight: 600; }
 
     /* ── Profile ─────────────────────────────────────────────────────── */
@@ -1606,7 +1601,8 @@
     .profile-edit svg { width: 16px; height: 16px; }
     .profile-edit:active { color: var(--text); }
     /* "Delete my account and all my data", at the foot of Profile */
-    .profile-delete { margin-top: 28px; color: #f87171; border-color: rgba(248,113,113,0.4); }
+    .profile-admin { margin-top: 18px; }
+    .btn-block.profile-delete { margin-top: 28px; color: #f87171; border-color: rgba(248,113,113,0.4); }
 
     /* ── Admin hub (#admin) ──────────────────────────────────────────── */
     #admin-content { padding: 12px 16px 24px; max-width: 520px; margin: 0 auto; }
@@ -1673,7 +1669,6 @@
       display: flex; align-items: center; justify-content: center; gap: 8px;
     }
     .user-detail-actions { margin-top: 24px; }
-    .user-detail-actions .btn-block + .btn-block { margin-top: 10px; }
     .user-detail-note { color: var(--text-muted); font-size: 13px; text-align: center; line-height: 1.5; margin-top: 12px; }
     .user-badge.public { background: rgba(74,222,128,0.12); border-color: rgba(74,222,128,0.45); color: #86efac; }
     .admin-search { margin-bottom: 12px; }
@@ -1835,7 +1830,7 @@
     .cc-option-label small { color: var(--text-muted); font-weight: 500; font-size: 12px; }
 
     /* 1 / 2 segmented control */
-    .cc-seg { display: flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+    .cc-seg { display: flex; border: 1px solid var(--border); border-radius: var(--btn-radius); overflow: hidden; }
     .cc-seg-btn {
       background: var(--surface2); color: var(--text-muted); border: none;
       padding: 8px 18px; font-size: 14px; font-weight: 700; cursor: pointer;
@@ -1954,16 +1949,7 @@
     .install-msg { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.4; color: var(--text); }
     .install-msg b { color: var(--accent-hover); }
     .install-actions { display: flex; gap: 8px; flex-shrink: 0; }
-    .install-btn {
-      border: none;
-      border-radius: 9px;
-      padding: 9px 14px;
-      font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
-      touch-action: manipulation;
-      white-space: nowrap;
-    }
+    .install-btn { border: none; }
     .install-btn.add { background: var(--accent); color: #fff; }
     .install-btn.dismiss { background: var(--surface2); color: var(--text-muted); }
 
@@ -2105,7 +2091,7 @@
       font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
       color: var(--text-muted); margin: 20px 2px 8px;
     }
-    a.btn-block { display: block; text-align: center; text-decoration: none; }
+    .ch-board-link { margin-top: 12px; }
     .ch-attempt {
       background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
       padding: 12px 14px; margin-bottom: 8px;
@@ -2152,11 +2138,7 @@
     .ch-run-top { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 18px; }
     .ch-held { font-size: 13px; color: var(--text-muted); }
     .ch-held b { color: var(--text); font-variant-numeric: tabular-nums; }
-    .ch-end {
-      background: transparent; border: 1px solid var(--border); border-radius: 9px;
-      color: var(--text-muted); font-size: 13px; font-weight: 700; padding: 8px 12px;
-      cursor: pointer; touch-action: manipulation;
-    }
+    .ch-end { background: transparent; border: 1px solid var(--border); color: var(--text); }
     .ch-end.armed, #ch-discard.armed { border-color: #dc2626; color: #f87171; }
     .ch-phase { font-size: 22px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
     .ch-phase-rep .ch-phase { color: var(--start); }
