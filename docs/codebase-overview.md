@@ -9,7 +9,7 @@
 - **Security findings:** `docs/security-findings.md`. It's **local only and never committed**, because the repo is public. If you don't have it, you're not on Ross's laptop; ask before touching RLS, grants, casting or sign-up.
 - **Also local only, on Ross's laptop:** `docs/changelog.md` (the feature-by-feature history that used to fill CLAUDE.md), `docs/project-notes.md` (hardware, the Pi, the original DTB system, the Circuits Phase 2 spec) and `db/README.md` (the index of every DB script).
 
-> **Nickname accounts went live on 18 Oct 2026** (`pb-v108`, db/30 applied, the Edge Function deployed). Sections 2, 5, 6, 8, 12 and 15 describe them. The 7 existing accounts were moved across (placeholder email, new passphrase, Google data removed) by the local `db/30_go_live.py`; a pre-switch backup is in `Documents\ProjectBoard-archive\pre-db30-backup-2026-10-18\`. `db/30_rollback.sql` restores the schema. CAPTCHA (Turnstile) is on and the Google provider is off (18 Oct 2026). The investigation behind it is `auth_audit.md` (repo root, local).
+> **Nickname accounts went live on 18 Oct 2026** (`pb-v108`, db/30 applied, the Edge Function deployed). Sections 2, 5, 6, 8, 12 and 15 describe them. The 7 existing accounts were moved across (placeholder email, new passphrase, Google data removed) by the local `db/30_go_live.py`; a pre-switch backup is in `Documents\_Archive\ProjectBoard\ProjectBoard-archive\pre-db30-backup-2026-10-18\`. `db/30_rollback.sql` restores the schema. CAPTCHA (Turnstile) is on and the Google provider is off (18 Oct 2026). The investigation behind it is `auth_audit.md` (repo root, local).
 
 ---
 
@@ -94,7 +94,7 @@ Local only (gitignored), on Ross's laptop:
 - `docs/*`: `changelog.md`, `project-notes.md`, `pi4-led-audit.md` (the Pi 4 / LED spec), `CC_Reference_Gareth_Code.md`, `hardware/` photos, and `security-findings.md`.
 - `reference/original-pi-codebase/dtb/`: Gareth's original DTB code, extracted from his SD card. `tools/register_holds.py` and `tools/register_mirror.py` read `dtb/SettingsFolder/holdlist.csv`, `dtb/SettingsFolder/MirrorDic.txt` and `dtb/dicholdlist.txt` from it by path, so it stays where it is.
 - `.claude/settings.local.json`: Claude Code's per-machine settings.
-- **Archived outside the repo** in `Documents\ProjectBoard-archive\` (see its `README.txt`); nothing depends on any of it:
+- **Archived outside the repo** in `Documents\_Archive\ProjectBoard\ProjectBoard-archive\` (see its `README.txt`); nothing depends on any of it:
   - since 11 Sep 2026: the 31 GB image of Gareth's SD card, the reverse-engineering of the DTB app, and unused source art;
   - since the 11 Sep 2026 folder tidy: the rest of the SD card's boot partition (kernels, firmware, overlays, `.dtb` files; 37 MB) that used to sit in `reference/original-pi-codebase/`, and the old LED test scripts that were in `pi/archive/`.
 - `.gitignore` also ignores `*.png`, so **every committed PNG needs a `!` exception** (they're written as `!app/…`).

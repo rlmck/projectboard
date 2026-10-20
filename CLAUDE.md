@@ -99,7 +99,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 - **Tools (`tools/`, not deployed):** `snapshot_board.py` (refreshes the fallback board from live), `register_shapes.py`, `register_leds.py`, `make_icons.py`, `make_qr.py`, `cast-test.html` + `serve.py`, `led_map.json` (the Pi wiring contract), and the retired `register_holds.py`/`register_mirror.py` + `hold_positions.json` (history; they can't write into `app/`).
 - **`print/`:** the A5 poster and QR, not deployed. The QR encodes `/scan`; change where it lands in `app/_redirects`, never by reprinting.
 
-**Local only (gitignored):** `db/`, `pi/` (the June 2026 Pi 3 listener and LED tests: superseded, not the basis for the Pi 4 rebuild), `docs/*` except the three committed docs, `reference/original-pi-codebase/dtb/` (Gareth's original code; two register scripts read it by path). Gareth's SD-card image, the rest of its boot partition, the old reverse-engineering and the old LED test scripts are archived outside the repo in `Documents\ProjectBoard-archive\`.
+**Local only (gitignored):** `db/`, `pi/` (the June 2026 Pi 3 listener and LED tests: superseded, not the basis for the Pi 4 rebuild), `docs/*` except the three committed docs, `reference/original-pi-codebase/dtb/` (Gareth's original code; two register scripts read it by path). Gareth's SD-card image, the rest of its boot partition, the old reverse-engineering and the old LED test scripts are archived outside the repo in `Documents\_Archive\ProjectBoard\ProjectBoard-archive\`.
 
 **Deploy:** Cloudflare Workers static assets. Push `dev` → a preview build at the staging URL (not promoted). Merge to `main` → production. `build.sh` wipes and rebuilds `public/` from its allowlist of files in `app/`; anything unlisted never ships. Preview locally with `python -m http.server` inside `app/`. Details: overview §9 and `docs/rollout-plan.md`.
 
@@ -175,7 +175,7 @@ await channel.httpSend('cast_problem',
 
 **Don't build yet:** the feet indicators (B1/B2, parked by Ross), Circuits Phase 3 (PBs, leaderboards), tags, session/logbook tracking beyond ticks, the Flutter migration.
 
-**Waiting on Ross:** for the Pi 4: a photo of the green sockets inside the box, and identifying the 16-wire harness (two 8-way plugs) on install day. Also: checking the geofence centre on-site (cast from a non-admin phone by the board and at the far end of the gym), and deleting `Documents\ProjectBoard-archive\passphrases-2026-10-18.txt` (then emptying the Recycle Bin) once all 7 migrated accounts have signed in. Done 19 Oct 2026: Always Use HTTPS on (verified: `http://` → 301 → `https://`), the old Google OAuth client deleted. (Email/SMTP is no longer needed.)
+**Waiting on Ross:** for the Pi 4: a photo of the green sockets inside the box, and identifying the 16-wire harness (two 8-way plugs) on install day. Also: checking the geofence centre on-site (cast from a non-admin phone by the board and at the far end of the gym), and deleting `Documents\_Archive\ProjectBoard\ProjectBoard-archive\passphrases-2026-10-18.txt` (then emptying the Recycle Bin) once all 7 migrated accounts have signed in. Done 19 Oct 2026: Always Use HTTPS on (verified: `http://` → 301 → `https://`), the old Google OAuth client deleted. (Email/SMTP is no longer needed.)
 
 ---
 
