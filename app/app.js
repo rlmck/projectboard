@@ -344,7 +344,7 @@
       tracking = true;
     }, { passive: true });
     area.addEventListener('touchend', e => {
-      if (!tracking) return;
+      if (!tracking || fsOpen) { tracking = false; return; }   // a pinch may have opened the viewer
       tracking = false;
       const t = e.changedTouches[0];
       const dx = t.clientX - startX;

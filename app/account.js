@@ -829,7 +829,7 @@
         : '—';
       const onRanks = !!profile.is_public;
       el.innerHTML = `
-        <div class="shell-card" style="margin:8px auto 18px;text-align:center">
+        <div class="shell-card profile-card">
           <div class="shell-icon">${userSvg}</div>
           <div class="profile-name-row">
             <div class="shell-title" style="margin-bottom:0">${escHtml(profile.username)}</div>
@@ -859,7 +859,7 @@
     } else if (session) {
       // Signed in, but the profile didn't load (offline, or an account with none).
       el.innerHTML = `
-        <div class="shell-card" style="margin:8px auto 18px;text-align:center">
+        <div class="shell-card profile-card">
           <div class="shell-icon">${userSvg}</div>
           <div class="shell-title">Couldn’t load your profile</div>
           <div class="shell-sub">Check your connection and try again.</div>
@@ -868,7 +868,7 @@
       document.getElementById('profile-signout').addEventListener('click', doSignOut);
     } else {
       el.innerHTML = `
-        <div class="shell-card" style="margin:8px auto 18px;text-align:center">
+        <div class="shell-card profile-card">
           <div class="shell-icon">${userSvg}</div>
           <div class="shell-title">Browsing as guest</div>
           <div class="shell-sub">Sign in to set problems and track your sends. No email needed: just a nickname.</div>

@@ -335,8 +335,10 @@
   //   - The expand button also asks for the browser's real fullscreen, which hides
   //     the status and browser bars on Android and desktop (iPhone Safari only
   //     allows that for video, so there it's the in-page viewer alone).
-  // Two ways in: the expand button on any board view, and turning a touch device
-  // to landscape on the read-only detail views (fsAuto; turning back closes it).
+  // Three ways in: the expand button on any board view, pinching the board on the
+  // read-only detail views (the same pinch carries on zooming in the viewer), and
+  // turning a touch device to landscape on those views (fsAuto; turning back
+  // closes it). On the detail views, pinching all the way back out closes it again.
   // On create views taps still set holds: there's no tap-to-hide or double-tap,
   // and a drag or pinch never counts as a tap.
   // Zoom resizes the board-wrap itself (its overlays are %-positioned and scale
@@ -344,7 +346,9 @@
   // a translate, so boardPct needs nothing special.
   const AUTO_FS_VIEWS = new Set(['detail', 'circuit-detail']);
   const FS_MAX_ZOOM = 5;        // relative to the whole board fitting the screen
-  const FS_PINCH_GAIN = 1.8;    // pinch sensitivity: zoom = (finger spread ratio)^gain
+  const FS_PINCH_GAIN = 1;      // pinch sensitivity: zoom = (finger spread ratio)^gain; 1 = the board stays under the fingers
+  const FS_PINCH_ENTER = 1.06;  // fingers spreading this much on a detail board open the viewer
+  const FS_PINCH_FLOOR = 0.6;   // a closing pinch can shrink the board this far below fitting
   const FS_ROUTE_ZOOM = 3;      // the route framing never zooms further than this
   let fsOpen = false;
   let fsAuto = false;           // entered by turning the phone (turning back exits)
@@ -356,6 +360,8 @@
   let fsBase = { w: 0, h: 0 };  // the board's size when it just fits the screen
   let fsCam = { k: 1, tx: 0, ty: 0 };   // zoom (× fsBase) and top-left offset, px
   let fsFrame = 'route';        // 'route' | 'board' | 'free' (after a pinch or drag)
+  let fsPageRect = null;        // where the board sat on the page when the viewer opened
+  let fsClosing = false;        // gliding back to the page after a closing pinch
   let wakeLock = null;
   const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
   const landscapeMQ = window.matchMedia('(orientation: landscape)');
@@ -377,18 +383,21 @@
 
   // Keep the camera sensible: zoom within bounds, and the board either centred
   // (when it fits that way) or covering the screen edge to edge (no pulling it
-  // off into empty space).
-  function fsClampCam({ k, tx, ty }) {
+  // off into empty space). minK lets a closing pinch shrink the board below
+  // fitting; loose (mid-pinch) leaves the position alone so the board stays under
+  // the fingers, and it settles when they lift.
+  function fsClampCam({ k, tx, ty }, minK = 1, loose = false) {
     const vw = window.innerWidth, vh = window.innerHeight;
-    k = Math.max(1, Math.min(FS_MAX_ZOOM, k));
+    k = Math.max(minK, Math.min(FS_MAX_ZOOM, k));
+    if (loose) return { k, tx, ty };
     const W = fsBase.w * k, H = fsBase.h * k;
     tx = W <= vw ? (vw - W) / 2 : Math.min(0, Math.max(vw - W, tx));
     ty = H <= vh ? (vh - H) / 2 : Math.min(0, Math.max(vh - H, ty));
     return { k, tx, ty };
   }
 
-  function fsApply(cam, animate) {
-    fsCam = fsClampCam(cam);
+  function fsApply(cam, animate, minK = 1, loose = false) {
+    fsCam = fsClampCam(cam, minK, loose);
     if (!fsWrap) return;
     fsWrap.classList.toggle('fs-anim', !!animate && !fsReducedMotion.matches);
     fsWrap.style.width = (fsBase.w * fsCam.k) + 'px';
@@ -447,13 +456,21 @@
 
   // Take on a board-wrap: lift it into the viewer, with the blurred backdrop just
   // behind it (a sibling, so the two share a stacking context). `from` is the
-  // camera to start from, so the move to the new framing is animated.
-  function fsAdopt(wrap, from) {
+  // camera to start from, so the move to the new framing is animated. Without
+  // glide (opened by a pinch) the board stays exactly where it was, for the pinch
+  // to carry on from.
+  function fsAdopt(wrap, from, glide = true) {
     fsWrap = wrap;
     wrap.parentNode.insertBefore(fsBackdrop, wrap);
     const img = wrap.querySelector('.board-graphic');
     if (img && img.naturalWidth) fsAspect = img.naturalWidth / img.naturalHeight;
     fsMeasure();
+    if (!glide) {
+      fsFrame = 'free';
+      fsApply(from, false, Math.min(1, from.k), true);
+      fsUpdateBar();
+      return;
+    }
     fsFrame = fsRouteBox() ? 'route' : 'board';
     fsApply(from, false);
     void wrap.offsetWidth;                                // commit the start frame
@@ -470,8 +487,9 @@
 
   // auto marks an entry made by turning the phone. The browser's fullscreen
   // needs a user gesture, so it's only asked for from the expand button (auto
-  // entries come from an orientation change or a route, which aren't gestures).
-  function enterBoardFs(auto = false) {
+  // entries come from an orientation change or a route, and a pinch's moves
+  // aren't one either). pinch: opened mid-pinch, so no glide to the route.
+  function enterBoardFs(auto = false, pinch = false) {
     const wrap = activeBoardWrap();
     if (!wrap || fsOpen) return;
     const r = wrap.getBoundingClientRect();
@@ -490,8 +508,9 @@
     document.body.classList.remove('fs-ui-hidden');
     document.body.classList.add('board-fs');
     fsMeasure();
+    fsPageRect = { left: r.left, top: r.top, width: r.width };
     // Start where the board sat on the page, then glide to the route.
-    fsAdopt(wrap, { k: r.width / (fsBase.w || 1), tx: r.left, ty: r.top });
+    fsAdopt(wrap, { k: r.width / (fsBase.w || 1), tx: r.left, ty: r.top }, !pinch);
     fsObserver = new MutationObserver(() => {
       const w = activeBoardWrap();
       if (fsOpen && w && w !== fsWrap) fsAdopt(w, fsCam);
@@ -499,13 +518,14 @@
     fsObserver.observe(document.getElementById('view-' + currentView), { childList: true, subtree: true });
     fsShowHint();
     acquireWakeLock();
-    if (!auto) requestNativeFs();
+    if (!auto && !pinch) requestNativeFs();
   }
 
   function exitBoardFs() {
     if (!fsOpen) return;
     fsOpen = false;
     fsAuto = false;
+    fsClosing = false;
     if (fsObserver) { fsObserver.disconnect(); fsObserver = null; }
     if (fsBackdrop) fsBackdrop.remove();
     if (fsWrap) {
@@ -515,7 +535,7 @@
     }
     fsWrap = null;
     clearTimeout(fsTapTimer);
-    document.body.classList.remove('board-fs', 'fs-ui-hidden');
+    document.body.classList.remove('board-fs', 'fs-ui-hidden', 'fs-closing');
     releaseWakeLock();
     exitNativeFs();
   }
@@ -589,8 +609,7 @@
 
   // ── Viewer gestures ────────────────────────────────────────────────────────────
   // Pointer events on the board and the backdrop: one finger pans, two pinch
-  // (about their midpoint, amplified by FS_PINCH_GAIN so a small spread zooms a
-  // long way). On the read-only views a tap hides/shows the bar and a
+  // (about their midpoint, scaled by FS_PINCH_GAIN). On the read-only views a tap hides/shows the bar and a
   // double-tap switches route ↔ whole board; a quick sideways swipe steps to the
   // next/previous problem when the board isn't wider than the screen (otherwise
   // a drag pans). After any drag or pinch the click that follows is swallowed,
@@ -602,9 +621,10 @@
   let fsLastTap = 0, fsTapTimer = 0;
   let fsDownAt = 0;
   let fsGest0 = { x: 0, y: 0 };  // where the first finger went down
+  let fsPinchK0 = 1;            // the zoom when the second finger went down
 
   function fsIsBoardTarget(t) {
-    if (!fsOpen || !t || !t.closest) return false;
+    if (!fsOpen || fsClosing || !t || !t.closest) return false;
     if (t.closest('button, a, input')) return false;
     return !!(t.closest('.fs-backdrop') || (fsWrap && fsWrap.contains(t)));
   }
@@ -620,6 +640,7 @@
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (!fsPtrs.size) { fsMoved = false; fsMulti = false; fsDownAt = Date.now(); fsGest0 = { x: e.clientX, y: e.clientY }; }
     fsPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (fsPtrs.size > 1 && !fsMulti) fsPinchK0 = fsCam.k;
     if (fsPtrs.size > 1) fsMulti = true;
     if (fsWrap) fsWrap.classList.remove('fs-anim');
     fsGestStart();
@@ -632,18 +653,20 @@
     if (!fsMoved && Math.hypot(pts[0].x - fsGest0.x, pts[0].y - fsGest0.y) < 8 && pts.length < 2) return;
     fsMoved = true;
     const g = fsGest;
-    let cam;
+    fsFrame = 'free';
     if (pts.length > 1 && g.n > 1) {
       const c = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
       const spread = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) / (g.d || 1);
-      const k = Math.max(1, Math.min(FS_MAX_ZOOM, g.cam.k * Math.pow(spread, FS_PINCH_GAIN)));
+      const floor = fsCanPinchClose() ? FS_PINCH_FLOOR : 1;
+      const k = Math.max(floor, Math.min(FS_MAX_ZOOM, g.cam.k * Math.pow(spread, FS_PINCH_GAIN)));
       const s = k / g.cam.k;               // keep the board point under the midpoint there
-      cam = { k, tx: c.x - (g.c.x - g.cam.tx) * s, ty: c.y - (g.c.y - g.cam.ty) * s };
+      fsApply({ k, tx: c.x - (g.c.x - g.cam.tx) * s, ty: c.y - (g.c.y - g.cam.ty) * s }, false, floor, true);
     } else {
-      cam = { k: g.cam.k, tx: g.cam.tx + pts[0].x - g.c.x, ty: g.cam.ty + pts[0].y - g.c.y };
+      // One finger pans. Left over from a pinch, the board may still be below
+      // fitting or off-centre: that holds until the finger lifts.
+      fsApply({ k: g.cam.k, tx: g.cam.tx + pts[0].x - g.c.x, ty: g.cam.ty + pts[0].y - g.c.y },
+        false, Math.min(1, g.cam.k), fsMulti);
     }
-    fsFrame = 'free';
-    fsApply(cam, false);
   }, true);
 
   function fsPointerEnd(e) {
@@ -655,6 +678,13 @@
     if (fsMoved || fsMulti) {
       fsSwallowClick = true;
       setTimeout(() => { fsSwallowClick = false; }, 400);
+      if (fsMulti) {
+        // A pinch that ends zoomed all the way out goes back to the page;
+        // otherwise the board settles back within bounds.
+        if (fsCanPinchClose() && fsCam.k <= 1.02 && fsCam.k < fsPinchK0 - 0.01) fsPinchClose();
+        else fsApply(fsCam, true);
+        return;
+      }
       // A quick sideways swipe on a board no wider than the screen steps along.
       const dx = upAt.x - fsGest0.x, dy = upAt.y - fsGest0.y;
       const cantPan = fsBase.w * fsCam.k <= window.innerWidth + 1;
@@ -696,6 +726,58 @@
     fsApply({ k, tx: e.clientX - (e.clientX - fsCam.tx) * s, ty: e.clientY - (e.clientY - fsCam.ty) * s }, false);
     fsUpdateBar();
   }, { passive: false });
+
+  // Pinch in and out of the viewer on the read-only views (not one opened by
+  // turning the phone: that one closes by turning back).
+  function fsCanPinchClose() { return fsReadOnly() && !fsAuto; }
+
+  // Glide the board back to its place on the page as the viewer fades, then close.
+  function fsPinchClose() {
+    document.body.classList.add('fs-ui-hidden', 'fs-closing');
+    const r = fsPageRect;
+    if (!r || fsNative || fsReducedMotion.matches) { exitBoardFs(); return; }
+    fsClosing = true;
+    fsApply({ k: r.width / (fsBase.w || 1), tx: r.left, ty: r.top }, true, 0, true);
+    setTimeout(() => { if (fsClosing) exitBoardFs(); }, 380);
+  }
+
+  // Two fingers spreading on a detail view's board open the viewer, which then
+  // takes over the same two fingers, so the one pinch zooms straight on in.
+  const pagePtrs = new Map();   // pointerId -> { x, y }, touches on the page's board
+  let pagePinchD0 = 0;          // the fingers' distance when the second went down
+  function fsPageBoardTarget(t) {
+    if (fsOpen || !AUTO_FS_VIEWS.has(currentView) || !t || !t.closest) return false;
+    if (t.closest('button, a, input')) return false;
+    const w = activeBoardWrap();
+    return !!(w && w.contains(t));
+  }
+  function pagePinchSpread() {
+    const pts = [...pagePtrs.values()];
+    return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  }
+  document.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'touch' || !fsPageBoardTarget(e.target)) return;
+    pagePtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pagePtrs.size === 2) pagePinchD0 = pagePinchSpread();
+  }, true);
+  document.addEventListener('pointermove', e => {
+    if (!pagePtrs.has(e.pointerId)) return;
+    if (fsOpen) { pagePtrs.clear(); return; }
+    pagePtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pagePtrs.size !== 2 || !pagePinchD0 || pagePinchSpread() / pagePinchD0 < FS_PINCH_ENTER) return;
+    enterBoardFs(false, true);
+    if (!fsOpen) return;
+    fsPtrs.clear();
+    pagePtrs.forEach((p, id) => fsPtrs.set(id, { ...p }));
+    pagePtrs.clear();
+    fsMoved = true; fsMulti = true; fsDownAt = Date.now();
+    fsGest0 = { ...fsPtrs.values().next().value };
+    fsPinchK0 = fsCam.k;
+    fsGestStart();
+  }, true);
+  ['pointerup', 'pointercancel'].forEach(type => {
+    document.addEventListener(type, e => { pagePtrs.delete(e.pointerId); }, true);
+  });
 
   // Previous/next problem or circuit, as the detail swipe does. The re-render is
   // picked up by fsObserver, which glides the camera to the new route.

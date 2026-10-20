@@ -61,6 +61,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-10-20, Claude Code (no stray scroll; pinch in and out of fullscreen).**
+  - **Changed (`pb-v113`, on `dev` only):** pages that fit no longer scroll by a few pixels (12px gap above the nav, no trailing margin on the last item; Profile and the challenge page spaced a little tighter). Fullscreen pinch now follows the fingers 1:1 (gain 1.8 → 1). On a problem or circuit, a pinch on the board opens fullscreen and keeps zooming; pinching all the way back out glides the board back and closes it (not for landscape-opened fullscreen or create views).
+  - **Tested:** scroll overflow measured per view at 390×844/763/667; the pinch with simulated touches in Chrome. Not yet on a real phone.
+  - **Left:** Ross to check the pinch on his phone on staging (no accidental swipe after a pinch; feel on iOS and Android), then fast-forward `main`.
+  - **New questions:** none.
+
 - **2026-10-20, Claude Code (button consistency sweep).**
   - **Changed (`pb-v112`):** every button now uses the page font (they were drawn in the browser's control font); one radius (`--btn-radius`, 10px) for all buttons and fields; secondary (ghost) buttons use normal text colour, and stacked buttons are always 10px apart; one small-button style (Suggest one, Copy, End early, the install banner); press feedback and a disabled look on every button; sheet close buttons are 36px like the other icon buttons; the nickname sheet lost its extra inset; Profile's header matches Ranks'; the "+" button matches the other icon buttons; the edit-grade sheet and circuit create use the same grade grid as problem create; circuit create saves with a tick (was a floppy disk) and every undo/redo uses the same icon; the outline editor's Preview toggle lights up like Shuffle.
   - **Live:** Ross checked it on his phone on staging; `main` fast-forwarded to `dev` (`b603ebe`), live `sw.js` confirmed at `pb-v112`.
