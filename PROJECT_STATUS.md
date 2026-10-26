@@ -3,8 +3,8 @@
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The cast contract: `docs/cast-contract.md`.
 
 ## Current state (as of 2026-10-26)
-- **The LEDs work and casting works end to end** (phone → Supabase → Pi 4 → LEDs) on **temporary wiring** behind the board, through a **stopgap listener** (`~/cast_listener.py` on the Pi). People are already using it: 48 casts on the evening of 26 Oct.
-- **The proper listener, with self-healing and night mode, is built in `pi/`** (see `pi/README.md`), laptop-tested, not yet deployed to the Pi. Deploy after the gym closes, then run the acceptance tests.
+- **The LEDs work and casting works end to end** (phone → Supabase → Pi 4 → LEDs) on **temporary wiring** behind the board. People are already using it: 50 casts on the evening of 26 Oct.
+- **The proper listener, with self-healing and night mode, is live on the Pi since 26 Oct 21:08** (`pi/`, see `pi/README.md`), replacing the stopgap (kept on the Pi for a rollback). Night mode runs 23:00–08:00. The acceptance tests are still to do.
 - **A wall kiosk is running:** `kiosk.service` (cage + Chromium showing the app on the wall screen), installed 26 Oct. Its unit is now kept in `pi/systemd/`.
 - Pi 4 (donated) installed behind the board: Raspberry Pi OS Lite 64-bit, hostname `projectboard`, on the gym Wi-Fi, reachable over Tailscale. A USB webcam streams the back of the board to Tailscale devices only.
 - Old Pi 3B: unavailable. Not relying on it.
@@ -73,7 +73,9 @@ Newest first. Each entry: date, which side (Claude Code / chat), what changed, w
     - `pi/systemd/` and `pi/conf/` (units and timers, the 15 s hardware watchdog, a 200 MB journal cap); `pi/install.sh` and `pi/deploy.sh` (scp + one sudo prompt, installs only what changed); `pi/setup.sh` (from the bring-up card, now with the Wi-Fi fix and without the power-save step); `pi/README.md`; `pi/tests/`.
     - CLAUDE.md and the overview point at `pi/`.
   - **Tested on the laptop:** 16 unit tests pass. LED colours match the app's functions for all 261 live problems, plain and mirrored. A dry-run listener joined the live channel, kept the connection over 75 s, handled fake casts (unknown name, bad name, bad mirror), and ignored casts in forced night mode. `pb-status` ran read-only on the Pi. `install.sh --dry-run` was checked in WSL.
-  - **Left:** the first deploy (after closing, Ross runs it: sudo needs his password), then the acceptance tests (plan R8). Then update `docs/cast-contract.md` §5 for the new listener. Relay control once the module arrives.
+  - **Deployed 21:08** (after checking nobody had cast since 20:25; Ross ran `pi/deploy.sh`). Checked over SSH: the listener joined and loaded the mirror map; two fake casts handled (latest wins, unknown name left the board alone); systemd's 30 s listener watchdog and the 15 s hardware watchdog are active; the stopgap is disabled.
+  - **Found and fixed after the deploy:** (1) pb-health and pb-mode logged every line twice (logger plus stdout, which systemd also sends to the journal), which would have doubled `pb-status`'s counts; they now echo only when run by hand. (2) **The 26 Oct "persistent journal" never took effect:** Raspberry Pi OS ships `40-rpi-volatile-storage.conf`, which keeps the journal in RAM, so earlier boots' logs are gone. `pb-journal.conf` overrides it; `install.sh` now flushes the journal to disk, and `setup.sh` writes the drop-in itself. Both need one more deploy.
+  - **Left:** that redeploy, then the acceptance tests (plan R8). Then update `docs/cast-contract.md` §5 for the new listener. Relay control once the module arrives.
   - **New questions:** does the wall screen go into standby when blanked, or show a lit "No signal"? Is 23:00 always after closing? Casts at night are ignored while the app still says "Cast: X" (contract §7 item 2).
 
 - **2026-10-26, Claude Code (Pi files copied, cast contract updated, listener and kiosk planned).**

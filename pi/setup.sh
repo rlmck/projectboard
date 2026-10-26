@@ -180,9 +180,14 @@ TS_AUTHKEY=""
 
 
 step "7/10  Persistent journal and pb-netlog"
-mkdir -p /var/log/journal
+# Raspberry Pi OS keeps the journal in RAM (40-rpi-volatile-storage.conf), so the
+# folder alone isn't enough: this drop-in matches pi/conf/pb-journal.conf.
+mkdir -p /var/log/journal /etc/systemd/journald.conf.d
 systemd-tmpfiles --create --prefix /var/log/journal
-echo "   /var/log/journal exists (the journal survives reboots)"
+printf '[Journal]\nStorage=persistent\nSystemMaxUse=200M\n' > /etc/systemd/journald.conf.d/pb-journal.conf
+systemctl restart systemd-journald
+journalctl --flush
+echo "   journal persistent in /var/log/journal, capped at 200 MB"
 # Keep in step with pi/systemd/pb-netlog.service (deploy.sh owns it after this).
 cat > /etc/systemd/system/pb-netlog.service <<'EOF'
 [Unit]

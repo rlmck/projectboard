@@ -87,6 +87,9 @@ echo "== System"
 if changed '/etc/tmpfiles.d/*'; then run systemd-tmpfiles --create /etc/tmpfiles.d/projectboard.conf; fi
 if [ $DRY -eq 0 ] && [ ! -d /run/projectboard ]; then systemd-tmpfiles --create /etc/tmpfiles.d/projectboard.conf; fi
 if changed '/etc/systemd/journald.conf.d/*'; then run systemctl restart systemd-journald; fi
+# Raspberry Pi OS ships 40-rpi-volatile-storage.conf (journal in RAM only); pb-journal.conf
+# overrides it, but journald only moves to /var/log/journal after a flush (or a boot).
+if [ -z "$(ls -A /var/log/journal 2>/dev/null)" ]; then run journalctl --flush; fi
 if changed '/etc/systemd/system.conf.d/*'; then
     run systemctl daemon-reexec          # picks up RuntimeWatchdogSec
 elif changed '/etc/systemd/system/*'; then

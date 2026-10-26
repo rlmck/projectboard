@@ -40,4 +40,5 @@ else
     msg="came up with problems: $(IFS=';'; echo "${problems[*]}" | sed 's/;/; /g') (mode $mode)$before"
     logger -t pb-boot -p user.err -- "$msg"
 fi
-echo "$msg"
+[ -t 1 ] && echo "$msg"   # by hand only: under systemd stdout is the journal too
+exit 0

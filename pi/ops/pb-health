@@ -28,7 +28,9 @@ cfg() {   # cfg KEY default: one value from config.env, without sourcing it
         | sed -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/")
     echo "${v:-$2}"
 }
-log()    { logger -t pb-health -p "user.${2:-notice}" -- "$1"; echo "$1"; }
+# logger writes the journal line; echo only when run by hand (under systemd stdout
+# also goes to the journal, which would log every line twice).
+log()    { logger -t pb-health -p "user.${2:-notice}" -- "$1"; [ -t 1 ] && echo "$1"; return 0; }
 action() { log "ACTION $1: $2" "${3:-warning}"; }
 
 IFACE=$(cfg WIFI_IFACE wlan0)

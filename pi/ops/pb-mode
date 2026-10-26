@@ -26,7 +26,8 @@ KIOSK = 'kiosk.service'
 
 def log(msg, level=syslog.LOG_NOTICE):
     syslog.syslog(level, msg)
-    print(msg, flush=True)
+    if sys.stdout.isatty():       # by hand only: under systemd stdout is the journal too
+        print(msg, flush=True)
 
 
 def systemctl(*args):
