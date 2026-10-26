@@ -6,7 +6,7 @@ How a cast gets from the app to the LEDs. **This describes what the code does** 
 
 ```
 PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime ──broadcast──▶ Pi listener ──SPI──▶ WS2801 strip
-                                                  (no database write)            (none running yet)
+                                                  (no database write)            (stopgap, 26 Oct)
 ```
 
 ## 2. Transport
@@ -48,7 +48,7 @@ There are no other fields: no message id, timestamp, sender, hold list, colours 
 
 ## 5. Listener: the Pi
 
-- **No listener is running.** The Pi side is being rebuilt from scratch on a Raspberry Pi 4. The June 2026 Pi 3 listener is reference only and will be discarded.
+- **A stopgap listener runs on the Pi 4 since 26 Oct 2026** (`cast_listener.py`, a systemd service; copy in the local `pi/`). It follows §6.2–6.4 at brightness 0.5, loads the mirror map on each connect and looks problems up by exact name. A proper listener built to this contract will replace it. The June 2026 Pi 3 listener is reference only and will be discarded.
 - `tools/cast-test.html` (served by `python tools/serve.py`) subscribes like a listener and logs every cast with its payload.
 - **What a listener can read with the anon key** (public-read RLS):
   - `problems`: `name`, `start_holds`, `intermediate_holds`, `finish_hold`, `feet_mode`
@@ -98,10 +98,16 @@ led = x*13 + (13 - y)     if x is odd    (B, D, F … run down)
 ```
 
 - Holds 1–247 map one to one onto LEDs 1–247.
-- LED 0 is never used.
-- Strip (from Gareth's code and the original SD image): WS2801 on SPI0 (`/dev/spidev0.0`), 1 MHz, mode 0, MSB first, 3 bytes per pixel in R, G, B order.
-- Gareth's code also drove BCM 23 and 24 LOW at start-up to switch two relays on.
-- **Status: from code only. Not yet verified on the wall with new hardware.**
+- LED 0 is never used. It exists, but it's mounted behind the board, out of sight.
+- Strip: WS2801 on SPI0 (`/dev/spidev0.0`), 1 MHz, mode 0, MSB first, 3 bytes per pixel in R, G, B order.
+- Gareth's code also drove BCM 23 and 24 LOW at start-up to switch two relays on. The new box has no relays yet (a 2-channel module is on order), so nothing drives those pins now.
+- **Status: verified on the wall on 26 Oct 2026** (Pi 4, temporary wiring, the live app casting through the stopgap listener):
+  - Colour order is **R, G, B**.
+  - **Pixel 0 exists** (behind the board). **Pixel 1 is A1**, and column A runs **up** the wall, as the formula says.
+  - Problems cast from the app light the holds the formula predicts.
+  - The 3.3 V SPI signals from the Pi drive the strip directly, without a level shifter (a 74AHCT125 is on order for the final box).
+  - The strip's 4-way cable: **blue = 5 V, black = GND, green = data (Pi pin 19, MOSI), red = clock (Pi pin 23, SCLK)**. The two 8-way plugs are power feeds into the strip (5 V on one, GND on the other), not signals; they're not connected yet, so the far end of the board drops voltage and shows the wrong colours on bright frames.
+  - **Not yet checked:** that column B runs down (and so every odd column), and mirrored casts.
 
 ### 6.5 Feet indicators
 - The original settings file names `hold21` (B2, LED 25) "Orange" and `hold2` (B1, LED 26) "Black". Neither cell has a real hold.
@@ -131,16 +137,17 @@ Nothing below is decided.
    - Which role wins when a hold is listed twice?
 9. **Brightness:** cap in software for the 5 V 10 A supply? If so, what budget?
 10. **Hold ids outside 1–247** (allowed by the database): ignore them? Log them?
-11. **Hardware not yet verified:**
-    - Is there a pixel 0?
-    - What is the colour order?
-    - Does the strip start at A1?
-    - Which wire is which in the 16-wire harness?
-    - What does each relay switch?
+11. **Hardware** (most of it answered on 26 Oct 2026; details in §6.4):
+    - ~~Is there a pixel 0?~~ Yes, behind the board; never lit.
+    - ~~What is the colour order?~~ R, G, B.
+    - ~~Does the strip start at A1?~~ Pixel 1 = A1, running up column A.
+    - ~~Which wire is which in the 16-wire harness?~~ The 4-way cable carries 5 V, GND, data and clock; the two 8-way plugs are 5 V and GND power feeds.
+    - Still open: does column B run down? What did each of Gareth's relays switch, and what will the new relays switch?
 12. **Start-up and idle behaviour** of the Pi (relays, the test pattern, what shows before the first cast).
 13. **Circuits:** a design spec (not code) plans `cast_circuit` (`circuit_name`, `interval`, `loop`, `mirror`, a run token) and a `stop` event on the same channel. Nothing implements it.
 14. **The wall kiosk** will cast through the same PWA and channel. Does it need anything different?
 15. **Who may cast:** anyone, by decision. Does the Pi apply any checks of its own?
 
 ## Change history
+- **2026-10-26, Claude Code:** §6.4 and §7 item 11 updated with the hardware verified at first light (colour order, pixel 0, A1, the 4-way cable and the 8-way power feeds); §5 notes the stopgap listener. No change to the channel, event or payload.
 - **2026-10-19, Claude Code:** first version, written from the code (app `pb-v109`; the old Pi 3 listener and Gareth's code as references).

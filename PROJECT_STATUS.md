@@ -2,17 +2,17 @@
 
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The cast contract: `docs/cast-contract.md`.
 
-## Current state (as of 2026-10-20)
+## Current state (as of 2026-10-26)
+- **The LEDs work and casting works end to end** (phone → Supabase → Pi 4 → LEDs) on **temporary wiring** behind the board, through a **stopgap listener** (`~/cast_listener.py` on the Pi, not yet in the repo). Details in the 2026-10-26 session log entry.
+- Pi 4 (donated) installed behind the board: Raspberry Pi OS Lite 64-bit, hostname `projectboard`, on the gym Wi-Fi, reachable over Tailscale. A USB webcam streams the back of the board to Tailscale devices only.
 - Old Pi 3B: unavailable. Not relying on it.
-- Rebuild plan: a donated Raspberry Pi 4 (believed 4GB) from a gym member. Nothing else comes with it (no HAT, relays or PSU), so parts must be bought.
   - **Corrected 20 Oct 2026:** the earlier note that a relay module was "already in the box behind the board" was wrong. Gareth's whole box (Pi 3B, Witty Pi HAT, 2-channel relay board, a small board that looks like a level shifter, and its wiring) left with the old Pi.
-  - Still on the wall (Ross, 20 Oct): the LED strip with **two** LED power supplies (ratings not yet checked), the wall touchscreen with its HDMI cable, and some other cables still to be identified.
-  - Ross already has a USB-C supply for the Pi 4 and an SD card.
-  - Bought 20 Oct 2026 (to match Gareth's setup): a 2-channel 5 V opto-isolated relay module (eBay), a 74AHCT125 level shifter breakout (Amazon), a 200x100x70 mm IP65 junction box, female-female jumpers, 1 m red and 1 m blue 16 AWG wire (blue = negative; black was out of stock), 5x Wago 221-413, 5x 3 A 12-way terminal strips (Maplin Pro), a micro-HDMI to HDMI adapter, a 9 mm M2.5 standoff kit and a Pi 4 heatsink set (The Pi Hut).
+  - On the wall: the LED strip, **two** YU0510 5 V 10 A supplies (DC plugs now cut; both needed together to start the strip), the wall touchscreen (HDMI to the Pi via micro-HDMI; its USB touch cable now in the Pi), the 4-way strip cable, and two 8-way power-feed plugs (mapped 26 Oct, not yet connected).
+  - Bought 20 Oct 2026 (to match Gareth's setup): a 2-channel 5 V opto-isolated relay module (eBay), a 74AHCT125 level shifter breakout (Amazon), a 200x100x70 mm IP65 junction box, female-female jumpers, 1 m red and 1 m blue 16 AWG wire (blue = negative; black was out of stock), 5x Wago 221-413, 5x 3 A 12-way terminal strips (Maplin Pro), a micro-HDMI to HDMI adapter, a 9 mm M2.5 standoff kit and a Pi 4 heatsink set (The Pi Hut). Relay module and level shifter not yet arrived (26 Oct). DC jack adapters no longer needed.
 - The original system's SD card image (dtb-backup.img) is kept for reference only.
 - board_listener.py will be discarded; Pi-side code starts fresh.
-- LEDs don't work yet, so the app is not fully rolled out to the public.
-- The app itself is live at https://symmetryboard.co.uk (service worker `pb-v115`, 20 Oct 2026), with the Pat Burner challenge live. Casting sends correctly, but no listener is running, so nothing lights.
+- The app is not yet announced to the public: the wiring is temporary and the far end of the board shows the wrong colours until the 8-way power feeds are wired in.
+- The app itself is live at https://symmetryboard.co.uk (service worker `pb-v115`, 20 Oct 2026), with the Pat Burner challenge live.
 
 ## Decisions
 - Remove Google sign-in completely. **Done 18 Oct 2026** (provider off; OAuth client deleted 19 Oct).
@@ -34,14 +34,13 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 
 ## Workstreams (in priority order)
 1. PWA account rework: **done 18 Oct 2026.** Left: delete the local passphrase hand-out file once all 7 migrated accounts have signed in.
-2. Cast contract finalised in docs/cast-contract.md. First version written 19 Oct 2026 from the code; its open questions need answers.
-3. Mock listener on the laptop for end-to-end cast testing without hardware. (`tools/cast-test.html` already subscribes and logs every cast; it doesn't yet turn a cast into LED indices.)
-4. Hardware: parts bought 20 Oct 2026 (see Current state). Next: identify the wall-side wiring from Ross's photos, then a wiring guide and a safe first power-on test (worked out in the claude.ai hardware chat). Check LED strip compatibility against the original SD image. (From Gareth's code and the image: WS2801 over SPI0, 1 MHz, mode 0, RGB, 5 V. Still to check on the wall: colour order, pixel 0, the 16-wire harness, what each relay switches.)
-5. Fresh Pi listener built to the contract, replacing the mock.
+2. Cast contract finalised in docs/cast-contract.md. First version written 19 Oct 2026 from the code; its open questions need answers. (26 Oct: hardware items partly verified, see the log.)
+3. Mock listener on the laptop for end-to-end cast testing without hardware. (`tools/cast-test.html` already subscribes and logs every cast; it doesn't yet turn a cast into LED indices.) Lower priority now that the real board can be tested over the webcam.
+4. Hardware: **first light 26 Oct 2026** on temporary wiring. Next: wire the 8-way power feeds into 5 V/GND, build the box, fit the relay module and level shifter when they arrive, check column B direction.
+5. Fresh Pi listener built to the contract, replacing the stopgap `cast_listener.py` (running on the Pi since 26 Oct). Then the tablet kiosk.
 
 ## Waiting on
-- Pi 4 donation (handover)
-- Ross's photos (from 21 Oct): the 16-wire harness (two 8-way plugs, close up, wire colours visible); both LED power supplies' labels and output terminals; the other cables on the wall; and the relay board and level shifter when they arrive (pin labels readable). Then multimeter checks on the harness before anything is connected.
+- Relay module (eBay) and 74AHCT125 level shifter (Amazon) to arrive.
 - An on-site check of the cast geofence centre (non-admin phone, by the board and at the far end of the gym).
 
 ## Feature backlog
@@ -57,12 +56,36 @@ Details in `docs/cast-contract.md` → "Open questions".
 2. How does the board get cleared or switched off? There's no clear/stop event.
 3. Should the phone know whether the Pi is online or got the cast? Today it always says "Cast: X" once Supabase accepts it.
 4. Stale, duplicate or rapid casts: debounce or rate limit on the Pi? (Casts carry no id or timestamp.)
-5. Mirroring: the Pi applies `board_config.mirror_map`, or the app sends resolved holds?
+5. Mirroring: the Pi applies `board_config.mirror_map`, or the app sends resolved holds? (The stopgap listener applies the map itself; mirrored casts not yet tested.)
 6. Is the problem name still the cast key once names become editable?
-7. Hardware: pixel 0, colour order, strip start, the 16-wire harness, what each relay switches.
+7. Hardware: ~~pixel 0, colour order, strip start, the 16-wire harness~~ (answered 26 Oct: see the log). Still open: what each relay switched; column B direction (expected down).
+8. Cast brightness: the stopgap uses 0.5; all-on tests stay at 0.1 until the power feeds are wired. What should the final values be?
 
 ## Session log
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-10-26, Claude Code (Pi files copied, cast contract updated, listener and kiosk planned).**
+  - **Changed:** merged the hardware chat's status update. Copied the working Pi files into the local, gitignored `pi/` (`show_problem.py`, `cast_listener.py`, `board-cam.sh`; units in `pi/systemd/`). `docs/cast-contract.md` §6.4 and §7 item 11 now record what first light verified, and §5 notes the stopgap listener. Checked on the Pi: it's a Pi 4 with **2 GB** (not 4 GB), running trixie **Lite** (no desktop packages), Python 3.13, `websockets` 15; the touchscreen's USB touch shows up as a G2Touch multi-touch device.
+  - **Left:** Ross's decisions on the listener and kiosk plan (local `docs/pi4-listener-kiosk-plan.md`), then build the listener, then the kiosk.
+  - **New questions:** the kiosk needs a display stack on the Lite card (a minimal compositor such as `cage`, or a reflash with desktop). The stopgap drops out-of-range hold ids before assigning roles, so roles could shift on bad data; the new listener classifies first, like `classifyHolds()`.
+
+- **2026-10-26, chat (hardware: bring-up, first light, first cast).**
+  - **Pi 4 bring-up:** `setup.sh` ran clean (9/9). Tailscale name `projectboard`; laptop key login works.
+  - **Wi-Fi lost after the first reboot:** the Pi joined but got no IPv4 (`127.0.1.1` + link-local only). Disabling setup.sh's power-save file did not fix it. NetworkManager's netplan-backed connection had been rewritten at that boot (`/etc/netplan/90-NM-*.yaml`). Fixed with a one-shot `systemd.run` script from the boot partition: a new keyfile connection `hangout-fixed` (autoconnect-priority 100, `cloned-mac-address=permanent`), `conf.d/98-projectboard-no-rand-mac.conf`, a persistent journal (`/var/log/journal`), and `pb-netlog.service` (writes `/boot/firmware/netlog.txt` 60 s after each boot). Survived a reboot test. **Root cause not confirmed.** The power-save file is parked at `/home/pi/99-projectboard-wifi-powersave.conf.disabled`; the fix scripts were deleted from the boot partition. Lesson: reboot-test straight after setup.
+  - **Harness mapped** (unpowered; continuity and diode mode): 4-way **blue = 5 V, black = GND, green = data, red = clock** (data/clock confirmed at first light). Diode readings: data and clock 0.70 V, 5 V rail 0.43 V. Plain-white 8-way plug: B1, B4–B7 = 5 V. Black-and-white striped 8-way plug: A2, A3, A5–A7 = GND. A1, A4, A8, B2, B3, B8 connect to nothing (positions 1–8 counted left to right, screws facing you).
+  - **Supplies (YU0510 ×2):** DC plugs cut. On both, the **plain conductor is +** and the printed one is −. Supply 1 was first wired reversed: the chips' protection diodes clamped it to ~0.3 V, with no lasting damage seen. **One 10 A supply can't start the strip; both in parallel hold 5.4 V.**
+  - **Temporary wiring:** 5 V Wago = 4-way blue + both supplies' +. GND Wago = 4-way black + Pi GND (pin 25, sharing a hole) + both supplies' −. Terminal strip: 4-way green ← Pi pin 19 (MOSI), 4-way red ← Pi pin 23 (SCLK). No level shifter (3.3 V direct works), no relays, 8-way plugs not connected. One terminal-strip screw is cross-threaded.
+  - **First light:** colour order **RGB**. **Pixel 0 exists but is mounted behind the board** (not visible). **Pixel 1 = A1**, walking up column A. Column B direction not checked. At 10% all-white the far end goes red/orange (voltage drop: power only enters through the 4-way cable).
+  - **Casting works end to end** from the live app. Mirrored casts untested.
+  - **On the Pi, not yet in the repo:** `~/show_problem.py` (light a problem by name, `--off`), `~/cast_listener.py` (stopgap listener: Realtime WebSocket, `phx_join` on `realtime:board:HangoutPortland`, `cast_problem` → REST lookup by exact name → contract §6.2 order and colours, §6.3 mirror via `board_config.mirror_map` loaded on each connect, §6.4 LED map; brightness 0.5; reconnects every 5 s on error), `~/board-cam.sh`. systemd units: `cast-listener`, `leds-off-at-boot`, `board-cam` (ustreamer USB webcam bound to the Tailscale IP, port 8080, `/stream`), `pb-netlog`. Packages added: `python3-websockets`, `ustreamer`.
+  - **Touchscreen:** HDMI 0 via the micro-HDMI adapter shows the console. Its USB (touch) cable is now in the Pi. No kiosk yet.
+  - **Left:** wire the 8-way feeds into 5 V/GND (fixes the far-end colour and takes current off the thin 4-way wires; until then a full-on power-up is a risk, softened by `leds-off-at-boot`); build the box; relay and 74AHCT125 when they arrive; copy the Pi files into `pi/`; proper listener to the contract (retire the stopgap); tablet kiosk; fold the Wi-Fi fix into setup.sh and drop its power-save step; check column B direction; update `docs/cast-contract.md` §6.4 and §7 item 11.
+  - **New questions:** what did the second relay switch? Final brightness values? What should the board show when idle?
+
+- **2026-10-26, Claude Code (Pi 4 SD card prepared for the first power-on).**
+  - **Changed:** on the freshly imaged trixie card's boot partition, `dtparam=spi=on` added under `[all]` in `config.txt`, and a `projectboard/` folder added: `setup.sh` (apt installs python3-spidev + python3-gpiozero, raspi-config SPI as a backup, PASS/FAIL for `/dev/spidev0.0`), `led_test.py` (WS2801, SPI0 CE0, 1 MHz, mode 0, R,G,B, 10% default brightness; colour check, pixel walk, all on, all off; Ctrl+C clears 1200 pixels), `relay_test.py` (BCM 23/24, active-low, start off, toggle per key, off on exit) and `README.txt`. Copies of the scripts are in the local, gitignored `pi/bringup/`. Nothing committed.
+  - **Left:** the first power-on test (README steps).
+  - **New questions:** is the new relay module active-low like Gareth's? Does pixel 0 exist, and is the colour order R,G,B?
 
 - **2026-10-20, chat (hardware parts).**
   - **Changed:** corrected the hardware notes in Current state (no relay module on the wall; Gareth's box is gone; two LED supplies and the touchscreen with its HDMI cable remain). Recorded the parts Ross bought to rebuild the box to match Gareth's setup.
