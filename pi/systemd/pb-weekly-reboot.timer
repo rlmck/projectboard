@@ -1,0 +1,9 @@
+[Unit]
+Description=Project Board weekly reboot, Monday 07:45
+
+[Timer]
+OnCalendar=Mon *-*-* 07:45:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

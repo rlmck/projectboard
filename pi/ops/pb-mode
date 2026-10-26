@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""pb-mode: applies day/night to the screen (and later the relays). Run as root
+by pb-mode.timer every minute. Plan: docs/pi4-listener-kiosk-plan.md R4 (local).
+
+The mode is worked out from the clock each run (mode.py), and every run checks
+the real state, so a missed run or a reboot changes nothing. The listener works
+out the same mode for itself (LEDs and casts).
+
+    night: stop kiosk.service, then power the HDMI output down (fb0 blank 4)
+    day:   unblank, start kiosk.service if it's enabled and not running
+"""
+import os
+import subprocess
+import sys
+import syslog
+import time
+
+sys.path.insert(0, '/opt/projectboard/listener')
+import mode as modelib  # noqa: E402
+import power  # noqa: E402
+
+STATE = '/run/projectboard/mode'           # the mode last applied (resets each boot)
+BLANK = '/sys/class/graphics/fb0/blank'    # 4 = powerdown, 0 = unblank
+KIOSK = 'kiosk.service'
+
+
+def log(msg, level=syslog.LOG_NOTICE):
+    syslog.syslog(level, msg)
+    print(msg, flush=True)
+
+
+def systemctl(*args):
+    return subprocess.run(['systemctl', *args], capture_output=True, text=True).stdout.strip()
+
+
+def blank(value):
+    try:
+        with open(BLANK, 'w') as f:
+            f.write(value)
+        return True
+    except OSError as e:
+        log('screen %s failed: %s' % ('off' if value == '4' else 'on', e), syslog.LOG_WARNING)
+        return False
+
+
+def main():
+    syslog.openlog('pb-mode')
+    try:
+        cfg = modelib.load_config()
+    except OSError as e:
+        log('config unreadable (%s): defaults' % e, syslog.LOG_WARNING)
+        cfg = dict(modelib.DEFAULTS)
+    mode, reason = modelib.mode_now(cfg)
+    try:
+        last = open(STATE).read().strip()
+    except OSError:
+        last = ''
+    changed = mode != last
+    if changed:
+        log('mode %s (%s)%s' % (mode, reason, '' if not last else ', was ' + last))
+
+    kiosk_enabled = systemctl('is-enabled', KIOSK) == 'enabled'
+    kiosk_state = systemctl('is-active', KIOSK)
+
+    if mode == 'night':
+        if kiosk_state in ('active', 'activating', 'reloading'):
+            log('night: stopping %s' % KIOSK)
+            systemctl('stop', KIOSK)
+            time.sleep(1)                      # let the console take the output back
+            changed = True
+        if changed and blank('4'):
+            log('night: screen off')
+        msg = power.leds_power(False, cfg) if changed else None
+    else:
+        kiosk_up = kiosk_state in ('active', 'activating', 'reloading')
+        # Only while the console owns the screen: with cage running the write is refused.
+        if (last == 'night' or not kiosk_up) and blank('0') and last == 'night':
+            log('day: screen on')
+        if kiosk_enabled and not kiosk_up:
+            log('day: starting %s (was %s)' % (KIOSK, kiosk_state))
+            systemctl('start', '--no-block', KIOSK)
+        msg = power.leds_power(True, cfg) if changed else None
+    if msg:
+        log(msg, syslog.LOG_WARNING)
+
+    try:
+        os.makedirs(os.path.dirname(STATE), exist_ok=True)
+        with open(STATE, 'w') as f:
+            f.write(mode + '\n')
+    except OSError as e:
+        log('state not saved: %s' % e, syslog.LOG_WARNING)
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

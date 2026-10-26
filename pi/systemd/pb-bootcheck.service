@@ -1,0 +1,6 @@
+[Unit]
+Description=Project Board boot summary (one pb-boot line)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pb-bootcheck

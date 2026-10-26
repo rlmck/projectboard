@@ -1,3 +1,5 @@
 build.sh       text eol=lf
 app/_headers   text eol=lf
 app/_redirects text eol=lf
+# Everything in pi/ runs on Linux: a CRLF script fails there
+pi/**         text eol=lf

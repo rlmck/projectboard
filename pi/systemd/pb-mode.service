@@ -1,0 +1,8 @@
+[Unit]
+Description=Project Board night mode (screen; later the LED supplies)
+
+[Service]
+Type=oneshot
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/local/bin/pb-mode
+TimeoutStartSec=2min

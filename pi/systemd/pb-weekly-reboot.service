@@ -1,0 +1,6 @@
+[Unit]
+Description=Project Board weekly reboot (skipped if up < 1 h)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pb-weekly-reboot

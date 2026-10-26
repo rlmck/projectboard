@@ -55,7 +55,7 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 
 ## Session rules
 
-This repo is the single source of truth shared by Claude Code and the claude.ai project chat, which reads and commits through GitHub (to `main`). The chat can't see local-only files (`docs/*` except the committed ones, `db/`, `pi/`, `reference/`), so `PROJECT_STATUS.md` and `docs/cast-contract.md` must stand on their own.
+This repo is the single source of truth shared by Claude Code and the claude.ai project chat, which reads and commits through GitHub (to `main`). The chat can't see local-only files (`docs/*` except the committed ones, `db/`, `pi/_old/`, `reference/`), so `PROJECT_STATUS.md` and `docs/cast-contract.md` must stand on their own.
 
 - **Start of every session:** `git pull` (on `dev`, also `git pull --ff-only origin main` in case the chat committed there), then read `PROJECT_STATUS.md`. Read `docs/cast-contract.md` too if the work touches casting, Supabase Realtime or the Pi.
 - **End of every session:** add a Session log entry to `PROJECT_STATUS.md` (date, Claude Code or chat, what changed, what's left, new questions), and update Current state, Decisions, Waiting on, Open questions and Feature backlog if anything changed.
@@ -73,6 +73,7 @@ This repo is the single source of truth shared by Claude Code and the claude.ai 
 app/      the website: exactly the files that are deployed, flat. build.sh copies it into public/.
 tools/    generators, dev tools and the cast test bench (never deployed)
 print/    the A5 poster and QR (never deployed)
+pi/       the board's Pi 4: cast listener, health checks, night mode, systemd units, deploy.sh (see pi/README.md)
 docs/     codebase-overview.md + rollout-plan.md + cast-contract.md (the rest is local only)
 build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs them from there
 ```
@@ -99,7 +100,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 - **Tools (`tools/`, not deployed):** `snapshot_board.py` (refreshes the fallback board from live), `register_shapes.py`, `register_leds.py`, `make_icons.py`, `make_qr.py`, `cast-test.html` + `serve.py`, `led_map.json` (the Pi wiring contract), and the retired `register_holds.py`/`register_mirror.py` + `hold_positions.json` (history; they can't write into `app/`).
 - **`print/`:** the A5 poster and QR, not deployed. The QR encodes `/scan`; change where it lands in `app/_redirects`, never by reprinting.
 
-**Local only (gitignored):** `db/`, `pi/` (the June 2026 Pi 3 listener and LED tests: superseded, not the basis for the Pi 4 rebuild), `docs/*` except the three committed docs, `reference/original-pi-codebase/dtb/` (Gareth's original code; two register scripts read it by path). Gareth's SD-card image, the rest of its boot partition, the old reverse-engineering and the old LED test scripts are archived outside the repo in `Documents\_Archive\ProjectBoard\ProjectBoard-archive\`.
+**Local only (gitignored):** `db/`, `pi/_old/` (the June 2026 Pi 3 listener, the 26 Oct stopgap, and `problems.csv`, which holds setters' nicknames), `pi/config.env` (the laptop's copy of the Pi's settings), `docs/*` except the three committed docs, `reference/original-pi-codebase/dtb/` (Gareth's original code; two register scripts read it by path). Gareth's SD-card image, the rest of its boot partition, the old reverse-engineering and the old LED test scripts are archived outside the repo in `Documents\_Archive\ProjectBoard\ProjectBoard-archive\`.
 
 **Deploy:** Cloudflare Workers static assets. Push `dev` → a preview build at the staging URL (not promoted). Merge to `main` → production. `build.sh` wipes and rebuilds `public/` from its allowlist of files in `app/`; anything unlisted never ships. Preview locally with `python -m http.server` inside `app/`. Details: overview §9 and `docs/rollout-plan.md`.
 
@@ -159,7 +160,7 @@ await channel.httpSend('cast_problem',
 - `castByName()` in `problems.js` is the only cast path. It runs the geofence check first (lenient; admins bypass), then sends only if the caller's `stillShowing()` says the tapped problem and orientation are still on screen. **Reuse both for the circuit cast.**
 - `httpSend` resolving means the **Realtime server** accepted the broadcast, not the Pi. There's no end-to-end confirmation, so never report board-level success.
 - **Test casting without the Pi:** `python tools/serve.py`, open `http://localhost:8000/tools/cast-test.html`. It lists every cast on the channel, and *Run checks* drives the local app through the cast cases using fake problem names.
-- **The Pi side is being rebuilt on a new Pi 4** (Gareth's Pi 3B is gone; spec in the local `docs/pi4-led-audit.md`). Its listener must look the name up in `problems`, apply the **live** mirror map, use `problemHoldOrder()`'s order, and light the LEDs (WS2801 on SPI0, 1 MHz, mode 0, RGB; hold → LED is a formula, in the audit §3). The relays (BCM 23/24, LOW = on) must be switched on at boot. The old `pi/board_listener.py` is not the basis.
+- **The Pi side is being rebuilt on a new Pi 4** (Gareth's Pi 3B is gone; spec in the local `docs/pi4-led-audit.md`). Its listener must look the name up in `problems`, apply the **live** mirror map, use `problemHoldOrder()`'s order, and light the LEDs (WS2801 on SPI0, 1 MHz, mode 0, RGB; hold → LED is a formula, in the audit §3). The relays (BCM 23/24, LOW = on) must be switched on at boot. The listener is `pi/listener/pb_listener.py`, deployed with `bash pi/deploy.sh` (restarts clear the board: deploy when the gym is closed). Never commit the Wi-Fi keyfile, `secrets.env` or `pi/config.env`.
 
 ---
 

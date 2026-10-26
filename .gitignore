@@ -1,4 +1,9 @@
-pi/
+# pi/ is committed (the Pi 4 listener and ops). pi/_old/ keeps the June Pi 3
+# material and the stopgap copies local: problems.csv holds setters' nicknames.
+# pi/config.env is the laptop's copy of the Pi's settings, which stay out of the repo.
+pi/_old/
+pi/config.env
+laptop_key.pub
 db/
 # docs/ stays private, except the rollout plan (hosting source of truth) and the
 # codebase overview and the cast contract. Must be docs/* not docs/ — git can't re-include a file inside

@@ -1,0 +1,8 @@
+[Unit]
+Description=Project Board network report to boot partition
+After=NetworkManager.service
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'sleep 60; { date; nmcli -f NAME,TYPE,DEVICE,AUTOCONNECT-PRIORITY connection show; nmcli device status; ip -br addr; journalctl -b --no-pager -u NetworkManager | grep -viE "psk|password" | tail -120; } > /boot/firmware/netlog.txt 2>&1; sync'
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+#!/bin/bash
+# pb-weekly-reboot: the planned reboot (Monday 07:45, pb-weekly-reboot.timer).
+# Skipped if the Pi has been up less than an hour. Not counted by pb-health's guard.
+up=$(cut -d. -f1 /proc/uptime)
+if (( up < 3600 )); then
+    logger -t pb-health -p user.notice -- "weekly reboot skipped: up only $((up / 60)) min"
+    exit 0
+fi
+logger -t pb-health -p user.notice -- "ACTION weekly-reboot: planned (up $((up / 3600)) h)"
+systemctl reboot

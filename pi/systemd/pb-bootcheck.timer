@@ -1,0 +1,8 @@
+[Unit]
+Description=Project Board boot summary, 3 min after boot
+
+[Timer]
+OnBootSec=3min
+
+[Install]
+WantedBy=timers.target

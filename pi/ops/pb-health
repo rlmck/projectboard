@@ -1,0 +1,175 @@
+#!/bin/bash
+# pb-health: the board's self-healing check, run as root by pb-health.timer
+# every 2 min. Plan: docs/pi4-listener-kiosk-plan.md R2 (local).
+#
+#   1 network    wlan0 has IPv4 and the gateway answers ping. Fail -> radio on +
+#                connection up; every 3rd failure in a row -> restart NetworkManager;
+#                down 10 min -> reboot (guarded). Steps 2-4 are skipped while down.
+#   2 tailscale  not Running -> restart tailscaled
+#   3 listener   status file stale (90 s) or not joined for 5 min -> restart pb-listener
+#   4 board-cam  enabled but failed/inactive -> restart it
+#   5 log only   temperature, disk free, throttling
+#
+# Every action is one journal line tagged pb-health starting "ACTION <name>:",
+# which pb-status counts. Reboot guard: at most 1 an hour and 3 a day, from
+# /var/lib/projectboard/reboots; past that it logs "ACTION reboot-suppressed".
+
+set -u
+export LC_ALL=C
+
+CONFIG=/etc/projectboard/config.env
+RUN=/run/projectboard/health
+LEDGER=/var/lib/projectboard/reboots
+STATUS=/run/projectboard/listener.json
+
+cfg() {   # cfg KEY default: one value from config.env, without sourcing it
+    local v
+    v=$(sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$CONFIG" 2>/dev/null | tail -n 1 \
+        | sed -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/")
+    echo "${v:-$2}"
+}
+log()    { logger -t pb-health -p "user.${2:-notice}" -- "$1"; echo "$1"; }
+action() { log "ACTION $1: $2" "${3:-warning}"; }
+
+IFACE=$(cfg WIFI_IFACE wlan0)
+CONN=$(cfg WIFI_CONNECTION hangout-fixed)
+mkdir -p "$RUN" "$(dirname "$LEDGER")"
+touch "$LEDGER"
+NOW=$(date +%s)
+SUMMARY=()
+
+reboot_guarded() {   # reboot_guarded "reason"
+    local hour=0 day=0 t _
+    while read -r t _; do
+        [[ "$t" =~ ^[0-9]+$ ]] || continue
+        (( NOW - t < 3600 )) && hour=$((hour + 1))
+        (( NOW - t < 86400 )) && day=$((day + 1))
+    done < "$LEDGER"
+    if (( hour >= 1 || day >= 3 )); then
+        action reboot-suppressed "$1 (limit reached: $hour in the last hour, $day in 24 h)" err
+        return
+    fi
+    # keep a week of history
+    awk -v now="$NOW" '$1 ~ /^[0-9]+$/ && now - $1 < 604800' "$LEDGER" > "$LEDGER.tmp" && mv "$LEDGER.tmp" "$LEDGER"
+    echo "$NOW $1" >> "$LEDGER"
+    sync
+    action reboot "$1" err
+    systemctl reboot
+    exit 0
+}
+
+# ---- 1 network ---------------------------------------------------------------
+net_ok() {
+    ip -4 -o addr show dev "$IFACE" 2>/dev/null | grep -q ' inet ' || { NET_WHY="no IPv4 on $IFACE"; return 1; }
+    local gw
+    gw=$(ip -4 route show default dev "$IFACE" 2>/dev/null | awk '{print $3; exit}')
+    [ -n "$gw" ] || { NET_WHY="no default route on $IFACE"; return 1; }
+    ping -c 2 -W 2 -I "$IFACE" "$gw" >/dev/null 2>&1 || { NET_WHY="gateway $gw not answering"; return 1; }
+}
+
+NET=ok
+NET_WHY=""
+if net_ok; then
+    if [ -f "$RUN/net_fails" ]; then
+        log "network back after $(cat "$RUN/net_fails") failed check(s)"
+        rm -f "$RUN/net_fails" "$RUN/net_down_since"
+    fi
+else
+    NET=down
+    fails=$(( $(cat "$RUN/net_fails" 2>/dev/null || echo 0) + 1 ))
+    echo "$fails" > "$RUN/net_fails"
+    [ -f "$RUN/net_down_since" ] || echo "$NOW" > "$RUN/net_down_since"
+    down_for=$(( NOW - $(cat "$RUN/net_down_since") ))
+    log "network down (check $fails, ${down_for}s): $NET_WHY" warning
+    if [ "$(nmcli radio wifi 2>/dev/null)" = "disabled" ]; then
+        action wifi-radio-on "the Wi-Fi radio was off"
+        nmcli radio wifi on
+    fi
+    if (( down_for >= 600 )); then
+        reboot_guarded "network down ${down_for}s: $NET_WHY"
+    elif (( fails % 3 == 0 )); then
+        action nm-restart "network down $fails checks in a row: $NET_WHY"
+        systemctl restart NetworkManager
+    else
+        action wifi-up "nmcli connection up $CONN: $NET_WHY"
+        nmcli --wait 30 connection up "$CONN" >/dev/null 2>&1 \
+            || log "nmcli connection up $CONN failed" warning
+    fi
+fi
+SUMMARY+=("net $NET")
+
+if [ "$NET" = ok ]; then
+    # ---- 2 tailscale -------------------------------------------------------------
+    if command -v tailscale >/dev/null; then
+        ts=$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("BackendState",""))' 2>/dev/null)
+        case "$ts" in
+            Running) ;;
+            NeedsLogin|NeedsMachineAuth)
+                log "tailscale is $ts: a restart won't fix that, it needs 'sudo tailscale up' by hand" err ;;
+            *)  action tailscale-restart "tailscale state '${ts:-no answer}'"
+                systemctl restart tailscaled ;;
+        esac
+        SUMMARY+=("tailscale ${ts:-?}")
+    fi
+
+    # ---- 3 listener --------------------------------------------------------------
+    if [ "$(systemctl is-active pb-listener)" = active ]; then
+        why=$(python3 - "$STATUS" "$NOW" <<'EOF'
+import json, os, sys
+path, now = sys.argv[1], float(sys.argv[2])
+try:
+    age = now - os.stat(path).st_mtime
+    s = json.load(open(path))
+except (OSError, ValueError) as e:
+    print('status file unreadable (%s)' % e); sys.exit()
+if age > 90:
+    print('status file %d s old' % age)
+elif s.get('state') != 'joined' and s.get('disconnected_since') and now - s['disconnected_since'] > 300:
+    print('not joined for %d s (state %s)' % (now - s['disconnected_since'], s.get('state')))
+EOF
+)
+        if [ -n "$why" ]; then
+            action listener-restart "$why"
+            systemctl restart pb-listener
+            SUMMARY+=("listener restarted")
+        else
+            SUMMARY+=("listener $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("state"))' "$STATUS" 2>/dev/null)")
+        fi
+    elif [ "$(systemctl is-enabled pb-listener 2>/dev/null)" = enabled ]; then
+        log "pb-listener is enabled but $(systemctl is-active pb-listener)" warning
+        SUMMARY+=("listener $(systemctl is-active pb-listener)")
+    fi
+
+    # ---- 4 board-cam -------------------------------------------------------------
+    if [ "$(systemctl is-enabled board-cam 2>/dev/null)" = enabled ]; then
+        cam=$(systemctl is-active board-cam)
+        case "$cam" in
+            active|activating|reloading) ;;
+            *)  action cam-restart "board-cam $cam"
+                systemctl restart board-cam ;;
+        esac
+        SUMMARY+=("cam $cam")
+    fi
+fi
+
+# ---- 5 log only ----------------------------------------------------------------
+LEVEL=info
+temp=$(awk '{printf "%.1f", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
+awk -v t="${temp:-0}" 'BEGIN{exit !(t >= 75)}' && LEVEL=warning
+disk_mb=$(df -BM --output=avail / 2>/dev/null | tail -n 1 | tr -dc 0-9)
+(( ${disk_mb:-0} < 1024 )) && LEVEL=warning
+thr=$(vcgencmd get_throttled 2>/dev/null | sed 's/.*=//')
+if [ -n "$thr" ] && (( thr != 0 )); then
+    LEVEL=warning
+    bits=()
+    (( thr & 0x1 )) && bits+=("undervoltage NOW")
+    (( thr & 0x2 )) && bits+=("freq capped NOW")
+    (( thr & 0x4 )) && bits+=("throttled NOW")
+    (( thr & 0x8 )) && bits+=("soft temp limit NOW")
+    (( thr & 0x10000 )) && bits+=("undervoltage since boot")
+    (( thr & 0x20000 )) && bits+=("capped since boot")
+    (( thr & 0x40000 )) && bits+=("throttled since boot")
+    (( thr & 0x80000 )) && bits+=("soft temp limit since boot")
+    thr="$thr ($(IFS=,; echo "${bits[*]}"))"
+fi
+log "check: $(IFS=,; echo "${SUMMARY[*]}" | sed 's/,/, /g'); temp ${temp:-?}C, disk ${disk_mb:-?}M free, throttled ${thr:-?}" "$LEVEL"

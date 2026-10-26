@@ -1,0 +1,13 @@
+[Unit]
+Description=Board webcam stream (Tailscale only)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+User=pi
+ExecStart=/opt/projectboard/ops/board-cam.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

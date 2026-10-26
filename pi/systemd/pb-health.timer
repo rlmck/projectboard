@@ -1,0 +1,10 @@
+[Unit]
+Description=Project Board health check every 2 min
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=2min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

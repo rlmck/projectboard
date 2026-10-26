@@ -1,0 +1,43 @@
+#!/bin/bash
+# pb-bootcheck: one line per boot, tagged pb-boot: "came up OK" or "came up
+# with problems: ...". Run by pb-bootcheck.timer 3 min after boot.
+
+set -u
+export LC_ALL=C
+problems=()
+
+for u in pb-listener board-cam tailscaled NetworkManager; do
+    [ "$(systemctl is-enabled "$u" 2>/dev/null)" = enabled ] || continue
+    s=$(systemctl is-active "$u")
+    [ "$s" = active ] || problems+=("$u $s")
+done
+mode=$(python3 /opt/projectboard/listener/mode.py 2>/dev/null || echo "? mode.py failed")
+if [ "$(systemctl is-enabled kiosk 2>/dev/null)" = enabled ] && [ "${mode%% *}" = day ]; then
+    s=$(systemctl is-active kiosk)
+    [ "$s" = active ] || problems+=("kiosk $s")
+fi
+failed=$(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | tr '\n' ' ')
+[ -n "$failed" ] && problems+=("failed units: ${failed% }")
+ip -4 -o addr show dev wlan0 2>/dev/null | grep -q ' inet ' || problems+=("no IPv4 on wlan0")
+[ -f /run/systemd/timesync/synchronized ] || problems+=("clock not synced")
+state=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("state"))' /run/projectboard/listener.json 2>/dev/null)
+[ "$state" = joined ] || problems+=("listener ${state:-no status}")
+thr=$(vcgencmd get_throttled 2>/dev/null | sed 's/.*=//')
+[ -n "$thr" ] && (( thr != 0 )) && problems+=("throttled $thr")
+
+last=$(tail -n 1 /var/lib/projectboard/reboots 2>/dev/null)
+before=""
+if [ -n "$last" ]; then
+    t=${last%% *}
+    boot=$(( $(date +%s) - $(cut -d. -f1 /proc/uptime) ))
+    (( t <= boot && boot - t < 900 )) && before="; previous boot ended in a health reboot: ${last#* }"
+fi
+
+if [ ${#problems[@]} -eq 0 ]; then
+    msg="came up OK: mode $mode, listener joined$before"
+    logger -t pb-boot -p user.notice -- "$msg"
+else
+    msg="came up with problems: $(IFS=';'; echo "${problems[*]}" | sed 's/;/; /g') (mode $mode)$before"
+    logger -t pb-boot -p user.err -- "$msg"
+fi
+echo "$msg"

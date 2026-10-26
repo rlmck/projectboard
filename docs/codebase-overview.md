@@ -90,7 +90,7 @@ build.sh  wrangler.jsonc  CLAUDE.md  .gitignore  .gitattributes   (the repo root
 
 Local only (gitignored), on Ross's laptop:
 - `db/`: numbered SQL scripts 01–29, applied by hand in the Supabase SQL editor, indexed in `db/README.md`, plus `db/.env` holding the direct-Postgres URL and the service key. **Never print or commit that file.**
-- `pi/`: the June 2026 listener for the old Pi 3, its systemd unit, a smoke test, `clear_strip.py`, and `problems.csv` (Gareth's problem list, the input to db/03). **Superseded:** the Pi 4 rebuild starts fresh from `docs/pi4-led-audit.md`.
+- `pi/_old/`: the June 2026 listener for the old Pi 3 (with `problems.csv`, Gareth's problem list, the input to db/03) and the 26 Oct 2026 stopgap listener. **Superseded** by the committed `pi/` (the Pi 4 listener and ops, `pi/README.md`). Also `pi/config.env`, the laptop's copy of the Pi's settings.
 - `docs/*`: `changelog.md`, `project-notes.md`, `pi4-led-audit.md` (the Pi 4 / LED spec), `CC_Reference_Gareth_Code.md`, `hardware/` photos, and `security-findings.md`.
 - `reference/original-pi-codebase/dtb/`: Gareth's original DTB code, extracted from his SD card. `tools/register_holds.py` and `tools/register_mirror.py` read `dtb/SettingsFolder/holdlist.csv`, `dtb/SettingsFolder/MirrorDic.txt` and `dtb/dicholdlist.txt` from it by path, so it stays where it is.
 - `.claude/settings.local.json`: Claude Code's per-machine settings.
@@ -253,7 +253,7 @@ A **challenge** is a timed competition on a circuit; its rules are data (`challe
    - Feed it the **live** mirror map (`board_config.mirror_map`), not Gareth's raw `MirrorDic.txt`.
    - The relays (BCM 23/24, active-low) must be switched on at boot. They're believed to power the LEDs and the wall touchscreen.
    - The same Pi drives the **wall touchscreen**: the PWA in a Chromium kiosk, planned as browse and cast only. The cast geofence lets a cast through when there's no location, so the kiosk can cast.
-   - The June 2026 Pi 3 listener in `pi/` is history, not the basis.
+   - The June 2026 Pi 3 listener (now in the local `pi/_old/`) is history, not the basis; the Pi 4 listener is in `pi/`.
 
 Nothing records casts in the database: the old `board_state` table was never used and was dropped in db/24. **Casting is open to guests by design** (decided 10 Sep 2026), with the geofence kept as the gate.
 

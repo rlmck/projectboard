@@ -1,0 +1,84 @@
+#!/bin/bash
+# pb-status: the board at a glance. Read-only; run it as pi (or with sudo if
+# the journal sections say they can't read the journal).
+#   pb-status          everything
+#   pb-status -n 30    show 30 recent health actions instead of 10
+
+set -u
+export LC_ALL=C
+N=10
+[ "${1:-}" = "-n" ] && N="${2:-10}"
+STATUS=/run/projectboard/listener.json
+LEDGER=/var/lib/projectboard/reboots
+
+h() { printf '\n\033[1m%s\033[0m\n' "$1"; }
+
+h "Board  $(hostname)  $(date '+%a %d %b %H:%M:%S')  up $(uptime -p | sed 's/^up //')"
+mode=$(python3 /opt/projectboard/listener/mode.py 2>/dev/null || echo "? mode.py failed")
+echo "  mode        $mode"
+echo "  time sync   $(timedatectl show -p NTPSynchronized --value 2>/dev/null)"
+echo "  boot line   $(journalctl -b -t pb-boot -o cat --no-pager 2>/dev/null | tail -n 1)"
+
+h "Services"
+for u in pb-listener kiosk board-cam tailscaled NetworkManager pb-netlog leds-off-at-boot cast-listener; do
+    printf '  %-18s %-10s %s\n' "$u" "$(systemctl is-active "$u" 2>/dev/null)" "$(systemctl is-enabled "$u" 2>/dev/null)"
+done
+printf '  %-18s %s\n' "pb-listener" "restarts since boot: $(systemctl show -p NRestarts --value pb-listener 2>/dev/null)"
+echo "  timers:"
+systemctl list-timers --all --no-legend 'pb-*' 2>/dev/null | awk '{
+    # NEXT (4 fields) LEFT ... UNIT ACTIVATES: print the unit and when it fires next
+    for (i = 1; i <= NF; i++) if ($i ~ /\.timer$/) unit = $i;
+    printf "    %-26s next %s %s %s\n", unit, $1, $2, $3 }'
+
+h "Listener"
+if [ -f "$STATUS" ]; then
+    python3 - "$STATUS" <<'EOF'
+import json, sys, time
+s = json.load(open(sys.argv[1])); now = time.time()
+def ago(t):
+    if not t: return '-'
+    d = int(now - t)
+    return '%dh%02dm ago' % (d // 3600, d % 3600 // 60) if d >= 3600 else '%dm%02ds ago' % (d // 60, d % 60)
+print('  state       %s  (connected %s, disconnected %s)' % (s.get('state'), ago(s.get('connected_since')), ago(s.get('disconnected_since'))))
+print('  mode        %s  (%s)' % (s.get('mode'), s.get('mode_reason')))
+print('  last frame  %s' % ago(s.get('last_message_at')))
+print('  last cast   %s  %s' % (repr(s['last_cast_name']) if s.get('last_cast_name') else '-', ago(s.get('last_cast_at'))))
+print('  casts       %s shown, %s ignored at night (since the listener started %s)' % (s.get('casts_shown'), s.get('casts_ignored_night'), ago(s.get('started_at'))))
+print('  mirror map  loaded %s' % ago(s.get('mirror_map_at')))
+print('  errors      %s%s' % (s.get('error_count'), '  last: ' + s['last_error'] if s.get('last_error') else ''))
+print('  file        written %s' % ago(s.get('updated_at')))
+EOF
+else
+    echo "  no $STATUS (pb-listener not running?)"
+fi
+
+h "Health actions (pb-health)"
+if journalctl -n 0 >/dev/null 2>&1 && journalctl -t pb-health -n 1 --no-pager -q >/dev/null 2>&1; then
+    for span in "24 hours ago" "7 days ago"; do
+        counts=$(journalctl -t pb-health --since "$span" -o cat --no-pager 2>/dev/null \
+            | sed -n 's/^ACTION \([a-z-]*\):.*/\1/p' | sort | uniq -c | awk '{printf "%s %s, ", $2, $1}' | sed 's/, $//')
+        printf '  %-14s %s\n' "since ${span% ago}" "${counts:-none}"
+    done
+    echo "  last $N:"
+    journalctl -t pb-health --no-pager -o short -q 2>/dev/null | grep ' ACTION ' | tail -n "$N" | sed 's/^/    /'
+    echo "  last check:  $(journalctl -t pb-health -o cat --no-pager -q 2>/dev/null | grep '^check:' | tail -n 1)"
+else
+    echo "  can't read the journal as $(id -un): run sudo pb-status"
+fi
+
+h "Reboots"
+if [ -s "$LEDGER" ]; then
+    while read -r t why; do echo "  $(date -d "@$t" '+%a %d %b %H:%M')  $why"; done < <(tail -n 5 "$LEDGER")
+else
+    echo "  no health-triggered reboots recorded"
+fi
+echo "  boots:"
+journalctl --list-boots --no-pager 2>/dev/null | grep -v 'FIRST ENTRY' | tail -n 5 | awk '{ $1=""; $2=""; print "   " $0 }'
+
+h "Hardware"
+echo "  temperature $(awk '{printf "%.1f C", $1/1000}' /sys/class/thermal/thermal_zone0/temp)"
+echo "  throttled   $(vcgencmd get_throttled 2>/dev/null | sed 's/.*=//')  (0x0 = never; 0x50000 = undervoltage + throttling since boot)"
+echo "  disk free   $(df -h --output=avail / | tail -n 1 | tr -d ' ')"
+echo "  journal     $(journalctl --disk-usage 2>/dev/null | grep -o '[0-9.]*[KMG]' | head -n 1)"
+echo "  wi-fi       $(nmcli -t -f IN-USE,SSID,SIGNAL device wifi list --rescan no 2>/dev/null | sed -n 's/^\*:\(.*\):\(.*\)/\1, signal \2%/p')"
+echo "  addresses   $(hostname -I)"

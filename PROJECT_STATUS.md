@@ -3,7 +3,9 @@
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The cast contract: `docs/cast-contract.md`.
 
 ## Current state (as of 2026-10-26)
-- **The LEDs work and casting works end to end** (phone → Supabase → Pi 4 → LEDs) on **temporary wiring** behind the board, through a **stopgap listener** (`~/cast_listener.py` on the Pi, not yet in the repo). Details in the 2026-10-26 session log entry.
+- **The LEDs work and casting works end to end** (phone → Supabase → Pi 4 → LEDs) on **temporary wiring** behind the board, through a **stopgap listener** (`~/cast_listener.py` on the Pi). People are already using it: 48 casts on the evening of 26 Oct.
+- **The proper listener, with self-healing and night mode, is built in `pi/`** (see `pi/README.md`), laptop-tested, not yet deployed to the Pi. Deploy after the gym closes, then run the acceptance tests.
+- **A wall kiosk is running:** `kiosk.service` (cage + Chromium showing the app on the wall screen), installed 26 Oct. Its unit is now kept in `pi/systemd/`.
 - Pi 4 (donated) installed behind the board: Raspberry Pi OS Lite 64-bit, hostname `projectboard`, on the gym Wi-Fi, reachable over Tailscale. A USB webcam streams the back of the board to Tailscale devices only.
 - Old Pi 3B: unavailable. Not relying on it.
   - **Corrected 20 Oct 2026:** the earlier note that a relay module was "already in the box behind the board" was wrong. Gareth's whole box (Pi 3B, Witty Pi HAT, 2-channel relay board, a small board that looks like a level shifter, and its wiring) left with the old Pi.
@@ -37,7 +39,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 2. Cast contract finalised in docs/cast-contract.md. First version written 19 Oct 2026 from the code; its open questions need answers. (26 Oct: hardware items partly verified, see the log.)
 3. Mock listener on the laptop for end-to-end cast testing without hardware. (`tools/cast-test.html` already subscribes and logs every cast; it doesn't yet turn a cast into LED indices.) Lower priority now that the real board can be tested over the webcam.
 4. Hardware: **first light 26 Oct 2026** on temporary wiring. Next: wire the 8-way power feeds into 5 V/GND, build the box, fit the relay module and level shifter when they arrive, check column B direction.
-5. Fresh Pi listener built to the contract, replacing the stopgap `cast_listener.py` (running on the Pi since 26 Oct). Then the tablet kiosk.
+5. Fresh Pi listener built to the contract, replacing the stopgap `cast_listener.py`: **built 26 Oct in `pi/`** with the resilience and night-mode spec (health checks, watchdogs, night 23:00–08:00, weekly reboot, `pb-status`). Next: deploy, then the acceptance tests. Then wall-screen mode for the kiosk.
 
 ## Waiting on
 - Relay module (eBay) and 74AHCT125 level shifter (Amazon) to arrive.
@@ -63,6 +65,16 @@ Details in `docs/cast-contract.md` → "Open questions".
 
 ## Session log
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-10-26, Claude Code (the Pi listener, self-healing and night mode, built).**
+  - **Changed:** `pi/` is now committed (the old Pi 3 files, the stopgap copies and `problems.csv` moved to a local, gitignored `pi/_old/`; `pi/config.env`, the laptop's copy of the Pi's settings, is gitignored; `pi/**` is LF in `.gitattributes`). New:
+    - `pi/listener/`: `pb_listener.py` (systemd notify + watchdog, backoff 1–60 s with jitter, heartbeat 25 s / dead at 60 s, every cast validated, latest cast wins, status file), `board.py` (order, roles, mirror, LED index, current cap), `mode.py` (day/night from the clock, day if unsynced), `leds.py` (`--off`, `--show`, `--dry-run`), `supa.py`, and `power.py` (the relay hook, not built).
+    - `pi/ops/`: `pb-health` (network, Tailscale, listener, webcam; reboot guard 1 an hour / 3 a day), `pb-mode` (night: kiosk stopped, screen off), `pb-status`, `pb-bootcheck`, `pb-weekly-reboot` (Mon 07:45), and `board-cam.sh` (now finds the Tailscale address itself).
+    - `pi/systemd/` and `pi/conf/` (units and timers, the 15 s hardware watchdog, a 200 MB journal cap); `pi/install.sh` and `pi/deploy.sh` (scp + one sudo prompt, installs only what changed); `pi/setup.sh` (from the bring-up card, now with the Wi-Fi fix and without the power-save step); `pi/README.md`; `pi/tests/`.
+    - CLAUDE.md and the overview point at `pi/`.
+  - **Tested on the laptop:** 16 unit tests pass. LED colours match the app's functions for all 261 live problems, plain and mirrored. A dry-run listener joined the live channel, kept the connection over 75 s, handled fake casts (unknown name, bad name, bad mirror), and ignored casts in forced night mode. `pb-status` ran read-only on the Pi. `install.sh --dry-run` was checked in WSL.
+  - **Left:** the first deploy (after closing, Ross runs it: sudo needs his password), then the acceptance tests (plan R8). Then update `docs/cast-contract.md` §5 for the new listener. Relay control once the module arrives.
+  - **New questions:** does the wall screen go into standby when blanked, or show a lit "No signal"? Is 23:00 always after closing? Casts at night are ignored while the app still says "Cast: X" (contract §7 item 2).
 
 - **2026-10-26, Claude Code (Pi files copied, cast contract updated, listener and kiosk planned).**
   - **Changed:** merged the hardware chat's status update. Copied the working Pi files into the local, gitignored `pi/` (`show_problem.py`, `cast_listener.py`, `board-cam.sh`; units in `pi/systemd/`). `docs/cast-contract.md` §6.4 and §7 item 11 now record what first light verified, and §5 notes the stopgap listener. Checked on the Pi: it's a Pi 4 with **2 GB** (not 4 GB), running trixie **Lite** (no desktop packages), Python 3.13, `websockets` 15; the touchscreen's USB touch shows up as a G2Touch multi-touch device.

@@ -1,0 +1,7 @@
+[Unit]
+Description=Project Board health check (self-healing)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pb-health
+TimeoutStartSec=5min

@@ -1,0 +1,13 @@
+[Unit]
+Description=Turn all LEDs off at boot
+DefaultDependencies=no
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=pi
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /opt/projectboard/listener/leds.py --off
+
+[Install]
+WantedBy=sysinit.target

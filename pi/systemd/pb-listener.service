@@ -1,0 +1,21 @@
+[Unit]
+Description=Project Board cast listener (Supabase Realtime -> LEDs)
+Documentation=https://github.com/rlmck/projectboard/tree/main/pi
+After=leds-off-at-boot.service
+# No network-online wait: a boot with no network must still bring it up.
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=pi
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /opt/projectboard/listener/pb_listener.py
+WatchdogSec=30
+Restart=always
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
