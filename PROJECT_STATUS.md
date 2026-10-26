@@ -4,7 +4,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 
 ## Current state (as of 2026-10-26)
 - **The LEDs work and casting works end to end** (phone → Supabase → Pi 4 → LEDs) on **temporary wiring** behind the board. People are already using it: 50 casts on the evening of 26 Oct.
-- **The proper listener, with self-healing and night mode, is live on the Pi since 26 Oct 21:08** (`pi/`, see `pi/README.md`), replacing the stopgap (kept on the Pi for a rollback). Night mode runs 23:00–08:00. The acceptance tests are still to do.
+- **The proper listener, with self-healing and night mode, is live on the Pi since 26 Oct 21:08** (`pi/`, see `pi/README.md`), replacing the stopgap (kept on the Pi for a rollback). Real casts light correctly (checked 21:30, about 0.25–0.45 s from cast to LEDs). Night mode runs 23:00–08:00; its first real switch is the night of 26 Oct, not yet checked. The acceptance tests are still to do.
 - **A wall kiosk is running:** `kiosk.service` (cage + Chromium showing the app on the wall screen), installed 26 Oct. Its unit is now kept in `pi/systemd/`.
 - Pi 4 (donated) installed behind the board: Raspberry Pi OS Lite 64-bit, hostname `projectboard`, on the gym Wi-Fi, reachable over Tailscale. A USB webcam streams the back of the board to Tailscale devices only.
 - Old Pi 3B: unavailable. Not relying on it.
@@ -39,9 +39,10 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 2. Cast contract finalised in docs/cast-contract.md. First version written 19 Oct 2026 from the code; its open questions need answers. (26 Oct: hardware items partly verified, see the log.)
 3. Mock listener on the laptop for end-to-end cast testing without hardware. (`tools/cast-test.html` already subscribes and logs every cast; it doesn't yet turn a cast into LED indices.) Lower priority now that the real board can be tested over the webcam.
 4. Hardware: **first light 26 Oct 2026** on temporary wiring. Next: wire the 8-way power feeds into 5 V/GND, build the box, fit the relay module and level shifter when they arrive, check column B direction.
-5. Fresh Pi listener built to the contract, replacing the stopgap `cast_listener.py`: **built 26 Oct in `pi/`** with the resilience and night-mode spec (health checks, watchdogs, night 23:00–08:00, weekly reboot, `pb-status`). Next: deploy, then the acceptance tests. Then wall-screen mode for the kiosk.
+5. Fresh Pi listener built to the contract, replacing the stopgap `cast_listener.py`: **built 26 Oct in `pi/`** with the resilience and night-mode spec (health checks, watchdogs, night 23:00–08:00, weekly reboot, `pb-status`). **Live since 26 Oct 21:08.** Next: check the first night (23:00 and 08:00), then the acceptance tests (plan R8: kill, freeze, Wi-Fi drop, Supabase blocked, reboot mid-cast, the clock across 23:00/08:00, boot with no network). Then wall-screen mode for the kiosk.
 
 ## Waiting on
+- Ross: what the wall screen does when night mode blanks it (dark standby, or a lit "No signal"?), and whether 23:00 is always after the gym closes.
 - Relay module (eBay) and 74AHCT125 level shifter (Amazon) to arrive.
 - An on-site check of the cast geofence centre (non-admin phone, by the board and at the far end of the gym).
 
@@ -75,7 +76,8 @@ Newest first. Each entry: date, which side (Claude Code / chat), what changed, w
   - **Tested on the laptop:** 16 unit tests pass. LED colours match the app's functions for all 261 live problems, plain and mirrored. A dry-run listener joined the live channel, kept the connection over 75 s, handled fake casts (unknown name, bad name, bad mirror), and ignored casts in forced night mode. `pb-status` ran read-only on the Pi. `install.sh --dry-run` was checked in WSL.
   - **Deployed 21:08** (after checking nobody had cast since 20:25; Ross ran `pi/deploy.sh`). Checked over SSH: the listener joined and loaded the mirror map; two fake casts handled (latest wins, unknown name left the board alone); systemd's 30 s listener watchdog and the 15 s hardware watchdog are active; the stopgap is disabled.
   - **Found and fixed after the deploy:** (1) pb-health and pb-mode logged every line twice (logger plus stdout, which systemd also sends to the journal), which would have doubled `pb-status`'s counts; they now echo only when run by hand. (2) **The 26 Oct "persistent journal" never took effect:** Raspberry Pi OS ships `40-rpi-volatile-storage.conf`, which keeps the journal in RAM, so earlier boots' logs are gone. `pb-journal.conf` overrides it; `install.sh` now flushes the journal to disk, and `setup.sh` writes the drop-in itself. Both need one more deploy.
-  - **Left:** that redeploy, then the acceptance tests (plan R8). Then update `docs/cast-contract.md` §5 for the new listener. Relay control once the module arrives.
+  - **Redeployed 21:14:** each health line is now logged once, and the journal is on the SD card. **Real casts from Ross's phone lit correctly** (13 and 7 LEDs, 0.25–0.45 s from receipt to LEDs). The health check ran every 2 min with no actions needed. Pushed to `dev` and `main` (no app change; live `sw.js` still `pb-v115`).
+  - **Left (next session):** check the first night in the journal (`ssh pi@projectboard pb-status`; `journalctl -t pb-mode -u pb-listener --since "22:55"`): strip cleared, kiosk stopped, screen off, casts ignored, back on at 08:00. Then the acceptance tests in plan R8 (most need Ross to run `sudo` commands). Relay control when the module arrives. Daytime idle, final brightness and the feet indicators are still Ross's decisions (plan doc, "Decisions needed"). Then update `docs/cast-contract.md` §5 for the new listener. Relay control once the module arrives.
   - **New questions:** does the wall screen go into standby when blanked, or show a lit "No signal"? Is 23:00 always after closing? Casts at night are ignored while the app still says "Cast: X" (contract §7 item 2).
 
 - **2026-10-26, Claude Code (Pi files copied, cast contract updated, listener and kiosk planned).**
