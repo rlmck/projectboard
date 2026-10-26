@@ -6,7 +6,7 @@ How a cast gets from the app to the LEDs. **This describes what the code does** 
 
 ```
 PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime ──broadcast──▶ Pi listener ──SPI──▶ WS2801 strip
-                                                  (no database write)            (stopgap, 26 Oct)
+                                                  (no database write)            (pi/listener, 26 Oct)
 ```
 
 ## 2. Transport
@@ -48,7 +48,19 @@ There are no other fields: no message id, timestamp, sender, hold list, colours 
 
 ## 5. Listener: the Pi
 
-- **A stopgap listener runs on the Pi 4 since 26 Oct 2026** (`cast_listener.py`, a systemd service; copy in the local `pi/`). It follows §6.2–6.4 at brightness 0.5, loads the mirror map on each connect and looks problems up by exact name. A proper listener built to this contract will replace it. The June 2026 Pi 3 listener is reference only and will be discarded.
+- **The listener is `pi/listener/pb_listener.py`** (systemd `pb-listener`, live since 26 Oct 2026 21:08; it replaced that day's stopgap `cast_listener.py`). What it does:
+  - joins `realtime:board:HangoutPortland` with the anon key and checks the join reply;
+  - sends a Phoenix heartbeat every 25 s; no reply for 60 s means a dead socket, and it reconnects with backoff from 1 s to 60 s, with jitter;
+  - on `cast_problem`, checks the payload (§3: `problem_name` a string of 1–60 characters, `mirror` true or absent) and logs and skips anything else;
+  - looks the problem up by exact name over REST (one retry); an unknown name leaves the board as it is;
+  - builds the frame by §6.2–6.4: roles are classified on the stored ids first, ids off the grid are then dropped and logged, and with `mirror` each hold moves to its partner, keeping its role. Brightness is 0.5, with a whole-frame current cap;
+  - latest cast wins: a cast still being fetched when a newer one arrives is dropped;
+  - loads the mirror map on every join and refreshes it every 10 min; a mirrored cast with no map loaded is skipped;
+  - **night mode, 23:00–08:00 by the Pi's clock** (day if the clock hasn't synced): the strip is cleared and casts are ignored (logged, not shown), while the socket stays joined;
+  - clears the strip on start and stop. It sends no reply, so a cast at night or with the Pi down still shows "Cast: X" in the app (§7 item 2);
+  - health checks, watchdogs and deploy are in `pi/README.md`.
+
+  The June 2026 Pi 3 listener and the stopgap are kept locally for reference only.
 - `tools/cast-test.html` (served by `python tools/serve.py`) subscribes like a listener and logs every cast with its payload.
 - **What a listener can read with the anon key** (public-read RLS):
   - `problems`: `name`, `start_holds`, `intermediate_holds`, `finish_hold`, `feet_mode`
@@ -149,5 +161,6 @@ Nothing below is decided.
 15. **Who may cast:** anyone, by decision. Does the Pi apply any checks of its own?
 
 ## Change history
+- **2026-10-26, Claude Code:** §5 describes the new Pi listener (`pi/listener/`), including night mode (casts ignored 23:00–08:00). No change to the channel, event or payload.
 - **2026-10-26, Claude Code:** §6.4 and §7 item 11 updated with the hardware verified at first light (colour order, pixel 0, A1, the 4-way cable and the 8-way power feeds); §5 notes the stopgap listener. No change to the channel, event or payload.
 - **2026-10-19, Claude Code:** first version, written from the code (app `pb-v109`; the old Pi 3 listener and Gareth's code as references).
