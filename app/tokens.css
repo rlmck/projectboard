@@ -1,0 +1,171 @@
+/* Shared design tokens for the phone app and the wall-screen mode.
+   Change styling values here, never in components. */
+
+:root {
+  /* Surfaces */
+  --bg: #0a0a0a;  /* the page; matches manifest.json and the theme-color meta */
+  --surface: #161616;  /* cards, sheets, fields */
+  --surface2: #202020;  /* raised controls, pressed rows */
+  --border: #2c2c2c;
+  --board-backdrop: #050505;  /* behind the board in fullscreen and the outline editor */
+  --black: #000;  /* the minimap and the editor loupe behind the board photo */
+  --white: #fff;  /* the toggle knob, the selected outline vertex */
+
+  /* Brand */
+  --accent: #ec4899;
+  --accent-hover: #f472b6;
+  --cast: #ec4899;
+  --cast-hover: #f472b6;
+  --ios-blue: #0a84ff;  /* iOS system blue, so the welcome glyph matches the button they're looking for */
+
+  /* Hold colours (start green, intermediate blue, finish red, feet orange) */
+  --start: #22c55e;
+  --int: #3b82f6;
+  --finish: #ef4444;
+  --feet: #f59e0b;
+  --gold: #fbbf24;  /* stars, the challenge clock in rests */
+  --start-text: #4ade80;  /* hold colours as text on a dark surface */
+  --int-text: #60a5fa;
+  --finish-text: #f87171;
+
+  /* Text */
+  --text: #f5f5f5;
+  --text-muted: #9a9a9a;
+  --text-soft: #d4d4d4;  /* long-form reading text (challenge rules, privacy page) */
+  --text-faint: #55556a;
+  --placeholder: #5a5a66;  /* the create view's name field */
+  --placeholder-focus: #45454f;
+  --comment-text: #c8c8da;
+  --on-accent: #fff;  /* text and icons on an accent or danger fill */
+  --on-board: #fff;  /* controls and labels drawn over the board photo */
+
+  /* States */
+  --danger: #dc2626;
+  --danger-pressed: #b91c1c;
+  --error-text: #f87171;
+  --success-text: #4ade80;
+  --mirror-text: #60a5fa;  /* the mirror toggle and mirrored-tick labels */
+  --fave: #f43f5e;
+  --star-off: #44445a;
+  --finish-zone-text: #fca5a5;
+
+  /* Badges */
+  --badge-pink-text: #f9a8d4;
+  --badge-pink-fill: rgba(236,72,153,0.16);
+  --badge-pink-line: rgba(236,72,153,0.5);
+  --badge-green-text: #86efac;
+  --badge-green-fill: rgba(34,197,94,0.16);
+  --badge-green-line: rgba(34,197,94,0.5);
+  --badge-blue-text: #93c5fd;
+  --badge-blue-fill: rgba(59,130,246,0.16);
+  --badge-blue-line: rgba(59,130,246,0.5);
+
+  /* Alpha variants: --<colour>-aNN is that colour at alpha 0.NN */
+  --accent-a05: rgba(236, 72, 153, 0.05);
+  --accent-a12: rgba(236,72,153,0.12);
+  --accent-a14: rgba(236,72,153,0.14);
+  --accent-a19: rgba(236, 72, 153, 0.19);
+  --accent-a40: rgba(236,72,153,0.4);
+  --accent-a85: rgba(236, 72, 153, 0.85);
+  --start-a10: rgba(34,197,94,0.10);
+  --start-a14: rgba(34,197,94,0.14);
+  --start-a28: rgba(34,197,94,0.28);
+  --start-a40: rgba(34,197,94,0.4);
+  --start-a55: rgba(34,197,94,0.55);
+  --int-a10: rgba(59,130,246,0.10);
+  --int-a12: rgba(59,130,246,0.12);
+  --int-a24: rgba(59,130,246,0.24);
+  --int-a40: rgba(59,130,246,0.4);
+  --int-a55: rgba(59,130,246,0.55);
+  --finish-a02: rgba(239,68,68,0.02);
+  --finish-a07: rgba(239,68,68,0.07);
+  --finish-a10: rgba(239,68,68,0.10);
+  --finish-a30: rgba(239,68,68,0.30);
+  --finish-a40: rgba(239,68,68,0.4);
+  --finish-a55: rgba(239,68,68,0.55);
+  --finish-text-a70: rgba(248,113,113,0.7);
+  --feet-a12: rgba(245,158,11,0.12);
+  --feet-a16: rgba(245,158,11,0.16);
+  --feet-a50: rgba(245,158,11,0.5);
+  --gold-a95: rgba(251,191,36,0.95);
+  --fave-a14: rgba(244,63,94,0.14);
+  --mirror-a16: rgba(96,165,250,0.16);
+  --success-a12: rgba(74,222,128,0.12);
+  --success-a45: rgba(74,222,128,0.45);
+  --error-text-a40: rgba(248,113,113,0.4);
+  --bg-a00: rgba(10,10,10,0);
+  --bg-a55: rgba(10,10,10,0.55);
+  --bg-a70: rgba(10,10,10,0.7);
+  --bg-a80: rgba(10,10,10,0.8);
+  --bg-a82: rgba(10,10,10,0.82);
+  --bg-a85: rgba(10,10,10,0.85);
+  --white-a00: rgba(255,255,255,0);
+  --white-a075: rgba(255, 255, 255, 0.075);
+  --white-a12: rgba(255,255,255,0.12);
+  --white-a15: rgba(255,255,255,0.15);
+  --white-a22: rgba(255,255,255,0.22);
+  --white-a25: rgba(255,255,255,0.25);
+  --white-a35: rgba(255,255,255,0.35);
+  --white-a45: rgba(255,255,255,0.45);
+  --white-a60: rgba(255,255,255,0.6);
+  --white-a70: rgba(255,255,255,0.7);
+  --white-a90: rgba(255,255,255,0.9);
+
+  /* Overlays and bars */
+  --topbar-bg: rgba(10,10,10,0.92);  /* the sticky top bar and the compare bar */
+  --nav-bg: rgba(15,15,15,0.95);
+  --fs-bar-bg: rgba(16,16,16,0.62);  /* the fullscreen viewer's bottom bar */
+  --scrim: rgba(0,0,0,0.6);  /* behind sheets and modals */
+
+  /* Outline editor (#outlines, admin only) */
+  --ol-edit: #f5c842;  /* the hold being edited */
+  --ol-edit-a12: rgba(245,200,66,0.12);
+  --ol-edit-a16: rgba(245,200,66,0.16);
+  --ol-edit-a45: rgba(245,200,66,0.45);
+  --ol-edit-a90: rgba(245,200,66,0.9);
+  --ol-other-line: rgba(125,185,255,0.95);  /* the other holds' outlines */
+  --ol-vertex-ring: #111;
+
+  /* Type */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;  /* the passphrase */
+
+  /* Radii */
+  --radius: 12px;  /* cards, menus, panels */
+  --btn-radius: 10px;  /* every rectangular button and field */
+  --radius-2xs: 3px;
+  --radius-xs: 5px;
+  --radius-badge: 6px;
+  --radius-sm: 8px;
+  --radius-chip: 9px;
+  --radius-md: 10px;  /* rows, the toast, small cards (same as --btn-radius today, a different job) */
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+  --radius-sheet: 18px;  /* bottom sheets' top corners, the fullscreen bar */
+  --radius-icon: 20px;
+  --radius-fell: 22px;  /* the challenge's Fell button */
+  --radius-pill: 999px;
+
+  /* Shadows */
+  --shadow: 0 4px 24px rgba(0,0,0,0.4);  /* sheets, the toast, the install banner */
+  --shadow-menu: 0 14px 34px rgba(0,0,0,0.55);
+  --shadow-play: 0 4px 14px rgba(236,72,153,0.35);
+  --shadow-fell: 0 8px 30px rgba(220,38,38,0.35);
+  --shadow-hold: 0 0 0 1px rgba(0,0,0,0.45), 0 0 9px rgba(0,0,0,0.4);
+  --shadow-hold-lit: 0 0 0 1px rgba(0,0,0,0.45), 0 0 14px 3px currentColor;  /* currentColor resolves on the element that uses it */
+  --shadow-fs-board: 0 10px 40px rgba(0,0,0,0.6);
+  --shadow-fs-map: 0 4px 16px rgba(0,0,0,0.5);
+  --shadow-fs-map-dim: 0 0 0 999px rgba(0,0,0,0.35);
+  --shadow-fs-bar: 0 8px 30px rgba(0,0,0,0.45);
+  --shadow-ol-vertex: 0 0 0 3px rgba(245,200,66,0.9);
+  --shadow-ol-dot: 0 0 0 1px rgba(0,0,0,0.5);
+  --shadow-ol-loupe: 0 6px 22px rgba(0,0,0,0.7);
+  --text-shadow-seq: 0 1px 2px rgba(0,0,0,0.9);
+  --text-shadow-finish-zone: 0 1px 3px rgba(0,0,0,0.9);
+  --drop-hold-lines: 0 0 1px rgba(0,0,0,0.85);  /* used as drop-shadow(var(...)) */
+  --drop-ol-x: 0 0 1.5px #000;
+
+  /* Sizes */
+  --nav-h: 60px;  /* the bottom nav; body.ch-away raises it to 100px in styles.css */
+  --nav-strip-h: 40px;  /* the 'back to the challenge' strip on top of the nav */
+}

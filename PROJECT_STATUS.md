@@ -5,16 +5,16 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 ## Current state (as of 2026-10-26)
 - **The LEDs work and casting works end to end** (phone → Supabase → Pi 4 → LEDs) on **temporary wiring** behind the board. People are already using it: 50 casts on the evening of 26 Oct.
 - **The proper listener, with self-healing and night mode, is live on the Pi since 26 Oct 21:08** (`pi/`, see `pi/README.md`), replacing the stopgap (kept on the Pi for a rollback). Real casts light correctly (checked 21:30, about 0.25–0.45 s from cast to LEDs). Night mode runs 23:00–08:00; its first real switch is the night of 26 Oct, not yet checked. The acceptance tests are still to do.
-- **A wall kiosk is running:** `kiosk.service` (cage + Chromium showing the app on the wall screen), installed 26 Oct. Its unit is now kept in `pi/systemd/`.
+- **A wall kiosk is running:** `kiosk.service` (cage + Chromium showing the app on the wall screen), installed 26 Oct. Its unit is now kept in `pi/systemd/`. **The kiosk setup must target `HDMI-A-2`** (the touchscreen's port; not HDMI 0 as first noted).
 - Pi 4 (donated) installed behind the board: Raspberry Pi OS Lite 64-bit, hostname `projectboard`, on the gym Wi-Fi, reachable over Tailscale. A USB webcam streams the back of the board to Tailscale devices only.
 - Old Pi 3B: unavailable. Not relying on it.
   - **Corrected 20 Oct 2026:** the earlier note that a relay module was "already in the box behind the board" was wrong. Gareth's whole box (Pi 3B, Witty Pi HAT, 2-channel relay board, a small board that looks like a level shifter, and its wiring) left with the old Pi.
-  - On the wall: the LED strip, **two** YU0510 5 V 10 A supplies (DC plugs now cut; both needed together to start the strip), the wall touchscreen (HDMI to the Pi via micro-HDMI; its USB touch cable now in the Pi), the 4-way strip cable, and two 8-way power-feed plugs (mapped 26 Oct, not yet connected).
+  - On the wall: the LED strip, **two** YU0510 5 V 10 A supplies (DC plugs now cut; both needed together to start the strip), the wall touchscreen (1280×720, landscape, on the Pi 4's **second** HDMI port: DRM connector `HDMI-A-2`, i.e. HDMI 1; `HDMI-A-1` shows disconnected; checked 26 Oct 2026. Its USB touch cable is in the Pi), the 4-way strip cable, and two 8-way power-feed plugs (mapped 26 Oct, not yet connected).
   - Bought 20 Oct 2026 (to match Gareth's setup): a 2-channel 5 V opto-isolated relay module (eBay), a 74AHCT125 level shifter breakout (Amazon), a 200x100x70 mm IP65 junction box, female-female jumpers, 1 m red and 1 m blue 16 AWG wire (blue = negative; black was out of stock), 5x Wago 221-413, 5x 3 A 12-way terminal strips (Maplin Pro), a micro-HDMI to HDMI adapter, a 9 mm M2.5 standoff kit and a Pi 4 heatsink set (The Pi Hut). Relay module and level shifter not yet arrived (26 Oct). DC jack adapters no longer needed.
 - The original system's SD card image (dtb-backup.img) is kept for reference only.
 - board_listener.py will be discarded; Pi-side code starts fresh.
 - The app is not yet announced to the public: the wiring is temporary and the far end of the board shows the wrong colours until the 8-way power feeds are wired in.
-- The app itself is live at https://symmetryboard.co.uk (service worker `pb-v115`, 20 Oct 2026), with the Pat Burner challenge live.
+- The app itself is live at https://symmetryboard.co.uk (service worker `pb-v115`, 20 Oct 2026), with the Pat Burner challenge live. Staging has `pb-v116` (26 Oct): every styling value moved into `app/tokens.css`, no visual change.
 
 ## Decisions
 - Remove Google sign-in completely. **Done 18 Oct 2026** (provider off; OAuth client deleted 19 Oct).
@@ -66,6 +66,14 @@ Details in `docs/cast-contract.md` → "Open questions".
 
 ## Session log
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-10-26, Claude Code (design tokens: `app/tokens.css`).**
+  - **Changed (`pb-v116`, staging only):** every colour, font stack, radius, shadow and size in the PWA now lives in the new `app/tokens.css` (one `:root` block, grouped and commented), so the phone app and the planned wall-screen mode share one set of values. `styles.css` lost its `:root` block and uses `var(--token)` everywhere; all 19 existing variable names are unchanged. New names follow the agreed list (`--danger`, `--error-text`, `--badge-pink-*`, `--topbar-bg`, `--scrim`, `--font-sans`, `--shadow-fell` …); alpha variants are `--<colour>-aNN` (e.g. `--accent-a12`). The splash mark's colour moved from SVG attributes in `index.html` to CSS; the challenge compare chart uses `var(--accent/--int/--start)`; `privacy.html` uses tokens too. Both pages load `tokens.css` before `styles.css`; it's in `build.sh` and the `sw.js` precache. CLAUDE.md has a new working rule 11 (styling values only in `tokens.css`).
+  - **Left as literals on purpose:** `transparent`/`currentColor`/`0`/`50%`, the splash mask gradients' `#000` (only alpha counts), the board-dim SVG mask in `core.js`, `body.ch-away { --nav-h: 100px }` (a state override), the theme-color metas, `manifest.json`, the icons. Spacing, z-index and transitions weren't swept (out of scope).
+  - **Tested:** a script expanded every token back and matched the old `styles.css` line for line (0 differences, no literal colour or px radius left). In Chrome at 390×844 (local, with a throwaway account, since deleted), computed styles of every element were identical before and after on: splash end state, welcome, Problems, detail, ⋮ menu, info sheet, fullscreen, create, Circuits, circuit detail, the Pat Burner page, a running attempt, the strip on Ranks, Ranks, Profile, sign-in, both toasts, privacy, and the compare chart. Only differences seen were the clock text and timing, re-checked equal with the text fixed.
+  - **Also corrected:** the wall touchscreen is on `HDMI-A-2` (HDMI 1), not HDMI 0 (Current state).
+  - **Left:** Ross checks staging on his phone; then fast-forward `main` to go live.
+  - **New questions:** none.
 
 - **2026-10-26, Claude Code (the Pi listener, self-healing and night mode, built).**
   - **Changed:** `pi/` is now committed (the old Pi 3 files, the stopgap copies and `problems.csv` moved to a local, gitignored `pi/_old/`; `pi/config.env`, the laptop's copy of the Pi's settings, is gitignored; `pi/**` is LF in `.gitattributes`). New:

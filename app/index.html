@@ -28,6 +28,7 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <!-- iOS ignores SVG touch icons (it uses a page screenshot instead), so this must be a PNG. -->
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="stylesheet" href="tokens.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -35,6 +36,7 @@
 <!-- ══ SPLASH / BOOT OVERLAY ══════════════════════════════════════════ -->
 <!-- The mark is inlined (same geometry as icon.svg) so its two parts can be
      animated: the chevron draws outward from its vertex, then the dot lands.
+     Its colour (--accent) is set in styles.css.
      The whole entrance is CSS in styles.css - see the timeline there. -->
 <div id="splash">
   <div class="splash-grid" aria-hidden="true"></div>
@@ -43,8 +45,8 @@
     <div class="splash-mark">
       <svg viewBox="0 0 512 512" aria-hidden="true" focusable="false">
         <path class="splash-chevron" d="M132 168 L256 356 L380 168" pathLength="100"
-              fill="none" stroke="#ec4899" stroke-width="56" stroke-linejoin="round" stroke-linecap="round"/>
-        <circle class="splash-dot" cx="256" cy="132" r="26" fill="#ec4899"/>
+              fill="none" stroke-width="56" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle class="splash-dot" cx="256" cy="132" r="26"/>
       </svg>
     </div>
     <div class="splash-name"><span class="sn-a">Project</span> <span class="sn-b">Board</span></div>

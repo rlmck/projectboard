@@ -26,7 +26,8 @@ FILES=(
   index.html
   privacy.html
 
-  # styles
+  # styles (tokens.css first: the shared design tokens)
+  tokens.css
   styles.css
 
   # vendored, pinned supabase-js (loaded before state.js)

@@ -28,7 +28,7 @@
   const CH_PENDING_KEY = 'pb-challenge-pending';
   const CH_REP_CAP = 1200;                       // seconds; the db/31 per-rep cap
   const CH_MAX_AGE = 14 * 24 * 3600 * 1000;      // db/31: an attempt must have started within 14 days
-  const CH_COLOURS = ['#ec4899', '#3b82f6', '#22c55e'];
+  const CH_COLOURS = ['var(--accent)', 'var(--int)', 'var(--start)'];   // tokens.css; set through style=, since SVG attributes don't take var()
   const CH_TROPHY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8"></path><path d="M12 17v4"></path><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"></path><path d="M17 5h3v2a3 3 0 0 1-3 3"></path><path d="M7 5H4v2a3 3 0 0 0 3 3"></path></svg>';
   const CH_TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
 
@@ -732,8 +732,8 @@
     const lines = series.map((s, k) => {
       const c = CH_COLOURS[k % CH_COLOURS.length];
       const pts = s.rep_seconds.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
-      const dots = s.rep_seconds.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.2" fill="${c}"/>`).join('');
-      return `<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2.2" stroke-linejoin="round"/>${dots}`;
+      const dots = s.rep_seconds.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.2" style="fill:${c}"/>`).join('');
+      return `<polyline points="${pts}" fill="none" style="stroke:${c}" stroke-width="2.2" stroke-linejoin="round"/>${dots}`;
     }).join('');
     const legend = series.map((s, k) => `
       <div class="ch-legend-row">

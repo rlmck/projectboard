@@ -66,7 +66,8 @@ build.sh  wrangler.jsonc  CLAUDE.md  .gitignore  .gitattributes   (the repo root
 | Path | What | Deployed? |
 |---|---|---|
 | `app/index.html` | All markup: splash, welcome overlay, 11 view `<section>`s, 8 modals, nav, install banner, toast | yes |
-| `app/styles.css` | All styling (dark theme, `--accent: #ec4899`) | yes |
+| `app/tokens.css` | The shared design tokens: every colour, font stack, radius, shadow and size, as custom properties on `:root`, shared by the phone app and the planned wall-screen mode. Loaded before `styles.css` by `index.html` and `privacy.html` | yes (and precached) |
+| `app/styles.css` | All styling (dark theme), written only in `var(--token)`s from `tokens.css` | yes |
 | `app/state.js` … `app/app.js` | The ten app scripts (section 4) | yes |
 | `app/sw.js`, `app/manifest.json` | Service worker, PWA manifest | yes |
 | `app/privacy.html` | Static privacy page; keep its claims true | yes |
@@ -535,7 +536,7 @@ The domain `symmetryboard.co.uk` doesn't contain the brand, so **a name change d
 **Changing the logo:**
 1. Edit `icon.svg` **and** the duplicated geometry in `make_icons.py`, then run `make_icons.py` (it rewrites 4 PNGs).
 2. Update the inline copies in `print/poster.html`. The legacy page's copy can stay.
-3. If the colour changes: `--accent`/`--accent-hover` in `styles.css`, `PINK` in `make_icons.py`, the poster CSS, and `theme_color`/`background_color` if the dark ground changes.
+3. If the colour changes: `--accent`/`--accent-hover` and the `--accent-aNN` alpha variants in `tokens.css`, `PINK` in `make_icons.py`, the poster CSS, and `theme_color`/`background_color` if the dark ground changes.
 4. `og:image` points at `icon-maskable-512.png`, so it updates by itself.
 5. Bump `CACHE`: icons are stale-while-revalidate, and the bump pushes them to installed clients.
 6. Regenerate the manifest screenshots if they show the old mark.

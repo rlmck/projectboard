@@ -9,7 +9,8 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-  <!-- Shares the app's palette (the :root colour tokens + body) from styles.css. -->
+  <!-- Shares the app's design tokens (tokens.css) and body styles (styles.css). -->
+  <link rel="stylesheet" href="tokens.css" />
   <link rel="stylesheet" href="styles.css" />
   <style>
     .privacy {
@@ -20,14 +21,14 @@
       font-size: 15px;
     }
     .privacy-head { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
-    .privacy-head img { width: 40px; height: 40px; border-radius: 10px; }
+    .privacy-head img { width: 40px; height: 40px; border-radius: var(--radius-md); }
     .privacy-head .name { font-weight: 800; font-size: 17px; }
     .privacy-head .name span { color: var(--accent); }
     .privacy-head .back { margin-left: auto; }
     .privacy h1 { font-size: 26px; font-weight: 800; line-height: 1.2; }
     .privacy .updated { color: var(--text-muted); font-size: 13px; margin: 4px 0 22px; }
     .privacy h2 { font-size: 17px; font-weight: 800; margin: 28px 0 8px; }
-    .privacy p, .privacy ul { color: #d4d4d4; margin-bottom: 12px; }
+    .privacy p, .privacy ul { color: var(--text-soft); margin-bottom: 12px; }
     .privacy ul { padding-left: 20px; }
     .privacy li { margin-bottom: 6px; }
     .privacy b { color: var(--text); }
