@@ -14,7 +14,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - The original system's SD card image (dtb-backup.img) is kept for reference only.
 - board_listener.py will be discarded; Pi-side code starts fresh.
 - The app is not yet announced to the public: the wiring is temporary and the far end of the board shows the wrong colours until the 8-way power feeds are wired in.
-- The app itself is live at https://symmetryboard.co.uk (service worker `pb-v115`, 20 Oct 2026), with the Pat Burner challenge live. Staging has `pb-v116` (26 Oct): every styling value moved into `app/tokens.css`, no visual change.
+- The app itself is live at https://symmetryboard.co.uk (service worker `pb-v116`, 26 Oct 2026), with the Pat Burner challenge live. Every styling value now lives in `app/tokens.css` (no visual change).
 
 ## Decisions
 - Remove Google sign-in completely. **Done 18 Oct 2026** (provider off; OAuth client deleted 19 Oct).
@@ -68,11 +68,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
 - **2026-10-26, Claude Code (design tokens: `app/tokens.css`).**
-  - **Changed (`pb-v116`, staging only):** every colour, font stack, radius, shadow and size in the PWA now lives in the new `app/tokens.css` (one `:root` block, grouped and commented), so the phone app and the planned wall-screen mode share one set of values. `styles.css` lost its `:root` block and uses `var(--token)` everywhere; all 19 existing variable names are unchanged. New names follow the agreed list (`--danger`, `--error-text`, `--badge-pink-*`, `--topbar-bg`, `--scrim`, `--font-sans`, `--shadow-fell` …); alpha variants are `--<colour>-aNN` (e.g. `--accent-a12`). The splash mark's colour moved from SVG attributes in `index.html` to CSS; the challenge compare chart uses `var(--accent/--int/--start)`; `privacy.html` uses tokens too. Both pages load `tokens.css` before `styles.css`; it's in `build.sh` and the `sw.js` precache. CLAUDE.md has a new working rule 11 (styling values only in `tokens.css`).
+  - **Changed (`pb-v116`):** every colour, font stack, radius, shadow and size in the PWA now lives in the new `app/tokens.css` (one `:root` block, grouped and commented), so the phone app and the planned wall-screen mode share one set of values. `styles.css` lost its `:root` block and uses `var(--token)` everywhere; all 19 existing variable names are unchanged. New names follow the agreed list (`--danger`, `--error-text`, `--badge-pink-*`, `--topbar-bg`, `--scrim`, `--font-sans`, `--shadow-fell` …); alpha variants are `--<colour>-aNN` (e.g. `--accent-a12`). The splash mark's colour moved from SVG attributes in `index.html` to CSS; the challenge compare chart uses `var(--accent/--int/--start)`; `privacy.html` uses tokens too. Both pages load `tokens.css` before `styles.css`; it's in `build.sh` and the `sw.js` precache. CLAUDE.md has a new working rule 11 (styling values only in `tokens.css`).
   - **Left as literals on purpose:** `transparent`/`currentColor`/`0`/`50%`, the splash mask gradients' `#000` (only alpha counts), the board-dim SVG mask in `core.js`, `body.ch-away { --nav-h: 100px }` (a state override), the theme-color metas, `manifest.json`, the icons. Spacing, z-index and transitions weren't swept (out of scope).
   - **Tested:** a script expanded every token back and matched the old `styles.css` line for line (0 differences, no literal colour or px radius left). In Chrome at 390×844 (local, with a throwaway account, since deleted), computed styles of every element were identical before and after on: splash end state, welcome, Problems, detail, ⋮ menu, info sheet, fullscreen, create, Circuits, circuit detail, the Pat Burner page, a running attempt, the strip on Ranks, Ranks, Profile, sign-in, both toasts, privacy, and the compare chart. Only differences seen were the clock text and timing, re-checked equal with the text fixed.
   - **Also corrected:** the wall touchscreen is on `HDMI-A-2` (HDMI 1), not HDMI 0 (Current state).
-  - **Left:** Ross checks staging on his phone; then fast-forward `main` to go live.
+  - **Live:** Ross checked it on his phone on staging; `main` fast-forwarded to `dev` (`5c959eb`), live `sw.js` confirmed at `pb-v116`.
+  - **Left:** nothing.
   - **New questions:** none.
 
 - **2026-10-26, Claude Code (the Pi listener, self-healing and night mode, built).**
