@@ -7,7 +7,8 @@
 
 Contract 6.4: SPI0 CE0 (/dev/spidev0.0), 1 MHz, mode 0, MSB first, 3 bytes per
 pixel in R, G, B order. Every write covers STRIP_PIXELS pixels, so anything
-past the board's 247 is cleared too. Pixel 0 (behind the board) is never lit.
+past the board's 247 is cleared too, except Glisten's frames, which cover the
+board's 248 to keep 30 fps. Pixel 0 (behind the board) is never lit.
 """
 import os
 import sys
@@ -22,12 +23,17 @@ class Strip:
     def __init__(self, pixels=1200):
         self.pixels = pixels
 
-    def write(self, leds):
-        """leds: {index: (r, g, b)} as ints 0-255; every other pixel is set off."""
+    def write(self, leds, pixels=None):
+        """leds: {index: (r, g, b)} as ints 0-255; every other pixel is set off.
+
+        pixels: write only the first N (the Glisten frames: the board's 248
+        instead of all 1200). Pixels past N keep what they had.
+        """
         import spidev
-        buf = bytearray(self.pixels * 3)
+        n = min(pixels or self.pixels, self.pixels)
+        buf = bytearray(n * 3)
         for i, rgb in leds.items():
-            if 1 <= i < self.pixels:
+            if 1 <= i < n:
                 buf[i * 3:i * 3 + 3] = bytes(rgb)
         s = spidev.SpiDev()
         try:
@@ -44,8 +50,15 @@ class Strip:
 
 
 class FakeStrip(Strip):
-    """--dry-run: prints what it would light."""
-    def write(self, leds):
+    """--dry-run: prints what it would light (an animation frame only every 5 s)."""
+    frames = 0
+
+    def write(self, leds, pixels=None):
+        if pixels:
+            self.frames += 1
+            if self.frames % 150 == 1:
+                print('  [dry-run] animation frame %d: %d LEDs lit' % (self.frames, len(leds)), flush=True)
+            return
         print('  [dry-run] LEDs:', ', '.join('%d=%s' % (i, rgb) for i, rgb in sorted(leds.items())) or 'all off',
               flush=True)
 

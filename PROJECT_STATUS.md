@@ -5,6 +5,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 ## Current state (as of 2026-10-27)
 - **The LEDs work and casting works end to end** (phone → Supabase → Pi 4 → LEDs) on **temporary wiring** behind the board. People are already using it: 50 casts on the evening of 26 Oct.
 - **The proper listener, with self-healing and night mode, is live on the Pi since 26 Oct 21:08** (`pi/`, see `pi/README.md`), replacing the stopgap (kept on the Pi for a rollback). Real casts light correctly (checked 21:30, about 0.25–0.45 s from cast to LEDs). Night mode runs 23:00–08:00; its first real switch is the night of 26 Oct, not yet checked. The acceptance tests are still to do.
+- **Glisten, the LEDs' idle animation, is built and tested on the laptop, not yet deployed** (27 Oct, `pi/listener/glisten.py` + `renderer.py`): 20 minutes after the last cast (and at start and at 08:00) the board shimmers navy/teal/violet with sparkles and a glint; a cast cuts straight in; 23:00 fades to black. Replaces "the last problem stays lit forever". Preview: `python tools/glisten_preview.py`.
 - **A wall kiosk is running:** `kiosk.service` (cage + Chromium showing the app on the wall screen), installed 26 Oct. Its unit is now kept in `pi/systemd/`. **The kiosk setup must target `HDMI-A-2`** (the touchscreen's port; not HDMI 0 as first noted).
 - **Wall-screen mode live (27 Oct, `7fd2b6a`; the live `sw.js` showed `pb-v117` when checked later that day):** `/?wall` (`app/wall.js`) and the kiosk unit pointing at it. Screenshots in `docs/screenshots/wall-mode/`. **`pb-v118` (27 Oct, `24bf501` on `dev` and `main`, live `sw.js` checked):** idle after 20 minutes untouched (was 90 s), and the idle slides are just the QR and the benchmark of the day (the Pat Burner slide is out; its board stays on Ranks). The wall's problem list has a new layout (option A of three in `docs/screenshots/wall-mode/options/`): a grade rail that jumps the list, the whole list with sticky grade headers (about 8 rows on screen, was 3.7), and the chosen problem's name, Mirror and Light it up in a bar over a slightly smaller board (647×530, was 762×624).
 - Pi 4 (donated) installed behind the board: Raspberry Pi OS Lite 64-bit, hostname `projectboard`, on the gym Wi-Fi, reachable over Tailscale. A USB webcam streams the back of the board to Tailscale devices only.
@@ -68,6 +69,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 
 ## Session log
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-10-27, Claude Code (Glisten, the LEDs' idle animation).**
+  - **Found:** the listener wrote the strip from the event loop under an asyncio lock (a full 1200-pixel write is ~29 ms at 1 MHz); the last cast stayed lit until night; numpy isn't on the Pi (Python 3.13).
+  - **Built:** `pi/listener/renderer.py`, a thread that is now the only writer to the strip (cast / idle / night; the event loop only posts to it; SIGUSR1 = idle now; the listener exits for a systemd restart if the thread dies or stalls 20 s), and `pi/listener/glisten.py`, the pattern in pure Python on the 19×13 grid (value-noise shimmer through a palette from the app's tokens, single-cell sparkles, a diagonal glint; gamma 2.2; its own 2 A cap through `board.scale`). About 3 ms a frame on the Pi 4 (benchmarked there, no strip touched); animation frames write only the board's 248 pixels (6 ms). New `IDLE_*` settings in `config.env`. `leds.py` `Strip.write` takes an optional pixel count. `pb-status` shows the LED state and fps. `tools/glisten_preview.py` writes a standalone `tools/glisten-preview.html` (gitignored) from the same code.
+  - **Tested:** 36 laptop tests pass (16 old + 20 new: states, the cap, pixel 0, sparkle and flash limits, a failing animation).
+  - **Left:** Ross to look at the preview, then deploy (`bash pi/deploy.sh`, starts Glisten at once in the daytime), and check a phone cast cuts in, the fps and CPU, and the watchdog.
 
 - **2026-10-27, Claude Code (wall screen: idle timeout, slides, list layout options).**
   - **Checked:** the live `sw.js` shows `pb-v117`.

@@ -10,8 +10,11 @@ docs/pi4-listener-kiosk-plan.md, section R1:
 - Reconnect backoff 1 s doubling to 60 s with jitter; Phoenix heartbeat every
   25 s; no heartbeat reply for 60 s = dead socket.
 - Every cast is checked; a bad one is logged and skipped. Latest cast wins.
-- Night mode (mode.py): the strip is cleared and casts are ignored, but the
+- Night mode (mode.py): the strip fades out and casts are ignored, but the
   socket stays joined.
+- The strip belongs to the LED thread (renderer.py): a cast is lit at once,
+  IDLE_AFTER_S after the last cast the idle animation (Glisten, glisten.py)
+  fades in, and at night the strip fades to black. SIGUSR1 = idle now.
 - Status in /run/projectboard/listener.json for pb-health and pb-status.
 
     pb_listener.py [--dry-run] [--config FILE] [--status FILE]
@@ -29,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import board  # noqa: E402
 import leds as ledlib  # noqa: E402
 import mode as modelib  # noqa: E402
+import renderer  # noqa: E402
 import supa  # noqa: E402
 
 from websockets.asyncio.client import connect  # noqa: E402
@@ -41,6 +45,7 @@ STABLE_AFTER = 60          # a connection joined this long resets the backoff
 TICK = 10                  # watchdog ping and status write
 MODE_EVERY = 30
 MIRROR_EVERY = 600
+LED_STALL = 20             # the LED thread silent this long = stuck: exit, systemd restarts us
 
 
 def log(msg, level=6):
@@ -86,13 +91,13 @@ class Listener:
         self.topic = 'realtime:board:' + self.cfg['BOARD_WALL']
         host = self.cfg['SUPABASE_URL'].rstrip('/').replace('https://', 'wss://', 1)
         self.ws_url = '%s/realtime/v1/websocket?apikey=%s&vsn=1.0.0' % (host, self.cfg['SUPABASE_ANON_KEY'])
-        self.spi = asyncio.Lock()
         self.pending = None
         self.cast_ready = asyncio.Event()
         self.mirror_wanted = asyncio.Event()
         self.stop = asyncio.Event()
         self.mirror_map = None
         self.mode, self.mode_reason = modelib.mode_now(self.cfg)
+        self.leds = renderer.Renderer(self.strip, self.cfg, self.mode == 'night', log, warn, err)
         now = time.time()
         self.status = {
             'pid': os.getpid(), 'started_at': now, 'mode': self.mode, 'mode_reason': self.mode_reason,
@@ -100,6 +105,7 @@ class Listener:
             'last_message_at': None, 'last_cast_at': None, 'last_cast_name': None,
             'casts_shown': 0, 'casts_ignored_night': 0, 'error_count': 0, 'last_error': None,
             'mirror_map_at': None, 'updated_at': now,
+            'leds': None, 'idle_fps': None, 'idle_frame_ms': None, 'idle_capped_frames': 0, 'led_write_errors': 0,
         }
 
     # -- status -------------------------------------------------------------
@@ -140,12 +146,16 @@ class Listener:
     # -- the strip ----------------------------------------------------------
 
     async def clear(self, why):
-        async with self.spi:
-            try:
-                await asyncio.to_thread(self.strip.clear)
-                log('strip cleared (%s)' % why)
-            except Exception as e:
-                self.error('clearing the strip failed (%s): %s' % (why, e))
+        """Only before the LED thread starts and after it stops: it owns the strip in between."""
+        try:
+            await asyncio.to_thread(self.strip.clear)
+            log('strip cleared (%s)' % why)
+        except Exception as e:
+            self.error('clearing the strip failed (%s): %s' % (why, e))
+
+    def idle_now(self):
+        log('SIGUSR1: idle now')
+        self.leds.idle_now()
 
     # -- background tasks ---------------------------------------------------
 
@@ -153,6 +163,11 @@ class Listener:
         """The watchdog ping proves the event loop is running, connected or not."""
         last_mode = 0.0
         while True:
+            if not self.leds.is_alive():
+                raise RuntimeError('the LED thread died')
+            if time.monotonic() - self.leds.beat > LED_STALL:
+                raise RuntimeError('the LED thread is stuck (%d s)' % (time.monotonic() - self.leds.beat))
+            self.status.update(self.leds.stats())
             sd_notify('WATCHDOG=1')
             if time.monotonic() - last_mode >= MODE_EVERY:
                 last_mode = time.monotonic()
@@ -174,7 +189,7 @@ class Listener:
         self.set(mode=mode)
         if mode == 'night':
             self.pending = None
-            await self.clear('night')
+        self.leds.set_night(mode == 'night')
 
     async def mirror_loop(self):
         while True:
@@ -223,8 +238,7 @@ class Listener:
         if self.mode == 'night':
             log('cast %r ignored: night began while it was fetched' % name)
             return
-        async with self.spi:
-            await asyncio.to_thread(self.strip.write, out)
+        self.leds.cast(out)         # the LED thread writes it at once, cutting into any animation
         self.status['casts_shown'] += 1
         self.set(last_cast_at=time.time(), last_cast_name=name)
         log('lit %r%s: %d LEDs, ~%d mA%s in %d ms' % (
@@ -355,8 +369,11 @@ class Listener:
                 loop.add_signal_handler(sig, self.stop.set)
             except (NotImplementedError, AttributeError):
                 pass                      # Windows, when testing on the laptop
+        if hasattr(signal, 'SIGUSR1'):
+            loop.add_signal_handler(signal.SIGUSR1, self.idle_now)
         log('starting: %s, mode %s (%s)' % (self.topic, self.mode, self.mode_reason))
         await self.clear('start')
+        self.leds.start()
         self.write_status()
         sd_notify('READY=1')
         tasks = [asyncio.create_task(c) for c in
@@ -371,6 +388,8 @@ class Listener:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         self.pending = None
+        self.leds.stop()
+        await asyncio.to_thread(self.leds.join, 5)
         await self.clear('stop')
         self.set_state('stopped')
         log('stopped')
