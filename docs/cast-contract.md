@@ -37,7 +37,7 @@ There are no other fields: no message id, timestamp, sender, hold list, colours 
 
 ## 4. Sender: the PWA
 
-- **Only path:** `castByName(name, btn, mirror, stillShowing)` in `app/problems.js`, called by the cast button on the problem detail view (wired in `app/app.js`). Circuits have no cast yet.
+- **Only path:** `castByName(name, btn, mirror, stillShowing)` in `app/problems.js`, called by the cast button on the problem detail view (wired in `app/app.js`) and by **Light it up** on the wall screen (`app/wall.js`, the kiosk's `/?wall` mode), with the same payload. Circuits have no cast yet.
 - **Steps:**
   1. Geofence check (`ensureCastLocation`). It runs in the app only and is lenient: it blocks only a location fix that is confidently far from the gym. No location, a refused permission or a timeout all let the cast through, and admins skip it.
   2. If the problem or orientation on screen changed during the location wait, nothing is sent.
@@ -157,10 +157,11 @@ Nothing below is decided.
     - Still open: does column B run down? What did each of Gareth's relays switch, and what will the new relays switch?
 12. **Start-up and idle behaviour** of the Pi (relays, the test pattern, what shows before the first cast).
 13. **Circuits:** a design spec (not code) plans `cast_circuit` (`circuit_name`, `interval`, `loop`, `mirror`, a run token) and a `stop` event on the same channel. Nothing implements it.
-14. **The wall kiosk** will cast through the same PWA and channel. Does it need anything different?
+14. ~~**The wall kiosk** will cast through the same PWA and channel. Does it need anything different?~~ No (27 Oct 2026): it casts as a guest through `castByName()`. Its Chromium runs with `--deny-permission-prompts`, so the location check fails at once and lets the cast through, instead of waiting on a permission bubble nobody answers. It turns casting off at night (23:00–08:00) and while it has no connection.
 15. **Who may cast:** anyone, by decision. Does the Pi apply any checks of its own?
 
 ## Change history
+- **2026-10-27, Claude Code:** §4 and §7 item 14: the wall screen (`/?wall`, `app/wall.js`) casts through `castByName()` too. No change to the channel, event or payload.
 - **2026-10-26, Claude Code:** §5 describes the new Pi listener (`pi/listener/`), including night mode (casts ignored 23:00–08:00). No change to the channel, event or payload.
 - **2026-10-26, Claude Code:** §6.4 and §7 item 11 updated with the hardware verified at first light (colour order, pixel 0, A1, the 4-way cable and the 8-way power feeds); §5 notes the stopgap listener. No change to the channel, event or payload.
 - **2026-10-19, Claude Code:** first version, written from the code (app `pb-v109`; the old Pi 3 listener and Gareth's code as references).

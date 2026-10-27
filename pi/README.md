@@ -16,7 +16,7 @@ Everything that runs on the Pi 4 behind the board: the cast listener that lights
 | `pb-bootcheck.timer` | 3 min after each boot, one `pb-boot` line: "came up OK" or what failed. |
 | `board-cam` | The webcam on the back of the board, for Tailscale devices only: `http://projectboard:8080/stream`. |
 | `pb-netlog` | 60 s after each boot, a network report to `/boot/firmware/netlog.txt`, readable from the SD card when SSH is down. |
-| `kiosk` | cage + Chromium showing the app on the wall screen (installed 26 Oct 2026; the unit is kept here as installed). |
+| `kiosk` | cage + Chromium showing the app's wall-screen mode (`https://symmetryboard.co.uk/?wall`) on the touchscreen. Installed 26 Oct 2026; `?wall` and `--deny-permission-prompts` added 27 Oct (deploy, then `sudo systemctl restart kiosk`: install.sh doesn't restart the screen itself). |
 
 Also installed:
 - the hardware watchdog (`RuntimeWatchdogSec=15`);

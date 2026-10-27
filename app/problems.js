@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file: problem list, detail, swipe, info, cast, board loaders, tick/delete/grade/benchmark buttons.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: problem list, detail, swipe, info, cast, board loaders, tick/delete/grade/benchmark buttons.
 
   // ── List: filter + sort ──────────────────────────────────────────────────────
   function visibleProblems() {
@@ -43,6 +43,7 @@
   }
 
   function renderList() {
+    if (WALL) wallRenderList();           // the wall screen's list follows every render of this one
     const container = document.getElementById('list-container');
     const list = visibleProblems();
     document.getElementById('count').textContent = `${list.length} problem${list.length !== 1 ? 's' : ''}`;
@@ -369,6 +370,7 @@
 
   // Re-render whatever board-bearing view is showing once positions/image change.
   function refreshBoardViews() {
+    if (WALL) wallRefreshBoard();
     if (currentView === 'detail') router();
     if (currentView === 'create') applyCreateRoles();
     if (currentView === 'outlines') initOutlines();
@@ -535,6 +537,7 @@
 
     if (error) {
       console.warn('problems load failed', error);
+      if (WALL) wallSetNet(true);
       if (saved) { setOfflineNote('list-offline', saved.t); return; }
       document.getElementById('list-container').innerHTML =
         `<div class="state-msg"><div class="icon">⚠️</div>Failed to load problems.<br><small style="opacity:.6">${escHtml(error.message)}</small></div>`;
@@ -544,6 +547,7 @@
 
     saveList('problems', data || []);
     setOfflineNote('list-offline', 0);
+    if (WALL) wallSetNet(false);
     showProblems(data || []);
     // Re-run the router in case we booted straight into #detail/<id>. If the saved
     // list already routed, just re-render the detail in place: router() has side

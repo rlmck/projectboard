@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file: circuits - load, list, detail, swipe, info, Play preview, create, delete.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: circuits - load, list, detail, swipe, info, Play preview, create, delete.
 //
 // Circuits are built to look and behave like problems: the same cards and grade
 // tabs (tap = one grade, hold = several), pull-to-refresh, a pinned detail view

@@ -878,6 +878,81 @@
   </div>
 </div>
 
+<!-- ══ WALL-SCREEN MODE (?wall; wall.js) ═════════════════════════════
+     The touchscreen next to the board (1280×720, landscape, the Pi's kiosk
+     loads /?wall). Browse and cast only: no sign-in, Ranks read-only, a "Get
+     the app" QR instead of Profile. Hidden everywhere else: the phone app
+     never shows it. Idle, it goes back to the list and plays the slides in
+     #wall-idle; at night it shows only the dimmed QR. -->
+<div id="wall" hidden>
+  <header class="wall-head">
+    <div class="wall-brand">
+      <img class="wall-brand-icon" src="icon.svg" alt="" />
+      <span>Project <b>Board</b></span>
+    </div>
+    <nav class="wall-tabs" aria-label="Wall screen">
+      <button class="wall-tab active" type="button" data-page="problems">Problems</button>
+      <button class="wall-tab" type="button" data-page="ranks">Ranks</button>
+      <button class="wall-tab" type="button" data-page="app">Get the app</button>
+    </nav>
+    <div class="wall-status" id="wall-status" hidden>Offline</div>
+  </header>
+
+  <!-- Problems: the list on the left, the board on the right -->
+  <section class="wall-page wall-problems active" data-page="problems">
+    <aside class="wall-side">
+      <div class="wall-sel" id="wall-sel"></div>
+      <div class="wall-actions">
+        <button class="wall-btn wall-mirror" id="wall-mirror" type="button" aria-pressed="false" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="3" x2="12" y2="21"></line><polyline points="8 8 4 12 8 16"></polyline><polyline points="16 8 20 12 16 16"></polyline></svg>
+          Mirror
+        </button>
+        <button class="wall-btn wall-cast" id="wall-cast" type="button" disabled><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zM21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>Light it up</button>
+      </div>
+      <p class="wall-offline" id="wall-offline" hidden></p>
+      <div class="wall-filters">
+        <div class="wall-grades" id="wall-grades"></div>
+        <button class="filter-pill wall-bench" id="wall-bench" type="button" aria-pressed="false">Benchmarks</button>
+      </div>
+      <div class="wall-list" id="wall-list"></div>
+    </aside>
+    <div class="wall-stage" id="wall-stage"></div>
+  </section>
+
+  <!-- Ranks, read-only: Points and each challenge side by side -->
+  <section class="wall-page wall-ranks" data-page="ranks">
+    <div class="wall-boards" id="wall-boards"></div>
+    <p class="wall-ranks-note">Climbers choose to appear here. Get the app to tick your sends and join in.</p>
+  </section>
+
+  <!-- Get the app -->
+  <section class="wall-page wall-app" data-page="app">
+    <div class="wall-qr-card"><div class="wall-qr"></div></div>
+    <div class="wall-app-text">
+      <h1>Get Project Board on your phone</h1>
+      <ol class="wall-steps">
+        <li>Point your phone’s camera at the code</li>
+        <li>Add it to your home screen</li>
+        <li>Light up problems, tick your sends and climb Ranks</li>
+      </ol>
+      <p class="wall-url">symmetryboard.co.uk</p>
+    </div>
+  </section>
+
+  <!-- Idle slides, and the night screen -->
+  <div class="wall-idle" id="wall-idle" hidden>
+    <div class="wall-slide" id="wall-slide"></div>
+    <div class="wall-dots" id="wall-dots"></div>
+    <p class="wall-touch">Touch the screen to start</p>
+  </div>
+</div>
+
+<!-- The QR for /scan (print/qr-scan.svg, made by tools/make_qr.py), copied into
+     each .wall-qr by wall.js. Its colours come from tokens.css. -->
+<template id="wall-qr-tpl">
+  <svg class="wall-qr-svg" viewBox="0 0 37 37" role="img" aria-label="QR code: symmetryboard.co.uk/scan"><path class="wall-qr-light" d="M0 0h37v37h-37z"/><path class="wall-qr-dark" d="M4 4.5h7m2 0h2m1 0h2m2 0h1m1 0h1m1 0h1m1 0h7m-29 1h1m5 0h1m2 0h1m1 0h1m1 0h2m3 0h1m1 0h1m1 0h1m5 0h1m-29 1h1m1 0h3m1 0h1m2 0h1m1 0h1m3 0h3m2 0h1m1 0h1m1 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m1 0h3m1 0h3m2 0h3m2 0h1m1 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m5 0h2m1 0h2m1 0h1m3 0h1m1 0h3m1 0h1m-29 1h1m5 0h1m1 0h3m3 0h1m1 0h3m1 0h1m1 0h1m5 0h1m-29 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-21 1h2m1 0h1m1 0h2m1 0h1m1 0h1m-18 1h2m3 0h1m2 0h1m3 0h4m3 0h1m1 0h2m1 0h1m-26 1h2m1 0h2m6 0h1m1 0h1m2 0h5m1 0h2m1 0h4m-27 1h6m1 0h2m1 0h4m1 0h1m1 0h1m1 0h1m1 0h1m4 0h1m-29 1h2m3 0h1m3 0h3m1 0h2m1 0h1m1 0h1m1 0h1m1 0h4m-25 1h4m1 0h1m1 0h1m1 0h1m1 0h1m1 0h2m3 0h1m1 0h2m2 0h1m1 0h1m-28 1h1m2 0h1m1 0h1m1 0h1m2 0h2m2 0h2m3 0h2m1 0h1m2 0h1m2 0h1m-28 1h2m1 0h1m1 0h1m1 0h5m2 0h1m2 0h2m1 0h2m2 0h2m1 0h1m-28 1h1m1 0h2m7 0h3m3 0h2m1 0h2m2 0h1m2 0h1m-29 1h2m4 0h3m3 0h2m1 0h2m2 0h1m2 0h2m3 0h2m-27 1h1m1 0h1m3 0h1m1 0h1m1 0h2m5 0h2m1 0h1m5 0h1m-29 1h4m1 0h3m3 0h2m2 0h3m1 0h2m2 0h2m1 0h1m1 0h1m-27 1h4m4 0h2m3 0h2m1 0h6m1 0h1m-26 1h9m3 0h1m1 0h1m5 0h5m2 0h2m-21 1h2m1 0h2m1 0h3m1 0h3m3 0h2m2 0h1m-29 1h7m2 0h1m1 0h1m2 0h3m1 0h1m1 0h1m1 0h1m1 0h3m1 0h1m-29 1h1m5 0h1m3 0h1m1 0h4m2 0h3m3 0h2m1 0h1m-28 1h1m1 0h3m1 0h1m2 0h1m2 0h2m1 0h2m2 0h6m2 0h1m-28 1h1m1 0h3m1 0h1m5 0h1m2 0h2m2 0h2m2 0h2m3 0h1m-29 1h1m1 0h3m1 0h1m1 0h3m4 0h1m1 0h1m3 0h1m2 0h2m1 0h2m-29 1h1m5 0h1m1 0h2m1 0h1m1 0h1m6 0h3m2 0h1m-26 1h7m2 0h1m1 0h2m1 0h2m3 0h2m2 0h3m2 0h1"/></svg>
+</template>
+
 <div id="toast"></div>
 
 <!-- app.js was split into ordered classic scripts sharing one global scope.
@@ -895,6 +970,7 @@
 <script src="circuits.js"></script>
 <script src="challenge.js"></script>
 <script src="leaderboard.js"></script>
+<script src="wall.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

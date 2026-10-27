@@ -68,7 +68,7 @@ build.sh  wrangler.jsonc  CLAUDE.md  .gitignore  .gitattributes   (the repo root
 | `app/index.html` | All markup: splash, welcome overlay, 11 view `<section>`s, 8 modals, nav, install banner, toast | yes |
 | `app/tokens.css` | The shared design tokens: every colour, font stack, radius, shadow and size, as custom properties on `:root`, shared by the phone app and the planned wall-screen mode. Loaded before `styles.css` by `index.html` and `privacy.html` | yes (and precached) |
 | `app/styles.css` | All styling (dark theme), written only in `var(--token)`s from `tokens.css` | yes |
-| `app/state.js` … `app/app.js` | The ten app scripts (section 4) | yes |
+| `app/state.js` … `app/app.js` | The eleven app scripts (section 4) | yes |
 | `app/sw.js`, `app/manifest.json` | Service worker, PWA manifest | yes |
 | `app/privacy.html` | Static privacy page; keep its claims true | yes |
 | `app/supabase-js-2.116.0.js` | **Vendored, pinned** `supabase-js` (npm `dist/umd/supabase.js`, verified against the registry hash). Loaded before `state.js`; defines the global `supabase` | yes (and precached) |
@@ -102,8 +102,8 @@ Local only (gitignored), on Ross's laptop:
 
 ## 4. Front end
 
-### 4.1 Ten classic scripts, one global scope
-Load order, set in `index.html`: **`state` → `core` → `problems` → `admin` → `account` → `authoring` → `circuits` → `challenge` → `leaderboard` → `app`**, after the vendored `supabase-js-2.116.0.js`.
+### 4.1 Eleven classic scripts, one global scope
+Load order, set in `index.html`: **`state` → `core` → `problems` → `admin` → `account` → `authoring` → `circuits` → `challenge` → `leaderboard` → `wall` → `app`**, after the vendored `supabase-js-2.116.0.js`.
 
 **Upgrading `supabase-js`:**
 1. Download the new version's `package/dist/umd/supabase.js` from the npm tarball, and check the tarball against the registry's `dist.integrity`.
@@ -113,7 +113,7 @@ Load order, set in `index.html`: **`state` → `core` → `problems` → `admin`
 Never go back to a floating CDN URL: the CSP also blocks it.
 
 These are plain `<script>` tags, not ES modules. There's no build step and no framework, and every top-level `let`/`const`/`function` is visible to every file. Consequences:
-- **A name may be declared only once across all ten files.** Check with `cd app && cat state.js core.js … app.js > ../all.js && node --check ../all.js` (then delete `all.js`).
+- **A name may be declared only once across all eleven files.** Check with `cd app && cat state.js core.js … app.js > ../all.js && node --check ../all.js` (then delete `all.js`).
 - **Order matters for top-level code.** Function bodies can reference later files; top-level statements can't.
 - **Symbols don't always live where you'd expect.** Grep across all `.js` before adding one. Traps:
   - `isAdmin`, `circuitName`, `circuitSeq`, `canEditCircuit` and `circuitsTableMissing` are at the bottom of `authoring.js`.
@@ -134,6 +134,7 @@ These are plain `<script>` tags, not ES modules. There's no build step and no fr
 | `circuits.js` | Circuits list, detail (swipe, info sheet), the Play-preview engine, create, delete |
 | `challenge.js` | Challenges (db/31, section 4.6a): loading, the circuit-detail link, the `#challenge` view (rules, the timed attempt, summary, save with retry, your best and history), and the challenge boards on Ranks (tabs, compare chart, admin delete) |
 | `leaderboard.js` | `#leaderboard` view: Points (opted-in climbers, plus a hidden climber's private note), or a challenge board picked with the tabs; `userPoints()` for the profile |
+| `wall.js` | The wall-screen mode (`/?wall`, section 4.7a): the kiosk layout, its cast button, read-only Ranks, the QR, idle slides, night screen and offline note. Does nothing unless `WALL` |
 | `app.js` | **Loaded last.** All event wiring, service-worker registration and update handling, the install flow (welcome overlay + banner), and **boot** |
 
 ### 4.2 Boot sequence (the Boot block in `app.js`, before the install code)
@@ -253,10 +254,20 @@ A **challenge** is a timed competition on a circuit; its rules are data (`challe
    - LED index = column-major serpentine (`led_map.json` / `register_leds.py`; the formula is in the audit §3). WS2801 on SPI0 at 1 MHz, mode 0, RGB.
    - Feed it the **live** mirror map (`board_config.mirror_map`), not Gareth's raw `MirrorDic.txt`.
    - The relays (BCM 23/24, active-low) must be switched on at boot. They're believed to power the LEDs and the wall touchscreen.
-   - The same Pi drives the **wall touchscreen**: the PWA in a Chromium kiosk, planned as browse and cast only. The cast geofence lets a cast through when there's no location, so the kiosk can cast.
+   - The same Pi drives the **wall touchscreen**: the PWA's wall-screen mode in a Chromium kiosk (section 4.7a). The cast geofence lets a cast through when there's no location, so the kiosk can cast; its Chromium runs with `--deny-permission-prompts`, so the location request fails at once instead of waiting on a permission bubble.
    - The June 2026 Pi 3 listener (now in the local `pi/_old/`) is history, not the basis; the Pi 4 listener is in `pi/`.
 
 Nothing records casts in the database: the old `board_state` table was never used and was dropped in db/24. **Casting is open to guests by design** (decided 10 Sep 2026), with the geofence kept as the gate.
+
+### 4.7a The wall screen (`/?wall`, `wall.js`, since `pb-v117`)
+The touchscreen next to the board (1280×720, landscape) runs the app in a Chromium kiosk at `https://symmetryboard.co.uk/?wall` (`pi/systemd/kiosk.service`). Screenshots, with fake sample data: `docs/screenshots/wall-mode/`.
+- **Switch:** `WALL` in `state.js`, from the `?wall` query. It stays in the URL, so a reload or an update keeps it; the service worker caches `/?wall` as the shell (any query on `/` is the shell). `body.wall` hides every phone view, the bottom nav, the welcome and the install banner (`!important`: `setView` sets the nav's display inline) and shows `#wall` (`index.html`). The phone views keep running underneath: the loaders and the router are untouched, and a few hooks call into `wall.js` only when `WALL` is set (`renderList` → `wallRenderList`, `refreshBoardViews` → `wallRefreshBoard`, `loadProblems` → `wallSetNet`, `showChallenges` → `wallOnChallenges`). The welcome, the install banner and the iOS banner never show in wall mode.
+- **Problems:** the list on the left (the phone's own `activeGrades` and `benchOnly`, single tap only; no search, favourites or done: no keyboard and no account), the chosen problem's board on the right (`boardShapeOverlayHtml` with `dim`, or dots), Mirror, and **Light it up**, which calls `castByName` like the phone's cast button, with its own `stillShowing` (same problem, same orientation, still on Problems, not idle or night). Changing the choice releases a cast still waiting on the location check, as `renderDetail` does.
+- **Ranks:** read-only: Points and each active challenge side by side, top 10 opted-in climbers, reloaded each time the tab opens. No compare, no admin delete, no private note.
+- **Get the app:** the `/scan` QR (`print/qr-scan.svg`'s path, inlined in a `<template>`, coloured by `--qr-dark`/`--qr-light`).
+- **Idle:** 90 s with no touch (`WALL_IDLE_MS`) → back to Problems with no filters and nothing chosen, then slides every 12 s: the QR, each challenge's top 5, the benchmark of the day (`wallFeatured()`: the benchmarks by name, one per day). A touch ends them; on the benchmark slide it picks that problem. A waiting app update reloads only when it goes idle (`wall-idle` event; `hasUnsavedWork` holds it otherwise), and the wall checks for updates hourly since it's never hidden.
+- **Night:** 23:00–08:00 by the screen's clock (`WALL_NIGHT_FROM`/`_TO`, the Pi's `NIGHT_START`/`NIGHT_END` defaults): only the QR, dimmed (`--wall-night-dim`), touches ignored, casting off. Today `pb-mode` stops the kiosk and blanks the screen at night, so this shows only if that changes (or the kiosk is started at night by hand).
+- **Offline:** while the problems fetch fails, or the browser says it's offline, a note says when the saved list was saved, the header shows Offline, and Light it up is disabled. It retries every 30 s (every 5 min when online, `wallPoll`: problems, setter names, challenges), silently.
 
 ### 4.8 Fullscreen board (the viewer)
 Since `pb-v106` (22 Sep 2026) fullscreen is a **camera over the board**, the "Fullscreen board viewer" section of `core.js`. The photo (~1.22:1) never matches a phone's shape, and both earlier answers were rejected: rotating it sideways (black bars) and stretching it to fill (`pb-v105`, distorted). The last commit before any of this is `8629944` (`pb-v104`).

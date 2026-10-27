@@ -168,4 +168,15 @@
   /* Sizes */
   --nav-h: 60px;  /* the bottom nav; body.ch-away raises it to 100px in styles.css */
   --nav-strip-h: 40px;  /* the 'back to the challenge' strip on top of the nav */
+
+  /* Wall-screen mode (?wall, wall.js): the 1280×720 touchscreen by the board */
+  --wall-head-h: 64px;  /* the header with the page tabs */
+  --wall-side-w: 440px;  /* the problem list column; the board fills the rest */
+  --wall-tap: 60px;  /* Mirror and Light it up: big enough for a chalky finger */
+  --wall-qr: 340px;  /* the QR on Get the app and the first idle slide */
+  --wall-qr-small: 150px;  /* the QR on the challenge slide */
+  --wall-qr-night: 260px;  /* the QR on the night screen */
+  --wall-night-dim: 0.32;  /* the night screen's opacity: readable up close, not a light in a dark gym */
+  --qr-dark: #000;  /* QR modules: black on white, or phone cameras struggle */
+  --qr-light: #fff;
 }

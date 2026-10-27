@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file: event wiring, PWA service worker + install banner, and boot (loaded LAST).
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: event wiring, PWA service worker + install banner, and boot (loaded LAST).
 
   // ── No pinch-zoom ─────────────────────────────────────────────────────────────
   // The viewport meta (user-scalable=no) stops it on Android, but iOS Safari and
@@ -619,6 +619,8 @@
   // The outline editor keeps a draft, but a reload mid-edit would still lose the
   // zoom, the selection and the undo history, so it waits too.
   function hasUnsavedWork() {
+    // The wall screen reloads only while nobody's using it (wall.js sends 'wall-idle').
+    if (WALL && !wallIsIdle()) return true;
     if (currentView === 'outlines' && olDirty()) return true;
     // Sign-up step 2: a reload would swap the passphrase being saved for a new one.
     if (currentView === 'auth' && authMode === 'signup-save') return true;
@@ -672,6 +674,7 @@
   loadBoardConfig().then(() => { applyBoardImage(); loadHoldMap(); loadMirrorMap(); });
   loadHoldShapes();     // bundled hold outlines for the problem shape overlay
   initAuth();      // restore the session and wire auth state
+  if (WALL) startWall();   // the wall-screen layout (wall.js) over the hidden phone views
 
   // Splash: let the entrance finish (the timeline is in styles.css), then fade
   // out and remove from the DOM. With reduced motion there's no sequence to
@@ -758,6 +761,12 @@
             if (pendingReload) applyUpdate();
           }
         });
+        // The wall screen is never hidden, so it checks every hour instead, and
+        // takes a waiting update the next time it goes idle.
+        if (WALL) {
+          setInterval(() => reg.update().catch(() => {}), 3600 * 1000);
+          document.addEventListener('wall-idle', () => { if (pendingReload) applyUpdate(); });
+        }
       }).catch(err => { booting = false; console.warn('SW registration failed', err); });
     });
   }
@@ -808,7 +817,7 @@
     history.replaceState(history.state, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
   }
 
-  const welcomeShown = (installCtx === 'android-prompt' || installCtx === 'ios' || installCtx === 'in-app') &&
+  const welcomeShown = !WALL && (installCtx === 'android-prompt' || installCtx === 'ios' || installCtx === 'in-app') &&
     (arrivedFrom === 'qr' || arrivedFrom === 'moved' || lsGet(WELCOME_KEY) !== '1');
   let androidPromptLate = false;   // true once ~3s pass with no beforeinstallprompt
 
@@ -849,6 +858,7 @@
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
     deferredPrompt = e;
+    if (WALL) return;   // nothing to install on the wall screen
     if (welcomeShown) { if (installCtx === 'android-prompt') renderWelcomeAndroid(); return; }
     if (!isStandalone() && !dismissed()) showInstallBanner();
   });
@@ -924,7 +934,7 @@
   });
 
   // iOS never fires beforeinstallprompt — the banner carries manual instructions instead.
-  if (!welcomeShown && installCtx === 'ios' && !dismissed()) {
+  if (!WALL && !welcomeShown && installCtx === 'ios' && !dismissed()) {
     document.getElementById('install-msg').innerHTML =
       '<b>Install this app:</b> tap the Share icon, then “Add to Home Screen”.';
     installAdd.style.display = 'none';

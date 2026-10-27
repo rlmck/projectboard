@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file: the signed-in user's data: ticks, favourites, auth, profile.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: the signed-in user's data: ticks, favourites, auth, profile.
 
   // Load the signed-in user's ticks into myTicks; clear for guests. RLS limits
   // the rows to this user, so we never see anyone else's sends.

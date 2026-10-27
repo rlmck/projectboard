@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file: Supabase client + channel, grade ladders, and all shared mutable state.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: Supabase client + channel, grade ladders, and all shared mutable state.
 
   // ── Supabase client ──────────────────────────────────────────────────────────
   const { createClient } = supabase;
@@ -18,6 +18,12 @@
   // same event and payload as they did from the old socket send. If a feature
   // ever needs to RECEIVE (Phase 2 status from the Pi), subscribe on that view only.
   const channel = sb.channel('board:HangoutPortland');
+
+  // ── Wall-screen mode ─────────────────────────────────────────────────────────
+  // The kiosk next to the board opens /?wall (pi/systemd/kiosk.service). It shows
+  // the wall layout (wall.js) instead of the phone views. The flag lives in the
+  // URL, so a reload or an update keeps it; nothing else about the app changes.
+  const WALL = new URLSearchParams(location.search).has('wall');
 
   // ── Grade ordering (boulder problems) ────────────────────────────────────────
   // Stored / matched lowercase (these strings are the DB values); displayed as

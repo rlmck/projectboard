@@ -1,6 +1,6 @@
 // ProjectBoard - the pieces load as ordered classic <script>s sharing ONE global scope
 // (no ES modules, no build step). Order: state, core, problems, admin, account,
-// authoring, circuits, challenge, leaderboard, app. This file: challenges (db/31) -
+// authoring, circuits, challenge, leaderboard, wall, app. This file: challenges (db/31) -
 // load, the challenge view (rules, your best + history, the timed attempt, summary,
 // save with retry), the circuit-detail link, and the challenge boards on Ranks
 // (compare, admin delete).
@@ -94,6 +94,7 @@
     }
     else if (currentView === 'challenge') renderChallenge(parseHash().param);
     else if (currentView === 'leaderboard') renderLeaderboard();
+    if (WALL) wallOnChallenges();
     if (currentView !== 'challenge') chSyncAway();   // the strip on the nav can name it now
   }
 

@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file: escape/toast/render helpers, hold + board-overlay helpers, and hash routing.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: escape/toast/render helpers, hold + board-overlay helpers, and hash routing.
 
   // ── Escape helpers ───────────────────────────────────────────────────────────
   function escHtml(s) {

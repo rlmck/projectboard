@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, app. This file: create-a-problem, the hold outlines editor (#outlines), and circuit helpers.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: create-a-problem, the hold outlines editor (#outlines), and circuit helpers.
 
   // ── Create a problem ──────────────────────────────────────────────────────────
   // The create view is laid out like the problem view: pinned, the same title

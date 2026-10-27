@@ -6,6 +6,11 @@ Conflicts=getty@tty1.service
 ConditionPathExists=/dev/tty1
 StartLimitIntervalSec=0
 
+# The app's wall-screen mode (/?wall, app/wall.js): browse and cast only.
+# --deny-permission-prompts answers the cast's location request with "denied" at
+# once; without it Chromium would show a permission bubble on the first cast, and
+# the cast would wait on it. A refused location lets the cast through (the
+# geofence is lenient, docs/cast-contract.md section 4).
 [Service]
 Type=simple
 User=kiosk
@@ -21,7 +26,7 @@ StandardOutput=journal
 StandardError=journal
 TimeoutStartSec=150
 ExecStartPre=-/usr/bin/timeout 120 /bin/sh -c 'until getent hosts symmetryboard.co.uk >/dev/null; do sleep 2; done'
-ExecStart=/usr/bin/cage -d -- /usr/bin/chromium --ozone-platform=wayland --kiosk --noerrdialogs --no-first-run --disable-infobars --disable-session-crashed-bubble --disable-features=Translate --password-store=basic --overscroll-history-navigation=0 --check-for-update-interval=31536000 https://symmetryboard.co.uk
+ExecStart=/usr/bin/cage -d -- /usr/bin/chromium --ozone-platform=wayland --kiosk --noerrdialogs --no-first-run --disable-infobars --disable-session-crashed-bubble --disable-features=Translate --password-store=basic --overscroll-history-navigation=0 --check-for-update-interval=31536000 --deny-permission-prompts https://symmetryboard.co.uk/?wall
 Restart=always
 RestartSec=3
 
