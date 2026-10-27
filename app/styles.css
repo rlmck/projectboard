@@ -2185,7 +2185,7 @@
        The kiosk's 1280×720 landscape touchscreen. body.wall hides every phone
        view, the nav and the install surfaces (!important: setView sets the nav's
        display inline) and shows #wall: a header with the page tabs, then the
-       page. Problems = the list column + the board; Ranks = the boards side by
+       page. Problems = the grade rail, the list, the chosen problem over the board; Ranks = the boards side by
        side; Get the app = the QR. #wall-idle covers it all for the idle slides
        and, dimmed, at night. */
     #wall { display: none; }
@@ -2240,65 +2240,89 @@
     .wall-page { display: none; min-height: 0; }
     .wall-page.active { display: grid; }
 
-    /* Problems */
-    .wall-problems.active { grid-template-columns: var(--wall-side-w) minmax(0, 1fr); }
-    .wall-side {
-      display: flex; flex-direction: column; min-height: 0;
-      padding: 18px 12px 0 20px;
+    /* Problems: the rail | the list | the chosen problem's bar over the board */
+    .wall-problems.active { grid-template-columns: var(--wall-rail-w) calc(var(--wall-side-w) - var(--wall-rail-w)) minmax(0, 1fr); }
+    .wall-rail {
+      display: flex; flex-direction: column; gap: 5px; min-height: 0;
+      padding: 10px 8px;
       border-right: 1px solid var(--border);
     }
-    .wall-sel { min-height: 88px; }
+    .wall-rail-grades { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 5px; }
+    .wall-rail-btn {
+      flex: 1 1 0; min-height: 0; max-height: var(--wall-row-h);
+      display: flex; align-items: center; justify-content: center;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-chip);
+      color: var(--text-muted); font-size: 16px; font-weight: 800;
+      cursor: pointer; touch-action: manipulation;
+    }
+    .wall-rail-btn.long { font-size: 12px; }
+    .wall-rail-btn:active { transform: scale(0.96); }
+    .wall-rail-btn.here { background: var(--accent-a12); border-color: var(--accent); color: var(--accent-hover); }
+    .wall-bench { flex: none; height: 52px; max-height: none; color: var(--gold); font-size: 22px; }
+    .wall-bench.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+    .wall-list {
+      position: relative;                  /* the sections' offsetTop, for the rail */
+      min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+      padding: 0 12px 16px 14px;
+      border-right: 1px solid var(--border);
+    }
+    .wall-grade-head {
+      position: sticky; top: 0; z-index: 1;
+      display: flex; align-items: baseline; gap: 10px;
+      padding: 10px 6px 8px;
+      background: var(--bg);
+      color: var(--accent-hover); font-size: 18px; font-weight: 800;
+    }
+    .wall-grade-head span { color: var(--text-muted); font-size: 14px; font-weight: 600; }
+    .wall-card {
+      width: 100%; min-height: var(--wall-row-h); margin-bottom: 6px; padding: 8px 16px;
+      text-align: left; color: inherit; font: inherit;
+    }
+    .wall-card .problem-name { display: block; font-size: 20px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wall-card .problem-meta { margin-top: 4px; font-size: 15px; }
+    .wall-card .grade-badge { font-size: 14px; }
+    .wall-card.selected { background: var(--accent-a12); border-color: var(--accent); }
+    .wall-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; padding: 14px 18px 16px; }
+    .wall-bar { display: flex; align-items: center; gap: 12px; }
+    /* Fixed height (two lines of name + the details), so the board doesn't move
+       from one problem to the next; a long name wraps instead of being cut. */
+    .wall-sel { flex: 1; min-width: 0; height: 84px; display: flex; flex-direction: column; justify-content: center; }
     .wall-name {
-      font-size: 26px; font-weight: 800; line-height: 1.2;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-size: 23px; font-weight: 800; line-height: 1.15;
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
     }
     .wall-name-empty { color: var(--text-muted); }
-    .wall-hint { margin-top: 8px; color: var(--text-muted); font-size: 15px; line-height: 1.4; }
-    .wall-meta { margin-top: 10px; font-size: 14px; }
-    .wall-actions { display: flex; gap: 10px; margin-top: 12px; }
+    .wall-hint { margin-top: 4px; color: var(--text-muted); font-size: 15px; line-height: 1.4; }
+    .wall-meta { margin-top: 6px; font-size: 15px; }
     .wall-btn {
-      display: flex; align-items: center; justify-content: center; gap: 10px;
-      min-height: var(--wall-tap); padding: 0 18px;
+      flex: none; display: flex; align-items: center; justify-content: center; gap: 10px;
+      min-height: var(--wall-tap); padding: 0 22px;
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--btn-radius);
-      color: var(--text); font-size: 18px; font-weight: 700;
+      color: var(--text); font-size: 19px; font-weight: 700;
       cursor: pointer; touch-action: manipulation;
     }
     .wall-btn svg { width: 24px; height: 24px; flex: none; }
     .wall-btn:active { transform: scale(0.98); }
     .wall-btn:disabled { opacity: 0.4; cursor: default; }
     .wall-mirror.active { background: var(--mirror-a16); border-color: var(--mirror-text); color: var(--mirror-text); }
-    .wall-cast { flex: 1; background: var(--cast); border-color: var(--cast); color: var(--on-accent); }
+    .wall-cast { background: var(--cast); border-color: var(--cast); color: var(--on-accent); }
     .wall-cast:active { background: var(--cast-hover); }
     .wall-cast.casting { opacity: 0.7; }
     .wall-cast.sent { animation: flash 0.4s ease; }
     .wall-offline {
-      margin-top: 12px; padding: 10px 14px;
+      padding: 10px 14px;
       background: var(--surface2); border: 1px solid var(--error-text-a40); border-radius: var(--radius-chip);
       color: var(--text-soft); font-size: 14px; line-height: 1.4;
     }
     .wall-offline[hidden] { display: none; }
-    .wall-filters { margin-top: 14px; }
-    .wall-grades { display: flex; flex-wrap: wrap; gap: 6px; }
-    .wall-grades .grade-tab { padding: 8px 14px; font-size: 15px; }
-    .wall-bench { flex: none; margin-top: 8px; padding: 8px 18px; font-size: 15px; }
-    .wall-list {
-      flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-      display: flex; flex-direction: column; gap: 8px;
-      margin-top: 12px; padding: 0 8px 16px 0;
-    }
-    .wall-card { width: 100%; flex: none; text-align: left; color: inherit; font: inherit; }
-    .wall-card .problem-name { display: block; font-size: 17px; }
-    .wall-card .problem-meta { font-size: 13px; }
-    .wall-card.selected { background: var(--accent-a12); border-color: var(--accent); }
     .wall-stage {
-      position: relative; min-width: 0; min-height: 0;
-      display: flex; align-items: center; justify-content: center;
-      padding: 16px;
+      position: relative; flex: 1; min-width: 0; min-height: 0;
+      display: flex; justify-content: center;
     }
     .wall-board { height: 100%; width: fit-content; }
     .wall-board .board-graphic { height: 100%; width: auto; border-radius: var(--radius); }
     .wall-stage-hint {
-      position: absolute; left: 50%; bottom: 36px; transform: translateX(-50%);
+      position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%);
       padding: 12px 24px;
       background: var(--bg-a85); border: 1px solid var(--border); border-radius: var(--radius-pill);
       font-size: 19px; font-weight: 700; pointer-events: none;
@@ -2368,11 +2392,6 @@
     .wall-slide-sub { max-width: 440px; margin-top: 18px; color: var(--text-soft); font-size: 20px; line-height: 1.5; }
     .wall-slide-bench { height: 100%; display: flex; align-items: center; gap: 44px; }
     .wall-slide-board { height: 100%; flex: none; }
-    .wall-slide-ch { width: 100%; max-width: 1120px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: center; }
-    .wall-slide-qr { display: flex; align-items: center; gap: 18px; margin-top: 28px; font-size: 19px; font-weight: 700; line-height: 1.35; }
-    .wall-slide-qr .wall-qr-card { padding: 8px; border-radius: var(--radius-md); }
-    .wall-slide-qr .wall-qr-svg { width: var(--wall-qr-small); height: var(--wall-qr-small); }
-    .wall-slide-rows h2 { margin-bottom: 14px; }
     .wall-idle.night { background: var(--black); cursor: default; }
     .wall-idle.night .wall-touch { display: none; }
     .wall-idle.night .wall-slide > * { animation: none; }   /* the fade would end at full brightness */

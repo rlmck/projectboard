@@ -5,15 +5,18 @@
 //
 // The Pi's kiosk (pi/systemd/kiosk.service) opens /?wall on a 1280×720 landscape
 // touchscreen. Browse and cast only:
-//   - Problems: the list on the left (grade tabs, Benchmarks), the board on the
-//     right with the chosen problem's outlines over the dimmed wall, Mirror, and
-//     "Light it up", which casts through castByName() exactly as the phone does
-//     (guests can cast; with no location fix the geofence lets it through).
+//   - Problems: a rail of grades down the left edge (a tap jumps the list to that
+//     grade; the star filters to benchmarks), the whole list with a header per
+//     grade, and on the right the chosen problem's name, Mirror and "Light it up"
+//     over the board (its outlines over the dimmed wall). Light it up casts
+//     through castByName() exactly as the phone does (guests can cast; with no
+//     location fix the geofence lets it through).
 //   - Ranks, read-only: Points and each challenge's board side by side.
 //   - Get the app: the /scan QR, in place of Profile. No sign-in anywhere.
-// After WALL_IDLE_MS without a touch it goes back to the list (filters and choice
-// cleared) and plays slides: the QR, the challenge's top climbers, the benchmark of
-// the day. A touch ends them (on the benchmark slide it picks that problem). At
+// After WALL_IDLE_MS without a touch it goes back to the list (the filter and the
+// choice cleared, the list at the top) and plays slides: the QR and the benchmark of the day. A touch ends
+// them (on the benchmark slide it picks that problem); a reload while they're up
+// (an app update) comes back to them, not to 20 minutes of the list. At
 // night (the Pi's 23:00–08:00) it shows only a dimmed QR, and casting is off: the
 // Pi ignores casts then anyway. With no connection the saved list stays up with a
 // note, casting is off, and it keeps trying.
@@ -22,14 +25,14 @@
 // run as usual, and the few hooks into them (renderList, refreshBoardViews,
 // loadProblems, showChallenges) only call in here when WALL is set.
 
-  const WALL_IDLE_MS = 90 * 1000;        // no touch for this long: back to the list, then the slides
+  const WALL_IDLE_MS = 20 * 60 * 1000;  // no touch for this long: back to the list, then the slides
   const WALL_SLIDE_MS = 12 * 1000;       // each idle slide
   const WALL_NIGHT_FROM = 23 * 60;       // minutes past midnight; the Pi's NIGHT_START / NIGHT_END
   const WALL_NIGHT_TO = 8 * 60;          // (pi/config.env.example), so the screen and the LEDs agree
   const WALL_POLL_MS = 5 * 60 * 1000;    // fresh problems, names and challenges while online
   const WALL_RETRY_MS = 30 * 1000;       // ...and how often to try while the connection is down
   const WALL_BOARD_ROWS = 10;            // rows on each Ranks board
-  const WALL_SLIDE_ROWS = 5;             // rows on the challenge slide
+  const WALL_IDLE_KEY = 'pb-wall-idle';  // sessionStorage: the slides were up when the page unloaded
 
   let wallPage = 'problems';     // 'problems' | 'ranks' | 'app'
   let wallSelId = null;          // the chosen problem's id (looked up afresh, the list reloads)
@@ -44,6 +47,13 @@
   let wallCastHtml = '';         // the cast button's resting markup
 
   const wallEl = id => document.getElementById(id);
+  // sessionStorage, guarded like lsGet/lsSet (core.js); null removes the key.
+  function ssGet(key) {
+    try { return sessionStorage.getItem(key); } catch (e) { return null; }
+  }
+  function ssSet(key, value) {
+    try { value === null ? sessionStorage.removeItem(key) : sessionStorage.setItem(key, value); } catch (e) {}
+  }
 
   if (WALL) {
     document.body.classList.add('wall');
@@ -62,6 +72,10 @@
       ${starsHtml(p.stars)}`;
   }
 
+  // The grade sections' keys and labels. Unknown grades sort last (gradeRank).
+  const wallGradeKey = p => p.grade || '';
+  const wallGradeLabel = g => (g ? fontGrade(g) : '—');
+
   function wallCardHtml(p) {
     const sel = String(p.id) === String(wallSelId);
     return `
@@ -73,37 +87,66 @@
       </button>`;
   }
 
-  // The grade tabs, the Benchmarks pill and the list. Called from renderList, so
-  // it follows every load, refresh and setter-name update. The filters are the
-  // phone list's own (activeGrades, benchOnly); its view is hidden here, and the
-  // other filters (search, favourites, done) stay off without a keyboard or account.
+  // The list, a section per grade with a sticky header, and the rail of the
+  // grades in it. Called from renderList, so it follows every load, refresh and
+  // setter-name update. The only filter is the phone list's own benchOnly (the
+  // star); activeGrades stays empty on the wall, and search, favourites and done
+  // stay off without a keyboard or account.
   function wallRenderList() {
     if (!WALL) return;
     const box = wallEl('wall-list');
     const top = box.scrollTop;
-    const present = [...new Set(allProblems.map(p => p.grade).filter(Boolean))]
-      .sort((a, b) => gradeRank(a) - gradeRank(b) || a.localeCompare(b));
-    [...activeGrades].forEach(g => { if (!present.includes(g)) activeGrades.delete(g); });
-    wallEl('wall-grades').innerHTML = loaded
-      ? gradeTabButtons(['all', ...present], g => g === 'all' ? activeGrades.size === 0 : activeGrades.has(g), fontGrade)
-      : '';
     const bench = wallEl('wall-bench');
     bench.classList.toggle('active', benchOnly);
     bench.setAttribute('aria-pressed', benchOnly ? 'true' : 'false');
 
+    let grades = [];
     if (!loaded) {
       box.innerHTML = wallNetDown
         ? `<div class="state-msg"><div class="icon">⚠️</div>Can’t reach the server right now.<br>Trying again by itself.</div>`
         : `<div class="spinner"></div>`;
     } else {
-      const list = visibleProblems();
-      box.innerHTML = list.length
-        ? list.map(wallCardHtml).join('')
-        : `<div class="state-msg"><div class="icon">🔎</div>None match these filters.</div>`;
+      const sections = [];                 // [{ g, ps }] in list order (visibleProblems sorts by grade)
+      visibleProblems().forEach(p => {
+        const g = wallGradeKey(p);
+        if (!sections.length || sections[sections.length - 1].g !== g) sections.push({ g, ps: [] });
+        sections[sections.length - 1].ps.push(p);
+      });
+      grades = sections.map(x => x.g);
+      box.innerHTML = sections.length
+        ? sections.map(({ g, ps }) => `
+            <section class="wall-grade" data-grade="${escAttr(g)}">
+              <h2 class="wall-grade-head">${escHtml(wallGradeLabel(g))}<span>${ps.length} problem${ps.length === 1 ? '' : 's'}</span></h2>
+              ${ps.map(wallCardHtml).join('')}
+            </section>`).join('')
+        : `<div class="state-msg"><div class="icon">🔎</div>No benchmarks yet.</div>`;
       box.scrollTop = top;
     }
+    wallEl('wall-rail').innerHTML = grades.map(g => {
+      const label = wallGradeLabel(g);
+      return `<button class="wall-rail-btn${label.length > 3 ? ' long' : ''}" type="button" data-grade="${escAttr(g)}">${escHtml(label)}</button>`;
+    }).join('');
+    wallMarkGrade();
     if (wallSelId !== null && loaded && !wallSelected()) wallSelect(null);   // deleted since
     else wallRenderSel();
+  }
+
+  // The rail marks the grade at the top of the list.
+  function wallMarkGrade() {
+    const box = wallEl('wall-list');
+    let here = null;
+    for (const sec of box.querySelectorAll('.wall-grade')) {
+      if (sec.offsetTop > box.scrollTop + 1) break;
+      here = sec.dataset.grade;
+    }
+    document.querySelectorAll('#wall-rail .wall-rail-btn').forEach(b => b.classList.toggle('here', b.dataset.grade === here));
+  }
+
+  // A tap on the rail: that grade's header to the top of the list. No smooth
+  // scrolling: a long glide is janky on the Pi, and it's a jump, not a browse.
+  function wallJumpTo(g) {
+    const sec = [...wallEl('wall-list').querySelectorAll('.wall-grade')].find(x => x.dataset.grade === g);
+    if (sec) wallEl('wall-list').scrollTop = sec.offsetTop;
   }
 
   // The chosen problem's name and details, Mirror and the cast button.
@@ -113,7 +156,7 @@
       ? `<h1 class="wall-name">${escHtml(displayName(p))}</h1>
          <div class="problem-meta wall-meta">${wallMetaHtml(p)}</div>`
       : `<h1 class="wall-name wall-name-empty">Pick a problem</h1>
-         <p class="wall-hint">Choose one from the list to see it on the board, then light it up on the wall.</p>`;
+         <p class="wall-hint">Choose one from the list, then light it up on the wall.</p>`;
     const mirror = wallEl('wall-mirror');
     mirror.disabled = !p;
     mirror.classList.toggle('active', !!p && wallMirror);
@@ -295,10 +338,11 @@
     return bench[day % bench.length];
   }
 
-  // The slides there's something to show for, in order.
+  // The slides there's something to show for, in order. (Until 27 Oct 2026 each
+  // challenge's top 5 had a slide after 'app'; it was taken out of the rotation.
+  // The challenge boards are still on Ranks.)
   function wallSlides() {
     const s = ['app'];
-    allChallenges.forEach(c => s.push('ch:' + c.id));
     if (wallFeatured()) s.push('bench');
     return s;
   }
@@ -321,35 +365,16 @@
           </div>
         </div>`;
     }
-    if (kind === 'bench') {
-      const p = wallFeatured();
-      return `
-        <div class="wall-slide-bench">
-          <div class="wall-slide-board">${wallBoardHtml(p, false)}</div>
-          <div class="wall-slide-text">
-            <p class="wall-kicker">Benchmark of the day</p>
-            <h1>${escHtml(displayName(p))}</h1>
-            <div class="problem-meta wall-meta">${wallMetaHtml(p)}</div>
-            <p class="wall-slide-sub">Benchmarks score points on Ranks. Touch the screen to pick it, then light it up.</p>
-          </div>
-        </div>`;
-    }
-    const ch = challengeById(kind.slice(3));
-    if (!ch) return '';
-    const b = challengeBoards[ch.id];
-    const rows = b && b.loaded && !b.error ? wallBoardRowsHtml(b.rows, r => chClock(r.total_seconds), WALL_SLIDE_ROWS) : '';
-    const p = chProto(ch);
+    // 'bench'
+    const p = wallFeatured();
     return `
-      <div class="wall-slide-ch">
+      <div class="wall-slide-bench">
+        <div class="wall-slide-board">${wallBoardHtml(p, false)}</div>
         <div class="wall-slide-text">
-          <p class="wall-kicker">Challenge</p>
-          <h1>${escHtml(ch.name)}</h1>
-          <p class="wall-slide-sub">${p.sets} sets of ${p.reps} reps, each to failure. Time yourself in the app and see where you land.</p>
-          <div class="wall-slide-qr">${WALL_QR_SLOT}<span>Get the app<br>to take it on</span></div>
-        </div>
-        <div class="wall-board-card wall-slide-rows">
-          <h2>Top climbers</h2>
-          <div class="wall-rows">${rows || '<div class="state-msg">Be the first on the board.</div>'}</div>
+          <p class="wall-kicker">Benchmark of the day</p>
+          <h1>${escHtml(displayName(p))}</h1>
+          <div class="problem-meta wall-meta">${wallMetaHtml(p)}</div>
+          <p class="wall-slide-sub">Benchmarks score points on Ranks. Touch the screen to pick it, then light it up.</p>
         </div>
       </div>`;
   }
@@ -381,26 +406,21 @@
     wallFillQr(box);
     wallEl('wall-dots').innerHTML = wallNightOn ? ''
       : slides.map((_, i) => `<i class="${i === wallSlide ? 'on' : ''}"></i>`).join('');
-    // The challenge slide fetches its board the first time round.
-    if (!wallNightOn && kind.startsWith('ch:')) {
-      const cid = kind.slice(3), b = challengeBoards[cid];
-      if (!b || !b.loaded) loadChallengeBoard(cid).then(() => { if (wallIdleOn && wallSlides()[wallSlide] === kind) wallRenderIdle(); });
-    }
   }
 
-  // Back to the start: the Problems page, no filters, nothing chosen, the list at
+  // Back to the start: the Problems page, no filter, nothing chosen, the list at
   // the top. Then the slides.
   function wallGoIdle() {
     wallSetPage('problems');
-    activeGrades.clear();
     benchOnly = false;
     wallSelect(null);
     wallRenderList();
     wallEl('wall-list').scrollTop = 0;
+    wallMarkGrade();
     wallIdleOn = true;
     wallSlide = 0;
     wallSlideAt = Date.now();
-    challengeBoards = {};                  // the slide shows today's board, not this morning's
+    ssSet(WALL_IDLE_KEY, '1');
     wallRenderIdle();
     document.dispatchEvent(new Event('wall-idle'));   // app.js: a waiting update reloads now
   }
@@ -412,6 +432,7 @@
     const kind = wallSlides()[wallSlide];
     wallIdleOn = false;
     wallLastTouch = Date.now();
+    ssSet(WALL_IDLE_KEY, null);
     wallRenderIdle();
     if (kind === 'bench') {
       const p = wallFeatured();
@@ -455,23 +476,29 @@
     wallCastHtml = wallEl('wall-cast').innerHTML;
     wallFillQr(wallEl('wall'));
 
-    // Any touch counts as someone using the screen.
-    ['pointerdown', 'keydown', 'wheel'].forEach(t =>
+    // Any touch counts as someone using the screen: a tap, or the start of a
+    // scroll or drag (touchstart as well as pointerdown, which a scroll cancels).
+    // Not 'scroll' itself: re-rendering the list moves it too.
+    ['pointerdown', 'touchstart', 'keydown', 'wheel'].forEach(t =>
       document.addEventListener(t, () => { wallLastTouch = Date.now(); }, { capture: true, passive: true }));
 
     document.querySelectorAll('.wall-tab').forEach(t => t.addEventListener('click', () => wallSetPage(t.dataset.page)));
-    wallEl('wall-grades').addEventListener('click', e => {
-      const t = e.target.closest('.grade-tab');
-      if (!t) return;
-      tapGrade(activeGrades, t.dataset.grade);   // app.js: the phone tabs' single tap
-      wallRenderList();
-      wallEl('wall-list').scrollTop = 0;
+    wallEl('wall-rail').addEventListener('click', e => {
+      const b = e.target.closest('.wall-rail-btn');
+      if (b) wallJumpTo(b.dataset.grade);
     });
     wallEl('wall-bench').addEventListener('click', () => {
       benchOnly = !benchOnly;
       wallRenderList();
       wallEl('wall-list').scrollTop = 0;
+      wallMarkGrade();
     });
+    let markQueued = false;
+    wallEl('wall-list').addEventListener('scroll', () => {
+      if (markQueued) return;
+      markQueued = true;
+      requestAnimationFrame(() => { markQueued = false; wallMarkGrade(); });
+    }, { passive: true });
     wallEl('wall-list').addEventListener('click', e => {
       const card = e.target.closest('.wall-card');
       if (card) wallSelect(card.dataset.id);
@@ -485,6 +512,6 @@
     wallRenderList();
     wallRenderStage();
     wallNightOn = wallIsNight();
-    if (wallNightOn) wallGoIdle();
+    if (wallNightOn || ssGet(WALL_IDLE_KEY)) wallGoIdle();
     setInterval(wallTick, 1000);
   }
