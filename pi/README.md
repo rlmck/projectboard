@@ -16,6 +16,7 @@ Everything that runs on the Pi 4 behind the board: the cast listener that lights
 | `pb-bootcheck.timer` | 3 min after each boot, one `pb-boot` line: "came up OK" or what failed. |
 | `board-cam` | The webcam on the back of the board, for Tailscale devices only: `http://projectboard:8080/stream`. |
 | `pb-netlog` | 60 s after each boot, a network report to `/boot/firmware/netlog.txt`, readable from the SD card when SSH is down. |
+| `pb-ledmap` | **Not enabled; started by hand.** The LED mapping tool (below): a web page on `http://projectboard:8081/` (Tailscale only) for finding LEDs that don't sit under their holds. It pauses `pb-listener` while it runs. |
 | `kiosk` | cage + Chromium showing the app's wall-screen mode (`https://symmetryboard.co.uk/?wall`) on the touchscreen. Installed 26 Oct 2026; `?wall` and `--deny-permission-prompts` added 27 Oct (deploy, then `sudo systemctl restart kiosk`: install.sh doesn't restart the screen itself). |
 
 Also installed:
@@ -52,6 +53,38 @@ The colours come from the app's `tokens.css` (accent pink, the hold colours, gol
 - **Safety:** nothing changes the whole board at once (breathe takes 9 s a breath and rises up the board); Glisten's sparkles are single cells, a cell at most once every 2 s. A test checks every pattern: at most 3 cells jump frame to frame.
 - **Preview on the laptop** (the same code): `python tools/idle_preview.py`, then double-click `tools/idle-preview.html` (gitignored, about 3 MB): every pattern side by side, a big view of the one you click, and a "cycle" tile showing the crossfades.
 - **Bench on the Pi** (no strip touched, the listener keeps running): see the docstring in `pi/tools/idle_bench.py`.
+
+## LED mapping
+
+`pb-ledmap` finds LEDs that don't sit under their holds. It's a page served from the Pi (`ledmap/pb_ledmap.py` + `ledmap/index.html`), open in the laptop's browser over Tailscale with the webcam beside it, so it works from home too.
+
+**What the page does:**
+- **Tap:** click a cell and its LED lights. The grid shows every cell's grid ref, `holdN` and LED; empty cells are dashed. **Photo** shows the app's board photo with the 188 holds instead.
+- **Walk:** step through the real holds (or all 247), along the strip or by hold number. `→` next, `←` back, `Space` OK, `W` wrong (then click where it really lit), `H` not visible.
+- **Raw LED:** step through LED indices (1 to `STRIP_PIXELS - 1`, past the board's 247 too) and click where each one is.
+- **Column check:** row 1 of every column green and row 13 red, so each column's direction shows at a glance. Click the letters to record them.
+- **Light a problem:** a problem lit exactly as a cast lights it: the same order, roles, colours, mirror map, `BRIGHTNESS` and current cap.
+- **Results:** OK / wrong / unchecked counts and a list of mismatches. **Export JSON** gives each hold's expected LED and observed cell, the raw LEDs, the columns and a `led_positions` table; **Download summary** gives a readable text version. Progress is kept in the browser (localStorage `pb-ledmap-v1`), so a refresh loses nothing.
+
+**How it shares the strip:**
+- `pb-ledmap.service` has `Conflicts=pb-listener.service`. Starting it stops the listener, which clears the strip, and anything that starts the listener stops it first. That includes a **deploy**, which ends a mapping session.
+- Its `ExecStopPost` starts the listener again however the session ends: Finish on the page, Ctrl+C in `pb-ledmap`, `pb-ledmap stop`, 30 minutes without a click (status polling doesn't count), a crash, or a failed start.
+- It's never enabled, so any reboot (weekly, pb-health's, pb-netwatch's) comes back to the listener.
+- `pb-health` never restarts a stopped listener. While pb-ledmap runs it logs "pb-listener paused for LED mapping" instead of a warning.
+- **Night:** mapping works at night as it is: `pb-mode` doesn't touch the LEDs (the relays aren't built), and the listener's night logic and the idle patterns stop with the listener. When you finish, the listener comes back dark until 08:00. Once the relays switch the LED supplies, `pb-mode` will need to skip that while pb-ledmap runs.
+- It writes the strip through `leds.Strip` (R, G, B; LED 0 is never lit), at brightness 0.3 (the slider goes 0.05 to 0.6), under the listener's current cap. Only the HTTP server writes, one request at a time.
+- Bound to the Tailscale address only, port 8081. Every POST must be JSON (a cheap guard against other web pages posting to it).
+
+**Using it:**
+
+```
+ssh -t pi@projectboard pb-ledmap           # Git Bash: pauses the listener, prints the URL, follows the log
+                                           # open http://projectboard:8081/ ; Ctrl+C here or Finish on the page ends it
+ssh pi@projectboard pb-ledmap status       # is it running, and the listener
+ssh -t pi@projectboard pb-ledmap stop      # end it from another terminal
+```
+
+**On the laptop** (no Pi, the strip printed instead): `python pi/ledmap/pb_ledmap.py --dry-run --host 127.0.0.1 --config pi/config.env`, then open `http://127.0.0.1:8081/`. It finds the board photo and hold map in `app/`; `deploy.sh` copies them next to the page on the Pi (`board-fallback.jpg` as `board.jpg`).
 
 ## Looking at it (Git Bash on the laptop, over Tailscale)
 
@@ -90,7 +123,7 @@ On the laptop (no Pi, no network):
 python -m unittest discover -s pi/tests
 ```
 
-The tests check the LED map against `tools/led_map.json`, the hold order and roles against the app's rules, mirroring, the brightness cap and day/night, `test_glisten.py` the LED thread's states (a cast cuts into idle, idle after the timeout, night wins), the idle current cap, pixel 0 off and the sparkle limits, and `test_patterns.py` every idle pattern (frame time, the 2 A cap, pixel 0, the board only, no flashes, brightness near Glisten's), the crossfade, the fallback to Glisten and pb-idle's commands. To try the listener on the laptop: `python pi/listener/pb_listener.py --dry-run --config pi/config.env --no-status`. It joins the real channel and prints the LEDs it would light, so a cast from `tools/cast-test.html` shows up there. On the Pi, `leds.py --show "<name>" [--mirror] [--dry-run]` lights one problem and `leds.py --off` clears the strip.
+The tests check the LED map against `tools/led_map.json`, the hold order and roles against the app's rules, mirroring, the brightness cap and day/night, `test_glisten.py` the LED thread's states (a cast cuts into idle, idle after the timeout, night wins), the idle current cap, pixel 0 off and the sparkle limits, and `test_patterns.py` every idle pattern (frame time, the 2 A cap, pixel 0, the board only, no flashes, brightness near Glisten's), the crossfade, the fallback to Glisten and pb-idle's commands, and `test_ledmap.py` the mapping tool (its map against `led_map.json` and the app's 188 holds, no two holds at one position, request checks, the column check, a problem lit as `board.frame()` lights it, the idle clock, and its HTTP server on 127.0.0.1). To try the listener on the laptop: `python pi/listener/pb_listener.py --dry-run --config pi/config.env --no-status`. It joins the real channel and prints the LEDs it would light, so a cast from `tools/cast-test.html` shows up there. On the Pi, `leds.py --show "<name>" [--mirror] [--dry-run]` lights one problem and `leds.py --off` clears the strip.
 
 **Stop the listener before any LED test on the Pi** (`leds.py`, `tools/led_test.py`): while `pb-listener` runs it keeps drawing the idle pattern, so whatever a test writes is overwritten straight away. `ssh -t pi@projectboard 'sudo systemctl stop pb-listener'`, test, then `sudo systemctl start pb-listener`.
 

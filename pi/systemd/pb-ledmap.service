@@ -1,0 +1,21 @@
+[Unit]
+Description=Project Board LED mapping tool (pauses pb-listener; Tailscale only)
+Documentation=https://github.com/rlmck/projectboard/tree/main/pi
+# Never both on the strip: starting this stops pb-listener, and anything that
+# starts pb-listener (a deploy, a hand start) stops this first. The ordering
+# makes the listener's stop (which clears the strip) finish before this starts.
+Conflicts=pb-listener.service
+After=pb-listener.service tailscaled.service
+
+[Service]
+User=pi
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /opt/projectboard/ledmap/pb_ledmap.py
+# However it ends (Finish, pb-ledmap stop, the idle timeout, a crash, a failed
+# start), the listener comes back. --no-block: it may already be queued.
+ExecStopPost=+/bin/systemctl start --no-block pb-listener.service
+Restart=no
+TimeoutStopSec=10
+
+# No [Install] section: it is never enabled, so a reboot always comes back to
+# the listener.

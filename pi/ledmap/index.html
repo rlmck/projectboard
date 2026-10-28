@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LED mapping</title>
+<!--
+  pb-ledmap's page: served by pi/ledmap/pb_ledmap.py on the Pi (Tailscale only).
+  Self-contained: no app code, no CDN. Colours, radii and fonts are copied
+  from app/tokens.css (keep them in step by hand if the app's change).
+  Progress is kept in this browser's localStorage (pb-ledmap-v1).
+-->
+<style>
+:root {
+  --bg: #0a0a0a; --surface: #161616; --surface2: #202020; --border: #2c2c2c;
+  --accent: #ec4899; --accent-hover: #f472b6; --accent-a14: rgba(236,72,153,0.14);
+  --start: #22c55e; --int: #3b82f6; --finish: #ef4444;
+  --start-text: #4ade80; --int-text: #60a5fa; --finish-text: #f87171;
+  --start-a28: rgba(34,197,94,0.28); --finish-a30: rgba(239,68,68,0.30);
+  --text: #f5f5f5; --text-muted: #9a9a9a; --text-soft: #d4d4d4; --text-faint: #55556a;
+  --danger: #dc2626; --warn: #f59e0b;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius: 12px; --radius-xs: 5px; --radius-sm: 8px; --radius-md: 10px; --radius-pill: 999px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 var(--font-sans); }
+button, input, select { font: inherit; color: inherit; }
+button { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--text-faint); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { background: var(--accent-hover); }
+button.danger { border-color: var(--danger); color: var(--finish-text); }
+button.on { background: var(--accent-a14); border-color: var(--accent); color: var(--text); }
+input[type=number], input[type=text], input[list], select { background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 6px 8px; }
+kbd { font: 12px var(--font-mono); background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-xs); padding: 0 5px; }
+.muted { color: var(--text-muted); }
+.mono { font-family: var(--font-mono); }
+
+header { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+  padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+header h1 { font-size: 16px; margin: 0; }
+#conn { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); }
+#conn::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--text-faint); }
+#conn.ok::before { background: var(--start); }
+#conn.bad::before { background: var(--danger); }
+header .grow { flex: 1; }
+header label { display: inline-flex; align-items: center; gap: 6px; }
+
+main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, 1fr); gap: 16px; padding: 16px; }
+@media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); } }
+section.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+section.card + section.card { margin-top: 16px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.row + .row { margin-top: 8px; }
+h2 { font-size: 14px; margin: 0 0 8px; color: var(--text-soft); }
+
+/* the board */
+#grid { display: grid; grid-template-columns: 22px repeat(19, minmax(0, 1fr)); gap: 3px; margin-top: 10px; }
+#grid .lab { color: var(--text-faint); font-size: 11px; display: flex; align-items: center; justify-content: center; }
+.cell { position: relative; aspect-ratio: 1 / 1.05; border-radius: var(--radius-xs); background: var(--surface2);
+  border: 1px solid var(--border); cursor: pointer; padding: 2px; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; line-height: 1.05; }
+.cell .ref { font-weight: 600; font-size: 12px; }
+.cell .hn, .cell .ln { color: var(--text-muted); font-family: var(--font-mono); font-size: 9px; }
+.cell.empty { background: transparent; border-style: dashed; border-color: #262626; }
+.cell.empty .ref { color: var(--text-faint); }
+.cell.ok { box-shadow: inset 0 -3px 0 var(--start); }
+.cell.wrong { box-shadow: inset 0 -3px 0 var(--finish); }
+.cell.cur { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cell.seen { outline: 2px dashed var(--warn); outline-offset: 1px; }
+.cell.lit { color: #000; }
+.cell.lit .hn, .cell.lit .ln, .cell.lit .ref { color: #000; }
+.cell.role { box-shadow: inset 0 0 0 3px var(--rc); }
+body.picking .cell, body.picking .dot { cursor: crosshair; }
+
+#photo { position: relative; margin-top: 10px; display: none; }
+#photo img { width: 100%; display: block; border-radius: var(--radius-sm); filter: brightness(0.55); }
+.dot { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; cursor: pointer;
+  border: 2px solid rgba(255,255,255,0.55); background: rgba(0,0,0,0.35); }
+.dot span { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); font-size: 10px; white-space: nowrap;
+  color: var(--text-soft); text-shadow: 0 1px 2px rgba(0,0,0,0.9); pointer-events: none; }
+.dot.ok { border-color: var(--start); }
+.dot.wrong { border-color: var(--finish); }
+.dot.cur { box-shadow: 0 0 0 3px var(--accent); }
+.dot.seen { box-shadow: 0 0 0 3px var(--warn); }
+.dot.role { border-color: var(--rc); border-width: 3px; }
+body.view-photo #grid { display: none; }
+body.view-photo #photo { display: block; }
+
+#hint { margin-top: 10px; min-height: 22px; color: var(--text-soft); }
+#hint.pick { color: var(--warn); font-weight: 600; }
+#msg { color: var(--finish-text); min-height: 20px; margin-top: 6px; }
+
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.pane { display: none; margin-top: 12px; }
+.pane.show { display: block; }
+.big { font-size: 22px; font-weight: 700; }
+#cam { width: 100%; display: block; border-radius: var(--radius-sm); background: #000; min-height: 120px; }
+#camNote { display: none; }
+.counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.counts div { background: var(--surface2); border-radius: var(--radius-md); padding: 8px; }
+.counts b { display: block; font-size: 20px; }
+ul.list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 260px; overflow: auto; font-size: 13px; }
+ul.list li { padding: 4px 0; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: baseline; }
+ul.list li button { padding: 0 6px; font-size: 12px; margin-left: auto; }
+.colbtns { display: grid; grid-template-columns: repeat(19, minmax(0, 1fr)); gap: 3px; margin-top: 8px; }
+.colbtns button { padding: 4px 0; font-size: 11px; }
+.colbtns button.ok { border-color: var(--start); color: var(--start-text); }
+.colbtns button.reversed { border-color: var(--finish); color: var(--finish-text); }
+.colbtns button.other { border-color: var(--warn); color: var(--warn); }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LED mapping</h1>
+  <span id="conn">connecting…</span>
+  <span id="info" class="muted"></span>
+  <span class="grow"></span>
+  <label>Brightness <input id="bright" type="range" min="0.05" max="0.6" step="0.05" value="0.3"> <span id="brightV" class="mono">0.30</span></label>
+  <label>Colour
+    <select id="colour">
+      <option value="#ffffff">white</option><option value="#ff0000">red</option>
+      <option value="#00ff00">green</option><option value="#0000ff">blue</option>
+      <option value="#ff00ff">magenta</option>
+    </select></label>
+  <button id="clear">Clear</button>
+  <button id="finish" class="danger">Finish</button>
+</header>
+
+<main>
+  <div>
+    <section class="card">
+      <div class="row">
+        <div class="tabs" id="modes">
+          <button data-mode="tap">Tap</button>
+          <button data-mode="walk">Walk</button>
+          <button data-mode="raw">Raw LED</button>
+          <button data-mode="columns">Column check</button>
+          <button data-mode="problem">Light a problem</button>
+        </div>
+        <span class="grow" style="flex:1"></span>
+        <div class="tabs">
+          <button data-view="grid">Grid</button>
+          <button data-view="photo">Photo</button>
+        </div>
+      </div>
+      <div id="grid"></div>
+      <div id="photo"><img src="board.jpg" alt="The board"><div id="dots"></div></div>
+      <div id="hint"></div>
+      <div id="msg"></div>
+    </section>
+
+    <section class="card">
+      <div class="pane" id="pane-tap">
+        <h2>Tap</h2>
+        <p class="muted">Click a cell: its LED lights (the last one goes off). Empty cells (dashed) have no hold but still have an LED.</p>
+        <div class="big" id="tapNow">–</div>
+      </div>
+
+      <div class="pane" id="pane-walk">
+        <h2>Walk</h2>
+        <div class="row">
+          <label><input type="checkbox" id="walkAll"> all 247 cells (not just the real holds)</label>
+          <label>Order <select id="walkOrder"><option value="led">along the strip (LED order)</option><option value="hold">by hold number</option></select></label>
+        </div>
+        <div class="row"><span class="big" id="walkNow">–</span><span class="muted" id="walkPos"></span></div>
+        <div class="row">
+          <button id="walkPrev">← Back</button>
+          <button id="walkOk" class="primary">OK (Space)</button>
+          <button id="walkWrong" class="danger">Wrong (W)</button>
+          <button id="walkHidden">Not visible / behind board (H)</button>
+          <button id="walkNext">Next →</button>
+          <button id="walkNextUnchecked">Next unchecked</button>
+        </div>
+        <p class="muted"><kbd>→</kbd> next · <kbd>←</kbd> back · <kbd>Space</kbd> OK · <kbd>W</kbd> wrong, then click the cell where it actually lit · <kbd>H</kbd> not visible · <kbd>Esc</kbd> cancel. Clicking a cell jumps there.</p>
+      </div>
+
+      <div class="pane" id="pane-raw">
+        <h2>Raw LED</h2>
+        <div class="row">
+          <button id="rawPrev">←</button>
+          <input id="rawLed" type="number" min="1" value="1" style="width:90px">
+          <button id="rawNext">→</button>
+          <button id="rawGo" class="primary">Light</button>
+          <button id="rawHidden">Not visible / behind board (H)</button>
+        </div>
+        <div class="row"><span class="big" id="rawNow">–</span></div>
+        <p class="muted">Steps through the strip by index (the formula only uses 1–247; the strip may be longer). Click the cell where the LED actually is to record "LED N is at cell X". <kbd>←</kbd>/<kbd>→</kbd> step. LED 0 is behind the board and the strip code never lights it.</p>
+      </div>
+
+      <div class="pane" id="pane-columns">
+        <h2>Column check</h2>
+        <div class="row"><button id="colGo" class="primary">Light the column check</button>
+          <span><span class="swatch" style="background:var(--start)"></span> row 1 (bottom) · <span class="swatch" style="background:var(--finish)"></span> row 13 (top)</span></div>
+        <p class="muted">Every column should show green at the bottom and red at the top. Red at the bottom means that column runs the other way. Click a column letter to record it: unchecked → OK → reversed → something else.</p>
+        <div class="colbtns" id="colBtns"></div>
+      </div>
+
+      <div class="pane" id="pane-problem">
+        <h2>Light a problem</h2>
+        <div class="row">
+          <input id="probName" list="probNames" type="text" placeholder="problem name" style="flex:1;min-width:180px">
+          <datalist id="probNames"></datalist>
+          <label><input type="checkbox" id="probMirror"> mirrored</label>
+          <button id="probGo" class="primary">Light it</button>
+        </div>
+        <p class="muted">Lit exactly as the listener lights a cast: the same order, roles, colours, mirror map, cast brightness and current cap.</p>
+        <ul class="list" id="probHolds"></ul>
+      </div>
+    </section>
+  </div>
+
+  <div>
+    <section class="card">
+      <h2>Webcam</h2>
+      <img id="cam" alt="The back of the board">
+      <p id="camNote" class="muted">No picture. Is board-cam running (and the webcam plugged in)?</p>
+      <div class="row"><input id="camUrl" type="text" style="flex:1"><button id="camReload">Reload</button></div>
+    </section>
+
+    <section class="card">
+      <h2>Results</h2>
+      <div class="counts">
+        <div><b id="nOk">0</b>OK</div><div><b id="nWrong">0</b>wrong</div><div><b id="nUn">0</b>unchecked</div>
+      </div>
+      <p class="muted" id="countNote"></p>
+      <h2 style="margin-top:12px">Mismatches</h2>
+      <ul class="list" id="mismatches"></ul>
+      <h2 style="margin-top:12px">Raw LEDs recorded</h2>
+      <ul class="list" id="rawList"></ul>
+      <div class="row" style="margin-top:12px">
+        <button id="export" class="primary">Export JSON</button>
+        <button id="exportTxt">Download summary</button>
+        <span class="grow" style="flex:1"></span>
+        <button id="reset" class="danger">Reset results</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+'use strict';
+const KEY = 'pb-ledmap-v1';
+const $ = (id) => document.getElementById(id);
+const ROLE_COLOUR = { start: 'var(--start)', int: 'var(--int)', finish: 'var(--finish)' };
+
+let cells = [], byHold = {}, byLed = {}, real = [];
+let lit = {};                  // {led: [r,g,b]} from the server
+let mode = 'tap', pick = null, current = null, walkList = [], problemHolds = null;
+let state = load();
+
+function load() {
+  const empty = { holds: {}, raw: {}, columns: {}, walk: { i: 0, all: false, order: 'led' }, raw_led: 1,
+                  view: 'grid', mode: 'tap', colour: '#ffffff', cam: '' };
+  try { return Object.assign(empty, JSON.parse(localStorage.getItem(KEY)) || {}); } catch (e) { return empty; }
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* private window */ } }
+
+function say(text) { $('msg').textContent = text || ''; }
+function hint(text, picking) { $('hint').textContent = text || ''; $('hint').classList.toggle('pick', !!picking);
+  document.body.classList.toggle('picking', !!picking); }
+
+async function api(path, body) {
+  const opts = body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(() => ({ error: 'HTTP ' + r.status }));
+  if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+  return j;
+}
+async function act(path, body) {
+  try {
+    const j = await api(path, body);
+    say('');
+    if (j.status) showStatus(j.status);
+    return j;
+  } catch (e) { say(e.message); setConn(false, e.message); return null; }
+}
+function rgb() { const s = $('colour').value; return [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16)); }
+
+// ---- status --------------------------------------------------------------
+function setConn(ok, why) {
+  $('conn').className = ok ? 'ok' : 'bad';
+  $('conn').textContent = ok ? 'connected' : 'not running' + (why ? ' (' + why + ')' : '');
+}
+function showStatus(s) {
+  setConn(true);
+  lit = s.lit || {};
+  const m = Math.floor(s.idle_left_s / 60);
+  $('info').textContent = `${s.dry_run ? 'DRY RUN · ' : ''}lit: ${s.what} · ${s.mode} (${s.mode_reason}) · stops in ${m} min without a click · strip ${s.pixels} px`;
+  if (document.activeElement !== $('bright')) { $('bright').value = s.brightness; $('brightV').textContent = (+s.brightness).toFixed(2); }
+  $('rawLed').max = s.pixels - 1;
+  render();
+}
+async function poll() {
+  try { showStatus(await api('/api/status')); } catch (e) { setConn(false); }
+}
+
+// ---- the board -------------------------------------------------------------
+function cellClasses(c) {
+  const cl = [];
+  const r = state.holds[c.hold];
+  if (r) cl.push(r.status);
+  if (current === c.hold) cl.push('cur');
+  const curRec = current && state.holds[current];
+  if (curRec && curRec.seen === c.cell) cl.push('seen');
+  if (mode === 'raw' && state.raw[state.raw_led] === c.cell) cl.push('seen');
+  return cl;
+}
+function litColour(c) {
+  const v = lit[c.led];
+  if (!v) return null;
+  const k = Math.max(v[0], v[1], v[2]) || 1;       // show the hue at full, whatever the brightness
+  return `rgb(${v.map((x) => Math.round(x * 255 / k)).join(',')})`;
+}
+function roleOf(c) {
+  if (!problemHolds) return null;
+  const h = problemHolds.find((p) => p.shown_at === c.hold);
+  return h ? ROLE_COLOUR[h.role] : null;
+}
+function render() {
+  const g = $('grid');
+  g.querySelectorAll('.cell').forEach((el) => {
+    const c = byHold[el.dataset.hold];
+    el.className = 'cell ' + (c.real ? 'real' : 'empty') + ' ' + cellClasses(c).join(' ');
+    const lc = litColour(c);
+    el.style.background = lc || '';
+    if (lc) el.classList.add('lit');
+    const rc = roleOf(c);
+    if (rc) { el.classList.add('role'); el.style.setProperty('--rc', rc); }
+  });
+  document.querySelectorAll('.dot').forEach((el) => {
+    const c = byHold[el.dataset.hold];
+    el.className = 'dot ' + cellClasses(c).join(' ');
+    const lc = litColour(c);
+    el.style.background = lc || '';
+    const rc = roleOf(c);
+    if (rc) { el.classList.add('role'); el.style.setProperty('--rc', rc); }
+  });
+  renderResults();
+}
+function buildBoard() {
+  const g = $('grid');
+  g.innerHTML = '';
+  for (let row = 13; row >= 1; row--) {
+    const lab = document.createElement('div'); lab.className = 'lab'; lab.textContent = row; g.appendChild(lab);
+    for (let col = 0; col < 19; col++) {
+      const c = cells[(row - 1) * 19 + col];
+      const el = document.createElement('div');
+      el.className = 'cell';
+      el.dataset.hold = c.hold;
+      el.title = `${c.cell} · ${c.hold} · LED ${c.led}${c.real ? '' : ' · no hold'}`;
+      el.innerHTML = `<span class="ref">${c.cell}</span><span class="hn">${c.n}</span><span class="ln">L${c.led}</span>`;
+      g.appendChild(el);
+    }
+  }
+  g.appendChild(Object.assign(document.createElement('div'), { className: 'lab' }));
+  'ABCDEFGHIJKLMNOPQRS'.split('').forEach((l) => g.appendChild(Object.assign(document.createElement('div'), { className: 'lab', textContent: l })));
+  const d = $('dots');
+  d.innerHTML = '';
+  cells.filter((c) => c.pos).forEach((c) => {
+    const el = document.createElement('div');
+    el.className = 'dot';
+    el.dataset.hold = c.hold;
+    el.style.left = c.pos.x + '%'; el.style.top = c.pos.y + '%';
+    el.title = `${c.cell} · ${c.hold} · LED ${c.led}`;
+    el.innerHTML = `<span>${c.cell}</span>`;
+    d.appendChild(el);
+  });
+  const cb = $('colBtns');
+  cb.innerHTML = '';
+  'ABCDEFGHIJKLMNOPQRS'.split('').forEach((l) => {
+    const b = document.createElement('button'); b.dataset.col = l; b.textContent = l; cb.appendChild(b);
+  });
+}
+function onCell(hold) {
+  const c = byHold[hold];
+  if (pick) return recordPick(c.cell);
+  if (mode === 'raw') { state.raw[state.raw_led] = c.cell; save(); hint(`LED ${state.raw_led} recorded at ${c.cell}.`); render(); return; }
+  if (mode === 'walk') { const i = walkList.indexOf(hold); if (i >= 0) { state.walk.i = i; save(); walkShow(); } else say('That cell isn’t in the walk (tick "all 247").'); return; }
+  lightHold(hold);
+  if (mode === 'tap') $('tapNow').textContent = `${c.cell} · ${c.hold} · LED ${c.led}${c.real ? '' : ' (no hold)'}`;
+}
+async function lightHold(hold) {
+  current = hold;
+  render();
+  await act('/api/hold', { hold, rgb: rgb() });
+}
+
+// ---- walk ------------------------------------------------------------------
+function buildWalk() {
+  walkList = cells.filter((c) => state.walk.all || c.real)
+    .sort((a, b) => state.walk.order === 'led' ? a.led - b.led : a.n - b.n).map((c) => c.hold);
+  state.walk.i = Math.min(Math.max(state.walk.i || 0, 0), walkList.length - 1);
+}
+function walkShow() {
+  const h = walkList[state.walk.i];
+  if (!h) return;
+  const c = byHold[h], r = state.holds[h];
+  $('walkNow').textContent = `${c.cell} · ${c.hold} · LED ${c.led}${c.real ? '' : ' (no hold)'}`;
+  $('walkPos').textContent = ` ${state.walk.i + 1} of ${walkList.length}${r ? ' · marked ' + r.status + (r.seen ? ' (seen at ' + r.seen + ')' : '') : ''}`;
+  hint(`Is ${c.cell} lit, and nothing else? Space = OK, W = wrong.`);
+  lightHold(h);
+}
+function walkStep(d) { state.walk.i = Math.min(Math.max(state.walk.i + d, 0), walkList.length - 1); save(); walkShow(); }
+function mark(hold, status, seen) {
+  state.holds[hold] = { status, seen: seen || null, led: byHold[hold].led, at: new Date().toISOString() };
+  save();
+}
+function walkOk() { mark(walkList[state.walk.i], 'ok'); walkStep(1); }
+function walkWrong() {
+  const c = byHold[walkList[state.walk.i]];
+  pick = { kind: 'walk', hold: c.hold };
+  hint(`${c.cell} (LED ${c.led}) is wrong: click the cell where the light actually is, or H if it isn't visible. Esc cancels.`, true);
+}
+function recordPick(seen) {
+  const p = pick; pick = null;
+  if (p.kind === 'walk') {
+    mark(p.hold, 'wrong', seen);
+    hint(`${byHold[p.hold].cell}: LED ${byHold[p.hold].led} recorded at ${seen}.`);
+    if (mode === 'walk') walkStep(1); else render();
+  }
+}
+function walkHidden() { if (pick) return recordPick('hidden'); mark(walkList[state.walk.i], 'wrong', 'hidden'); walkStep(1); }
+function nextUnchecked() {
+  for (let k = 1; k <= walkList.length; k++) {
+    const i = (state.walk.i + k) % walkList.length;
+    if (!state.holds[walkList[i]]) { state.walk.i = i; save(); return walkShow(); }
+  }
+  hint('Everything in the walk is checked.');
+}
+
+// ---- raw -------------------------------------------------------------------
+async function rawShow() {
+  const n = state.raw_led, c = byLed[n];
+  $('rawLed').value = n;
+  current = c ? c.hold : null;
+  $('rawNow').textContent = `LED ${n}: the formula puts it at ${c ? c.cell + ' (' + c.hold + ')' : 'no cell (past the board)'}` +
+    (state.raw[n] ? ` · recorded at ${state.raw[n]}` : '');
+  hint(`Click the cell where LED ${n} actually is, or H if it isn't visible.`);
+  await act('/api/led', { led: n, rgb: rgb() });
+}
+function rawStep(d) { state.raw_led = Math.max(1, Math.min(+$('rawLed').max || 1199, state.raw_led + d)); save(); rawShow(); }
+
+// ---- problem ----------------------------------------------------------------
+async function loadNames() {
+  if ($('probNames').childElementCount) return;
+  try {
+    const j = await api('/api/problems');
+    $('probNames').innerHTML = j.names.map((n) => `<option value="${n.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}">`).join('');
+  } catch (e) { say('Problem names didn’t load: ' + e.message); }
+}
+async function lightProblem() {
+  const j = await act('/api/problem', { name: $('probName').value.trim(), mirror: $('probMirror').checked });
+  if (!j) return;
+  problemHolds = j.holds;
+  const order = { start: 0, int: 1, finish: 2 };
+  $('probHolds').innerHTML = j.holds.slice().sort((a, b) => order[a.role] - order[b.role]).map((h) =>
+    `<li><span class="swatch" style="background:${ROLE_COLOUR[h.role]}"></span><b>${h.cell || h.shown_at}</b>
+     <span class="muted mono">${h.shown_at}${h.shown_at !== h.hold ? ' (from ' + h.hold + ')' : ''} · LED ${h.led ?? '–'}</span>
+     ${h.real ? '' : '<span style="color:var(--warn)">no hold here</span>'}</li>`).join('') +
+    (j.dropped.length ? `<li style="color:var(--warn)">dropped: ${j.dropped.join(', ')}</li>` : '');
+  hint(`${j.name}${j.mirror ? ' (mirrored)' : ''}: ${Object.keys(j.lit).length} LEDs, ~${j.ma} mA.`);
+  render();
+}
+
+// ---- results ------------------------------------------------------------------
+function counts(list) {
+  let ok = 0, wrong = 0;
+  list.forEach((c) => { const r = state.holds[c.hold]; if (r && r.status === 'ok') ok++; else if (r) wrong++; });
+  return { ok, wrong, un: list.length - ok - wrong };
+}
+function renderResults() {
+  const r = counts(real), all = counts(cells);
+  $('nOk').textContent = r.ok; $('nWrong').textContent = r.wrong; $('nUn').textContent = r.un;
+  $('countNote').textContent = `Of the ${real.length} real holds. All 247 cells: ${all.ok} OK, ${all.wrong} wrong, ${all.un} unchecked.`;
+  const mm = cells.filter((c) => state.holds[c.hold] && state.holds[c.hold].status === 'wrong');
+  $('mismatches').innerHTML = mm.map((c) => `<li><b>${c.cell}</b><span class="muted mono">${c.hold} · LED ${c.led}</span>
+    <span>lit at <b>${state.holds[c.hold].seen}</b></span><button data-undo="${c.hold}">undo</button></li>`).join('') ||
+    '<li class="muted">none yet</li>';
+  const raws = Object.keys(state.raw).map(Number).sort((a, b) => a - b);
+  $('rawList').innerHTML = raws.map((n) => {
+    const exp = byLed[n] ? byLed[n].cell : 'none';
+    const same = state.raw[n] === exp;
+    return `<li><b>LED ${n}</b><span>at <b>${state.raw[n]}</b></span><span class="muted">formula: ${exp}${same ? ' ✓' : ''}</span><button data-unraw="${n}">undo</button></li>`;
+  }).join('') || '<li class="muted">none yet</li>';
+  document.querySelectorAll('#colBtns button').forEach((b) => { b.className = state.columns[b.dataset.col] || ''; });
+}
+function exportData() {
+  const holds = cells.map((c) => {
+    const r = state.holds[c.hold];
+    return { hold: c.hold, cell: c.cell, real: c.real, expected_led: c.led, status: r ? r.status : 'unchecked',
+             observed_cell: r ? (r.status === 'ok' ? c.cell : r.seen) : null, checked_at: r ? r.at : null };
+  });
+  // Where each LED physically is, from every observation: OK = at its own cell, wrong = where it was seen, raw = as recorded.
+  const positions = {};
+  holds.forEach((h) => { if (h.observed_cell) positions[h.expected_led] = h.observed_cell; });
+  Object.keys(state.raw).forEach((n) => { positions[n] = state.raw[n]; });
+  const raw = Object.keys(state.raw).map(Number).sort((a, b) => a - b)
+    .map((n) => ({ led: n, expected_cell: byLed[n] ? byLed[n].cell : null, observed_cell: state.raw[n] }));
+  return { tool: 'pb-ledmap', exported_at: new Date().toISOString(),
+           mapping: 'contract 6.4 formula (pi/listener/board.py led_index)',
+           summary: summaryLines(), holds, raw_leds: raw, columns: state.columns, led_positions: positions };
+}
+function summaryLines() {
+  const r = counts(real), all = counts(cells);
+  const lines = [`LED mapping, ${new Date().toLocaleString()}`,
+    `Real holds (${real.length}): ${r.ok} OK, ${r.wrong} wrong, ${r.un} unchecked.`,
+    `All 247 cells: ${all.ok} OK, ${all.wrong} wrong, ${all.un} unchecked.`];
+  const mm = cells.filter((c) => state.holds[c.hold] && state.holds[c.hold].status === 'wrong');
+  if (mm.length) lines.push('', 'Mismatches (cell, hold, LED the formula lights -> where it lit):',
+    ...mm.map((c) => `  ${c.cell} ${c.hold} LED ${c.led} -> ${state.holds[c.hold].seen}${c.real ? '' : ' (no hold at ' + c.cell + ')'}`));
+  const raws = Object.keys(state.raw).map(Number).sort((a, b) => a - b);
+  if (raws.length) lines.push('', 'Raw LEDs (LED -> where it is; formula in brackets):',
+    ...raws.map((n) => `  LED ${n} -> ${state.raw[n]} (${byLed[n] ? byLed[n].cell : 'none'})`));
+  const cols = Object.keys(state.columns).sort();
+  if (cols.length) lines.push('', 'Columns: ' + cols.map((k) => `${k} ${state.columns[k]}`).join(', '));
+  return lines;
+}
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function stamp() { return new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-'); }
+
+// ---- modes -------------------------------------------------------------------
+function setMode(m) {
+  mode = m; state.mode = m; save(); pick = null; problemHolds = null;
+  document.querySelectorAll('#modes button').forEach((b) => b.classList.toggle('on', b.dataset.mode === m));
+  document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('show', p.id === 'pane-' + m));
+  hint('');
+  if (m === 'walk') { buildWalk(); walkShow(); }
+  else if (m === 'raw') rawShow();
+  else if (m === 'problem') { current = null; loadNames(); render(); }
+  else if (m === 'columns') { current = null; render(); }
+  else { hint('Click a cell to light its LED.'); render(); }
+}
+function setView(v) {
+  state.view = v; save();
+  document.body.classList.toggle('view-photo', v === 'photo');
+  document.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
+}
+let resetArmed = 0;
+
+function wire() {
+  document.querySelectorAll('#modes button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+  $('grid').addEventListener('click', (e) => { const el = e.target.closest('.cell'); if (el) onCell(el.dataset.hold); });
+  $('dots').addEventListener('click', (e) => { const el = e.target.closest('.dot'); if (el) onCell(el.dataset.hold); });
+  $('clear').addEventListener('click', () => { problemHolds = null; act('/api/clear', {}); });
+  $('finish').addEventListener('click', async () => {
+    const j = await act('/api/finish', {});
+    if (j) { setConn(false, 'finished: the strip is cleared and pb-listener is starting again'); clearInterval(pollTimer); }
+  });
+  $('bright').addEventListener('input', () => { $('brightV').textContent = (+$('bright').value).toFixed(2); });
+  $('bright').addEventListener('change', () => act('/api/brightness', { value: +$('bright').value }));
+  $('colour').value = state.colour;
+  $('colour').addEventListener('change', () => { state.colour = $('colour').value; save(); });
+
+  $('walkAll').checked = state.walk.all;
+  $('walkOrder').value = state.walk.order;
+  $('walkAll').addEventListener('change', () => { const h = walkList[state.walk.i]; state.walk.all = $('walkAll').checked; buildWalk(); state.walk.i = Math.max(0, walkList.indexOf(h)); save(); walkShow(); });
+  $('walkOrder').addEventListener('change', () => { state.walk.order = $('walkOrder').value; state.walk.i = 0; buildWalk(); save(); walkShow(); });
+  $('walkPrev').addEventListener('click', () => walkStep(-1));
+  $('walkNext').addEventListener('click', () => walkStep(1));
+  $('walkOk').addEventListener('click', walkOk);
+  $('walkWrong').addEventListener('click', walkWrong);
+  $('walkHidden').addEventListener('click', walkHidden);
+  $('walkNextUnchecked').addEventListener('click', nextUnchecked);
+
+  $('rawPrev').addEventListener('click', () => rawStep(-1));
+  $('rawNext').addEventListener('click', () => rawStep(1));
+  $('rawGo').addEventListener('click', () => { state.raw_led = Math.max(1, parseInt($('rawLed').value, 10) || 1); save(); rawShow(); });
+  $('rawLed').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('rawGo').click(); });
+  $('rawHidden').addEventListener('click', () => { state.raw[state.raw_led] = 'hidden'; save(); hint(`LED ${state.raw_led}: not visible.`); render(); });
+
+  $('colGo').addEventListener('click', () => { current = null; act('/api/columns', {}); });
+  $('colBtns').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    const next = { undefined: 'ok', ok: 'reversed', reversed: 'other', other: undefined }[state.columns[b.dataset.col]];
+    if (next) state.columns[b.dataset.col] = next; else delete state.columns[b.dataset.col];
+    save(); render();
+  });
+
+  $('probGo').addEventListener('click', lightProblem);
+  $('probName').addEventListener('keydown', (e) => { if (e.key === 'Enter') lightProblem(); });
+
+  $('mismatches').addEventListener('click', (e) => { const h = e.target.dataset.undo; if (h) { delete state.holds[h]; save(); render(); } });
+  $('rawList').addEventListener('click', (e) => { const n = e.target.dataset.unraw; if (n) { delete state.raw[n]; save(); render(); } });
+  $('export').addEventListener('click', () => download(`ledmap-${stamp()}.json`, JSON.stringify(exportData(), null, 2), 'application/json'));
+  $('exportTxt').addEventListener('click', () => download(`ledmap-${stamp()}.txt`, summaryLines().join('\n') + '\n', 'text/plain'));
+  $('reset').addEventListener('click', () => {
+    if (Date.now() - resetArmed > 4000) { resetArmed = Date.now(); $('reset').textContent = 'Click again to reset'; setTimeout(() => { $('reset').textContent = 'Reset results'; }, 4000); return; }
+    state.holds = {}; state.raw = {}; state.columns = {}; state.walk.i = 0; save(); $('reset').textContent = 'Reset results'; render();
+  });
+
+  const camDefault = `http://${location.hostname}:8080/stream`;
+  $('camUrl').value = state.cam || camDefault;
+  const cam = () => { $('camNote').style.display = 'none'; $('cam').style.display = 'block'; $('cam').src = $('camUrl').value + (($('camUrl').value.includes('?') ? '&' : '?') + 't=' + Date.now()); };
+  $('cam').addEventListener('error', () => { $('cam').style.display = 'none'; $('camNote').style.display = 'block'; });
+  $('camReload').addEventListener('click', () => { state.cam = $('camUrl').value === camDefault ? '' : $('camUrl').value; save(); cam(); });
+  cam();
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target.matches && e.target.matches('input[type=text], input[type=number], input[list], select')) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'Escape' && pick) { pick = null; hint('Cancelled.'); return; }
+    if (mode === 'walk') {
+      if (e.key === 'ArrowRight') walkStep(1);
+      else if (e.key === 'ArrowLeft') walkStep(-1);
+      else if (e.key === ' ') walkOk();
+      else if (e.key === 'w' || e.key === 'W') walkWrong();
+      else if (e.key === 'h' || e.key === 'H') walkHidden();
+      else return;
+      e.preventDefault();
+    } else if (mode === 'raw') {
+      if (e.key === 'ArrowRight') rawStep(1);
+      else if (e.key === 'ArrowLeft') rawStep(-1);
+      else if (e.key === 'h' || e.key === 'H') $('rawHidden').click();
+      else return;
+      e.preventDefault();
+    }
+  });
+}
+
+let pollTimer;
+(async function boot() {
+  try {
+    const m = await api('/api/map');
+    cells = m.cells;
+    cells.forEach((c) => { byHold[c.hold] = c; byLed[c.led] = c; });
+    real = cells.filter((c) => c.real);
+  } catch (e) { setConn(false, e.message); say('The board map didn’t load: ' + e.message); return; }
+  buildBoard();
+  wire();
+  setView(state.view);
+  await poll();
+  setMode(state.mode === 'problem' || state.mode === 'columns' ? 'tap' : state.mode);
+  pollTimer = setInterval(poll, 5000);
+})();
+</script>
+</body>
+</html>

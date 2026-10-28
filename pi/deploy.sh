@@ -17,7 +17,7 @@ cd "$(dirname "$0")/.."
 [ -f pi/install.sh ] || { echo "Run it from the repo: bash pi/deploy.sh"; exit 1; }
 
 # A CRLF file breaks on the Pi (.gitattributes keeps pi/ LF; this catches a stray editor).
-if grep -rlI $'\r' pi/listener pi/ops pi/systemd pi/conf pi/install.sh pi/config.env.example 2>/dev/null; then
+if grep -rlI $'\r' pi/listener pi/ledmap pi/ops pi/systemd pi/conf pi/install.sh pi/config.env.example 2>/dev/null; then
     echo "!! the files above have Windows line endings: fix them before deploying"; exit 1
 fi
 if [ -f pi/config.env ] && grep -q $'\r' pi/config.env; then
@@ -25,11 +25,14 @@ if [ -f pi/config.env ] && grep -q $'\r' pi/config.env; then
 fi
 
 echo "== Copying pi/ to $HOST:~/$STAGE"
-ssh "$HOST" "rm -rf ~/$STAGE && mkdir -p ~/$STAGE/listener/patterns ~/$STAGE/ops ~/$STAGE/systemd/kiosk.service.d ~/$STAGE/conf"
+ssh "$HOST" "rm -rf ~/$STAGE && mkdir -p ~/$STAGE/listener/patterns ~/$STAGE/ledmap ~/$STAGE/ops ~/$STAGE/systemd/kiosk.service.d ~/$STAGE/conf"
 scp -q pi/install.sh pi/config.env.example "$HOST:$STAGE/"
 scp -q pi/listener/*.py "$HOST:$STAGE/listener/"
 scp -q pi/listener/patterns/*.py "$HOST:$STAGE/listener/patterns/"
 scp -q pi/ops/* "$HOST:$STAGE/ops/"
+# The mapping page, with the app's real-hold map and board photo (a snapshot of the live board)
+scp -q pi/ledmap/pb_ledmap.py pi/ledmap/index.html app/hold_map.json "$HOST:$STAGE/ledmap/"
+scp -q app/board-fallback.jpg "$HOST:$STAGE/ledmap/board.jpg"
 scp -q pi/systemd/*.service pi/systemd/*.timer "$HOST:$STAGE/systemd/"
 scp -q pi/systemd/kiosk.service.d/* "$HOST:$STAGE/systemd/kiosk.service.d/"
 scp -q pi/conf/* "$HOST:$STAGE/conf/"

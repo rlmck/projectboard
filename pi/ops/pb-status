@@ -20,7 +20,7 @@ echo "  time sync   $(timedatectl show -p NTPSynchronized --value 2>/dev/null)"
 echo "  boot line   $(journalctl -b -t pb-boot -o cat --no-pager 2>/dev/null | tail -n 1)"
 
 h "Services"
-for u in pb-listener kiosk board-cam tailscaled NetworkManager pb-netlog leds-off-at-boot cast-listener; do
+for u in pb-listener pb-ledmap kiosk board-cam tailscaled NetworkManager pb-netlog leds-off-at-boot cast-listener; do
     printf '  %-18s %-10s %s\n' "$u" "$(systemctl is-active "$u" 2>/dev/null)" "$(systemctl is-enabled "$u" 2>/dev/null)"
 done
 printf '  %-18s %s\n' "pb-listener" "restarts since boot: $(systemctl show -p NRestarts --value pb-listener 2>/dev/null)"

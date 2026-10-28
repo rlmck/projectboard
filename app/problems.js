@@ -152,11 +152,6 @@
     detailMirror = !detailMirror;
     updateMirrorButton();
     if (currentView === 'detail') renderDetail(currentProblem.id);
-    // I12 had no real partner in the original mirror table; the live one pairs it
-    // with I11 (hold199). Flag it only if the map in use really leaves it in place.
-    if (detailMirror && mirrorHold('hold218') === 'hold218' && problemHoldOrder(currentProblem).includes('hold218')) {
-      showToast('I12 has no mirror — left in place', 'success');
-    }
   }
 
   // ── Swipe between problems (detail view) ──────────────────────────────────────

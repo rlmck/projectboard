@@ -71,6 +71,39 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-10-28, Claude Code (LED mapping tool).**
+  - **Why:** a cast lit an LED with no hold over it and left one of its holds dark.
+  - **Found:**
+    - The listener maps hold → LED with the §6.4 formula (`board.led_index`), equal to `tools/led_map.json`. Casts write all 1200 pixels (`STRIP_PIXELS`), and the idle frames write 248.
+    - The problem cast at 13:01, `4beginnerz`, lists `hold2` (B1) and `hold21` (B2), the feet-indicator cells with no hold. The listener lights them blue as LEDs 26 and 25: very likely the stray LED. The dark hold isn't explained yet.
+    - Column B's direction is still unverified (contract §6.4 / §7 item 11).
+    - `pb-health` never restarts a stopped listener. Only a deploy (`install.sh` restarts a stopped listener) could have clashed with a second program writing the strip.
+    - The repo's `app/hold_map.json` matches the live board: the same `updated_at` and 189 holds, checked read-only.
+  - **Built:**
+    - `pb-ledmap`: `pi/ledmap/pb_ledmap.py` (stdlib HTTP, Tailscale only, port 8081) and `pi/ledmap/index.html`. Modes: Tap, Walk, Raw LED, Column check, Light a problem, the webcam beside the board, results with a JSON and text export.
+    - `pi/systemd/pb-ledmap.service`: never enabled. `Conflicts=pb-listener`, so only one of them ever drives the strip, and `ExecStopPost` starts the listener again. The session also stops after 30 min without a click.
+    - `pi/ops/pb-ledmap`: start, follow the log, and Ctrl+C to end.
+    - `pb-health` logs "paused for LED mapping" instead of a warning; `pb-status` lists the unit; `install.sh`/`deploy.sh` install it, with the app's board photo and hold map.
+    - 17 new laptop tests (80 in all pass). Tried on the laptop with `--dry-run` in Chrome: tap, walk with OK/wrong/hidden, raw, columns, `4beginnerz` from Supabase, Finish.
+    - How to use it: `pi/README.md` → "LED mapping".
+  - **Mapped (Ross, the same day):** 186 of the 189 holds OK. The three wrong ones were the app's labels, not the LEDs:
+    - the dot drawn as K9 was lit by N13's LED;
+    - the dot drawn as I12 was lit by K9's LED;
+    - I12's own LED, 116, is behind the board.
+    - Gareth's position table agrees: these three are the only holds out of place against it, and he drew I12 off the screen.
+    - The `Leds` problem had been made at 13:04 by tapping the I12 dot, so it lit LED 116 behind the board: that was the original symptom.
+  - **Fixed:**
+    - `db/32_hold_labels_fix.sql` (local), applied by Ross and checked live. `hold163` and `hold242` moved to their real dots and outlines, `hold218` removed (**188 real holds**), Gareth's mirror pairs for the six, and the 2 app-made problems on those dots moved with them. Migrated problems untouched; `updated_at` untouched, so outlines still work.
+    - Snapshot re-run; `pb-v119`. The dead "I12 has no mirror" toast is gone from `problems.js`.
+    - A new test checks no two holds share a position.
+    - Docs: 188 holds, and the mirror table now differs from Gareth's in 5 entries.
+    - Column directions confirmed on the wall: every hold lights its formula LED.
+  - **Left:**
+    - Ross: deploy the app (`pb-v119`), then `bash pi/deploy.sh`, then re-check K9, N13 and `Leds` in the mapping tool.
+    - Check mirrored casts on the wall.
+    - Decide the B1/B2 feet indicators (open question 1).
+    - Once relays exist, `pb-mode` must not cut the LED supplies while `pb-ledmap` runs.
+
 - **2026-10-28, Claude Code (idle patterns: try several, pick one).**
   - **Found:** the grid is 19 × 13 cells (cell = hold number − 1, row 1 at the bottom); every cell has an LED, 1–247, column-major serpentine (A runs up, B down, …), pixel 0 hidden and never lit, idle frames write 248 pixels. Glisten ran ~3 ms a frame on the Pi (pure Python 3.13, no numpy) inside a 33 ms frame at 30 fps; SPI adds ~6 ms. The idle cap is `board.scale` at 2 A on the PWM frame after gamma 2.2; a cast cuts straight in; night fades 3 s to black. The benchmarks are one ~1 KB read with the anon key (`is_benchmark`), so the teaser was cheap enough to build.
   - **Built:** `pi/listener/patterns/` (Glisten moved there; `common.py` = the grid, gamma, the app's palette and the `Pattern` interface; `idle.py` = the registry, `Plan` and `Idle`: one pattern, a cycle with a 3 s crossfade, or pb-idle's tour, with brightness, gamma and the cap applied to every pattern, and a failing pattern replaced by Glisten). Eight new patterns: chase, lava, breathe, aurora, rain, ripples, fireflies, teaser (a random benchmark fades in, dimmer, for 5 s). Settings `IDLE_PATTERN`, `IDLE_CYCLE`, `IDLE_CYCLE_MIN` (default unchanged: glisten). The renderer takes pb-idle's choice and the benchmarks; the listener reads the benchmarks every 30 min and takes SIGUSR2 from `pi/ops/pb-idle` (list / a name / cycle / tour / default / now; the choice lasts until a restart). `pb-status` shows the pattern; `install.sh`/`deploy.sh` copy `patterns/` and `pb-idle` (and remove the old `glisten.py`). `tools/idle_preview.py` (replaces `glisten_preview.py`) writes `tools/idle-preview.html` (gitignored): every pattern side by side plus a big view. `pi/tools/idle_bench.py` times them.

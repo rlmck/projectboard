@@ -7,6 +7,7 @@
 #                down 10 min -> reboot (guarded). Steps 2-4 are skipped while down.
 #   2 tailscale  not Running -> restart tailscaled
 #   3 listener   status file stale (90 s) or not joined for 5 min -> restart pb-listener
+#                (stopped while pb-ledmap, the LED mapping tool, runs: logged, never restarted)
 #   4 board-cam  enabled but failed/inactive -> restart it
 #   5 log only   temperature, disk free, throttling
 #
@@ -137,6 +138,9 @@ EOF
         else
             SUMMARY+=("listener $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("state"))' "$STATUS" 2>/dev/null)")
         fi
+    elif [ "$(systemctl is-active pb-ledmap 2>/dev/null)" = active ]; then
+        log "pb-listener paused for LED mapping (pb-ledmap)" info
+        SUMMARY+=("listener paused (pb-ledmap)")
     elif [ "$(systemctl is-enabled pb-listener 2>/dev/null)" = enabled ]; then
         log "pb-listener is enabled but $(systemctl is-active pb-listener)" warning
         SUMMARY+=("listener $(systemctl is-active pb-listener)")

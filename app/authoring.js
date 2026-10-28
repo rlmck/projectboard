@@ -780,7 +780,7 @@
     }
   }
 
-  // Changed count, Publish button, hold picker and the draft save: all 189 outlines
+  // Changed count, Publish button, hold picker and the draft save: all 188 outlines
   // get compared, so this runs a beat after edits settle, not on every pointermove.
   function olScheduleStatus() { clearTimeout(OL.statusT); OL.statusT = setTimeout(olStatus, 200); }
   function olStatus() {

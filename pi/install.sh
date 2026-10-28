@@ -9,6 +9,7 @@
 #   listener/*.py      /opt/projectboard/listener/ (and listener/patterns/*.py)
 #   ops/board-cam.sh   /opt/projectboard/ops/
 #   ops/pb-*           /usr/local/bin/
+#   ledmap/            /opt/projectboard/ledmap/ (the LED mapping tool: installed, never enabled)
 #   systemd/*          /etc/systemd/system/ (kiosk.service as installed 26 Oct)
 #   conf/              journald + system.conf.d drop-ins, NetworkManager conf, tmpfiles.d
 #   config.env         /etc/projectboard/config.env, if deploy.sh sent the laptop's copy
@@ -62,10 +63,12 @@ if [ -f /opt/projectboard/listener/glisten.py ]; then
 fi
 for f in pb_listener.py leds.py mode.py; do put "listener/$f" "/opt/projectboard/listener/$f" 0755; done
 put ops/board-cam.sh /opt/projectboard/ops/board-cam.sh 0755
-for f in pb-health pb-mode pb-status pb-idle pb-bootcheck pb-weekly-reboot; do put "ops/$f" "/usr/local/bin/$f" 0755; done
+for f in pb-health pb-mode pb-status pb-idle pb-ledmap pb-bootcheck pb-weekly-reboot; do put "ops/$f" "/usr/local/bin/$f" 0755; done
 for f in "$SRC"/systemd/*.service "$SRC"/systemd/*.timer; do
     put "systemd/$(basename "$f")" "/etc/systemd/system/$(basename "$f")" 0644
 done
+put ledmap/pb_ledmap.py /opt/projectboard/ledmap/pb_ledmap.py 0755
+for f in index.html board.jpg hold_map.json; do put "ledmap/$f" "/opt/projectboard/ledmap/$f" 0644; done
 put systemd/kiosk.service.d/cursor.conf /etc/systemd/system/kiosk.service.d/cursor.conf 0644
 put conf/pb-journal.conf /etc/systemd/journald.conf.d/pb-journal.conf 0644
 put conf/pb-watchdog.conf /etc/systemd/system.conf.d/pb-watchdog.conf 0644
@@ -114,6 +117,7 @@ if [ "$(systemctl is-enabled cast-listener 2>/dev/null)" = enabled ] || [ "$(sys
     echo "   (the stopgap stays in /home/pi for a rollback)"
 fi
 # leds-off-at-boot runs at the next boot; running it now would only clear the strip.
+# pb-ledmap is deliberately not in this list: it only runs when started by hand.
 for u in leds-off-at-boot.service pb-listener.service board-cam.service pb-netlog.service; do
     [ "$(systemctl is-enabled "$u" 2>/dev/null)" = enabled ] || run systemctl enable "$u"
 done
@@ -125,6 +129,10 @@ done
 # Enabled only: it fires 3 min after the next boot (starting it now would log a misleading boot line).
 [ "$(systemctl is-enabled pb-bootcheck.timer 2>/dev/null)" = enabled ] || run systemctl enable pb-bootcheck.timer
 
+# A running pb-ledmap session ends here: pb-listener Conflicts= with it.
+if [ "$(systemctl is-active pb-ledmap 2>/dev/null)" = active ]; then
+    echo "   pb-ledmap was running: starting pb-listener ends that mapping session"
+fi
 if changed '/opt/projectboard/listener/*' '/etc/projectboard/config.env' '/etc/systemd/system/pb-listener.service' \
    || [ "$(systemctl is-active pb-listener)" != active ]; then
     run systemctl restart pb-listener

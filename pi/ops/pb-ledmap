@@ -1,0 +1,63 @@
+#!/bin/bash
+# pb-ledmap: start and stop the LED mapping tool (pi/ledmap/, pb-ledmap.service).
+#
+#   pb-ledmap            start it (pauses pb-listener), print the URL, follow its log;
+#                        Ctrl+C ends the session and the listener starts again
+#   pb-ledmap start      start it and return
+#   pb-ledmap stop       end the session: strip cleared, pb-listener started again
+#   pb-ledmap status     is it running, and the listener
+#
+# Run as pi over ssh -t (sudo asks for the password once).
+
+set -u
+PORT=8081
+cmd=${1:-follow}
+
+url() {
+    local ip; ip=$(tailscale ip -4 2>/dev/null | head -n 1)
+    echo "http://projectboard:$PORT/   (or http://${ip:-<tailscale ip>}:$PORT/)"
+}
+show() {
+    printf '  pb-ledmap    %s\n  pb-listener  %s\n' "$(systemctl is-active pb-ledmap)" "$(systemctl is-active pb-listener)"
+}
+start() {
+    if [ "$(systemctl is-active pb-ledmap)" = active ]; then
+        echo "already running"
+    else
+        echo "pausing pb-listener, starting the mapping tool..."
+        sudo systemctl start pb-ledmap || { journalctl -u pb-ledmap -n 20 --no-pager; exit 1; }
+        sleep 1
+    fi
+    [ "$(systemctl is-active pb-ledmap)" = active ] || { echo "it didn't stay up:"; journalctl -u pb-ledmap -n 20 --no-pager; exit 1; }
+    show
+    echo "open $(url)"
+}
+stop() {
+    sudo systemctl stop pb-ledmap
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        [ "$(systemctl is-active pb-listener)" = active ] && break
+        sleep 1
+    done
+    show
+}
+
+case "$cmd" in
+    start)  start ;;
+    stop)   stop ;;
+    status) show ;;
+    follow)
+        start
+        echo "Ctrl+C here (or Finish on the page) ends the session."
+        trap 'echo; echo "ending the session..."; stop; exit 0' INT TERM HUP
+        journalctl -fu pb-ledmap -n 0 -o cat &
+        jpid=$!
+        while [ "$(systemctl is-active pb-ledmap)" = active ]; do sleep 2; done
+        kill "$jpid" 2>/dev/null
+        trap - INT TERM HUP
+        echo "the session ended by itself:"
+        journalctl -u pb-ledmap -n 1 -o cat --no-pager
+        sleep 3
+        show ;;
+    -h|--help|help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *) echo "pb-ledmap [start|stop|status]"; exit 2 ;;
+esac
