@@ -9,33 +9,41 @@
 <link rel="stylesheet" href="/static/console.css">
 <script src="/static/console.js" defer></script>
 <script src="/static/more.js" defer></script>
+<script src="/static/dash.js" defer></script>
 </head>
 <body>
-<header class="top">
+<div class="shell">
+<aside class="side">
   <div class="brand"><span class="mark" aria-hidden="true"></span>PB Console</div>
-  <nav class="tabs" role="tablist">
-    <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
-    <button role="tab" data-tab="services">Services</button>
-    <button role="tab" data-tab="board">Board</button>
-    <button role="tab" data-tab="logs">Logs</button>
-    <button role="tab" data-tab="config">Config</button>
-    <button role="tab" data-tab="deploy">Deploy</button>
-    <button role="tab" data-tab="release">Release</button>
-    <button role="tab" data-tab="ledmap">LED map</button>
-    <button role="tab" data-tab="cast">Test cast</button>
-    <button role="tab" data-tab="activity">Activity</button>
-    <button role="tab" data-tab="tests">Tests</button>
-    <button role="tab" data-tab="backups">Backups</button>
-    <button role="tab" data-tab="power">Power</button>
-    <button role="tab" data-tab="runbook">Runbook</button>
-    <button role="tab" data-tab="audit">Audit</button>
+  <nav class="nav" role="tablist" aria-label="Sections">
+    <button role="tab" data-tab="overview" aria-selected="true"><span class="nav-dot" id="nav-dot-overview"></span>Overview</button>
+    <div class="nav-group">Board</div>
+    <button role="tab" data-tab="board"><span class="nav-dot" id="nav-dot-board"></span>Board</button>
+    <button role="tab" data-tab="cast"><span class="nav-dot" id="nav-dot-cast"></span>Test cast</button>
+    <button role="tab" data-tab="ledmap"><span class="nav-dot" id="nav-dot-ledmap"></span>LED map</button>
+    <button role="tab" data-tab="power"><span class="nav-dot" id="nav-dot-power"></span>Power</button>
+    <div class="nav-group">Pi</div>
+    <button role="tab" data-tab="services"><span class="nav-dot" id="nav-dot-services"></span>Services</button>
+    <button role="tab" data-tab="logs"><span class="nav-dot" id="nav-dot-logs"></span>Logs</button>
+    <button role="tab" data-tab="config"><span class="nav-dot" id="nav-dot-config"></span>Config</button>
+    <button role="tab" data-tab="deploy"><span class="nav-dot" id="nav-dot-deploy"></span>Deploy</button>
+    <button role="tab" data-tab="backups"><span class="nav-dot" id="nav-dot-backups"></span>Backups</button>
+    <div class="nav-group">Checks</div>
+    <button role="tab" data-tab="activity"><span class="nav-dot" id="nav-dot-activity"></span>Activity</button>
+    <button role="tab" data-tab="tests"><span class="nav-dot" id="nav-dot-tests"></span>Tests</button>
+    <button role="tab" data-tab="audit"><span class="nav-dot" id="nav-dot-audit"></span>Audit</button>
+    <div class="nav-group">Ship</div>
+    <button role="tab" data-tab="release"><span class="nav-dot" id="nav-dot-release"></span>Release</button>
+    <div class="nav-group">Help</div>
+    <button role="tab" data-tab="runbook"><span class="nav-dot" id="nav-dot-runbook"></span>Runbook</button>
   </nav>
-  <div class="status-line">
-    <span id="lock-state" class="pill">idle</span>
-    <span id="updated" class="muted"></span>
-    <button id="refresh" class="btn small" title="Probe the Pi and the site now">Refresh</button>
+  <div class="side-foot">
+    <button id="palette-open" class="kbd-hint" title="Every section and quick action">Search actions <kbd>Ctrl K</kbd></button>
+    <div class="side-status"><span id="lock-state" class="pill">idle</span><button id="refresh" class="btn small" title="Probe the Pi and the site now">Refresh</button></div>
+    <span id="updated" class="muted small"></span>
   </div>
-</header>
+</aside>
+<div class="main-col">
 
 <div id="no-token" class="banner bad" hidden>
   This page needs this launch's token. Start the console with <code>bash console/start.sh</code> from the repo root in Git Bash; it opens the right address.
@@ -47,10 +55,45 @@
 
 <main>
   <section id="tab-overview" class="tab">
-    <div id="tiles" class="tiles"><p class="muted">Checking the Pi, the live site and Supabase (a few seconds)…</p></div>
+    <div id="hero" class="hero"><div class="hero-state"><span class="hero-icon">…</span><div><h1 id="hero-title">Checking the Pi, the live site and Supabase…</h1><div id="hero-chips" class="hero-chips"></div></div></div><dl id="hero-kpis" class="hero-kpis"></dl></div>
+    <div id="bento" class="bento">
+      <article class="t w5 tall t-board" id="t-board">
+        <div class="t-head"><h2>Board</h2><span id="board-chip" class="lvl-chip unknown">…</span><button class="t-more" data-goto="board" title="Open the Board section">Board ›</button></div>
+        <div class="cam-wrap" id="ov-cam-wrap">
+          <img id="ov-cam" alt="The board from the webcam">
+          <div class="cam-over"><span id="ov-leds" class="cam-pill"></span><span id="ov-mode" class="cam-pill"></span></div>
+          <p id="ov-cam-note" class="cam-note" hidden>The webcam didn't answer. Is this laptop on Tailscale, and board-cam running?</p>
+        </div>
+        <div class="ctl">
+          <div class="ctl-row"><span class="ctl-label">LEDs</span>
+            <div class="seg"><button class="btn small" data-act="idle" data-cmd="now">Idle now</button><button class="btn small" data-act="idle" data-cmd="off">Off</button><button class="btn small" data-act="idle" data-cmd="default">Default</button></div></div>
+          <div class="ctl-row"><span class="ctl-label">Pattern</span>
+            <select id="ov-pattern" aria-label="Idle pattern"></select><button class="btn small" id="ov-pattern-set">Show</button></div>
+          <div class="ctl-row"><span class="ctl-label">Brightness</span>
+            <input id="ov-bright" type="range" min="5" max="100" step="5" value="100" aria-label="Brightness"><output id="ov-bright-out">100%</output><button class="btn small" id="ov-bright-set">Set</button></div>
+          <div class="ctl-row"><span class="ctl-label">Night</span>
+            <div class="seg" id="ov-night"><button class="btn small" data-act="night" data-mode="auto">Auto</button><button class="btn small" data-act="night" data-mode="night">Night</button><button class="btn small" data-act="night" data-mode="day">Day</button></div></div>
+          <div class="ctl-row"><span class="ctl-label">Screen</span>
+            <div class="seg" id="ov-screen"><button class="btn small" data-act="screen" data-state="on">On</button><button class="btn small" data-act="screen" data-state="off">Off</button></div></div>
+        </div>
+      </article>
+      <article class="t w4" id="t-listener"></article>
+      <article class="t w3" id="t-casts"></article>
+      <article class="t w4" id="t-pi"></article>
+      <article class="t w3" id="t-wifi"></article>
+      <article class="t w4" id="t-services"></article>
+      <article class="t w4" id="t-site"></article>
+      <article class="t w4" id="t-release"></article>
+      <article class="t w4" id="t-health"></article>
+      <article class="t w4" id="t-errors"></article>
+      <article class="t w4" id="t-top"></article>
+      <article class="t w8" id="t-audit"></article>
+      <article class="t w4" id="t-schedule"></article>
+    </div>
   </section>
 
   <section id="tab-services" class="tab" hidden>
+    <header class="page-head"><h1>Services</h1><p>Start, stop and restart the Pi's units.</p></header>
     <p class="note">Each button asks first. A stop or restart checks for a cast in the last 5 minutes and warns if there was one.</p>
     <div id="services" class="rows"></div>
     <div class="row-actions">
@@ -60,6 +103,7 @@
   </section>
 
   <section id="tab-board" class="tab" hidden>
+    <header class="page-head"><h1>Board</h1><p>The LEDs, night mode and the wall screen, beside the webcam.</p></header>
     <div class="board-grid">
       <div class="controls">
         <div class="card">
@@ -117,6 +161,7 @@
   </section>
 
   <section id="tab-logs" class="tab" hidden>
+    <header class="page-head"><h1>Logs</h1><p>The Pi's journal and log files.</p></header>
     <form id="log-form" class="log-form">
       <label>Log <select id="log-source"></select></label>
       <label>Since <input id="log-since" value="-1h" size="12" placeholder="-1h, today"></label>
@@ -131,6 +176,7 @@
   </section>
 
   <section id="tab-config" class="tab" hidden>
+    <header class="page-head"><h1>Config</h1><p>The Pi's config.env, every value checked and backed up.</p></header>
     <p class="note">The Pi's <code>/etc/projectboard/config.env</code>. Change fields, then Apply: the dialog shows what changes, the Pi backs up the old file first, the listener restarts only if a key it reads at start changed, and the laptop's <code>pi/config.env</code> follows so a deploy keeps it.</p>
     <div id="cfg-drift" class="banner warn" hidden>
       <strong>The laptop's pi/config.env and the Pi's differ.</strong> Changes are refused until they match. Choose which one is right:
@@ -145,6 +191,7 @@
   </section>
 
   <section id="tab-deploy" class="tab" hidden>
+    <header class="page-head"><h1>Deploy</h1><p>Ship pi/ to the Pi, and what differs from the repo.</p></header>
     <div class="card">
       <h2>Deploy pi/ to the Pi</h2>
       <p class="note">Runs <code>bash pi/deploy.sh</code>: copies pi/ over and installs what changed. The password goes to sudo on the Pi and is never saved or logged; the field clears after each run. A real deploy restarts the listener if its files or config.env changed (do it when the gym is closed).</p>
@@ -161,6 +208,7 @@
   </section>
 
   <section id="tab-release" class="tab" hidden>
+    <header class="page-head"><h1>Release</h1><p>Commit, push and ship the app.</p></header>
     <div class="board-grid">
       <div class="controls">
         <div class="card"><h2>Repo <button class="btn small" id="git-reload">Refresh</button> <button class="btn small" id="git-pull">Pull</button></h2><div id="git-status"></div></div>
@@ -188,6 +236,7 @@
   </section>
 
   <section id="tab-ledmap" class="tab" hidden>
+    <header class="page-head"><h1>LED map</h1><p>Map holds to LEDs with the webcam.</p></header>
     <div class="btn-row">
       <button class="btn primary" id="ledmap-start">Start mapping (pauses the listener)</button>
       <button class="btn" id="ledmap-stop">Stop (listener back)</button>
@@ -206,6 +255,7 @@
   </section>
 
   <section id="tab-cast" class="tab" hidden>
+    <header class="page-head"><h1>Test cast</h1><p>A real cast, timed from the listener's log.</p></header>
     <div class="board-grid">
       <div class="controls">
         <div class="card">
@@ -225,11 +275,13 @@
   </section>
 
   <section id="tab-activity" class="tab" hidden>
+    <header class="page-head"><h1>Activity</h1><p>Casts from the Pi's journal.</p></header>
     <label>Days <select id="activity-days"><option>7</option><option selected>14</option><option>30</option><option>60</option></select></label>
     <div id="activity-out" class="card"></div>
   </section>
 
   <section id="tab-tests" class="tab" hidden>
+    <header class="page-head"><h1>Tests</h1><p>The R8 acceptance checklist and the night check.</p></header>
     <div class="card">
       <h2>Check a night</h2>
       <div class="slider-row"><label>Night starting <input type="date" id="night-date"></label><button class="btn" id="night-check">Check (default: last night)</button></div>
@@ -241,6 +293,7 @@
   </section>
 
   <section id="tab-backups" class="tab" hidden>
+    <header class="page-head"><h1>Backups</h1><p>The Pi's settings and the public tables.</p></header>
     <div class="btn-row">
       <button class="btn primary" id="backup-pi">Back up the Pi</button>
       <button class="btn" id="backup-sb">Export Supabase (public tables)</button>
@@ -250,6 +303,7 @@
   </section>
 
   <section id="tab-power" class="tab" hidden>
+    <header class="page-head"><h1>Power</h1><p>The LED supplies' relays.</p></header>
     <div class="card">
       <h2>LED supplies</h2>
       <p id="power-state" class="muted"></p>
@@ -259,6 +313,7 @@
   </section>
 
   <section id="tab-runbook" class="tab" hidden>
+    <header class="page-head"><h1>Runbook</h1><p>What to do when the console can't reach the Pi.</p></header>
     <div class="card">
       <h2>When the console can't reach the Pi</h2>
       <ol>
@@ -272,10 +327,13 @@
   </section>
 
   <section id="tab-audit" class="tab" hidden>
+    <header class="page-head"><h1>Audit</h1><p>Every action the console ran.</p></header>
     <p class="note">Every action, from <code>console/audit.log</code> (local, gitignored). Newest last.</p>
     <table class="audit"><thead><tr><th>Time</th><th>Action</th><th>Result</th><th>Detail</th></tr></thead><tbody id="audit"></tbody></table>
   </section>
 </main>
+</div>
+</div>
 
 <section id="output" class="output" hidden>
   <div class="output-head"><strong id="output-title"></strong><button id="output-close" class="btn small">Close</button></div>
@@ -295,5 +353,15 @@
   </form>
 </dialog>
 <div id="toast" class="toast" hidden></div>
+<aside id="drawer" class="drawer" hidden aria-labelledby="drawer-title">
+  <div class="drawer-head"><h2 id="drawer-title"></h2><button id="drawer-close" class="btn small">Close</button></div>
+  <div id="drawer-body"></div>
+</aside>
+<dialog id="palette" class="palette">
+  <input id="palette-q" placeholder="Go to a section or run an action…" autocomplete="off" aria-label="Search">
+  <ul id="palette-list" role="listbox"></ul>
+  <p class="note">Enter runs it · ↑↓ to choose · Esc closes. Anything that changes the board still asks first.</p>
+</dialog>
+<div id="tip" class="tip" hidden></div>
 </body>
 </html>

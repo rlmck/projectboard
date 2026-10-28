@@ -86,24 +86,20 @@ async function readStream(res, onLine) {
 // -- tabs ----------------------------------------------------------------------
 
 function showTab(name) {
-  document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+  if (!document.getElementById('tab-' + name)) name = 'overview';
+  document.querySelectorAll('.nav [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
   document.querySelectorAll('.tab').forEach((s) => { s.hidden = s.id !== 'tab-' + name; });
   try { localStorage.setItem('pb-console-tab', name); } catch (e) { /* ignore */ }
   if (name === 'audit') loadState();
   if (name === 'board') startCam();
   const hook = window.PB && window.PB.tabHooks[name];
   if (hook) hook();
+  if (window.PB && window.PB.dash) window.PB.dash.onTab(name);
+  window.scrollTo(0, 0);
 }
 
 // -- overview ------------------------------------------------------------------
 
-function renderTiles(tiles) {
-  $('tiles').innerHTML = tiles.map((t) =>
-    '<article class="tile ' + esc(t.level) + '">' +
-    '<div class="tile-head"><span class="tile-title">' + esc(t.title) + '</span><span class="dot" title="' + esc(t.level) + '"></span></div>' +
-    '<div class="tile-value">' + esc(t.value) + '</div>' +
-    '<ul>' + (t.lines || []).map((l) => '<li>' + esc(l) + '</li>').join('') + '</ul></article>').join('');
-}
 
 function renderServices() {
   if (!overview) return;
@@ -151,7 +147,7 @@ async function loadOverview(refresh) {
     const { status, data } = await apiJson('/api/overview' + (refresh ? '?refresh=1' : ''));
     if (status !== 200) throw new Error(data.error || status);
     overview = data;
-    renderTiles(data.tiles);
+    if (window.PB.dash) window.PB.dash.render(data);
     $('no-helper').hidden = !(data.pi_ok && data.helper === false);
     const d = $('drift');
     d.hidden = !data.config_drift;
@@ -173,6 +169,7 @@ async function loadState() {
     const { data } = await apiJson('/api/state');
     state = data;
     setLock(data.busy);
+    if (window.PB && window.PB.dash) window.PB.dash.onState(data);
     $('audit').innerHTML = (data.audit || []).map((r) =>
       '<tr><td>' + esc(r.time.replace('T', ' ')) + '</td><td>' + esc(r.action) + '</td><td class="r-' + esc(r.result) + '">' +
       esc(r.result) + '</td><td>' + esc(r.detail || '') + (r.ms != null ? ' (' + (r.ms / 1000).toFixed(1) + ' s)' : '') + '</td></tr>').join('');
@@ -321,7 +318,7 @@ function startCam() {
 async function boot() {
   readToken();
   if (!token) { $('no-token').hidden = false; return; }
-  document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  document.querySelectorAll('.nav [data-tab]').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
   document.body.addEventListener('click', (ev) => {
     const el = ev.target.closest('[data-act]');
     if (!el) return;
@@ -356,5 +353,5 @@ async function boot() {
 }
 
 window.PB = { api, apiJson, readStream, esc, toast, runAction, tabHooks: {}, afterAction: null,
-  state: () => state, overview: () => overview, showTab };
+  state: () => state, overview: () => overview, showTab, isRunning: () => running };
 boot();

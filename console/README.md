@@ -16,7 +16,8 @@ Needs: Python 3 (the standard library only), Git Bash's `ssh`, and `ssh pi@proje
 
 ## What it does
 
-- **Overview:** green, amber or red tiles, refreshed every 30 s: the Pi online (uptime, last boot, the boot check line), temperature, throttling and under-voltage, disk and memory, Wi-Fi (signal, connection, rescue hotspot), each service (listener, kiosk, Wi-Fi watchdog, webcam) and the timers, the listener (joined, what the LEDs show, fps, last cast), the live site and its `sw.js` CACHE against the repo's, Supabase (REST, and a Realtime join of `board:HangoutPortland` every 5 minutes), the self-healing actions (pb-health, watchdog restarts, pb-netwatch) and the journal's errors in 24 h by source, against the day before. **Refresh** probes at once. The Pi side is `console/probe.py`, sent over ssh and run as `pi`: it reads, never writes.
+- **Layout:** a sidebar of sections in groups (Board, Pi, Checks, Ship, Help), each with a status dot where it has one; **Ctrl+K** (or `/`) opens a palette that goes to any section or runs a quick action (LEDs, patterns, night, screen, restarts, reboot), always through the same confirm.
+- **Overview:** a tiled dashboard (`static/dash.js`): a status line on top (what needs a look, the Pi's uptime, the live CACHE, casts in 24 h, the last cast, day or night), then the board (the webcam with the LED state and day/night over it, and the LED, pattern, brightness, night and screen controls under it), the listener (what it shows, the last five casts), casts over 7 days (per day and by hour), the Pi (temperature gauge, disk, memory, load), Wi-Fi, services (with Restart), the live site and Supabase, release (changed files, unpushed, not live), self-healing, journal errors by source, the most cast problems, recent actions, and the night switch and timers. Click a tile for **every line** behind it (the drawer), with a link to its section. The checks behind the tiles, refreshed every 30 s: the Pi online (uptime, last boot, the boot check line), temperature, throttling and under-voltage, disk and memory, Wi-Fi (signal, connection, rescue hotspot), each service (listener, kiosk, Wi-Fi watchdog, webcam) and the timers, the listener (joined, what the LEDs show, fps, last cast), the live site and its `sw.js` CACHE against the repo's, Supabase (REST, and a Realtime join of `board:HangoutPortland` every 5 minutes), the self-healing actions (pb-health, watchdog restarts, pb-netwatch) and the journal's errors in 24 h by source, against the day before. **Refresh** probes at once. The Pi side is `console/probe.py`, sent over ssh and run as `pi`: it reads, never writes.
 - **Services:** start, stop or restart `pb-listener`, `kiosk`, `board-cam`, `pb-netwatch`, `pb-health.timer`, `pb-mode.timer`; restart the kiosk (the wall loads the latest app); reboot the Pi.
 - **Board:** idle now, LEDs off (dark now and whenever idle, casts still light) and back to the default, the idle pattern (each of the ten, the tour, the cycle), a brightness for everything (5–100% of the configured level), night mode (auto, force night, force day) and the night hours, the wall screen off/on, and the webcam beside them. Patterns, LEDs off and brightness last until the listener restarts (`pb-idle`); the permanent ones are in `config.env`.
 - **Logs:** the journal for one unit or tag (or the kernel, all errors, everything), a time range (`-1h`, `2 hours ago`, `today`, `2026-10-28 14:00`), a line count, a filter (case-insensitive text) and **Follow**; also `/boot/firmware/netlog.txt` and pb-netwatch's own log.
@@ -32,7 +33,7 @@ Needs: Python 3 (the standard library only), Git Bash's `ssh`, and `ssh pi@proje
 - **Runbook:** the rescue-hotspot steps and the key sections of `pi/README.md`, readable when the Pi isn't.
 - **Audit:** every action from `console/audit.log` (gitignored): time, action, result, how long.
 
-Not built: **Data** (admin edits to board data, phase 13) waits for Ross's choice of how the console writes to Supabase (`docs/console-plan.md`).
+Not built yet: **Data** (admin edits to board data, phase 13). Ross chose direct Postgres through `db/.env` (28 Oct 2026); `docs/console-plan.md`.
 
 ## Safety
 
@@ -68,8 +69,8 @@ Not built: **Data** (admin edits to board data, phase 13) waits for Ross's choic
 | `reports.py` | activity, the acceptance checklist and night check, mapping results, backups, the runbook |
 | `probe.py` | the read-only script the overview runs on the Pi |
 | `checks.py` | the laptop's checks: the live site, Supabase REST, a Realtime join |
-| `tiles.py` | the overview's thresholds (green, amber, red) |
-| `static/` | the page (`index.html`, `console.css`, `console.js` for the first tabs, `more.js` for the rest); the colours come from `app/tokens.css` |
+| `tiles.py` | the overview's thresholds (green, amber, red), and `metrics()`, the raw numbers the dashboard draws |
+| `static/` | the page (`index.html`, `console.css`, `console.js` for the first tabs, `more.js` for the rest, `dash.js` for the overview, its drawer and the Ctrl+K palette); the colours come from `app/tokens.css`. The CSP blocks inline `style=""` attributes, so sizes set from data go through `element.style` |
 | `tests/` | `python -m unittest discover -s console/tests` |
 
 The Pi side lives with the rest of the Pi code: `pi/ops/pb-console-helper`, `pi/conf/pb-console.sudoers`, and `pb-idle off` / `pb-idle brightness` in the listener.

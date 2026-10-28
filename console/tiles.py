@@ -251,3 +251,52 @@ def laptop_tiles(c):
         if not rt['ok']:
             lvl = worst(lvl, BAD)
     return [site, tile('supabase', 'Supabase', lvl, 'reachable' if lvl == OK else 'problem', lines)]
+
+
+def metrics(p, c=None):
+    """The raw numbers behind the tiles, for the overview's gauges and charts. The tiles
+    keep every line of detail; this is only what the dashboard draws. Pure, like the rest."""
+    p, c = p or {}, c or {}
+    out = {'pi_ok': bool(p.get('ok'))}
+    hw, wifi, ts = p.get('hardware') or {}, p.get('wifi') or {}, p.get('tailscale') or {}
+    if p.get('ok'):
+        tl, ttexts = throttle(hw.get('throttled'))
+        out['pi'] = {'host': p.get('host'), 'uptime_s': hw.get('uptime_s'), 'boot_at': hw.get('boot_at'),
+                     'tailscale': ts.get('state'), 'synced': p.get('time_synced'), 'probe_ms': p.get('ms'),
+                     'mode': p.get('mode')}
+        out['hw'] = {'temp_c': hw.get('temp_c'), 'throttled': hw.get('throttled'), 'throttle_level': tl,
+                     'throttle': ttexts, 'load': hw.get('load'),
+                     'disk_used': 1 - hw['disk_free'] / hw['disk_total'] if hw.get('disk_total') else None,
+                     'disk_free': hw.get('disk_free'), 'disk_total': hw.get('disk_total'),
+                     'mem_used': 1 - hw['mem_available'] / hw['mem_total'] if hw.get('mem_total') else None,
+                     'mem_available': hw.get('mem_available'), 'mem_total': hw.get('mem_total')}
+        out['wifi'] = {k: wifi.get(k) for k in ('ssid', 'signal', 'ip', 'freq', 'connection', 'rescue_up')}
+        s = p.get('listener') or {}
+        out['listener'] = {k: s.get(k) for k in (
+            'state', 'leds', 'idle_pattern', 'last_cast_name', 'last_cast_at', 'casts_shown', 'casts_ignored_night',
+            'idle_fps', 'idle_frame_ms', 'error_count', 'last_error', 'connected_since', 'file_age_s', 'mode')}
+        out['listener']['casts_24h'] = p.get('casts_24h')
+        out['casts_recent'] = p.get('casts_recent') or []
+        e = p.get('errors') or {}
+        now, before = e.get('last24h') or {}, e.get('before') or {}
+        out['errors'] = {'total': sum(now.values()), 'before': sum(before.values()), 'this_boot': e.get('this_boot'),
+                         'sources': [[k, n, before.get(k, 0)] for k, n in sorted(now.items(), key=lambda kv: -kv[1])[:6]]}
+        h = p.get('health') or {}
+        acts = h.get('actions') or []
+        day = [a for a in acts if _iso_ts(a.get('at')) >= time.time() - 86400]
+        counts = {}
+        for a in day:
+            counts[a['action']] = counts.get(a['action'], 0) + 1
+        out['health'] = {'day': len(day), 'week': len(acts), 'counts': counts, 'watchdog': h.get('watchdog_24h') or 0,
+                         'restarts': int(((p.get('services') or {}).get('pb-listener') or {}).get('NRestarts') or 0),
+                         'recent': acts[-3:]}
+        out['services'] = {u: {'state': s.get('ActiveState'), 'sub': s.get('SubState'), 'restarts': s.get('NRestarts'),
+                               'since': s.get('ActiveEnterTimestamp')} for u, s in (p.get('services') or {}).items()}
+        out['timers'] = {t: {'state': s.get('ActiveState'), 'last': s.get('LastTriggerUSec'),
+                             'next': s.get('NextElapseUSecRealtime'), 'result': s.get('service_result')}
+                         for t, s in (p.get('timers') or {}).items()}
+    live, sb, rt = c.get('live') or {}, c.get('supabase') or {}, c.get('realtime') or {}
+    out['site'] = {'status': live.get('status'), 'ms': live.get('ms'), 'cache': live.get('cache'), 'repo': c.get('repo_cache')}
+    out['supabase'] = {'status': sb.get('status'), 'ms': sb.get('ms'), 'rt_ok': rt.get('ok'), 'rt_ms': rt.get('ms'),
+                       'rt_at': rt.get('at')}
+    return out

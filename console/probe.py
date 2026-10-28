@@ -176,6 +176,7 @@ def everything():
     except ValueError:
         pass
     cfg = read('/etc/projectboard/config.env')
+    day_casts = casts_since(86400)
     return {
         'host': sh('hostname'), 'now': time.time(),
         'hardware': hardware(), 'wifi': wifi(), 'tailscale': ts,
@@ -186,7 +187,7 @@ def everything():
         'boot_line': (sh('journalctl', '-b', '-t', 'pb-boot', '-o', 'cat', '--no-pager', '-q').splitlines() or [None])[-1],
         'time_synced': sh('timedatectl', 'show', '-p', 'NTPSynchronized', '--value'),
         'health': health(), 'errors': errors(),
-        'casts_5min': casts_since(BUSY_S), 'casts_24h': len(casts_since(86400)),
+        'casts_5min': casts_since(BUSY_S), 'casts_24h': len(day_casts), 'casts_recent': day_casts[-8:],
         'helper': os.path.exists('/usr/local/sbin/pb-console-helper') and os.path.exists('/etc/sudoers.d/pb-console'),
         'config_env': cfg,
         'probe_ms': None, '_t0': t0,

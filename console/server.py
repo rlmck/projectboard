@@ -50,6 +50,7 @@ STATIC = {
     '/static/console.css': ('static/console.css', 'text/css; charset=utf-8'),
     '/static/console.js': ('static/console.js', 'text/javascript; charset=utf-8'),
     '/static/more.js': ('static/more.js', 'text/javascript; charset=utf-8'),
+    '/static/dash.js': ('static/dash.js', 'text/javascript; charset=utf-8'),
     '/static/icon.svg': ('static/icon.svg', 'image/svg+xml'),
     '/tokens.css': ('../app/tokens.css', 'text/css; charset=utf-8'),   # the app's own design tokens
 }
@@ -146,7 +147,7 @@ class Console:
                           'plan': listener.get('idle_plan'), 'override': listener.get('idle_override'),
                           'scale': listener.get('brightness_scale', 1.0), 'mode': p.get('mode'),
                           'screen_off': p.get('screen_off_flag'), 'config': _night_cfg(p.get('config_env'))},
-                'casts_5min': p.get('casts_5min')}
+                'casts_5min': p.get('casts_5min'), 'metrics': tiles.metrics(p, lap)}
 
 
 def _night_cfg(text):

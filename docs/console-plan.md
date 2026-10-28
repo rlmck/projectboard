@@ -1,6 +1,6 @@
 # PB Console: the plan
 
-PB Console (`console/`, see `console/README.md`) is a local admin console for the Project Board, run on Ross's laptop with `bash console/start.sh`. It's for running, tuning, fixing and shipping without opening a Claude Code session; new features are still written in Claude Code. Phases 1–4 and the foundation were built on 28 Oct 2026, and **phases 5–12, 14 and 15 later the same day** (Ross asked to carry on). Each phase below says what was built and where it differs from the plan. **Phase 13 (Data) is not built**: it needs Ross's choice of write path. Phases 5, 6 (NetworkManager pull, root hashes), 8, 11 and 12 need the new `pb-console-helper` on the Pi: one deploy. The repo is public: nothing secret or personal goes in this file.
+PB Console (`console/`, see `console/README.md`) is a local admin console for the Project Board, run on Ross's laptop with `bash console/start.sh`. It's for running, tuning, fixing and shipping without opening a Claude Code session; new features are still written in Claude Code. Phases 1–4 and the foundation were built on 28 Oct 2026, and **phases 5–12, 14 and 15 later the same day** (Ross asked to carry on). Each phase below says what was built and where it differs from the plan. **Phase 13 (Data) is not built yet**: Ross chose its write path (direct Postgres, 28 Oct 2026). Phases 5, 6 (NetworkManager pull, root hashes), 8, 11 and 12 need the new `pb-console-helper` on the Pi: one deploy. The repo is public: nothing secret or personal goes in this file.
 
 ## What every phase builds on (the foundation, done)
 
@@ -97,7 +97,7 @@ A guided checklist for R8 of the local plan (`docs/pi4-listener-kiosk-plan.md`):
 
 ## Phase 13: Data
 
-**Not built: waiting on Ross's choice of write path (below).**
+**Not built yet. Write path chosen by Ross, 28 Oct 2026: option 1, direct Postgres through `db/.env`.**
 
 Admin edits to the board data with a preview and an undo record.
 
@@ -107,7 +107,7 @@ Admin edits to the board data with a preview and an undo record.
 - Problem holds are stored inverted (CLAUDE.md "Data traps"); a label move rewrites ids in `start_holds`, `intermediate_holds`, `finish_hold`, never their order.
 - **Benchmarks:** `problems.is_benchmark`; only admins set it (the app's ⋮ menu); once set, only admins can edit or delete the problem (RLS); only benchmarks score (db/27).
 
-**How the console would write:** not with the service key. CLAUDE.md names the Edge Function as the only place the service-role key is used. Two options, Ross to choose:
+**How the console writes:** not with the service key. CLAUDE.md names the Edge Function as the only place the service-role key is used. Two options were weighed; Ross chose **1** (28 Oct 2026):
 1. **Direct Postgres** with `db/.env` (`SUPABASE_DB_URL`, as the db scripts and reviews use), through `pg8000` if it's installed (not the standard library: a decision), in one transaction per edit.
 2. **Signed in as an admin** (nickname + passphrase in the page, the session kept in memory only): writes go through RLS like the app's, with the anon key and the user's JWT. Turnstile guards sign-in, which a local page can't pass easily: check first.
 

@@ -440,5 +440,23 @@ class TileTests(unittest.TestCase):
         self.assertEqual(tiles.laptop_tiles(lap)[1]['level'], tiles.BAD)
 
 
+    def test_metrics(self):
+        p = {'ok': True, 'ms': 10, 'hardware': {'temp_c': 55, 'throttled': '0x0', 'disk_total': 100, 'disk_free': 60,
+                                                'mem_total': 100, 'mem_available': 50},
+             'wifi': {'ssid': 'Hangout', 'signal': 70}, 'listener': {'state': 'joined'}, 'casts_24h': 3,
+             'casts_recent': [{'at': 'x', 'name': 'a', 'mirror': False}],
+             'errors': {'last24h': {'kernel': 5, 'kiosk': 2}, 'before': {'kernel': 1}}, 'health': {}}
+        m = tiles.metrics(p, {'live': {'status': 200, 'cache': 'pb-v119'}, 'repo_cache': 'pb-v119'})
+        self.assertAlmostEqual(m['hw']['disk_used'], 0.4)
+        self.assertAlmostEqual(m['hw']['mem_used'], 0.5)
+        self.assertEqual(m['errors']['total'], 7)
+        self.assertEqual(m['errors']['sources'][0], ['kernel', 5, 1])
+        self.assertEqual(m['listener']['casts_24h'], 3)
+        self.assertEqual(m['site']['cache'], 'pb-v119')
+        down = tiles.metrics({'ok': False}, None)
+        self.assertFalse(down['pi_ok'])
+        self.assertNotIn('hw', down)
+
+
 if __name__ == '__main__':
     unittest.main()

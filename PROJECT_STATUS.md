@@ -44,7 +44,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 2. Cast contract finalised in docs/cast-contract.md. First version written 19 Oct 2026 from the code; its open questions need answers. (26 Oct: hardware items partly verified, see the log.)
 3. Mock listener on the laptop for end-to-end cast testing without hardware. (`tools/cast-test.html` already subscribes and logs every cast; it doesn't yet turn a cast into LED indices.) Lower priority now that the real board can be tested over the webcam.
 4. Hardware: **first light 26 Oct 2026** on temporary wiring. **Power feeds wired 28 Oct** (5.5 V under load, the far end white). Next: tidy and box the wiring, then fit the relay module and level shifter when they arrive; check column B direction.
-6. **PB Console** (`console/`, plan in `docs/console-plan.md`): phases 1–12, 14 and 15 built 28 Oct 2026. Next: deploy the new helper (one `bash pi/deploy.sh`, or the console's Deploy tab), then use it: pull pb-netwatch and pb-rescue into `pi/` (Deploy tab), a mirrored test cast, the R8 acceptance tests (Tests tab). Phase 13 (Data) waits for Ross's choice of write path; phase 14's switching waits for the relays.
+6. **PB Console** (`console/`, plan in `docs/console-plan.md`): phases 1–12, 14 and 15 built 28 Oct 2026. Next: deploy the new helper (one `bash pi/deploy.sh`, or the console's Deploy tab), then use it: pull pb-netwatch and pb-rescue into `pi/` (Deploy tab), a mirrored test cast, the R8 acceptance tests (Tests tab). Ross deployed the new helper (28 Oct evening). The overview is now a tiled dashboard with a sidebar and a Ctrl+K palette (28 Oct). Phase 13 (Data) is next, through direct Postgres (`db/.env`, Ross's choice, 28 Oct); phase 14's switching waits for the relays.
 5. Fresh Pi listener built to the contract, replacing the stopgap `cast_listener.py`: **built 26 Oct in `pi/`** with the resilience and night-mode spec (health checks, watchdogs, night 23:00–08:00, weekly reboot, `pb-status`). **Live since 26 Oct 21:08.** Next: check the first night (23:00 and 08:00), then the acceptance tests (plan R8: kill, freeze, Wi-Fi drop, Supabase blocked, reboot mid-cast, the clock across 23:00/08:00, boot with no network). Then wall-screen mode for the kiosk.
 
 ## Waiting on
@@ -73,6 +73,13 @@ Details in `docs/cast-contract.md` → "Open questions".
 
 ## Session log
 Newest first. Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-10-28 late evening, Claude Code (PB Console look and feel).**
+  - **Aligned first:** `main` fast-forwarded to `dev` (`092c28c`, console only, no `app/` change, live stays `pb-v119`). Ross had deployed the new helper.
+  - **Built:** the console's layout. A sidebar of grouped sections with status dots replaces the 15-tab bar; each section has a title and a line saying what it's for. The Overview is a tiled dashboard (`console/static/dash.js`): a status line (what needs a look, uptime, live CACHE, casts, last cast, day or night), the board tile (webcam with the LED state, and the LED, pattern, brightness, night and screen controls), listener with the last casts, casts over 7 days (per day, by hour), the Pi (temperature gauge, disk, memory, load), Wi-Fi, services with Restart, live site and Supabase, release, self-healing, journal errors by source, most cast, recent actions, night and timers. Clicking a tile opens a drawer with every line the old tiles had. Ctrl+K (or `/`) opens a palette of sections and quick actions, all through the usual confirm. Server side: `tiles.metrics()` (the raw numbers, one new test: 58 pass) and the probe's last 8 casts. The webcam stream stops when the Overview is hidden.
+  - **Noticed (not changed):** the overview shows journal errors at about 3,460 in 24 h against 22 the day before, nearly all from the kernel, and 19 self-healing actions (mostly `wifi-up` and `reboot-suppressed` around 15:20, network down with no IPv4 on wlan0). Worth a look in Logs (kernel) once the gym is closed.
+  - **Decided:** phase 13 (Data) writes through direct Postgres with `db/.env` (Ross).
+  - **Left:** phase 13; restart the console (`bash console/start.sh`) so the server side loads.
 
 - **2026-10-28 evening, Claude Code (PB Console, phases 5–12, 14, 15).**
   - **Built** (plan and what differs: `docs/console-plan.md`):
