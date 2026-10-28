@@ -193,9 +193,68 @@ def everything():
     }
 
 
+def activity(days):
+    """Casts from the listener's journal over the last `days` days (phase 10): [at, name, mirror, shown]."""
+    out = sh('journalctl', '-u', 'pb-listener', '--since', '-%dd' % days, '-o', 'short-iso', '--no-pager', '-q',
+             '--grep', r'cast received|ignored: night mode', timeout=60)
+    casts = []
+    for line in out.splitlines():
+        m = re.match(r"^(\S+) \S+ \S+: cast (?:received: )?'(.*?)'( mirrored)?( ignored: night mode)?$", line)
+        if m:
+            casts.append([m.group(1), m.group(2), bool(m.group(3)), not m.group(4)])
+    boots = [l for l in sh('journalctl', '--list-boots', '--no-pager', '-q').splitlines() if l.strip()]
+    first = boots[0].split() if boots else []
+    # the oldest boot line: IDX BOOT-ID Day YYYY-MM-DD HH:MM:SS ZONE ...: the journal starts there
+    return {'casts': casts, 'days': days, 'journal_from': ' '.join(first[3:5]) if len(first) > 4 else None}
+
+
+def last_night(date):
+    """What happened around NIGHT_START and NIGHT_END for the night starting on `date` (YYYY-MM-DD)."""
+    cfg = {}
+    for line in (read('/etc/projectboard/config.env') or '').splitlines():
+        if '=' in line and not line.lstrip().startswith('#'):
+            k, v = line.split('=', 1)
+            cfg[k.strip()] = v.strip()
+    start, end = cfg.get('NIGHT_START') or '23:00', cfg.get('NIGHT_END') or '08:00'
+    import datetime
+    d = datetime.date.fromisoformat(date)
+    s_at = datetime.datetime.combine(d, datetime.time.fromisoformat(start))
+    e_day = d + datetime.timedelta(days=1) if end <= start else d
+    e_at = datetime.datetime.combine(e_day, datetime.time.fromisoformat(end))
+
+    def around(t):
+        a, b = (t - datetime.timedelta(minutes=3)).strftime('%Y-%m-%d %H:%M:%S'), (t + datetime.timedelta(minutes=5)).strftime('%Y-%m-%d %H:%M:%S')
+        return sh('journalctl', '--since', a, '--until', b, '-o', 'short-iso', '--no-pager', '-q',
+                  '_SYSTEMD_UNIT=pb-listener.service', '+', '_SYSTEMD_UNIT=kiosk.service', '+',
+                  'SYSLOG_IDENTIFIER=pb-mode', timeout=30).splitlines()
+    return {'start': s_at.isoformat(), 'end': e_at.isoformat(), 'at_start': around(s_at)[-60:],
+            'at_end': around(e_at)[-60:], 'ignored': sh('journalctl', '-u', 'pb-listener', '--since',
+                                                        s_at.strftime('%Y-%m-%d %H:%M:%S'), '--until',
+                                                        e_at.strftime('%Y-%m-%d %H:%M:%S'), '-o', 'cat',
+                                                        '--no-pager', '-q', '--grep', 'ignored').splitlines()[-20:]}
+
+
+def config_backups():
+    d = '/var/lib/projectboard/config-backups'
+    out = []
+    try:
+        names = sorted((n for n in os.listdir(d) if n.startswith('config.env.')), reverse=True)
+    except OSError:
+        names = []
+    for n in names:
+        out.append({'name': n, 'text': read(os.path.join(d, n))})
+    return {'backups': out, 'current': read('/etc/projectboard/config.env')}
+
+
 def main(argv):
     if argv[:1] == ['busy']:
         out = busy()
+    elif argv[:1] == ['activity']:
+        out = activity(max(1, min(60, int(argv[1]) if len(argv) > 1 and argv[1].isdigit() else 14)))
+    elif argv[:1] == ['night'] and len(argv) > 1 and re.match(r'^\d{4}-\d{2}-\d{2}$', argv[1]):
+        out = last_night(argv[1])
+    elif argv[:1] == ['config']:
+        out = config_backups()
     else:
         out = everything()
         out['probe_ms'] = int((time.time() - out.pop('_t0')) * 1000)

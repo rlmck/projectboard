@@ -90,7 +90,7 @@ ssh -t pi@projectboard pb-ledmap stop      # end it from another terminal
 
 The laptop's admin console (`console/`, `bash console/start.sh`; see `console/README.md`) does most of what follows from a browser page: the health tiles, services, the LEDs, night mode, logs. Its root commands go through one helper, installed by `install.sh`:
 
-- `/usr/local/sbin/pb-console-helper` (`ops/pb-console-helper`), root-owned. It takes only `unit start|stop|restart` for `pb-listener`, `kiosk`, `board-cam`, `pb-netwatch`, `pb-health.timer`, `pb-mode.timer`; `reboot`; `night auto|day|night` (`NIGHT_FORCE`); `night-hours HH:MM HH:MM`; `screen on|off`; `backups`. It checks every argument, never uses a shell, logs each command to the journal as `pb-console`, and backs up `config.env` to `/var/lib/projectboard/config-backups/` (30 kept) before it changes it.
+- `/usr/local/sbin/pb-console-helper` (`ops/pb-console-helper`), root-owned. It takes only: `unit start|stop|restart` for `pb-listener`, `kiosk`, `board-cam`, `pb-netwatch`, `pb-health.timer`, `pb-mode.timer`; `reboot`; `night auto|day|night` (`NIGHT_FORCE`); `night-hours HH:MM HH:MM`; `screen on|off`; `backups`; `config-set KEY=VALUE...`, `config-restore <backup>` and `config-put` (a whole file on stdin), each key and value checked against its list (`KEYS`), restarting the listener only when a key it reads at start changed; `ledmap start|stop`; `hashes` (root-only files, for the drift check); `nm-export <connection>` and `backup` (a tar.gz on stdout), both with every password/psk/secret line removed; `test <step>` for the R8 acceptance tests (kill or freeze the listener, drop the Wi-Fi, block Supabase, set the clock, the weekly-reboot skip), each cutting step scheduling its own undo first. It checks every argument, never uses a shell, logs each command to the journal as `pb-console`, and backs up `config.env` to `/var/lib/projectboard/config-backups/` (30 kept) before it changes it.
 - `/etc/sudoers.d/pb-console` (`conf/pb-console.sudoers`): `pi` may run that helper, and nothing else, without a password. `install.sh` installs it only if `visudo -cf` accepts it. Deploys still ask for the password.
 
 By hand: `ssh pi@projectboard sudo pb-console-helper screen on` (for example).
@@ -113,6 +113,8 @@ From the repo root in Git Bash. Deploying restarts the listener, which clears th
 bash pi/deploy.sh --dry-run    # lists what would change
 bash pi/deploy.sh              # installs; sudo asks for the Pi's password once
 ```
+
+PB Console's Deploy tab runs the same script with `--sudo-stdin`: the password it was given goes to `sudo -S` on the Pi through stdin (never on a command line or in a file).
 
 `deploy.sh` copies `pi/` to `~/pb-deploy` on the Pi with scp and runs `install.sh` there. `install.sh` only installs files that differ, and restarts only what those files affect. On its first run it disables the stopgap `cast-listener`.
 

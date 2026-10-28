@@ -9,27 +9,45 @@ with /etc/sudoers.d/pb-console allowing pi to run it (and nothing else) as root:
     sudo pb-console-helper night-hours HH:MM HH:MM  NIGHT_START, NIGHT_END
     sudo pb-console-helper screen on|off            the day-time screen-off flag
     sudo pb-console-helper backups                  the config.env backups, newest first
+    sudo pb-console-helper config-set KEY=VALUE...  known keys, each value checked
+    sudo pb-console-helper config-restore <backup>  one of `backups`
+    sudo pb-console-helper config-put               a whole config.env on stdin, every line checked
+    sudo pb-console-helper ledmap start|stop        the LED mapping tool (pauses the listener)
+    sudo pb-console-helper hashes                   sha256 of the root-only files install.sh places
+    sudo pb-console-helper nm-export <connection>   a NetworkManager profile, secrets stripped
+    sudo pb-console-helper backup                   a tar.gz of the Pi's settings on stdout, secrets stripped
+    sudo pb-console-helper test <name> [arg]        the R8 acceptance-test steps (see TESTS)
 
 Everything else is refused. Every argument is checked against a fixed list or
 pattern before anything runs, and nothing is passed to a shell. Each command is
 one syslog line tagged pb-console.
 
-config.env writes change only the named keys (comments and order kept, a
-missing key appended), copy the old file to /var/lib/projectboard/config-backups
-first (the newest 30 kept), and replace it in one rename. The listener and
-pb-mode read the night settings by themselves (within 30 s and 1 min); this
-also runs pb-mode once so the screen follows at once.
+config.env writes accept only known keys with checked values (KEYS), keep
+comments and order, copy the old file to /var/lib/projectboard/config-backups
+first (the newest 30 kept), and replace it in one rename. Then: the listener
+restarts if a key it reads at start changed; the night keys are re-read by
+the listener and pb-mode by themselves (this also runs pb-mode once).
+
+Nothing secret leaves the Pi through here: nm-export and backup drop every
+psk/password/secret/key line from NetworkManager profiles, and never include
+secrets.env or the Tailscale state.
 
 Deploys are not here on purpose: install.sh runs from a folder pi can write, so
 it keeps needing the password.
 """
 import datetime
 import difflib
+import hashlib
+import io
 import os
 import re
+import signal
+import socket
 import subprocess
 import sys
 import syslog
+import tarfile
+import time
 
 CONFIG = '/etc/projectboard/config.env'
 BACKUPS = '/var/lib/projectboard/config-backups'
@@ -39,10 +57,126 @@ UNITS = ('pb-listener', 'kiosk', 'board-cam', 'pb-netwatch', 'pb-health.timer', 
 VERBS = ('start', 'stop', 'restart')
 HHMM = re.compile(r'^([01][0-9]|2[0-3]):[0-5][0-9]$')
 NIGHT = {'auto': '', 'day': 'day', 'night': 'night'}
+PATTERNS = ('glisten', 'chase', 'lava', 'breathe', 'aurora', 'rain', 'ripples', 'fireflies', 'teaser', 'wave')
+NM_DIR = '/etc/NetworkManager/system-connections'
+SECRET_LINE = re.compile(r'^\s*([A-Za-z0-9_-]*(psk|password|passwd|secret|private-key|wep-key\d*|pin)[A-Za-z0-9_-]*)\s*=',
+                         re.I)
+ROOT_ONLY = ('/etc/sudoers.d/pb-console',)
+SUPABASE_HOST = 'uqirowyfqwiceyjznosl.supabase.co'
 
 
 class Refused(Exception):
     pass
+
+
+# -- config.env: the keys and their checks (also used by the console's form) ----
+
+def _num(lo, hi, integer=False):
+    def check(v):
+        try:
+            n = int(v) if integer else float(v)
+        except ValueError:
+            return False
+        return lo <= n <= hi
+    check.range = (lo, hi, integer)
+    return check
+
+
+def _match(rx):
+    r = re.compile(rx)
+    return lambda v: bool(r.match(v))
+
+
+def _choice(*opts):
+    f = lambda v: v in opts  # noqa: E731
+    f.choices = opts
+    return f
+
+
+def _names(v):
+    return all(n in PATTERNS for n in v.replace(',', ' ').split())
+
+
+def _pins(v):
+    return all(p.isdigit() and 2 <= int(p) <= 27 for p in v.replace(',', ' ').split())
+
+
+# key: (check, group, what it is). Listener keys need a listener restart; the rest are re-read.
+KEYS = {
+    'SUPABASE_URL': (_match(r'^https://[a-z0-9]+\.supabase\.co$'), 'Supabase', 'the project URL'),
+    'SUPABASE_ANON_KEY': (_match(r'^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$'), 'Supabase', 'the public anon key'),
+    'BOARD_WALL': (_match(r'^[A-Za-z0-9_-]{1,40}$'), 'Supabase', 'board_config.wall'),
+    'BRIGHTNESS': (_num(0.05, 1), 'LEDs', 'cast brightness, 0.05-1'),
+    'STRIP_PIXELS': (_num(248, 1200, True), 'LEDs', 'pixels written on a cast, 248-1200'),
+    'POWER_BUDGET_MA': (_num(500, 20000, True), 'LEDs', 'cast current cap, mA'),
+    'MA_PER_CHANNEL': (_num(5, 60, True), 'LEDs', 'mA per colour channel at full'),
+    'IDLE_ANIMATION': (_choice('on', 'off'), 'Idle', 'on, or off (just clear the strip)'),
+    'IDLE_PATTERN': (_choice(*PATTERNS, 'cycle'), 'Idle', 'a pattern, or cycle'),
+    'IDLE_CYCLE': (_names, 'Idle', 'patterns to cycle through (empty = all)'),
+    'IDLE_CYCLE_MIN': (_num(0.25, 1440), 'Idle', 'minutes each in the cycle'),
+    'IDLE_AFTER_S': (_num(60, 86400, True), 'Idle', 'seconds after a cast before idle'),
+    'IDLE_BRIGHTNESS': (_num(0, 1), 'Idle', 'idle brightness, 0-1'),
+    'IDLE_MAX_AMPS': (_num(0.2, 5), 'Idle', 'idle current cap, A'),
+    'IDLE_FPS': (_num(5, 60, True), 'Idle', 'frames a second'),
+    'NIGHT_MODE': (_choice('on', 'off'), 'Night', 'on or off'),
+    'NIGHT_START': (lambda v: bool(HHMM.match(v)), 'Night', 'HH:MM'),
+    'NIGHT_END': (lambda v: bool(HHMM.match(v)), 'Night', 'HH:MM'),
+    'NIGHT_FORCE': (_choice('', 'day', 'night'), 'Night', 'empty (the clock), day or night'),
+    'WIFI_CONNECTION': (_match(r'^[A-Za-z0-9_.-]{1,64}$'), 'Network', 'the NetworkManager connection pb-health brings up'),
+    'WIFI_IFACE': (_match(r'^[a-z0-9]{1,15}$'), 'Network', 'the Wi-Fi interface'),
+    'RELAY_PINS': (_pins, 'Relays', 'BCM pins, comma separated (empty: not built)'),
+    'RELAY_ACTIVE_LOW': (_choice('yes', 'no'), 'Relays', 'yes or no'),
+}
+REREAD = ('NIGHT_', 'WIFI_', 'RELAY_')      # read again by the listener / pb-health / pb-mode each time
+
+
+def needs_restart(key):
+    return not key.startswith(REREAD)
+
+
+def check_value(key, value):
+    if key not in KEYS:
+        raise Refused('unknown key %s' % key)
+    if not re.match(r'^[A-Za-z0-9:._ ,/-]*$', value):
+        raise Refused('%s: characters not allowed' % key)
+    if not KEYS[key][0](value):
+        raise Refused('%s=%r: %s' % (key, value, KEYS[key][2]))
+
+
+def parse_config(text):
+    """{key: value} from config.env text (the last line for a key wins), quotes stripped."""
+    out = {}
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith('#') or '=' not in s:
+            continue
+        k, v = s.split('=', 1)
+        v = v.strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in '"\'':
+            v = v[1:-1]
+        out[k.strip()] = v
+    return out
+
+
+def check_text(text):
+    """A whole config.env: every setting line a known key with a good value."""
+    if len(text) > 20000:
+        raise Refused('config.env too long')
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith('#'):
+            continue
+        if '=' not in s:
+            raise Refused('not KEY=value: %r' % s[:60])
+        k, v = s.split('=', 1)
+        v = v.strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in '"\'':
+            v = v[1:-1]
+        check_value(k.strip(), v)
+    cfg = parse_config(text)
+    for k in ('SUPABASE_URL', 'SUPABASE_ANON_KEY'):
+        if not cfg.get(k):
+            raise Refused('%s must be set' % k)
 
 
 def log(msg):
@@ -65,7 +199,7 @@ def set_keys(text, values):
     that key) or appended. Comments, blank lines and order are kept."""
     lines = text.splitlines()
     for key, value in values.items():
-        if not re.match(r'^[A-Z][A-Z0-9_]*$', key) or not re.match(r'^[A-Za-z0-9:._ -]*$', value) or '\n' in value:
+        if not re.match(r'^[A-Z][A-Z0-9_]*$', key) or not re.match(r'^[A-Za-z0-9:._ ,/-]*$', value) or '\n' in value:
             raise Refused('bad config value %s=%r' % (key, value))
         hit = None
         for i, line in enumerate(lines):
@@ -86,18 +220,23 @@ def backups():
     return [os.path.join(BACKUPS, n) for n in names]
 
 
-def write_config(values, path=CONFIG):
+def replace_config(new, why, path=CONFIG):
+    """Back up, write atomically, print the diff. Returns the old text, or None if unchanged."""
     with open(path, encoding='utf-8') as f:
         old = f.read()
-    new = set_keys(old, values)
     if new == old:
-        print('config.env already has %s: nothing to change' % ', '.join('%s=%s' % kv for kv in values.items()))
-        return False
+        print('config.env unchanged')
+        return None
     os.makedirs(BACKUPS, mode=0o755, exist_ok=True)
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     backup = os.path.join(BACKUPS, 'config.env.%s' % stamp)
+    n = 1
+    while os.path.exists(backup):
+        n += 1
+        backup = os.path.join(BACKUPS, 'config.env.%s-%d' % (stamp, n))
     with open(backup, 'w', encoding='utf-8') as f:
         f.write(old)
+    os.chmod(backup, 0o644)
     tmp = path + '.pb-console'
     with open(tmp, 'w', encoding='utf-8') as f:
         f.write(new)
@@ -109,14 +248,45 @@ def write_config(values, path=CONFIG):
         os.remove(extra)
     sys.stdout.writelines(difflib.unified_diff(old.splitlines(True), new.splitlines(True),
                                                'config.env (before)', 'config.env (now)', n=0))
-    log('config.env: %s (backup %s)' % (', '.join('%s=%s' % kv for kv in values.items()), backup))
+    log('config.env: %s (backup %s)' % (why, backup))
+    return old
+
+
+def write_config(values, path=CONFIG):
+    with open(path, encoding='utf-8') as f:
+        old = f.read()
+    new = set_keys(old, values)
+    if new == old:
+        print('config.env already has %s: nothing to change' % ', '.join('%s=%s' % kv for kv in values.items()))
+        return False
+    replace_config(new, ', '.join('%s=%s' % kv for kv in values.items()), path)
     return True
+
+
+def apply_changes(old_text, new_text):
+    """After a config.env change: restart the listener if a key it reads at start changed; run pb-mode."""
+    if old_text is None:
+        return 0
+    a, b = parse_config(old_text), parse_config(new_text)
+    changed = sorted(k for k in set(a) | set(b) if a.get(k) != b.get(k))
+    print('changed: %s' % (', '.join(changed) or 'nothing'))
+    code = 0
+    if any(needs_restart(k) for k in changed):
+        log('restarting pb-listener for %s' % ', '.join(k for k in changed if needs_restart(k)))
+        code, out = run('systemctl', 'restart', 'pb-listener', timeout=60)
+        print(out or 'pb-listener restarted' if code == 0 else 'pb-listener restart failed: %s' % out)
+    else:
+        print('no restart needed: the listener and pb-mode re-read these')
+    apply_mode()
+    return code
 
 
 def apply_mode():
     code, out = run('systemctl', 'start', 'pb-mode.service', timeout=150)
     print('pb-mode run now: %s' % ('ok' if code == 0 else 'failed (%d) %s' % (code, out)))
 
+
+# -- commands ---------------------------------------------------------------------
 
 def cmd_unit(args):
     if len(args) != 2 or args[0] not in VERBS or args[1] not in UNITS:
@@ -183,8 +353,250 @@ def cmd_backups(args):
     return 0
 
 
+def cmd_config_set(args):
+    if not args or len(args) > len(KEYS):
+        raise Refused('config-set KEY=VALUE ...')
+    values = {}
+    for a in args:
+        if '=' not in a:
+            raise Refused('not KEY=VALUE: %r' % a[:60])
+        k, v = a.split('=', 1)
+        check_value(k, v)
+        values[k] = v
+    with open(CONFIG, encoding='utf-8') as f:
+        old = f.read()
+    new = set_keys(old, values)
+    check_text(new)
+    return apply_changes(replace_config(new, 'set ' + ', '.join(sorted(values))), new)
+
+
+def cmd_config_restore(args):
+    names = {os.path.basename(p): p for p in backups()}
+    if len(args) != 1 or args[0] not in names:
+        raise Refused('config-restore <one of the names `backups` lists>')
+    with open(names[args[0]], encoding='utf-8') as f:
+        new = f.read()
+    check_text(new)
+    return apply_changes(replace_config(new, 'restored ' + args[0]), new)
+
+
+def cmd_config_put(args, stdin=None):
+    if args:
+        raise Refused('config-put takes the file on stdin')
+    new = (stdin or sys.stdin).read(20001).replace('\r\n', '\n')
+    check_text(new)
+    return apply_changes(replace_config(new, 'replaced from PB Console'), new)
+
+
+def cmd_ledmap(args):
+    if len(args) != 1 or args[0] not in ('start', 'stop'):
+        raise Refused('ledmap start|stop')
+    log('ledmap %s' % args[0])
+    code, out = run('systemctl', args[0], 'pb-ledmap', timeout=60)
+    if out:
+        print(out)
+    if args[0] == 'stop':
+        for _ in range(10):
+            if run('systemctl', 'is-active', 'pb-listener')[1] == 'active':
+                break
+            time.sleep(1)
+    print('pb-ledmap %s, pb-listener %s' % (run('systemctl', 'is-active', 'pb-ledmap')[1],
+                                             run('systemctl', 'is-active', 'pb-listener')[1]))
+    return 0 if code == 0 else 1
+
+
+def cmd_hashes(args):
+    if args:
+        raise Refused('hashes takes no arguments')
+    for p in ROOT_ONLY:
+        try:
+            with open(p, 'rb') as f:
+                print('%s  %s' % (hashlib.sha256(f.read()).hexdigest(), p))
+        except OSError:
+            print('-  %s' % p)
+    return 0
+
+
+def nm_profiles():
+    """{connection name: keyfile path} from nmcli (names are what the console shows)."""
+    code, out = run('nmcli', '-t', '-f', 'NAME,FILENAME', 'connection', 'show')
+    found = {}
+    for line in out.splitlines():
+        name, _, path = line.rpartition(':')
+        name = name.replace('\\:', ':')
+        if path.startswith(NM_DIR + '/') and '/..' not in path:
+            found[name] = path
+    return found
+
+
+def strip_secrets(text):
+    return ''.join(l for l in text.splitlines(True) if not SECRET_LINE.match(l))
+
+
+def cmd_nm_export(args):
+    profiles = nm_profiles()
+    if len(args) != 1 or args[0] not in profiles:
+        raise Refused('nm-export <one of: %s>' % ', '.join(sorted(profiles)))
+    with open(profiles[args[0]], encoding='utf-8') as f:
+        sys.stdout.write(strip_secrets(f.read()))
+    log('nm-export %s (secrets stripped)' % args[0])
+    return 0
+
+
+def _add_text(tar, name, text):
+    data = text.encode('utf-8')
+    info = tarfile.TarInfo(name)
+    info.size, info.mtime, info.mode = len(data), int(time.time()), 0o644
+    tar.addfile(info, io.BytesIO(data))
+
+
+def cmd_backup(args):
+    if args:
+        raise Refused('backup takes no arguments')
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w:gz') as tar:
+        def add(path, arc):
+            if os.path.isfile(path) and not os.path.islink(path):
+                tar.add(path, arcname=arc, recursive=False)
+        add(CONFIG, 'etc/projectboard/config.env')
+        for p in backups():
+            add(p, 'var/lib/projectboard/config-backups/' + os.path.basename(p))
+        for d in ('/etc/systemd/system',):
+            for n in sorted(os.listdir(d)):
+                if n.startswith(('pb-', 'kiosk', 'board-cam', 'leds-off', 'cast-listener')):
+                    p = os.path.join(d, n)
+                    if os.path.isdir(p):
+                        for m in sorted(os.listdir(p)):
+                            add(os.path.join(p, m), 'etc/systemd/system/%s/%s' % (n, m))
+                    else:
+                        add(p, 'etc/systemd/system/' + n)
+        for d, prefix in (('/etc/systemd/journald.conf.d', 'pb-'), ('/etc/systemd/system.conf.d', 'pb-'),
+                          ('/etc/NetworkManager/conf.d', ''), ('/etc/tmpfiles.d', 'projectboard'),
+                          ('/usr/local/sbin', ''), ('/usr/local/bin', 'pb-'), ('/etc/sudoers.d', 'pb-')):
+            if os.path.isdir(d):
+                for n in sorted(os.listdir(d)):
+                    if n.startswith(prefix):
+                        add(os.path.join(d, n), d.lstrip('/') + '/' + n)
+        for name, path in sorted(nm_profiles().items()):
+            with open(path, encoding='utf-8') as f:
+                _add_text(tar, NM_DIR.lstrip('/') + '/' + os.path.basename(path), strip_secrets(f.read()))
+        _add_text(tar, 'MANIFEST.txt', 'PB Console backup of %s at %s. NetworkManager secrets removed.\n'
+                  % (socket.gethostname(), datetime.datetime.now().isoformat(timespec='seconds')))
+    sys.stdout.buffer.write(buf.getvalue())
+    sys.stdout.buffer.flush()
+    log('backup (%d bytes)' % len(buf.getvalue()))
+    return 0
+
+
+# -- the R8 acceptance tests (docs/pi4-listener-kiosk-plan.md, local) ---------------
+
+def _schedule(seconds, name, *cmd):
+    """Run cmd as a transient timer after seconds, so it happens even if SSH drops."""
+    run('systemctl', 'stop', name + '.timer', name + '.service')
+    return run('systemd-run', '--unit', name, '--on-active=%d' % seconds, '--timer-property=AccuracySec=1s', *cmd)
+
+
+def _supabase_ips():
+    ips = set()
+    for fam in (socket.AF_INET, socket.AF_INET6):
+        try:
+            for info in socket.getaddrinfo(SUPABASE_HOST, 443, fam, socket.SOCK_STREAM):
+                ips.add((fam, info[4][0]))
+        except OSError:
+            pass
+    return sorted(ips)
+
+
+def test_kill_listener(arg):
+    log('test: kill -9 pb-listener')
+    return run('systemctl', 'kill', '-s', 'KILL', 'pb-listener')
+
+
+def test_freeze_listener(arg):
+    code, pid = run('systemctl', 'show', '-p', 'MainPID', '--value', 'pb-listener')
+    if not pid.isdigit() or pid == '0':
+        raise Refused('pb-listener is not running')
+    log('test: SIGSTOP pb-listener (pid %s); systemd should restart it within 30 s' % pid)
+    os.kill(int(pid), getattr(signal, 'SIGSTOP', 19))
+    return 0, 'stopped pid %s: the watchdog should kill and restart it within 30 s' % pid
+
+
+def test_wifi_drop(arg):
+    cfg = parse_config(open(CONFIG, encoding='utf-8').read())
+    conn = cfg.get('WIFI_CONNECTION') or 'hangout-fixed'
+    log('test: Wi-Fi down in 5 s (%s), safety net up in 4 min' % conn)
+    _schedule(240, 'pb-test-wifi-up', '/usr/bin/nmcli', 'connection', 'up', conn)
+    return _schedule(5, 'pb-test-wifi-down', '/usr/bin/nmcli', 'connection', 'down', conn)
+
+
+def test_block_supabase(arg):
+    ips = _supabase_ips()
+    if not ips:
+        raise Refused('could not resolve %s' % SUPABASE_HOST)
+    v4 = [ip for f, ip in ips if f == socket.AF_INET]
+    v6 = [ip for f, ip in ips if f == socket.AF_INET6]
+    rules = 'table inet pbtest {\n chain out {\n  type filter hook output priority 0;\n'
+    if v4:
+        rules += '  ip daddr { %s } drop\n' % ', '.join(v4)
+    if v6:
+        rules += '  ip6 daddr { %s } drop\n' % ', '.join(v6)
+    rules += ' }\n}\n'
+    run('nft', 'delete', 'table', 'inet', 'pbtest')
+    p = subprocess.run(['nft', '-f', '-'], input=rules, capture_output=True, text=True)
+    if p.returncode:
+        return p.returncode, p.stderr
+    _schedule(720, 'pb-test-unblock', '/usr/sbin/nft', 'delete', 'table', 'inet', 'pbtest')
+    log('test: Supabase blocked (%s), unblocked automatically in 12 min' % ', '.join(ip for _, ip in ips))
+    return 0, 'blocked %s; unblocked in 12 min (or: test unblock-supabase)' % ', '.join(ip for _, ip in ips)
+
+
+def test_unblock_supabase(arg):
+    run('systemctl', 'stop', 'pb-test-unblock.timer')
+    log('test: Supabase unblocked')
+    return run('nft', 'delete', 'table', 'inet', 'pbtest')
+
+
+def test_clock(arg):
+    if not arg or not re.match(r'^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$', arg):
+        raise Refused('test clock HH:MM:SS')
+    log('test: clock set to %s (NTP off; back on automatically in 15 min)' % arg)
+    run('timedatectl', 'set-ntp', 'false')
+    _schedule(900, 'pb-test-ntp', '/usr/bin/timedatectl', 'set-ntp', 'true')
+    return run('date', '-s', arg)
+
+
+def test_clock_ntp(arg):
+    run('systemctl', 'stop', 'pb-test-ntp.timer')
+    log('test: NTP back on')
+    return run('timedatectl', 'set-ntp', 'true')
+
+
+def test_weekly_reboot(arg):
+    log('test: pb-weekly-reboot started by hand (skips if up under an hour)')
+    return run('systemctl', 'start', 'pb-weekly-reboot.service', timeout=60)
+
+
+TESTS = {'kill-listener': test_kill_listener, 'freeze-listener': test_freeze_listener,
+         'wifi-drop': test_wifi_drop, 'block-supabase': test_block_supabase,
+         'unblock-supabase': test_unblock_supabase, 'clock': test_clock, 'clock-ntp': test_clock_ntp,
+         'weekly-reboot': test_weekly_reboot}
+
+
+def cmd_test(args):
+    if not args or args[0] not in TESTS or len(args) > 2:
+        raise Refused('test <%s> [HH:MM:SS for clock]' % '|'.join(TESTS))
+    if args[0] != 'clock' and len(args) > 1:
+        raise Refused('test %s takes no argument' % args[0])
+    code, out = TESTS[args[0]](args[1] if len(args) > 1 else None)
+    if out:
+        print(out)
+    return 0 if code == 0 else 1
+
+
 COMMANDS = {'unit': cmd_unit, 'reboot': cmd_reboot, 'night': cmd_night, 'night-hours': cmd_night_hours,
-            'screen': cmd_screen, 'backups': cmd_backups}
+            'screen': cmd_screen, 'backups': cmd_backups, 'config-set': cmd_config_set,
+            'config-restore': cmd_config_restore, 'config-put': cmd_config_put, 'ledmap': cmd_ledmap,
+            'hashes': cmd_hashes, 'nm-export': cmd_nm_export, 'backup': cmd_backup, 'test': cmd_test}
 
 
 def main(argv):

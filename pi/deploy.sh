@@ -4,6 +4,8 @@
 #
 #   bash pi/deploy.sh            copy, install what changed, restart what needs it
 #   bash pi/deploy.sh --dry-run  copy, then only list what would change
+#   ... --sudo-stdin             PB Console: the Pi's password comes on stdin (one line),
+#                                for sudo -S, instead of a terminal prompt
 #
 # Plain ssh/scp over Tailscale (no rsync on Windows). Copies pi/ into ~/pb-deploy
 # on the Pi, then runs install.sh there under sudo: one password prompt.
@@ -13,6 +15,20 @@
 set -euo pipefail
 HOST="${PB_HOST:-pi@projectboard}"
 STAGE=pb-deploy
+SUDO_STDIN=0
+ARGS=()
+for a in "$@"; do
+    case "$a" in
+        --sudo-stdin) SUDO_STDIN=1 ;;
+        --dry-run) ARGS+=(--dry-run) ;;
+        *) echo "deploy.sh [--dry-run] [--sudo-stdin]"; exit 2 ;;
+    esac
+done
+PW=""
+if [ $SUDO_STDIN -eq 1 ]; then
+    IFS= read -r PW || true     # kept in this shell only: never on a command line or in a file
+    [ -n "$PW" ] || { echo "!! --sudo-stdin: no password on stdin"; exit 1; }
+fi
 cd "$(dirname "$0")/.."
 [ -f pi/install.sh ] || { echo "Run it from the repo: bash pi/deploy.sh"; exit 1; }
 
@@ -25,7 +41,7 @@ if [ -f pi/config.env ] && grep -q $'\r' pi/config.env; then
 fi
 
 echo "== Copying pi/ to $HOST:~/$STAGE"
-ssh "$HOST" "rm -rf ~/$STAGE && mkdir -p ~/$STAGE/listener/patterns ~/$STAGE/ledmap ~/$STAGE/ops ~/$STAGE/systemd/kiosk.service.d ~/$STAGE/conf"
+ssh -n "$HOST" "rm -rf ~/$STAGE && mkdir -p ~/$STAGE/listener/patterns ~/$STAGE/ledmap ~/$STAGE/ops ~/$STAGE/systemd/kiosk.service.d ~/$STAGE/conf"
 scp -q pi/install.sh pi/config.env.example "$HOST:$STAGE/"
 scp -q pi/listener/*.py "$HOST:$STAGE/listener/"
 scp -q pi/listener/patterns/*.py "$HOST:$STAGE/listener/patterns/"
@@ -41,5 +57,10 @@ if [ -f pi/config.env ]; then
     echo "   with pi/config.env"
 fi
 
-echo "== Installing (sudo will ask for the Pi's password)"
-ssh -t "$HOST" "sudo bash ~/$STAGE/install.sh $*"
+if [ $SUDO_STDIN -eq 1 ]; then
+    echo "== Installing"
+    printf '%s\n' "$PW" | ssh "$HOST" "sudo -S -p '' bash ~/$STAGE/install.sh ${ARGS[*]+${ARGS[*]}}"
+else
+    echo "== Installing (sudo will ask for the Pi's password)"
+    ssh -t "$HOST" "sudo bash ~/$STAGE/install.sh ${ARGS[*]+${ARGS[*]}}"
+fi

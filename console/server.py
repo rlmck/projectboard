@@ -37,6 +37,10 @@ sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 import actions  # noqa: E402
 import checks  # noqa: E402
+import drift  # noqa: E402
+import gitops  # noqa: E402
+import reports  # noqa: E402
+import supabase_api as supa  # noqa: E402
 import security  # noqa: E402
 import tiles  # noqa: E402
 from remote import Remote  # noqa: E402
@@ -45,6 +49,7 @@ STATIC = {
     '/': ('static/index.html', 'text/html; charset=utf-8'),
     '/static/console.css': ('static/console.css', 'text/css; charset=utf-8'),
     '/static/console.js': ('static/console.js', 'text/javascript; charset=utf-8'),
+    '/static/more.js': ('static/more.js', 'text/javascript; charset=utf-8'),
     '/static/icon.svg': ('static/icon.svg', 'image/svg+xml'),
     '/tokens.css': ('../app/tokens.css', 'text/css; charset=utf-8'),   # the app's own design tokens
 }
@@ -91,6 +96,9 @@ class Console:
         self.cam_url = self.env.get('PB_CAM_URL') or 'http://projectboard:8080/stream'
         p = urllib.parse.urlparse(self.cam_url)
         self.cam_origin = '%s://%s' % (p.scheme, p.netloc) if p.netloc else ''
+        self.ledmap_url = self.env.get('PB_LEDMAP_URL') or 'http://projectboard:8081/'
+        p = urllib.parse.urlparse(self.ledmap_url)
+        self.ledmap_origin = '%s://%s' % (p.scheme, p.netloc) if p.netloc else ''
         self.err_warn = int(self.env.get('PB_ERR_WARN') or 50)
         self.err_bad = int(self.env.get('PB_ERR_BAD') or 500)
         self.lock = threading.Lock()          # one action at a time
@@ -144,10 +152,115 @@ class Console:
 def _night_cfg(text):
     out = {}
     for line in (text or '').splitlines():
-        m = re.match(r'^\s*(NIGHT_[A-Z]+|IDLE_PATTERN|BRIGHTNESS|IDLE_BRIGHTNESS)\s*=\s*(.*)$', line)
+        m = re.match(r'^\s*(NIGHT_[A-Z]+|IDLE_PATTERN|BRIGHTNESS|IDLE_BRIGHTNESS|RELAY_[A-Z_]+)\s*=\s*(.*)$', line)
         if m:
             out[m.group(1)] = m.group(2).strip().strip('"\'')
     return out
+
+
+MAX_BODY = 4 * 1024 * 1024       # the LED mapping export is the biggest (~200 KB)
+
+
+def _num(q, key, default, lo, hi):
+    try:
+        return max(lo, min(hi, int(q.get(key) or default)))
+    except ValueError:
+        raise ValueError('%s: a number' % key)
+
+
+def r_config(app, q):
+    raw = app.remote.probe('config')
+    if not raw.get('ok'):
+        raise RuntimeError(raw.get('error') or 'the Pi did not answer')
+    h = actions.helper()
+    current = raw.get('current') or ''
+    return {'values': h.parse_config(current), 'keys': actions.config_keys(), 'text': current,
+            'drift': actions.config_drift(current), 'laptop_exists': actions.laptop_config() is not None,
+            'backups': [{'name': b['name'], 'diff': actions.text_diff(b['text'], current, b['name'], 'config.env (now)')}
+                        for b in raw.get('backups') or []]}
+
+
+def r_drift(app, q):
+    from remote import helper_cmd
+    code, text, err = app.remote.run(drift.remote_script(), timeout=60)
+    if code == 255:
+        raise RuntimeError(err.strip() or 'ssh failed')
+    rcode, root, _ = app.remote.run(helper_cmd('hashes'), timeout=30)
+    out = drift.compare(text, root if rcode == 0 else '')
+    out['config_drift'] = actions.config_drift(app.pi().get('config_env'))
+    return out
+
+
+def r_git(app, q):
+    return gitops.status()
+
+
+def r_git_diff(app, q):
+    path = q.get('path')
+    if path and path not in {f['path'] for f in gitops.status()['files']}:
+        raise ValueError('path: one of the changed files')
+    return {'diff': gitops.diff(path, staged=q.get('staged') == '1')}
+
+
+def r_live(app, q):
+    s = checks.site(checks.LIVE)
+    return {'cache': s.get('cache'), 'status': s.get('status'), 'repo': gitops.checks()['cache'],
+            'staging': checks.site(checks.STAGING).get('cache')}
+
+
+def r_ledmap(app, q):
+    b = app.remote.busy() or {}
+    return {'state': b.get('pb_ledmap'), 'url': app.ledmap_url, 'history': reports.ledmap_history()}
+
+
+def r_problems(app, q):
+    return {'problems': supa.problems(app.env)}
+
+
+def r_problem(app, q):
+    name = q.get('name') or ''
+    row = supa.problem(name, app.env)
+    if not row:
+        raise ValueError('no problem called %r' % name)
+    return {'name': row['name'], 'grade': row.get('grade'),
+            'holds': supa.holds_with_mirror(row, supa.board(app.env).get('mirror_map'))}
+
+
+def r_activity(app, q):
+    days = _num(q, 'days', 14, 1, 60)
+    raw = app.remote.probe('activity %d' % days)
+    if not raw.get('ok'):
+        raise RuntimeError(raw.get('error') or 'the Pi did not answer')
+    return reports.activity(raw)
+
+
+def r_acceptance(app, q):
+    return {'tests': reports.acceptance()}
+
+
+def r_last_night(app, q):
+    import datetime
+    date = q.get('date') or (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', date):
+        raise ValueError('date: YYYY-MM-DD')
+    raw = app.remote.probe('night %s' % date)
+    if not raw.get('ok'):
+        raise RuntimeError(raw.get('error') or 'the Pi did not answer')
+    return reports.night_report(raw)
+
+
+def r_backups(app, q):
+    return {'backups': reports.backups_list()}
+
+
+def r_runbook(app, q):
+    return {'sections': reports.runbook()}
+
+
+GET_ROUTES = {'/api/config': r_config, '/api/drift': r_drift, '/api/git': r_git, '/api/git-diff': r_git_diff,
+              '/api/live': r_live, '/api/ledmap': r_ledmap, '/api/problems': r_problems, '/api/problem': r_problem,
+              '/api/activity': r_activity, '/api/acceptance': r_acceptance, '/api/last-night': r_last_night,
+              '/api/backups': r_backups, '/api/runbook': r_runbook}
 
 
 class ConsoleServer(ThreadingHTTPServer):
@@ -173,7 +286,7 @@ def make_handler(app):
         def _headers(self, code, ctype, extra=None):
             self.send_response(code)
             self.send_header('Content-Type', ctype)
-            for k, v in security.headers(app.cam_origin).items():
+            for k, v in security.headers(app.cam_origin, app.ledmap_origin).items():
                 self.send_header(k, v)
             for k, v in (extra or {}).items():
                 self.send_header(k, v)
@@ -188,6 +301,12 @@ def make_handler(app):
             path = urllib.parse.urlsplit(self.path).path
             refused = app.gate.check(method, path, self.headers)
             if refused:
+                try:                      # drain a small body, so the client sees the answer, not a reset
+                    n = int(self.headers.get('Content-Length') or 0)
+                    if 0 < n <= 65536:
+                        self.rfile.read(n)
+                except (ValueError, OSError):
+                    pass
                 self._json(refused[0], {'error': refused[1]})
                 return None
             return path
@@ -217,6 +336,14 @@ def make_handler(app):
                                         'units': actions.UNITS})
             if path == '/api/logs':
                 return self.logs(q)
+            route = GET_ROUTES.get(path)
+            if route:
+                try:
+                    return self._json(200, route(app, q))
+                except ValueError as e:
+                    return self._json(400, {'error': str(e)})
+                except Exception as e:
+                    return self._json(502, {'error': '%s: %s' % (type(e).__name__, e)})
             return self._json(404, {'error': 'not found'})
 
         def do_POST(self):
@@ -225,15 +352,28 @@ def make_handler(app):
                 return
             try:
                 n = int(self.headers.get('Content-Length') or 0)
-                body = json.loads(self.rfile.read(min(n, 65536)) or b'{}') if n else {}
+                if n > MAX_BODY:
+                    return self._json(413, {'error': 'too big'})
+                body = json.loads(self.rfile.read(n) or b'{}') if n else {}
                 if not isinstance(body, dict):
                     raise ValueError
             except ValueError:
                 return self._json(400, {'error': 'send a JSON object'})
+            if path == '/api/ledmap-results':
+                try:
+                    return self._json(200, {'saved': reports.ledmap_save(body.get('results'))})
+                except ValueError as e:
+                    return self._json(400, {'error': str(e)})
             if path == '/api/preview':
                 return self.preview(body)
             if path == '/api/action':
                 return self.action(body)
+            if path == '/api/acceptance-note':
+                try:
+                    reports.save_note(body.get('id'), body.get('result'), body.get('note'))
+                except ValueError as e:
+                    return self._json(400, {'error': str(e)})
+                return self._json(200, {'ok': True})
             return self._json(404, {'error': 'not found'})
 
         def do_PUT(self):
@@ -247,10 +387,12 @@ def make_handler(app):
                 a = actions.build(body.get('action'), body.get('args'))
             except actions.Invalid as e:
                 return self._json(400, {'error': str(e)})
-            out = {'describe': a.describe, 'confirm': a.confirm, 'busy_check': a.busy, 'config': a.config}
+            out = {'describe': a.describe, 'confirm': a.confirm, 'busy_check': a.busy, 'config': a.config,
+                   'shown': a.shown}
+            out.update(a.preview)
             if a.busy:
                 out['busy'] = app.remote.busy()
-            if a.config:
+            if a.config == 'keep':
                 p = app.pi(refresh=True)
                 out['config_drift'] = actions.config_drift(p.get('config_env')) if p.get('ok') else None
             return self._json(200, out)
@@ -276,7 +418,7 @@ def make_handler(app):
                         why = 'the Pi did not answer the busy check' if b is None else 'a cast came in during the last 5 minutes'
                         actions.audit(a.name, 'refused', why)
                         return self._json(409, {'error': why, 'busy': b})
-                if a.config:
+                if a.config == 'keep':
                     p = app.pi(refresh=True)
                     if not p.get('ok'):
                         return self._json(502, {'error': 'the Pi did not answer: %s' % p.get('error')})
@@ -293,8 +435,14 @@ def make_handler(app):
         def run_streamed(self, a):
             t0 = time.monotonic()
             self._headers(200, 'text/plain; charset=utf-8')
-            self.wfile.write(('$ %s\n' % a.cmd).encode())
-            code, cut = self.pump(app.remote.start(a.cmd), timeout=a.timeout)
+            self.wfile.write(('$ %s\n' % a.shown).encode())
+            try:
+                proc = a.start(app)
+            except OSError as e:
+                self.wfile.write(('could not start: %s\n' % e).encode())
+                actions.audit(a.name, 'failed', str(e))
+                return
+            code, cut = self.pump(proc, timeout=a.timeout)
             ms = int((time.monotonic() - t0) * 1000)
             extra = ''
             if a.config and code == 0:

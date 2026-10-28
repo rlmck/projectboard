@@ -67,7 +67,7 @@ class FakeRemote:
     def busy(self):
         return self.busy_result
 
-    def start(self, cmd):
+    def start(self, cmd, stdin=None):
         import subprocess
         self.cmds.append(cmd)
         code = 'import sys,time\nprint("ran", flush=True)\n'
@@ -131,7 +131,7 @@ class GateTests(unittest.TestCase):
             security.Gate('short', 8765)
 
 
-class ServerTests(unittest.TestCase):
+class ServerBase(unittest.TestCase):
     """The real HTTP server on 127.0.0.1, with ssh and the laptop checks faked."""
 
     def setUp(self):
@@ -179,6 +179,8 @@ class ServerTests(unittest.TestCase):
     def audit_rows(self):
         return actions.audit_tail(100, actions.AUDIT)
 
+
+class ServerTests(ServerBase):
     def test_no_token_rejected(self):
         self.assertEqual(self.req('GET', '/api/state', token=None)[0], 401)
         self.assertEqual(self.req('POST', '/api/action', {'action': 'idle', 'args': {'cmd': 'now'}}, token=None)[0], 401)
@@ -294,9 +296,9 @@ class ServerTests(unittest.TestCase):
         self.remote.config = 'NIGHT_FORCE=\n'             # the same: runs, then the laptop copy follows the Pi
         orig = self.remote.start
 
-        def start(cmd):
+        def start(cmd, stdin=None):
             self.remote.config = 'NIGHT_FORCE=night\n'
-            return orig(cmd)
+            return orig(cmd, stdin)
         self.remote.start = start
         self.assertEqual(self.req('POST', '/api/action', body)[0], 200)
         with open(actions.LAPTOP_CONFIG, 'rb') as f:
@@ -317,10 +319,10 @@ class ServerTests(unittest.TestCase):
 
 class ActionTableTests(unittest.TestCase):
     def test_commands_are_fixed(self):
-        self.assertEqual(actions.build('idle', {'cmd': 'tour'}).cmd, 'pb-idle tour')
-        self.assertEqual(actions.build('brightness', {'value': 0.5}).cmd, 'pb-idle brightness 0.5')
+        self.assertEqual(actions.build('idle', {'cmd': 'tour'}).shown, 'pb-idle tour')
+        self.assertEqual(actions.build('brightness', {'value': 0.5}).shown, 'pb-idle brightness 0.5')
         a = actions.build('night-hours', {'start': '22:30', 'end': '07:00'})
-        self.assertEqual(a.cmd, 'sudo -n /usr/local/sbin/pb-console-helper night-hours 22:30 07:00')
+        self.assertEqual(a.shown, 'sudo -n /usr/local/sbin/pb-console-helper night-hours 22:30 07:00')
         self.assertTrue(a.confirm and a.config and not a.busy)
         r = actions.build('reboot', {})
         self.assertTrue(r.confirm and r.busy)

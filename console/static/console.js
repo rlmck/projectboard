@@ -91,6 +91,8 @@ function showTab(name) {
   try { localStorage.setItem('pb-console-tab', name); } catch (e) { /* ignore */ }
   if (name === 'audit') loadState();
   if (name === 'board') startCam();
+  const hook = window.PB && window.PB.tabHooks[name];
+  if (hook) hook();
 }
 
 // -- overview ------------------------------------------------------------------
@@ -205,8 +207,10 @@ function confirmDialog(pre, title) {
       bb.textContent = 'Someone cast in the last 5 minutes' + (names.length ? ': ' + names.join(', ') : '') + '. The board may be in use.';
     }
     const diff = $('confirm-diff');
-    diff.hidden = !pre.config_drift;
-    diff.textContent = pre.config_drift || '';
+    const extra = [pre.shown ? '$ ' + pre.shown : '', (pre.warnings || []).map((w) => '! ' + w).join('\n'),
+      pre.log ? 'Commits:\n' + pre.log : '', pre.diff || ''].filter(Boolean).join('\n\n');
+    diff.hidden = !(pre.config_drift || extra);
+    diff.textContent = pre.config_drift || extra;
     $('confirm-ok').disabled = !!pre.config_drift;
     if (pre.config_drift) $('confirm-text').textContent = pre.describe + " — refused: the laptop's pi/config.env and the Pi's differ (below). Make them the same first.";
     d.returnValue = '';
@@ -216,6 +220,7 @@ function confirmDialog(pre, title) {
 }
 
 async function runAction(action, args, label) {
+  // Returns true when the action ran and finished OK.
   if (running) { toast('Another action is running'); return; }
   running = true;
   setLock(label);
@@ -244,12 +249,14 @@ async function runAction(action, args, label) {
     const ok = result && result.ok;
     $('output-title').textContent = label + (ok ? ' — done' : ' — failed' + (result ? ' (exit ' + result.code + ')' : ''));
     toast(label + (ok ? ': done' : ': failed'));
+    return !!ok;
   } catch (e) {
     if (e.message !== 'no token') toast('Error: ' + e.message, 6000);
   } finally {
     running = false;
     setLock(null);
     setTimeout(() => loadOverview(true), 1500);
+    if (window.PB && window.PB.afterAction) window.PB.afterAction(action);
   }
 }
 
@@ -348,4 +355,6 @@ async function boot() {
   setInterval(() => { if (!document.hidden && !running) loadState(); }, 10000);
 }
 
+window.PB = { api, apiJson, readStream, esc, toast, runAction, tabHooks: {}, afterAction: null,
+  state: () => state, overview: () => overview, showTab };
 boot();

@@ -1,6 +1,6 @@
 # PB Console: the plan
 
-PB Console (`console/`, see `console/README.md`) is a local admin console for the Project Board, run on Ross's laptop with `bash console/start.sh`. It's for running, tuning, fixing and shipping without opening a Claude Code session; new features are still written in Claude Code. **One phase per session.** Phases 1–4 and the foundation were built on 28 Oct 2026; this file is the plan for 5–15, written so a later session can take one phase and build it. The repo is public: nothing secret or personal goes in this file.
+PB Console (`console/`, see `console/README.md`) is a local admin console for the Project Board, run on Ross's laptop with `bash console/start.sh`. It's for running, tuning, fixing and shipping without opening a Claude Code session; new features are still written in Claude Code. Phases 1–4 and the foundation were built on 28 Oct 2026, and **phases 5–12, 14 and 15 later the same day** (Ross asked to carry on). Each phase below says what was built and where it differs from the plan. **Phase 13 (Data) is not built**: it needs Ross's choice of write path. Phases 5, 6 (NetworkManager pull, root hashes), 8, 11 and 12 need the new `pb-console-helper` on the Pi: one deploy. The repo is public: nothing secret or personal goes in this file.
 
 ## What every phase builds on (the foundation, done)
 
@@ -14,6 +14,8 @@ PB Console (`console/`, see `console/README.md`) is a local admin console for th
 
 ## Phase 5: Config
 
+**Built 28 Oct 2026** as below. The key checks live once, in the helper (`KEYS`); the console loads the helper file to use the same checks in its form. "Make the laptop match" is `config-pull` (a local write); "make the Pi match" is the helper's `config-put` with the laptop's file on stdin.
+
 Edit the Pi's `config.env` in a form.
 
 - **Read:** the probe already returns `config_env`. Parse it with the same rules as `pi/listener/mode.py` `load_config` (KEY=value, # comments, quotes stripped).
@@ -25,6 +27,8 @@ Edit the Pi's `config.env` in a form.
 
 ## Phase 6: Pi deploy
 
+**Built 28 Oct 2026.** `deploy.sh --sudo-stdin` reads one line (the password) into a shell variable and pipes it to `sudo -S` on the Pi; its other ssh calls use `-n` so they can't eat it. Pulled files land in `pi/ops/`, `pi/systemd/` or `pi/conf/`; their `install.sh` lines are still added by hand, in a session, and reviewed.
+
 - **Run `pi/deploy.sh` with streamed output.** It ends in `ssh -t … sudo bash ~/pb-deploy/install.sh`; for the console, add a `--sudo-stdin` mode to `deploy.sh` (or have the console run the same scp steps itself) that runs `sudo -S -p '' bash …` and writes the password the user typed into the page to its stdin. The password is never stored, logged or put on a command line; the field clears after use. Add `--dry-run` as its own button (it needs the password too, since install.sh runs as root).
 - Confirm, busy check, the lock, the audit (without the password). A deploy restarts the listener when listener files changed: say so in the confirm (from a dry run).
 - **Drift check:** a new probe mode that returns sha256 of every installed file `install.sh` places (its `put` list: `/opt/projectboard/…`, `/usr/local/bin/pb-*`, `/usr/local/sbin/pb-console-helper`, `/etc/systemd/system/<units>`, the conf drop-ins, `/etc/sudoers.d/pb-console` (root-only: the helper gets a `hashes` verb for root-readable files)). Compare with the repo's files and list: same, differs, missing on the Pi.
@@ -32,6 +36,8 @@ Edit the Pi's `config.env` in a form.
 - **Pull into `pi/`:** a button per file copies it into the repo (`pi/ops/`, `pi/systemd/`, `pi/conf/`). For a NetworkManager profile, the helper reads it and **strips `psk=`, `password`, `secret`, `private-key` lines before it leaves the Pi**; the laptop checks again for them and refuses to write a file that still has one. Never pull a Wi-Fi keyfile or `secrets.env`. Then `install.sh` gains the matching `put` lines (in the same session, reviewed by Ross).
 
 ## Phase 7: App release
+
+**Built 28 Oct 2026.** New (untracked) files start unticked in the commit list, so nothing unrelated gets committed by default. Console commits carry no attribution lines.
 
 - **Status:** `git status`, the branch, ahead/behind `origin/dev` and `origin/main`, `git pull --ff-only` (and `git pull --ff-only origin main` on `dev`, as CLAUDE.md asks).
 - **Diff:** `git diff` and `git diff --stat` for what would be committed; staged and unstaged shown apart.
@@ -44,11 +50,15 @@ Edit the Pi's `config.env` in a form.
 
 ## Phase 8: LED mapping
 
+**Built 28 Oct 2026**: start/stop through the helper, the page in an iframe (the console's CSP allows `frame-src http://projectboard:8081`), results kept by adding the exported file on the tab.
+
 - Start and stop `pb-ledmap` through new helper verbs (`ledmap start|stop`, i.e. `systemctl start|stop pb-ledmap`), with the busy check and a confirm (it pauses the listener; the board shows the mapping tool's LEDs until it ends). `Conflicts=` keeps it and the listener apart; the console adds nothing around that.
 - Embed `http://projectboard:8081/` in an iframe beside the webcam (add `frame-src http://projectboard:8081` to the console's CSP; the mapping page itself must allow being framed by `http://127.0.0.1:<port>`: today it sends no frame headers, check that). Or open it in a new tab if framing is a problem.
 - **Results history:** the page's Export JSON goes to the browser. Add an "export to the console" button on the mapping page? Simpler: a POST to the console with the exported JSON, saved in `console/data/ledmap/<date>.json` (gitignored), and a list with OK / wrong / unchecked counts per run.
 
 ## Phase 9: Test cast
+
+**Built 28 Oct 2026.** The endpoint is what the vendored supabase-js `httpSend` posts to: `POST /realtime/v1/api/broadcast/board%3AHangoutPortland/events/cast_problem`, the payload as the body, 202 on success. No change to the contract.
 
 - Send `cast_problem` on `board:HangoutPortland` from the laptop: an HTTPS POST to Realtime's broadcast endpoint (`/realtime/v1/api/broadcast`, the anon key, `{"messages":[{"topic":"board:HangoutPortland","event":"cast_problem","payload":{"problem_name":…,"mirror":true?}}]}`), exactly the contract's payload (`docs/cast-contract.md` §3; never `mirror: false`). Check what `httpSend` posts in the vendored supabase-js first and copy it. **A real cast lights the real board**: confirm, and note the time (night mode ignores it).
 - **The problem picker:** names from `problems` (anon read), with a search.
@@ -58,12 +68,16 @@ Edit the Pi's `config.env` in a form.
 
 ## Phase 10: Activity
 
+**Built 28 Oct 2026, Pi side only** (casts per day and hour, mirrored, ignored at night, top problems). The Supabase counts wait for phase 13's admin path.
+
 - **From the Pi's journal** (the persistent journal holds weeks; 200 MB cap): `cast received` lines → casts per day and per hour of day, mirrored share, casts ignored at night, the top problems by name (problem names aren't personal).
 - **From Supabase:** ticks per day and distinct users per day, as **counts only** (no nicknames, no ids). With the anon key the `leaderboard()` RPC is public; ticks are own-row only under RLS, so counts need either an admin path (see phase 13: direct Postgres with `db/.env`, read-only) or a new aggregate RPC (a schema change: Ross's call, CLAUDE.md rule 6).
 - Cache the results in `console/data/` (gitignored). Charts as inline SVG (no libraries; the CSP allows nothing else).
 - **Never write any of it into the repo.**
 
 ## Phase 11: Acceptance tests (plan R8)
+
+**Built 28 Oct 2026**: the helper's `test` verbs below, the checklist, and the night check. Not yet run on the board.
 
 A guided checklist for R8 of the local plan (`docs/pi4-listener-kiosk-plan.md`): kill, freeze, Wi-Fi drop, Supabase blocked, reboot mid-cast, 23:00/08:00, boot with no network, and the weekly-reboot skip.
 
@@ -75,11 +89,15 @@ A guided checklist for R8 of the local plan (`docs/pi4-listener-kiosk-plan.md`):
 
 ## Phase 12: Backups
 
+**Built 28 Oct 2026** (the helper's `backup` verb, and the anon export of the four public tables).
+
 - **Pi config:** one button pulls `/etc/projectboard/config.env` and its backups, the units in `/etc/systemd/system/pb-*`, `kiosk.service` and its drop-ins, the conf drop-ins, `/usr/local/sbin/*`, and the NetworkManager profiles **with secrets stripped on the Pi** (the same stripping as phase 6), into `backups/<date>/pi/` at the repo root (gitignored). Root-only files come through a helper verb (`backup-tar`), which writes a tarball to stdout with the secrets stripped.
 - **Supabase:** a local export of `problems`, `circuits`, `board_config` (hold map, mirror map, outlines), `challenges` as JSON into `backups/<date>/supabase/`. Public tables with the anon key; anything else only through the admin path in phase 13. No `profiles`, ticks or attempts unless Ross asks (personal data, and the repo is public: the folder is gitignored, but keep it to what's needed).
 - A list of backups with sizes and dates.
 
 ## Phase 13: Data
+
+**Not built: waiting on Ross's choice of write path (below).**
 
 Admin edits to the board data with a preview and an undo record.
 
@@ -99,12 +117,16 @@ First edits worth having: mark or unmark a benchmark; the mirror partner of one 
 
 ## Phase 14: Power
 
+**Built 28 Oct 2026 as the disabled view.** The switching itself waits for the relay module.
+
 Relay on/off for the LED supplies. `pi/listener/power.py` is the hook; it's a no-op while `RELAY_PINS` is empty. The relay module hasn't arrived.
 
 - Show the buttons disabled, with "relay module not fitted", until `RELAY_PINS` is set in `config.env`.
 - When it's built: `power.py` sets each pin with `pinctrl set <pin> op dl|dh` (held after the process exits; not gpiozero, which releases its pins); a helper verb `power on|off` calls it. pb-mode switches it at night; pb-ledmap's sessions must keep the power on (pb-mode should skip switching while pb-ledmap runs: `pi/README.md` → LED mapping → Night). Confirm and busy check for "off".
 
 ## Phase 15: Runbook
+
+**Built 28 Oct 2026.**
 
 A tab that works without the Pi (static content, no ssh): the rescue hotspot steps (`projectboard-rescue`, the Pi at 10.42.0.1, stop `pb-netwatch` first), reading `netlog.txt` from the SD card, the rollback to the stopgap listener, the key commands from `pi/README.md` (pb-status, pb-idle, pb-ledmap, journalctl lines, deploy), and what each overview tile's red means and what to try. Generated from `pi/README.md` at start (so it stays in step), with the hotspot section always shown first when the Pi is unreachable.
 

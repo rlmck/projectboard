@@ -38,19 +38,21 @@ class Remote:
             return 255, '', 'ssh could not start: %s' % e
         return p.returncode, p.stdout.decode('utf-8', 'replace'), p.stderr.decode('utf-8', 'replace')
 
-    def start(self, remote_cmd):
+    def start(self, remote_cmd, stdin=None):
         """A running ssh with stdout and stderr together on .stdout, for streaming.
-        Killing it ends the remote command too (its output pipe closes)."""
-        return subprocess.Popen(self.argv(remote_cmd), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
+        Killing it ends the remote command too (its output pipe closes). stdin: bytes
+        or text sent to the remote command (then closed)."""
+        import procs
+        return procs.local(self.argv(remote_cmd), stdin=stdin, cwd=None)
 
     # -- the probe (read-only) ---------------------------------------------------
 
     def probe(self, mode=''):
+        """mode: '' (everything), 'busy', 'activity 14', 'night 2026-10-27', 'config': words, each quoted."""
         with open(PROBE, 'rb') as f:
             script = f.read()
         t0 = time.monotonic()
-        code, out, err = self.run('python3 - %s' % shlex.quote(mode) if mode else 'python3 -', stdin=script,
+        code, out, err = self.run(' '.join(['python3', '-'] + [shlex.quote(w) for w in mode.split()]), stdin=script,
                                   timeout=60)
         ms = int((time.monotonic() - t0) * 1000)
         if code != 0:

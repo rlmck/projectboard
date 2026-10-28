@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/tokens.css">
 <link rel="stylesheet" href="/static/console.css">
 <script src="/static/console.js" defer></script>
+<script src="/static/more.js" defer></script>
 </head>
 <body>
 <header class="top">
@@ -17,6 +18,16 @@
     <button role="tab" data-tab="services">Services</button>
     <button role="tab" data-tab="board">Board</button>
     <button role="tab" data-tab="logs">Logs</button>
+    <button role="tab" data-tab="config">Config</button>
+    <button role="tab" data-tab="deploy">Deploy</button>
+    <button role="tab" data-tab="release">Release</button>
+    <button role="tab" data-tab="ledmap">LED map</button>
+    <button role="tab" data-tab="cast">Test cast</button>
+    <button role="tab" data-tab="activity">Activity</button>
+    <button role="tab" data-tab="tests">Tests</button>
+    <button role="tab" data-tab="backups">Backups</button>
+    <button role="tab" data-tab="power">Power</button>
+    <button role="tab" data-tab="runbook">Runbook</button>
     <button role="tab" data-tab="audit">Audit</button>
   </nav>
   <div class="status-line">
@@ -117,6 +128,147 @@
       <button class="btn" type="button" id="log-stop" disabled>Stop</button>
     </form>
     <pre id="log-out" class="out tall"></pre>
+  </section>
+
+  <section id="tab-config" class="tab" hidden>
+    <p class="note">The Pi's <code>/etc/projectboard/config.env</code>. Change fields, then Apply: the dialog shows what changes, the Pi backs up the old file first, the listener restarts only if a key it reads at start changed, and the laptop's <code>pi/config.env</code> follows so a deploy keeps it.</p>
+    <div id="cfg-drift" class="banner warn" hidden>
+      <strong>The laptop's pi/config.env and the Pi's differ.</strong> Changes are refused until they match. Choose which one is right:
+      <div class="btn-row"><button class="btn" id="cfg-pull">Laptop ← Pi (keep the Pi's)</button><button class="btn" id="cfg-push">Pi ← laptop (keep the laptop's)</button></div>
+      <pre id="cfg-drift-text" class="out"></pre>
+    </div>
+    <div class="btn-row"><button class="btn primary" id="cfg-apply">Apply changes</button><button class="btn" id="cfg-reload">Reload from the Pi</button></div>
+    <div id="cfg-form" class="cfg-grid"></div>
+    <h2>Earlier copies</h2>
+    <p class="note">The Pi keeps the last 30, each made just before a change. Each shows what putting it back would change.</p>
+    <div id="cfg-backups"></div>
+  </section>
+
+  <section id="tab-deploy" class="tab" hidden>
+    <div class="card">
+      <h2>Deploy pi/ to the Pi</h2>
+      <p class="note">Runs <code>bash pi/deploy.sh</code>: copies pi/ over and installs what changed. The password goes to sudo on the Pi and is never saved or logged; the field clears after each run. A real deploy restarts the listener if its files or config.env changed (do it when the gym is closed).</p>
+      <div class="slider-row">
+        <label>The Pi's password <input id="deploy-pw" type="password" autocomplete="off" size="20"></label>
+        <button class="btn" id="deploy-dry">Dry run</button>
+        <button class="btn primary" id="deploy-go">Deploy</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Drift <button class="btn small" id="drift-reload">Check again</button></h2>
+      <div id="drift-out"></div>
+    </div>
+  </section>
+
+  <section id="tab-release" class="tab" hidden>
+    <div class="board-grid">
+      <div class="controls">
+        <div class="card"><h2>Repo <button class="btn small" id="git-reload">Refresh</button> <button class="btn small" id="git-pull">Pull</button></h2><div id="git-status"></div></div>
+        <div class="card">
+          <h2>Commit</h2>
+          <div id="git-files" class="rows"></div>
+          <textarea id="git-msg" rows="3" placeholder="What changed and why"></textarea>
+          <div class="btn-row"><button class="btn" id="git-alldiff">Show the whole diff</button><button class="btn primary" id="git-commit">Commit the ticked files</button></div>
+        </div>
+        <div class="card">
+          <h2>Ship</h2>
+          <div class="btn-row">
+            <button class="btn" id="git-bump">Bump CACHE</button>
+            <button class="btn" id="git-syntax">Syntax check</button>
+            <button class="btn" id="git-push">Push dev (staging)</button>
+            <button class="btn danger" id="git-main">Fast-forward main (live)</button>
+          </div>
+          <p class="note" id="rel-node" hidden>node isn't on the PATH, so the syntax check can't run.</p>
+          <p class="note">Commit, push and main are separate, each showing what it sends first. After main, the live <code>sw.js</code> is polled until the new CACHE shows. <a href="https://dev-projectboard.rosslewismckechnie.workers.dev" target="_blank" rel="noopener">Staging</a> · <a href="https://symmetryboard.co.uk" target="_blank" rel="noopener">Live</a></p>
+          <div class="btn-row"><button class="btn small" id="git-poll">Check the live CACHE</button> <span id="live-cache" class="muted"></span></div>
+        </div>
+      </div>
+      <div class="card"><h2>Recent commits</h2><pre id="git-log" class="out"></pre><h2>Diff</h2><pre id="git-diff" class="out tall"></pre></div>
+    </div>
+  </section>
+
+  <section id="tab-ledmap" class="tab" hidden>
+    <div class="btn-row">
+      <button class="btn primary" id="ledmap-start">Start mapping (pauses the listener)</button>
+      <button class="btn" id="ledmap-stop">Stop (listener back)</button>
+      <span id="ledmap-state" class="muted"></span>
+    </div>
+    <div class="board-grid">
+      <iframe id="ledmap-frame" class="ledmap-frame" title="The LED mapping tool"></iframe>
+      <div class="cam card"><h2>Webcam</h2><img id="ledmap-cam" alt="The board from the webcam"></div>
+    </div>
+    <div class="card">
+      <h2>Results</h2>
+      <p class="note">Export JSON on the mapping page, then add the file here to keep it in <code>console/data/ledmap/</code>.</p>
+      <input type="file" id="ledmap-file" accept="application/json,.json">
+      <ul id="ledmap-history"></ul>
+    </div>
+  </section>
+
+  <section id="tab-cast" class="tab" hidden>
+    <div class="board-grid">
+      <div class="controls">
+        <div class="card">
+          <h2>Cast a problem</h2>
+          <p class="note">Sends <code>cast_problem</code> on <code>board:HangoutPortland</code> exactly as the app does, then reads the listener's journal for when it arrived and lit. The real board lights.</p>
+          <div class="slider-row">
+            <input id="cast-name" list="cast-list" placeholder="Problem name" size="28">
+            <datalist id="cast-list"></datalist>
+            <label class="check"><input type="checkbox" id="cast-mirror"> Mirrored</label>
+            <button class="btn primary" id="cast-go">Cast</button>
+          </div>
+        </div>
+        <div class="card"><h2>Holds, and where mirroring puts them</h2><div id="cast-holds" class="muted">Choose a problem.</div></div>
+      </div>
+      <div class="cam card"><h2>Webcam</h2><img id="cast-cam" alt="The board from the webcam"></div>
+    </div>
+  </section>
+
+  <section id="tab-activity" class="tab" hidden>
+    <label>Days <select id="activity-days"><option>7</option><option selected>14</option><option>30</option><option>60</option></select></label>
+    <div id="activity-out" class="card"></div>
+  </section>
+
+  <section id="tab-tests" class="tab" hidden>
+    <div class="card">
+      <h2>Check a night</h2>
+      <div class="slider-row"><label>Night starting <input type="date" id="night-date"></label><button class="btn" id="night-check">Check (default: last night)</button></div>
+      <div id="night-out"></div>
+    </div>
+    <h2>Acceptance tests (R8)</h2>
+    <p class="note">Each step breaks something on purpose and the board should heal by itself. Every step asks first and checks for recent casts. Steps that cut the network schedule their own undo on the Pi first. Watch the Overview and Logs while they run; record the result here (kept in <code>console/data/acceptance.json</code>).</p>
+    <div id="tests-list" class="tests"></div>
+  </section>
+
+  <section id="tab-backups" class="tab" hidden>
+    <div class="btn-row">
+      <button class="btn primary" id="backup-pi">Back up the Pi</button>
+      <button class="btn" id="backup-sb">Export Supabase (public tables)</button>
+    </div>
+    <p class="note">Saved under <code>backups/&lt;date&gt;/</code> at the repo root (gitignored). The Pi backup holds config.env and its earlier copies, the units and drop-ins, the scripts and the NetworkManager profiles with every password line removed on the Pi.</p>
+    <ul id="backups-list"></ul>
+  </section>
+
+  <section id="tab-power" class="tab" hidden>
+    <div class="card">
+      <h2>LED supplies</h2>
+      <p id="power-state" class="muted"></p>
+      <div class="btn-row"><button class="btn" disabled>Power on</button><button class="btn" disabled>Power off</button></div>
+      <p class="note">Waiting for the relay module. When it's fitted, <code>pi/listener/power.py</code> switches the pins and these buttons go live (docs/console-plan.md, phase 14).</p>
+    </div>
+  </section>
+
+  <section id="tab-runbook" class="tab" hidden>
+    <div class="card">
+      <h2>When the console can't reach the Pi</h2>
+      <ol>
+        <li>Wait 4 minutes: pb-netwatch and pb-health retry the Wi-Fi, restart NetworkManager, and reboot if needed.</li>
+        <li>Still nothing: on site, look for the Wi-Fi network <code>projectboard-rescue</code> (the Pi opens it after about 4 minutes offline, for 15 minutes). Join it, then <code>ssh pi@10.42.0.1</code>.</li>
+        <li>Over the hotspot: <code>sudo systemctl stop pb-netwatch</code> first, or it tears the hotspot down.</li>
+        <li>No SSH at all: take the SD card out and read <code>netlog.txt</code> and <code>netwatch.txt</code> from its boot partition.</li>
+      </ol>
+    </div>
+    <div id="runbook-out"></div>
   </section>
 
   <section id="tab-audit" class="tab" hidden>

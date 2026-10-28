@@ -22,12 +22,13 @@ import hmac
 TOKEN_HEADER = 'X-PB-Token'
 
 # Sent with every response. No CORS headers, ever.
-def headers(cam_origin=''):
+def headers(cam_origin='', frame_origin=''):
     img = "'self' data:" + (' ' + cam_origin if cam_origin else '')
+    frame = frame_origin or "'none'"     # the LED mapping tool, embedded on the LED mapping tab
     return {
         'Content-Security-Policy': ("default-src 'none'; script-src 'self'; style-src 'self'; "
-                                    "img-src %s; connect-src 'self'; font-src 'self'; "
-                                    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'" % img),
+                                    "img-src %s; connect-src 'self'; font-src 'self'; frame-src %s; "
+                                    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'" % (img, frame)),
         'X-Content-Type-Options': 'nosniff',
         'Referrer-Policy': 'no-referrer',
         'Cache-Control': 'no-store',
