@@ -8,7 +8,8 @@
 # Where things go:
 #   listener/*.py      /opt/projectboard/listener/ (and listener/patterns/*.py)
 #   ops/board-cam.sh   /opt/projectboard/ops/
-#   ops/pb-*           /usr/local/bin/
+#   ops/pb-*           /usr/local/bin/ (pb-console-helper: /usr/local/sbin/, root only)
+#   conf/pb-console.sudoers  /etc/sudoers.d/pb-console (checked with visudo -cf first)
 #   ledmap/            /opt/projectboard/ledmap/ (the LED mapping tool: installed, never enabled)
 #   systemd/*          /etc/systemd/system/ (kiosk.service as installed 26 Oct)
 #   conf/              journald + system.conf.d drop-ins, NetworkManager conf, tmpfiles.d
@@ -64,6 +65,14 @@ fi
 for f in pb_listener.py leds.py mode.py; do put "listener/$f" "/opt/projectboard/listener/$f" 0755; done
 put ops/board-cam.sh /opt/projectboard/ops/board-cam.sh 0755
 for f in pb-health pb-mode pb-status pb-idle pb-ledmap pb-bootcheck pb-weekly-reboot; do put "ops/$f" "/usr/local/bin/$f" 0755; done
+# PB Console's root helper, and the sudoers rule that lets pi run it (only it) without
+# a password. The rule goes in only if visudo accepts it: a broken file would lock sudo.
+put ops/pb-console-helper /usr/local/sbin/pb-console-helper 0755
+if visudo -cf "$SRC/conf/pb-console.sudoers" >/dev/null; then
+    put conf/pb-console.sudoers /etc/sudoers.d/pb-console 0440
+else
+    echo "!! conf/pb-console.sudoers failed visudo -cf: not installed"
+fi
 for f in "$SRC"/systemd/*.service "$SRC"/systemd/*.timer; do
     put "systemd/$(basename "$f")" "/etc/systemd/system/$(basename "$f")" 0644
 done

@@ -17,6 +17,7 @@ h "Board  $(hostname)  $(date '+%a %d %b %H:%M:%S')  up $(uptime -p | sed 's/^up
 mode=$(python3 /opt/projectboard/listener/mode.py 2>/dev/null || echo "? mode.py failed")
 echo "  mode        $mode"
 echo "  time sync   $(timedatectl show -p NTPSynchronized --value 2>/dev/null)"
+[ -e /run/projectboard/screen-off ] && echo "  screen      off by hand until a reboot (sudo pb-console-helper screen on)"
 echo "  boot line   $(journalctl -b -t pb-boot -o cat --no-pager 2>/dev/null | tail -n 1)"
 
 h "Services"
@@ -48,6 +49,8 @@ print('  mirror map  loaded %s' % ago(s.get('mirror_map_at')))
 print('  idle        %s%s' % (s.get('idle_plan'), '  (benchmarks for the teaser: %s)' % s['benchmarks'] if s.get('benchmarks') is not None else ''))
 print('  leds        %s%s%s' % (s.get('idle_pattern') or s.get('leds'), '  %s fps, %s ms a frame' % (s.get('idle_fps'), s.get('idle_frame_ms')) if s.get('idle_fps') else '',
       '  capped %s frames' % s['idle_capped_frames'] if s.get('idle_capped_frames') else ''))
+if s.get('brightness_scale', 1) < 1:
+    print('  brightness  x%s (pb-idle, until a restart)' % s['brightness_scale'])
 print('  errors      %s%s' % (s.get('error_count'), '  last: ' + s['last_error'] if s.get('last_error') else ''))
 print('  file        written %s' % ago(s.get('updated_at')))
 EOF

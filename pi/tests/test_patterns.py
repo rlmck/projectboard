@@ -417,6 +417,74 @@ class PbIdle(unittest.TestCase):
         run_for(r, self.clock, 30, dt=0.1)
         self.assertEqual(r.anim.cur[1].shown[0], 'Test problem')
 
+    def test_off_takes_a_lit_problem_dark_and_casts_still_light(self):
+        r = self.make()
+        r.cast(CAST)
+        r.step(self.clock.t)
+        r.set_pattern('off')
+        run_for(r, self.clock, 2)
+        self.assertEqual(r.state, renderer.IDLE)
+        self.assertEqual(r.strip.last, {})               # faded out, then cleared
+        self.assertEqual(r.stats()['leds'], 'off')
+        self.assertEqual(r.stats()['idle_override'], 'off')
+        r.cast(CAST)
+        r.step(self.clock.t)
+        self.assertEqual(r.strip.last, CAST)             # a cast still lights
+        run_for(r, self.clock, 62)
+        self.assertEqual(r.strip.last, {})               # and idle is dark again after it
+        n = len(r.strip.writes)
+        run_for(r, self.clock, 5)
+        self.assertEqual(len(r.strip.writes), n)         # nothing drawn while off
+
+    def test_default_or_a_pattern_ends_off(self):
+        r = self.make()
+        run_for(r, self.clock, 1)
+        r.set_pattern('off')
+        run_for(r, self.clock, 2)
+        r.set_pattern('default')
+        run_for(r, self.clock, 2)
+        self.assertEqual(r.stats()['leds'], 'glisten')
+        self.assertTrue(r.strip.last)
+        r.set_pattern('off')
+        run_for(r, self.clock, 2)
+        r.set_pattern('rain')
+        run_for(r, self.clock, 1)
+        self.assertEqual(r.anim.name, 'rain')
+        self.assertEqual(r.stats()['idle_override'], 'rain')
+
+    def test_off_at_night_stays_dark_in_the_morning(self):
+        r = self.make(night=True)
+        run_for(r, self.clock, 1)
+        r.set_pattern('off')
+        run_for(r, self.clock, 1)
+        r.set_night(False)
+        run_for(r, self.clock, 3)
+        self.assertEqual(r.stats()['leds'], 'off')
+        self.assertFalse(any(f for f, _ in r.strip.writes))
+
+    def test_brightness_dims_casts_and_idle(self):
+        r = self.make()
+        r.cast(CAST)
+        r.step(self.clock.t)
+        full = sum(sum(v) for v in r.strip.last.values())
+        r.set_pattern('brightness 0.5')
+        r.step(self.clock.t)
+        half = sum(sum(v) for v in r.strip.last.values())
+        self.assertLess(half, full)                      # the lit problem rewritten, dimmer
+        self.assertEqual(r.shown, CAST)                  # kept undimmed
+        self.assertEqual(r.stats()['brightness_scale'], 0.5)
+        r.set_pattern('brightness 1')
+        r.step(self.clock.t)
+        self.assertEqual(r.strip.last, CAST)
+
+    def test_brightness_out_of_range_is_ignored(self):
+        r = self.make()
+        for bad in ('brightness 1.5', 'brightness 0', 'brightness', 'brightness x'):
+            r.set_pattern(bad)
+            r.step(self.clock.t)
+        self.assertEqual(r.scale, 1.0)
+        self.assertEqual(sum('ignored' in m for m in self.logs), 4)
+
 
 if __name__ == '__main__':
     unittest.main()

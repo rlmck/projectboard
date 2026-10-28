@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PB Console</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/static/console.css">
+<script src="/static/console.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="mark" aria-hidden="true"></span>PB Console</div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+    <button role="tab" data-tab="services">Services</button>
+    <button role="tab" data-tab="board">Board</button>
+    <button role="tab" data-tab="logs">Logs</button>
+    <button role="tab" data-tab="audit">Audit</button>
+  </nav>
+  <div class="status-line">
+    <span id="lock-state" class="pill">idle</span>
+    <span id="updated" class="muted"></span>
+    <button id="refresh" class="btn small" title="Probe the Pi and the site now">Refresh</button>
+  </div>
+</header>
+
+<div id="no-token" class="banner bad" hidden>
+  This page needs this launch's token. Start the console with <code>bash console/start.sh</code> from the repo root in Git Bash; it opens the right address.
+</div>
+<div id="drift" class="banner warn" hidden></div>
+<div id="no-helper" class="banner warn" hidden>
+  The Pi doesn't have <code>pb-console-helper</code> yet, so Services, night mode and the screen buttons can't run. Install it with one deploy (<code>bash pi/deploy.sh</code>, password once).
+</div>
+
+<main>
+  <section id="tab-overview" class="tab">
+    <div id="tiles" class="tiles"><p class="muted">Checking the Pi, the live site and Supabase (a few seconds)…</p></div>
+  </section>
+
+  <section id="tab-services" class="tab" hidden>
+    <p class="note">Each button asks first. A stop or restart checks for a cast in the last 5 minutes and warns if there was one.</p>
+    <div id="services" class="rows"></div>
+    <div class="row-actions">
+      <button class="btn" data-act="service" data-unit="kiosk" data-verb="restart">Restart kiosk (wall loads the latest app)</button>
+      <button class="btn danger" data-act="reboot">Reboot the Pi</button>
+    </div>
+  </section>
+
+  <section id="tab-board" class="tab" hidden>
+    <div class="board-grid">
+      <div class="controls">
+        <div class="card">
+          <h2>Now</h2>
+          <div id="board-now" class="kv"></div>
+        </div>
+        <div class="card">
+          <h2>LEDs</h2>
+          <div class="btn-row">
+            <button class="btn" data-act="idle" data-cmd="now">Idle now</button>
+            <button class="btn" data-act="idle" data-cmd="off">LEDs off</button>
+            <button class="btn" data-act="idle" data-cmd="default">Back to the default</button>
+          </div>
+          <p class="note">LEDs off: dark now and whenever idle; a cast still lights. Back to the default ends it. Both last until the listener restarts.</p>
+          <h3>Idle pattern <span class="muted">(until a restart; the permanent one is IDLE_PATTERN)</span></h3>
+          <div id="patterns" class="chips"></div>
+          <div class="btn-row">
+            <button class="btn" data-act="idle" data-cmd="tour">Tour (each for 60 s)</button>
+            <button class="btn" data-act="idle" data-cmd="cycle">Cycle (IDLE_CYCLE)</button>
+          </div>
+          <h3>Brightness <span class="muted">(of the configured level, until a restart)</span></h3>
+          <div class="slider-row">
+            <input id="brightness" type="range" min="5" max="100" step="5" value="100" aria-label="Brightness">
+            <output id="brightness-out">100%</output>
+            <button id="brightness-apply" class="btn">Set</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Night mode</h2>
+          <div class="seg" id="night-seg">
+            <button class="btn" data-act="night" data-mode="auto">Auto (clock)</button>
+            <button class="btn" data-act="night" data-mode="night">Force night</button>
+            <button class="btn" data-act="night" data-mode="day">Force day</button>
+          </div>
+          <div class="slider-row">
+            <label>From <input id="night-start" type="time" step="60"></label>
+            <label>to <input id="night-end" type="time" step="60"></label>
+            <button id="night-hours" class="btn">Save hours</button>
+          </div>
+          <p class="note">Writes config.env on the Pi (backed up first) and pi/config.env here, so a deploy keeps it.</p>
+          <h3>Wall screen</h3>
+          <div class="btn-row">
+            <button class="btn" data-act="screen" data-state="off">Screen off</button>
+            <button class="btn" data-act="screen" data-state="on">Screen on</button>
+          </div>
+          <p class="note">Screen off lasts until Screen on or a reboot; night still turns it off and on by itself.</p>
+        </div>
+      </div>
+      <div class="cam card">
+        <h2>Webcam <span class="muted" id="cam-url"></span></h2>
+        <img id="cam" alt="The board from the webcam">
+        <p class="note" id="cam-note">Over Tailscale only.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-logs" class="tab" hidden>
+    <form id="log-form" class="log-form">
+      <label>Log <select id="log-source"></select></label>
+      <label>Since <input id="log-since" value="-1h" size="12" placeholder="-1h, today"></label>
+      <label>Until <input id="log-until" size="12" placeholder="(now)"></label>
+      <label>Lines <input id="log-lines" type="number" min="1" max="5000" value="300"></label>
+      <label>Filter <input id="log-filter" size="16" placeholder="text"></label>
+      <label class="check"><input id="log-follow" type="checkbox"> Follow</label>
+      <button class="btn primary" type="submit">Show</button>
+      <button class="btn" type="button" id="log-stop" disabled>Stop</button>
+    </form>
+    <pre id="log-out" class="out tall"></pre>
+  </section>
+
+  <section id="tab-audit" class="tab" hidden>
+    <p class="note">Every action, from <code>console/audit.log</code> (local, gitignored). Newest last.</p>
+    <table class="audit"><thead><tr><th>Time</th><th>Action</th><th>Result</th><th>Detail</th></tr></thead><tbody id="audit"></tbody></table>
+  </section>
+</main>
+
+<section id="output" class="output" hidden>
+  <div class="output-head"><strong id="output-title"></strong><button id="output-close" class="btn small">Close</button></div>
+  <pre id="output-text" class="out"></pre>
+</section>
+
+<dialog id="confirm">
+  <form method="dialog">
+    <h2 id="confirm-title">Are you sure?</h2>
+    <p id="confirm-text"></p>
+    <div id="confirm-busy" class="banner warn" hidden></div>
+    <pre id="confirm-diff" class="out" hidden></pre>
+    <div class="btn-row end">
+      <button value="cancel" class="btn">Cancel</button>
+      <button value="ok" id="confirm-ok" class="btn primary">Go ahead</button>
+    </div>
+  </form>
+</dialog>
+<div id="toast" class="toast" hidden></div>
+</body>
+</html>

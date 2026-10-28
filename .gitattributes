@@ -3,3 +3,5 @@ app/_headers   text eol=lf
 app/_redirects text eol=lf
 # Everything in pi/ runs on Linux: a CRLF script fails there
 pi/**         text eol=lf
+# PB Console runs from Git Bash (start.sh) and sends probe.py to the Pi: keep LF
+console/**    text eol=lf

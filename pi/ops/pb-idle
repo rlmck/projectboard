@@ -8,8 +8,14 @@
     pb-idle cycle           run IDLE_CYCLE (config.env) from its first pattern
     pb-idle tour            every pattern for 60 s in turn (each named in the
                             journal), then back to the default; follows along here
-    pb-idle default         back to config.env's IDLE_PATTERN
+                            (in a terminal; over plain ssh it prints the plan and returns)
+    pb-idle default         back to config.env's IDLE_PATTERN (also ends `off`)
     pb-idle now             go idle now (SIGUSR1; clears a lit problem)
+    pb-idle off             the board dark now (a lit problem too) and dark when
+                            idle; casts still light. Until `default`, a pattern
+                            or the next listener restart
+    pb-idle brightness K    dim everything (casts and idle) to K of its configured
+                            brightness, 0.05-1, until a restart; 1 = as configured
 
 Run as pi (or with sudo). It writes the choice to /run/projectboard/idle-pattern
 and sends pb-listener SIGUSR2; the listener's LED thread picks it up. It never
@@ -67,6 +73,9 @@ def show():
     print('  %-10s %s' % ('cycle', 'IDLE_CYCLE in turn, IDLE_CYCLE_MIN each'))
     print('  %-10s %s' % ('tour', 'every pattern for %d s, once, then the default' % patterns.TOUR_S))
     print('  %-10s %s' % ('default', "back to config.env's IDLE_PATTERN"))
+    print('  %-10s %s' % ('off', 'dark now and when idle (casts still light), until default'))
+    print('  %-10s %s' % ('brightness', 'brightness K: everything at K (0.05-1) of config.env, until a restart; now %s'
+                          % s.get('brightness_scale', 1.0)))
 
 
 def send(spec):
@@ -85,6 +94,8 @@ def send(spec):
         print('a problem is lit: this shows when the board next goes idle (pb-idle now goes idle now)')
     elif leds == 'night':
         print("it's night: the board stays dark; this shows in the morning (until a restart)")
+    elif leds == 'off':
+        print('the board is off (pb-idle off): casts still light; pb-idle default turns idle back on')
     elif leds == 'dark':
         print('idle is dark (IDLE_ANIMATION=off, or Glisten failed: see journalctl -u pb-listener)')
     else:
@@ -103,6 +114,8 @@ def tour():
         print('  %s  %-10s %s' % (time.strftime('%H:%M:%S', time.localtime(start + i * patterns.TOUR_S)), n,
                                   patterns.PATTERNS[n].about))
     print()
+    if not sys.stdout.isatty():         # over plain ssh (the console): the plan is enough
+        return 0
     try:
         for i, n in enumerate(names):
             wait = start + i * patterns.TOUR_S - time.time()
@@ -129,10 +142,21 @@ def main(argv):
         return 0
     if arg == 'tour':
         return tour()
-    if arg in patterns.PATTERNS or arg in ('cycle', 'default'):
+    if arg == 'brightness':
+        try:
+            k = float(argv[1])
+        except (IndexError, ValueError):
+            k = -1.0
+        if not 0.05 <= k <= 1:
+            print('pb-idle brightness K: K from 0.05 to 1 (1 = as config.env has it)')
+            return 2
+        send('brightness %g' % k)
+        return 0
+    if arg in patterns.PATTERNS or arg in ('cycle', 'default', 'off'):
         send(arg)
         return 0
-    print('no pattern called %r: one of %s, or cycle, tour, default, now' % (arg, ', '.join(patterns.NAMES)))
+    print('no pattern called %r: one of %s, or cycle, tour, default, now, off, brightness K'
+          % (arg, ', '.join(patterns.NAMES)))
     return 2
 
 

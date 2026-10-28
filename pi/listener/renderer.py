@@ -9,9 +9,16 @@ Three states (night always wins):
 - night: a 3 s fade to black, then the strip cleared.
 
 The event loop never waits on it: cast(), set_night(), idle_now(),
-set_pattern() (pb-idle), set_benchmarks() and stop() only post a command and
+set_pattern() (pb-idle: a pattern, off, brightness), set_benchmarks() and
+stop() only post a command and
 wake the thread. step() does one round of work and
 says how long to sleep, so the tests drive it with a fake clock and no thread.
+
+pb-idle's runtime overrides (until the next restart): `off` takes the board dark
+now (a lit problem too) and keeps idle dark, while casts still light; any
+pattern or `default` ends it. `brightness K` (0.05-1) dims everything written,
+casts and idle, to K of its configured brightness, never brighter. Frames are
+kept undimmed in `shown`; the dimming is applied only at the strip.
 
 A pattern that throws is replaced by Glisten (patterns/idle.py). If Glisten
 throws too, it's logged once, the strip is cleared and idle stays dark until
@@ -33,6 +40,7 @@ FADE_TO_NIGHT = 3.0       # s, whatever is showing fading to black at the start 
 # all 1200. Pixels past the board stay dark from the full clear before them.
 BOARD_PIXELS = board.MAX_HOLD + 1
 MAX_SLEEP = 1.0           # the loop comes round at least this often (keeps `beat` fresh)
+SCALE_MIN = 0.05          # pb-idle brightness: the lowest it takes (1 = as configured)
 
 
 def _on(v):
@@ -55,6 +63,8 @@ class Renderer:
         self.config_plan, self.cycle_plan = patterns.config_plans(cfg, clock(), warn)
         self.override = None
         self.override_spec = None
+        self.dark = False           # pb-idle off: idle stays dark (casts still light)
+        self.scale = 1.0            # pb-idle brightness: everything written dimmed to this
         self.ctx = {'benchmarks': []}       # shared with the patterns (the teaser reads it)
         self._lock = threading.Lock()
         self._cmds = []
@@ -93,7 +103,8 @@ class Renderer:
         self._post(('idle', None))
 
     def set_pattern(self, spec):
-        """pb-idle: a pattern name, 'cycle' (IDLE_CYCLE), 'tour' (each for TOUR_S, once) or 'default'."""
+        """pb-idle: a pattern name, 'cycle' (IDLE_CYCLE), 'tour' (each for TOUR_S, once), 'default',
+        'off' (dark when idle) or 'brightness K'."""
         self._post(('pattern', spec))
 
     def set_benchmarks(self, benchmarks):
@@ -124,12 +135,13 @@ class Renderer:
         span, frames, busy = now - self.window_at, self.frames, self.busy
         if reset:
             self.frames, self.busy, self.window_at = 0, 0.0, now
-        anim = self.anim if self.state == IDLE and self.animate and not self.broken else None
-        s = {'leds': anim.name if anim else 'dark' if self.state == IDLE else self.state,
+        anim = self.anim if self.state == IDLE and self.animate and not self.broken and not self.dark else None
+        s = {'leds': anim.name if anim else ('off' if self.dark else 'dark') if self.state == IDLE else self.state,
              'idle_pattern': anim.label if anim else None,
-             'idle_plan': ('off (IDLE_ANIMATION)' if not self.animate else 'dark (Glisten failed)' if self.broken
-                           else self.plan().summary()),
-             'idle_override': self.override_spec,
+             'idle_plan': ('off (pb-idle)' if self.dark else 'off (IDLE_ANIMATION)' if not self.animate
+                           else 'dark (Glisten failed)' if self.broken else self.plan().summary()),
+             'idle_override': 'off' if self.dark else self.override_spec,
+             'brightness_scale': self.scale,
              'idle_fps': round(frames / span, 1) if frames and span > 0 else None,
              'idle_frame_ms': round(busy / frames * 1000, 1) if frames else None,
              'idle_capped_frames': self.anim.capped_frames if self.anim else 0,
@@ -151,7 +163,7 @@ class Renderer:
 
     def _write(self, frame, full):
         try:
-            self.strip.write(frame, None if full else BOARD_PIXELS)
+            self.strip.write(dim(frame, self.scale) if self.scale < 1 else frame, None if full else BOARD_PIXELS)
         except Exception as e:
             self.write_errors += 1
             if self.write_errors == 1 or self.write_errors % 1000 == 0:
@@ -162,7 +174,15 @@ class Renderer:
 
     def _go_idle(self, now, why):
         self.state = IDLE
-        if self.animate and not self.broken:
+        if self.dark:
+            self.log('LEDs: idle, off (pb-idle) (%s)' % why)
+            self.anim = None
+            if self.shown:
+                self.fade = (now, FADE_TO_IDLE, self.shown)
+            else:
+                self.fade = None
+                self._write({}, True)
+        elif self.animate and not self.broken:
             plan = self.plan()
             if plan.epoch is None:          # a pb-idle tour or cycle starts when it first shows
                 plan.epoch = now
@@ -211,24 +231,54 @@ class Renderer:
             self._go_idle(now, '%d s since the last cast' % self.idle_after)
 
         if self.state == NIGHT:
-            if not self.fade:
-                return MAX_SLEEP
-            t0, span, frm = self.fade
-            k = (now - t0) / span
-            if k >= 1:
-                self.fade = None
-                self._write({}, True)
-                return MAX_SLEEP
-            self._write(dim(frm, 1 - k), False)
-            return self.dt
+            return self._fade_out(now)
         if self.state == CAST:
             return min(MAX_SLEEP, self.cast_at + self.idle_after - now)
         return self._idle_frame(now)
 
+    def _fade_out(self, now):
+        """Night, or idle with pb-idle off: finish fading to black, then clear."""
+        if not self.fade:
+            return MAX_SLEEP
+        t0, span, frm = self.fade
+        k = (now - t0) / span
+        if k >= 1:
+            self.fade = None
+            self._write({}, True)
+            return MAX_SLEEP
+        self._write(dim(frm, 1 - k), False)
+        return self.dt
+
+    def _set_scale(self, spec):
+        """pb-idle brightness K: everything written from now on dimmed to K (SCALE_MIN-1)."""
+        try:
+            k = float(spec.split()[1])
+        except (IndexError, ValueError):
+            k = -1.0
+        if not SCALE_MIN <= k <= 1:
+            self.warn('pb-idle: brightness %r is not %g-1, ignored' % (spec[10:].strip(), SCALE_MIN))
+            return
+        self.scale = k
+        self.log('LEDs: pb-idle brightness x%.2f (until a restart)' % k)
+        if self.state == CAST and self.shown:
+            self._write(self.shown, True)      # the lit problem, at the new level
+
     def _set_pattern(self, spec, now):
-        """pb-idle's choice: at once if idle (crossfading), else from the next idle. Never touches a cast or night."""
-        spec = (spec or '').strip().lower()
+        """pb-idle's choice: at once if idle (crossfading), else from the next idle. Never touches night;
+        only `off` touches a cast (it takes the board dark now)."""
+        spec = ' '.join((spec or '').strip().lower().split())
         showing = self.state == IDLE
+        if spec.startswith('brightness'):
+            return self._set_scale(spec)
+        if spec == 'off':
+            was = self.dark
+            self.dark = True
+            self.log('LEDs: pb-idle off: dark when idle, casts still light (pb-idle default ends it)')
+            if self.state == CAST:
+                self._go_idle(now, 'pb-idle off')
+            elif showing and not was:
+                self._go_idle(now, 'pb-idle off')
+            return
         if spec in ('', 'default'):
             plan = None
         elif spec == 'tour':
@@ -241,13 +291,18 @@ class Renderer:
         else:
             self.warn('pb-idle: no pattern called %r, ignored' % spec)
             return
+        was_dark, self.dark = self.dark, False
         self.override, self.override_spec = plan, (spec if plan else None)
         self.log('LEDs: pb-idle asked for %s%s' % (spec or 'default', '' if showing else
                                                    ' (shows at the next idle; now %s)' % self.state))
-        if showing and self.anim is not None and not self.broken:
+        if showing and (was_dark or self.anim is None):
+            self._go_idle(now, 'pb-idle %s' % (spec or 'default'))
+        elif showing and not self.broken:
             self.anim.switch(self.plan(), now - self.anim_t0)
 
     def _idle_frame(self, now):
+        if self.dark:
+            return self._fade_out(now)
         if not self.animate or self.broken:
             return MAX_SLEEP
         if now < self.next_frame:

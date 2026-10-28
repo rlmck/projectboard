@@ -8,6 +8,10 @@ out the same mode for itself (LEDs and casts).
 
     night: stop kiosk.service, then power the HDMI output down (fb0 blank 4)
     day:   unblank, start kiosk.service if it's enabled and not running
+
+The screen also goes off in the day while /run/projectboard/screen-off exists
+(`pb-console-helper screen off`, from the console). It's in /run, so a reboot
+always brings the screen back. The LEDs don't follow it: only night does that.
 """
 import os
 import subprocess
@@ -20,6 +24,8 @@ import mode as modelib  # noqa: E402
 import power  # noqa: E402
 
 STATE = '/run/projectboard/mode'           # the mode last applied (resets each boot)
+SCREEN = '/run/projectboard/screen'        # the screen state last applied: on | off
+SCREEN_OFF = '/run/projectboard/screen-off'   # the console's "screen off" in the day
 BLANK = '/sys/class/graphics/fb0/blank'    # 4 = powerdown, 0 = unblank
 KIOSK = 'kiosk.service'
 
@@ -62,25 +68,31 @@ def main():
 
     kiosk_enabled = systemctl('is-enabled', KIOSK) == 'enabled'
     kiosk_state = systemctl('is-active', KIOSK)
+    kiosk_up = kiosk_state in ('active', 'activating', 'reloading')
+    why = 'night' if mode == 'night' else 'screen off by hand'
+    screen_off = mode == 'night' or os.path.exists(SCREEN_OFF)
+    try:
+        last_screen = open(SCREEN).read().strip()
+    except OSError:
+        last_screen = 'off' if last == 'night' else ''
+    screen_changed = ('off' if screen_off else 'on') != last_screen
 
-    if mode == 'night':
-        if kiosk_state in ('active', 'activating', 'reloading'):
-            log('night: stopping %s' % KIOSK)
+    if screen_off:
+        if kiosk_up:
+            log('%s: stopping %s' % (why, KIOSK))
             systemctl('stop', KIOSK)
             time.sleep(1)                      # let the console take the output back
-            changed = True
-        if changed and blank('4'):
-            log('night: screen off')
-        msg = power.leds_power(False, cfg) if changed else None
+            screen_changed = True
+        if screen_changed and blank('4'):
+            log('%s: screen off' % why)
     else:
-        kiosk_up = kiosk_state in ('active', 'activating', 'reloading')
         # Only while the console owns the screen: with cage running the write is refused.
-        if (last == 'night' or not kiosk_up) and blank('0') and last == 'night':
+        if (last_screen == 'off' or not kiosk_up) and blank('0') and last_screen == 'off':
             log('day: screen on')
         if kiosk_enabled and not kiosk_up:
             log('day: starting %s (was %s)' % (KIOSK, kiosk_state))
             systemctl('start', '--no-block', KIOSK)
-        msg = power.leds_power(True, cfg) if changed else None
+    msg = power.leds_power(mode != 'night', cfg) if changed else None
     if msg:
         log(msg, syslog.LOG_WARNING)
 
@@ -88,6 +100,8 @@ def main():
         os.makedirs(os.path.dirname(STATE), exist_ok=True)
         with open(STATE, 'w') as f:
             f.write(mode + '\n')
+        with open(SCREEN, 'w') as f:
+            f.write(('off' if screen_off else 'on') + '\n')
     except OSError as e:
         log('state not saved: %s' % e, syslog.LOG_WARNING)
     return 0

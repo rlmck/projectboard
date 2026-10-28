@@ -1,0 +1,205 @@
+#!/usr/bin/python3 -I
+"""pb-console-helper: the only commands PB Console (console/ in the repo) runs as
+root, without a password. Installed root-owned in /usr/local/sbin by install.sh,
+with /etc/sudoers.d/pb-console allowing pi to run it (and nothing else) as root:
+
+    sudo pb-console-helper unit start|stop|restart <unit>
+    sudo pb-console-helper reboot
+    sudo pb-console-helper night auto|day|night     NIGHT_FORCE in config.env
+    sudo pb-console-helper night-hours HH:MM HH:MM  NIGHT_START, NIGHT_END
+    sudo pb-console-helper screen on|off            the day-time screen-off flag
+    sudo pb-console-helper backups                  the config.env backups, newest first
+
+Everything else is refused. Every argument is checked against a fixed list or
+pattern before anything runs, and nothing is passed to a shell. Each command is
+one syslog line tagged pb-console.
+
+config.env writes change only the named keys (comments and order kept, a
+missing key appended), copy the old file to /var/lib/projectboard/config-backups
+first (the newest 30 kept), and replace it in one rename. The listener and
+pb-mode read the night settings by themselves (within 30 s and 1 min); this
+also runs pb-mode once so the screen follows at once.
+
+Deploys are not here on purpose: install.sh runs from a folder pi can write, so
+it keeps needing the password.
+"""
+import datetime
+import difflib
+import os
+import re
+import subprocess
+import sys
+import syslog
+
+CONFIG = '/etc/projectboard/config.env'
+BACKUPS = '/var/lib/projectboard/config-backups'
+KEEP = 30
+SCREEN_OFF = '/run/projectboard/screen-off'
+UNITS = ('pb-listener', 'kiosk', 'board-cam', 'pb-netwatch', 'pb-health.timer', 'pb-mode.timer')
+VERBS = ('start', 'stop', 'restart')
+HHMM = re.compile(r'^([01][0-9]|2[0-3]):[0-5][0-9]$')
+NIGHT = {'auto': '', 'day': 'day', 'night': 'night'}
+
+
+class Refused(Exception):
+    pass
+
+
+def log(msg):
+    syslog.openlog('pb-console')
+    syslog.syslog(syslog.LOG_NOTICE, msg)
+    print(msg, flush=True)
+
+
+def run(*cmd, timeout=90):
+    """A fixed argv, never a shell. Returns (code, output)."""
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 124, '%s: timed out after %d s' % (' '.join(cmd), timeout)
+    return p.returncode, (p.stdout + p.stderr).strip()
+
+
+def set_keys(text, values):
+    """config.env text with each KEY=value in values replaced (the last line for
+    that key) or appended. Comments, blank lines and order are kept."""
+    lines = text.splitlines()
+    for key, value in values.items():
+        if not re.match(r'^[A-Z][A-Z0-9_]*$', key) or not re.match(r'^[A-Za-z0-9:._ -]*$', value) or '\n' in value:
+            raise Refused('bad config value %s=%r' % (key, value))
+        hit = None
+        for i, line in enumerate(lines):
+            if re.match(r'^\s*%s\s*=' % key, line):
+                hit = i
+        if hit is None:
+            lines.append('%s=%s' % (key, value))
+        else:
+            lines[hit] = '%s=%s' % (key, value)
+    return '\n'.join(lines) + '\n'
+
+
+def backups():
+    try:
+        names = sorted((n for n in os.listdir(BACKUPS) if n.startswith('config.env.')), reverse=True)
+    except OSError:
+        names = []
+    return [os.path.join(BACKUPS, n) for n in names]
+
+
+def write_config(values, path=CONFIG):
+    with open(path, encoding='utf-8') as f:
+        old = f.read()
+    new = set_keys(old, values)
+    if new == old:
+        print('config.env already has %s: nothing to change' % ', '.join('%s=%s' % kv for kv in values.items()))
+        return False
+    os.makedirs(BACKUPS, mode=0o755, exist_ok=True)
+    stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+    backup = os.path.join(BACKUPS, 'config.env.%s' % stamp)
+    with open(backup, 'w', encoding='utf-8') as f:
+        f.write(old)
+    tmp = path + '.pb-console'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        f.write(new)
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, path)
+    for extra in backups()[KEEP:]:
+        os.remove(extra)
+    sys.stdout.writelines(difflib.unified_diff(old.splitlines(True), new.splitlines(True),
+                                               'config.env (before)', 'config.env (now)', n=0))
+    log('config.env: %s (backup %s)' % (', '.join('%s=%s' % kv for kv in values.items()), backup))
+    return True
+
+
+def apply_mode():
+    code, out = run('systemctl', 'start', 'pb-mode.service', timeout=150)
+    print('pb-mode run now: %s' % ('ok' if code == 0 else 'failed (%d) %s' % (code, out)))
+
+
+def cmd_unit(args):
+    if len(args) != 2 or args[0] not in VERBS or args[1] not in UNITS:
+        raise Refused('unit %s <unit>, the unit one of %s' % ('|'.join(VERBS), ', '.join(UNITS)))
+    verb, unit = args
+    log('%s %s' % (verb, unit))
+    code, out = run('systemctl', verb, unit, timeout=120)
+    if out:
+        print(out)
+    _, state = run('systemctl', 'is-active', unit)
+    print('%s is now %s' % (unit, state))
+    if unit == 'pb-listener' and verb == 'stop':
+        print('pb-listener stays stopped until it is started again (pb-health does not restart a stopped listener)')
+    return 0 if code == 0 else 1
+
+
+def cmd_reboot(args):
+    if args:
+        raise Refused('reboot takes no arguments')
+    log('reboot asked for by PB Console')
+    os.sync()
+    code, out = run('systemctl', 'reboot')
+    print(out or 'rebooting')
+    return code
+
+
+def cmd_night(args):
+    if len(args) != 1 or args[0] not in NIGHT:
+        raise Refused('night auto|day|night')
+    write_config({'NIGHT_FORCE': NIGHT[args[0]]})
+    apply_mode()
+    return 0
+
+
+def cmd_night_hours(args):
+    if len(args) != 2 or not all(HHMM.match(a) for a in args) or args[0] == args[1]:
+        raise Refused('night-hours HH:MM HH:MM (24-hour, two different times)')
+    write_config({'NIGHT_START': args[0], 'NIGHT_END': args[1]})
+    apply_mode()
+    return 0
+
+
+def cmd_screen(args):
+    if len(args) != 1 or args[0] not in ('on', 'off'):
+        raise Refused('screen on|off')
+    if args[0] == 'off':
+        with open(SCREEN_OFF, 'w') as f:
+            f.write('PB Console %s\n' % datetime.datetime.now().isoformat(timespec='seconds'))
+    elif os.path.exists(SCREEN_OFF):
+        os.remove(SCREEN_OFF)
+    log('screen %s by hand' % args[0])
+    apply_mode()
+    code, mode = run('python3', '/opt/projectboard/listener/mode.py')
+    if args[0] == 'on' and mode.startswith('night'):
+        print("it's night: the screen stays off until the night ends")
+    return 0
+
+
+def cmd_backups(args):
+    if args:
+        raise Refused('backups takes no arguments')
+    for p in backups():
+        print(p)
+    return 0
+
+
+COMMANDS = {'unit': cmd_unit, 'reboot': cmd_reboot, 'night': cmd_night, 'night-hours': cmd_night_hours,
+            'screen': cmd_screen, 'backups': cmd_backups}
+
+
+def main(argv):
+    if not argv or argv[0] not in COMMANDS:
+        print('pb-console-helper %s' % '|'.join(COMMANDS), file=sys.stderr)
+        return 2
+    if os.geteuid() != 0:
+        print('run it with sudo', file=sys.stderr)
+        return 2
+    try:
+        return COMMANDS[argv[0]](argv[1:])
+    except Refused as e:
+        print('refused: %s' % e, file=sys.stderr)
+        return 2
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))
