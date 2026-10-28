@@ -75,11 +75,42 @@ python -m unittest discover -s pi/tests
 
 The tests check the LED map against `tools/led_map.json`, the hold order and roles against the app's rules, mirroring, the brightness cap and day/night, and (`test_glisten.py`) the LED thread's states (a cast cuts into idle, idle after the timeout, night wins), the idle current cap, pixel 0 off and the sparkle limits. To try the listener on the laptop: `python pi/listener/pb_listener.py --dry-run --config pi/config.env --no-status`. It joins the real channel and prints the LEDs it would light, so a cast from `tools/cast-test.html` shows up there. On the Pi, `leds.py --show "<name>" [--mirror] [--dry-run]` lights one problem and `leds.py --off` clears the strip.
 
+**Stop the listener before any LED test on the Pi** (`leds.py`, `tools/led_test.py`): while `pb-listener` runs it keeps drawing Glisten, so whatever a test writes is overwritten straight away. `ssh -t pi@projectboard 'sudo systemctl stop pb-listener'`, test, then `sudo systemctl start pb-listener`.
+
 The acceptance tests (kill, freeze, Wi-Fi drop, Supabase blocked, reboot mid-cast, the clock across 23:00 and 08:00, boot with no network) are a checklist in the plan doc, section R8.
 
 ## A fresh SD card
 
 `setup.sh` goes on the boot partition with `secrets.env` (`TS_AUTHKEY`, `WIFI_SSID`, `WIFI_PSK`) and `laptop_key.pub`. Run `sudo bash /boot/firmware/projectboard/setup.sh`, **reboot once to test the Wi-Fi**, then run `bash pi/deploy.sh` from the laptop.
+
+## Wiring (temporary but working, 28 Oct 2026)
+
+Loose on a ledge behind the board for now; it gets tidied into the junction box, and the relay module and 74AHCT125 go in when they arrive.
+
+**Supplies:** two YU0510 5 V 10 A bricks on one mains lead through a splitter, DC plugs cut. On both, the **plain conductor is +** and the printed one is −. Both are needed together to start the strip.
+
+**Power enters the strip at six points:** the 4-way cable plus five feeds from the two 8-way harness plugs. Measured 28 Oct: no short between the 5 V and GND buses before connecting; **5.5 V under load** after, and all-on dim white is white at the far end.
+
+**5 V side** (red 16 AWG links):
+- Main 5 V Wago: supply 1 +, supply 2 +, a red link to the 5 V bus Wago.
+- 5 V bus Wago: that link, plus red links to rows 1 and 2 of the 5 V terminal piece.
+- 5 V terminal piece: row 1, left = red link + 4-way blue, right = B1 + B4; row 2, left = red link + B5, right = B6 + B7.
+
+**GND side** (blue 16 AWG links):
+- Main GND Wago: supply 1 −, supply 2 −, a blue link to GND bus Wago 1.
+- GND bus Wago 1: that link, a blue link to GND terminal row 1, and a blue link to GND bus Wago 2.
+- GND bus Wago 2: that link, a blue link to GND terminal row 2, and the **Pi ground** (Pi pin 25) in its own hole.
+- GND terminal piece: row 1, left = blue link + 4-way black, right = A2 + A3; row 2, left = blue link + A5, right = A6 + A7.
+
+**Data** (the old terminal strip): 4-way green ← Pi pin 19 (MOSI, data); 4-way red ← Pi pin 23 (SCLK, clock). No level shifter (3.3 V direct works) and no relays yet.
+
+**The 4-way strip cable:** blue = 5 V, black = GND, green = data, red = clock.
+
+**The harness** (two 8-way plugs, positions 1–8 left to right with the screws facing you): plain-white plug B1, B4–B7 = 5 V; black-and-white striped plug A2, A3, A5–A7 = GND. A1, A4, A8, B2, B3 and B8 connect to nothing and stay in the plugs.
+
+**Ratings:** the terminal pieces are 3 A each. Normal use is well under that (a cast is under 1 A; all-on at 10% is about 1.5 A). Only a full-on power-up after a power cut briefly exceeds it, until the Pi boots and `leds-off-at-boot` clears the strip. A few 5-port Wagos (221-415) would make a cleaner power bus when it's boxed.
+
+**Touchscreen:** video on the Pi's second HDMI port (DRM connector `HDMI-A-2`, through the micro-HDMI adapter), touch over USB (a G2Touch multi-touch device).
 
 ## Other files
 

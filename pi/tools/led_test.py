@@ -2,6 +2,8 @@
 """ProjectBoard bring-up: WS2801 LED strip test over SPI.
 
 Run on the Pi:  python3 /boot/firmware/projectboard/led_test.py
+First stop the listener, or its idle pattern overwrites the test at once:
+                sudo systemctl stop pb-listener   (sudo systemctl start pb-listener after)
 Options:        --brightness 0.10   (0-0.5, default 10%)
                 --pixels 248        (how many "all on" lights)
                 --relays-on         (hold both relays on while the test runs)
