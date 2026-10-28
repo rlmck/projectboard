@@ -121,7 +121,7 @@ led = x*13 + (13 - y)     if x is odd    (B, D, F … run down)
   - The 3.3 V SPI signals from the Pi drive the strip directly, without a level shifter (a 74AHCT125 is on order for the final box).
   - The strip's 4-way cable: **blue = 5 V, black = GND, green = data (Pi pin 19, MOSI), red = clock (Pi pin 23, SCLK)**. The two 8-way plugs are power feeds into the strip (5 V on one, GND on the other), not signals; they're not connected yet, so the far end of the board drops voltage and shows the wrong colours on bright frames.
   - **Not yet checked:** mirrored casts.
-- **Mapped on the wall on 28 Oct 2026** with `pb-ledmap` (`pi/README.md` → "LED mapping"): every real hold lights the LED the formula gives, so every column runs the way it says (B, D … down). The three mismatches found were app labels, not LEDs, fixed in the board data by db/32.
+- **Mapped on the wall on 28 Oct 2026** with `pb-ledmap` (`pi/README.md` → "LED mapping"): every real hold lights the LED the formula gives, so every column runs the way it says (B, D … down). The three mismatches found were app labels, not LEDs, fixed in the board data by db/32 and rechecked on the wall after the deploy, along with the B1/B2 feet-indicator lights (LEDs 26 and 25).
 
 ### 6.5 Feet indicators
 - The original settings file names `hold21` (B2, LED 25) "Orange" and `hold2` (B1, LED 26) "Black". Neither cell has a real hold.

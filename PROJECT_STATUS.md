@@ -4,6 +4,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 
 ## Current state (as of 2026-10-28)
 - **The LEDs work and casting works end to end** (phone → Supabase → Pi 4 → LEDs) on **temporary wiring** behind the board (loose on a ledge; to be tidied and boxed). Power now enters the strip at six points (the 4-way cable plus five 8-way feeds, wired 28 Oct): 5.5 V under load, and all-on dim white is white at the far end. Wiring: `pi/README.md` → "Wiring". People are already using it: 50 casts on the evening of 26 Oct.
+- **Every hold's LED is checked on the wall (28 Oct 2026)** with `pb-ledmap`, the LED mapping tool (`pi/README.md` → "LED mapping"). The LEDs and the hold → LED formula were right everywhere; three app labels at the top were shifted, fixed in the board data by db/32 (188 real holds, `pb-v119`), and rechecked on the wall after the deploy. Mirrored casts are still unchecked.
 - **The proper listener, with self-healing and night mode, is live on the Pi since 26 Oct 21:08** (`pi/`, see `pi/README.md`), replacing the stopgap (kept on the Pi for a rollback). Real casts light correctly (checked 21:30, about 0.25–0.45 s from cast to LEDs). Night mode runs 23:00–08:00; its first real switch is the night of 26 Oct, not yet checked. The acceptance tests are still to do.
 - **Glisten, the LEDs' idle animation, is deployed** (seen on the Pi 28 Oct: `pb-status` shows `glisten` at 30 fps, 15.6 ms a frame; built 27 Oct, `pi/listener/glisten.py` + `renderer.py`): 20 minutes after the last cast (and at start and at 08:00) the board shimmers navy/teal/violet with sparkles and a glint; a cast cuts straight in; 23:00 fades to black. Replaces "the last problem stays lit forever". Preview: `python tools/glisten_preview.py`.
 - **Idle patterns built, not deployed (28 Oct):** ten patterns in `pi/listener/patterns/` (glisten, chase, lava, breathe, aurora, rain, ripples, fireflies, teaser, wave), chosen by `IDLE_PATTERN` (a name or `cycle`, with `IDLE_CYCLE` and `IDLE_CYCLE_MIN`); the default stays `glisten`. `pb-idle` on the Pi switches live without a redeploy (`pb-idle tour` shows each for 60 s). Laptop preview: `python tools/idle_preview.py`. Ross's choice: **wave** (a vertical band sweeping left and right, green bottom quarter / blue / red top three rows, dark elsewhere), set as `IDLE_PATTERN=wave` in the laptop's `pi/config.env`; live once Ross runs `bash pi/deploy.sh`.
@@ -17,7 +18,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - The original system's SD card image (dtb-backup.img) is kept for reference only.
 - board_listener.py will be discarded; Pi-side code starts fresh.
 - The app is not yet announced to the public: the wiring is temporary (loose behind the board, not yet boxed).
-- The app itself is live at https://symmetryboard.co.uk (service worker `pb-v118`, 27 Oct 2026), with the Pat Burner challenge live. Every styling value now lives in `app/tokens.css` (no visual change).
+- The app itself is live at https://symmetryboard.co.uk (service worker `pb-v119`, 28 Oct 2026), with the Pat Burner challenge live. Every styling value now lives in `app/tokens.css` (no visual change).
 
 ## Decisions
 - Remove Google sign-in completely. **Done 18 Oct 2026** (provider off; OAuth client deleted 19 Oct).
@@ -99,7 +100,7 @@ Newest first. Each entry: date, which side (Claude Code / chat), what changed, w
     - Docs: 188 holds, and the mirror table now differs from Gareth's in 5 entries.
     - Column directions confirmed on the wall: every hold lights its formula LED.
   - **Left:**
-    - Ross: deploy the app (`pb-v119`), then `bash pi/deploy.sh`, then re-check K9, N13 and `Leds` in the mapping tool.
+    - ~~Ross: deploy the app, then the Pi, then re-check~~ **Done 28 Oct 2026:** `pb-v119` live (`4e24ddf` on `dev` and `main`, the live `sw.js` checked), `bash pi/deploy.sh` run, and on the wall K9, N13 and `Leds` all light correctly, the B1/B2 feet-indicator lights too.
     - Check mirrored casts on the wall.
     - Decide the B1/B2 feet indicators (open question 1).
     - Once relays exist, `pb-mode` must not cut the LED supplies while `pb-ledmap` runs.
