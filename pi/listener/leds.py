@@ -7,7 +7,7 @@
 
 Contract 6.4: SPI0 CE0 (/dev/spidev0.0), 1 MHz, mode 0, MSB first, 3 bytes per
 pixel in R, G, B order. Every write covers STRIP_PIXELS pixels, so anything
-past the board's 247 is cleared too, except Glisten's frames, which cover the
+past the board's 247 is cleared too, except the idle frames, which cover the
 board's 248 to keep 30 fps. Pixel 0 (behind the board) is never lit.
 """
 import os
@@ -26,7 +26,7 @@ class Strip:
     def write(self, leds, pixels=None):
         """leds: {index: (r, g, b)} as ints 0-255; every other pixel is set off.
 
-        pixels: write only the first N (the Glisten frames: the board's 248
+        pixels: write only the first N (the idle frames: the board's 248
         instead of all 1200). Pixels past N keep what they had.
         """
         import spidev

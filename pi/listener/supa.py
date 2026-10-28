@@ -44,3 +44,13 @@ def fetch_mirror_map(cfg):
     if isinstance(mm, str):
         mm = json.loads(mm)
     return mm or {}
+
+
+def fetch_benchmarks(cfg):
+    """Every benchmark problem's name and holds (for the teaser idle pattern): one small read."""
+    rows = _retry_once(lambda: _get(cfg, 'problems', {
+        'select': 'name,start_holds,intermediate_holds,finish_hold',
+        'is_benchmark': 'eq.true', 'order': 'name', 'limit': '500'}))
+    if not isinstance(rows, list):
+        raise ValueError('benchmarks lookup returned %s' % type(rows).__name__)
+    return rows

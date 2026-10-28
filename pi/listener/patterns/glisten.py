@@ -1,9 +1,9 @@
-"""Glisten: the board's idle animation. Pure: no I/O, no clock, no strip.
+"""Glisten: the first idle pattern, and the fallback for all the others (an
+idle pattern that throws is replaced by Glisten: idle.py). Pure: no I/O, no
+clock, no strip.
 
-renderer.py asks for one frame at a time, giving the seconds since Glisten
-started; tools/glisten_preview.py runs this same code on the laptop. Everything
-is worked out on the 19 x 13 grid (contract 6.4: row 1 at the bottom, column A
-on the left), so the effects are 2D on the wall, and only then turned into LED
+Worked out on the 19 x 13 grid (common.py: row 1 at the bottom, column A on
+the left), so the effects are 2D on the wall, and only then turned into LED
 indices. Pixel 0 is never lit.
 
 Three layers, added in perceptual brightness (0-1, what the eye sees):
@@ -11,8 +11,8 @@ Three layers, added in perceptual brightness (0-1, what the eye sees):
    different directions, through a navy -> teal -> violet -> pink palette.
 2. Sparkles: single cells flash cool white (a fast attack, an exponential decay).
 3. Glint: every 20-40 s a soft diagonal band sweeps across the board.
-Then gamma (perceptual -> the LED's linear PWM value, 0-255), then the idle
-current cap through board.scale().
+Then (common.py, or idle.py on the Pi) gamma, perceptual -> the LED's linear
+PWM value 0-255, then the idle current cap through board.scale().
 
 Photosensitivity: sparkles are single cells, two neighbours never start
 together, and a cell can't sparkle again for SPARKLE_CELL_GAP s (so never more
@@ -20,24 +20,21 @@ than 1 flash in 2 s per cell, far under 3 a second). The glint is a slow sweep,
 not a flash, and nothing changes the whole board at once.
 """
 import math
-import random
 
-import board
+from .common import (CELLS, COLS, GAMMA, LED, NAVY, NEIGHBOURS, ROWS, TEAL, VIOLET, COOL_WHITE,  # noqa: F401
+                     Pattern, blend, dim, palette_lut, smooth, to_pwm)
 
 # ---- Tunables ---------------------------------------------------------------
-# Colours are perceptual RGB 0-1, before gamma. Keep every dark colour's
-# strongest channel at about 0.25 or more: below that the 8-bit PWM steps
-# (1, 2, 3 ...) show as visible jumps in a slow fade.
-
-GAMMA = 2.2
+# Colours are perceptual RGB 0-1, before gamma (common.py: keep a dark colour's
+# strongest channel at about 0.25 or more).
 
 # Shimmer: the noise (0-1) picks a colour along these stops. The navy is the
 # floor (most of the board, most of the time), the pink (the app's --accent,
 # #ec4899, dimmed) only shows at the noise peaks.
 PALETTE = [
-    (0.00, (0.05, 0.08, 0.27)),    # deep navy
-    (0.40, (0.00, 0.30, 0.32)),    # teal
-    (0.70, (0.25, 0.07, 0.42)),    # violet
+    (0.00, NAVY),                  # deep navy
+    (0.40, TEAL),                  # teal
+    (0.70, VIOLET),                # violet
     (0.90, (0.50, 0.15, 0.32)),    # accent pink
     (1.00, (0.60, 0.18, 0.39)),
 ]
@@ -49,7 +46,7 @@ SHIMMER_DETAIL_WEIGHT = 0.4
 SHIMMER_CONTRAST = 1.9        # stretches the noise around 0.5 so the whole palette gets used
 
 # Sparkles
-SPARKLE_COLOUR = (0.80, 0.88, 1.00)   # cool white, a little blue (the far end drops voltage)
+SPARKLE_COLOUR = COOL_WHITE           # cool white, a little blue (the far end drops voltage)
 SPARKLE_LEVEL = 0.85                  # peak, added on top of the shimmer
 SPARKLE_ATTACK = 0.08                 # s, rise to the peak
 SPARKLE_DECAY = (0.6, 1.2)            # s to fade to ~5%, picked per sparkle
@@ -67,82 +64,22 @@ GLINT_LEVEL = 0.22         # keeps the worst frame (glint + sparkles) under the 
 GLINT_COLOUR = (0.75, 0.85, 1.00)
 # ------------------------------------------------------------------------------
 
-COLS, ROWS = board.COLS, board.ROWS
-CELLS = COLS * ROWS
-LED = [board.led_index(n) for n in range(1, CELLS + 1)]      # cell (n - 1) -> LED index
 _LAT = 256                                                   # noise lattice, wraps
-
-_LUT_N = 4096
-_PWM = [int(round(255 * (i / (_LUT_N - 1)) ** GAMMA)) for i in range(_LUT_N)]
-_PERCEPT = [(v / 255) ** (1 / GAMMA) for v in range(256)]
-
-
-def to_pwm(p):
-    """Perceptual 0-1 -> PWM 0-255 (gamma)."""
-    if p <= 0:
-        return 0
-    if p >= 1:
-        return 255
-    return _PWM[int(p * (_LUT_N - 1) + 0.5)]
-
-
-def blend(a, b, k):
-    """Crossfade two PWM frames ({led: (r, g, b)}) in perceptual space: k=0 is a, k=1 is b."""
-    out = {}
-    for i in set(a) | set(b):
-        ca, cb = a.get(i, (0, 0, 0)), b.get(i, (0, 0, 0))
-        rgb = tuple(to_pwm(_PERCEPT[x] + (_PERCEPT[y] - _PERCEPT[x]) * k) for x, y in zip(ca, cb))
-        if any(rgb):
-            out[i] = rgb
-    return out
-
-
-def dim(frame, k):
-    """A PWM frame faded by k (1 = as is, 0 = black), in perceptual space."""
-    return blend(frame, {}, 1 - k)
-
-
-def smooth(x):
-    return x * x * (3 - 2 * x)
-
-
-def _palette_lut(n=256):
-    lut = []
-    for i in range(n):
-        v = i / (n - 1)
-        for (p0, c0), (p1, c1) in zip(PALETTE, PALETTE[1:]):
-            if v <= p1:
-                k = (v - p0) / (p1 - p0) if p1 > p0 else 0
-                lut.append(tuple(a + (b - a) * k for a, b in zip(c0, c1)))
-                break
-    return lut
-
-
-_PAL = _palette_lut()
-
-
-def _neighbours(c):
-    x, y = c % COLS, c // COLS
-    return [yy * COLS + xx for yy in (y - 1, y, y + 1) for xx in (x - 1, x, x + 1)
-            if 0 <= xx < COLS and 0 <= yy < ROWS and (xx, yy) != (x, y)]
-
-
-NEIGHBOURS = [_neighbours(c) for c in range(CELLS)]
+_PAL = palette_lut(PALETTE)
 # Distance across the glint band, for each of its two diagonals (cells).
 _DIAG = [[(c % COLS + c // COLS) / math.sqrt(2) for c in range(CELLS)],
          [(c % COLS + (ROWS - 1 - c // COLS)) / math.sqrt(2) for c in range(CELLS)]]
 _DIAG_MAX = (COLS - 1 + ROWS - 1) / math.sqrt(2)
 
 
-class Glisten:
-    def __init__(self, brightness=1.0, max_ma=2000.0, ma_per_channel=20.0, seed=None):
-        self.brightness = min(max(float(brightness), 0.0), 1.0)
-        self.max_ma = float(max_ma)
-        self.ma_per_channel = float(ma_per_channel)
-        self.rng = rng = random.Random(seed)
+class Glisten(Pattern):
+    name = 'glisten'
+    about = 'a navy, teal and violet shimmer, cool white sparkles, now and then a diagonal glint'
+
+    def setup(self):
+        rng = self.rng
         self.lat = [[rng.random() for _ in range(_LAT)] for _ in range(_LAT)]
         self.off = (rng.uniform(0, 100), rng.uniform(0, 100), rng.uniform(0, 100), rng.uniform(0, 100))
-        self.t = None
         self.sparkles = []          # [cell, start, decay]
         self.last_start = {}        # cell -> when it last sparkled
         self.started = []           # (cell, start), every sparkle so far (tests read it)
@@ -150,8 +87,6 @@ class Glisten:
         self.retarget_at = rng.uniform(3, 8)
         self.glint = None           # (start, which diagonal, direction)
         self.next_glint = rng.uniform(*GLINT_FIRST)
-        self.capped_frames = 0      # frames the current cap scaled down
-        self.last_cap, self.last_ma = 1.0, 0.0
 
     # -- the layers -----------------------------------------------------------
 
@@ -215,8 +150,7 @@ class Glisten:
 
     def levels(self, t):
         """The perceptual frame at t seconds: a list of [r, g, b] (0-1) per cell, cell = hold number - 1."""
-        dt = 0.0 if self.t is None else max(0.0, t - self.t)
-        self.t = t
+        dt = self.step_dt(t)
         px = self._shimmer(t)
         self._update_sparkles(t, dt)
         for c, t0, decay in self.sparkles:
@@ -240,29 +174,4 @@ class Glisten:
                     p = px[c]
                     for i in range(3):
                         p[i] += GLINT_COLOUR[i] * e
-        b = self.brightness
-        if b != 1.0:
-            for p in px:
-                p[0] *= b
-                p[1] *= b
-                p[2] *= b
         return px
-
-    # -- output -----------------------------------------------------------------
-
-    def cap(self, leds):
-        """The idle current cap on a PWM frame (board.scale); counts the frames it scaled down."""
-        out, cap, ma = board.scale(leds, 1.0, self.max_ma, self.ma_per_channel)
-        self.last_cap, self.last_ma = cap, ma
-        if cap < 1:
-            self.capped_frames += 1
-        return out
-
-    def frame(self, t):
-        """{led: (r, g, b)} PWM 0-255 at t seconds, capped; unlit LEDs left out, pixel 0 never in it."""
-        leds = {}
-        for c, p in enumerate(self.levels(t)):
-            rgb = (to_pwm(p[0]), to_pwm(p[1]), to_pwm(p[2]))
-            if rgb[0] or rgb[1] or rgb[2]:
-                leds[LED[c]] = rgb
-        return self.cap(leds)

@@ -15,7 +15,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(ROOT, 'pi', 'listener'))
 sys.dont_write_bytecode = True
 import board  # noqa: E402
-import glisten  # noqa: E402
+from patterns import glisten  # noqa: E402
 import renderer  # noqa: E402
 
 CAST = {54: (0, 127, 0), 1: (0, 127, 0), 200: (0, 0, 127), 247: (127, 0, 0)}

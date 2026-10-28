@@ -6,7 +6,7 @@
 #   sudo bash ~/pb-deploy/install.sh [--dry-run]
 #
 # Where things go:
-#   listener/*.py      /opt/projectboard/listener/
+#   listener/*.py      /opt/projectboard/listener/ (and listener/patterns/*.py)
 #   ops/board-cam.sh   /opt/projectboard/ops/
 #   ops/pb-*           /usr/local/bin/
 #   systemd/*          /etc/systemd/system/ (kiosk.service as installed 26 Oct)
@@ -50,10 +50,19 @@ changed() {   # changed PATTERN...: did anything matching change?
 run() { if [ $DRY -eq 1 ]; then echo "   would run: $*"; else echo "   $*"; "$@"; fi; }
 
 echo "== Files"
-for f in board.py supa.py power.py glisten.py renderer.py; do put "listener/$f" "/opt/projectboard/listener/$f" 0644; done
+for f in board.py supa.py power.py renderer.py; do put "listener/$f" "/opt/projectboard/listener/$f" 0644; done
+for f in "$SRC"/listener/patterns/*.py; do
+    put "listener/patterns/$(basename "$f")" "/opt/projectboard/listener/patterns/$(basename "$f")" 0644
+done
+# glisten.py moved into listener/patterns/ (28 Oct 2026): remove the old copy.
+if [ -f /opt/projectboard/listener/glisten.py ]; then
+    CHANGED+=(/opt/projectboard/listener/glisten.py)
+    if [ $DRY -eq 1 ]; then echo "   would remove /opt/projectboard/listener/glisten.py (moved)"
+    else rm -f /opt/projectboard/listener/glisten.py; echo "   removed /opt/projectboard/listener/glisten.py (moved to patterns/)"; fi
+fi
 for f in pb_listener.py leds.py mode.py; do put "listener/$f" "/opt/projectboard/listener/$f" 0755; done
 put ops/board-cam.sh /opt/projectboard/ops/board-cam.sh 0755
-for f in pb-health pb-mode pb-status pb-bootcheck pb-weekly-reboot; do put "ops/$f" "/usr/local/bin/$f" 0755; done
+for f in pb-health pb-mode pb-status pb-idle pb-bootcheck pb-weekly-reboot; do put "ops/$f" "/usr/local/bin/$f" 0755; done
 for f in "$SRC"/systemd/*.service "$SRC"/systemd/*.timer; do
     put "systemd/$(basename "$f")" "/etc/systemd/system/$(basename "$f")" 0644
 done

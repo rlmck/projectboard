@@ -13,8 +13,11 @@ docs/pi4-listener-kiosk-plan.md, section R1:
 - Night mode (mode.py): the strip fades out and casts are ignored, but the
   socket stays joined.
 - The strip belongs to the LED thread (renderer.py): a cast is lit at once,
-  IDLE_AFTER_S after the last cast the idle animation (Glisten, glisten.py)
+  IDLE_AFTER_S after the last cast the idle pattern (patterns/, IDLE_PATTERN)
   fades in, and at night the strip fades to black. SIGUSR1 = idle now.
+  SIGUSR2 = read pb-idle's choice from /run/projectboard/idle-pattern (the
+  file is removed at start, so a restart goes back to config.env).
+- The benchmark problems (for the teaser pattern) are read every half hour.
 - Status in /run/projectboard/listener.json for pb-health and pb-status.
 
     pb_listener.py [--dry-run] [--config FILE] [--status FILE]
@@ -34,6 +37,7 @@ import leds as ledlib  # noqa: E402
 import mode as modelib  # noqa: E402
 import renderer  # noqa: E402
 import supa  # noqa: E402
+from patterns import teaser  # noqa: E402
 
 from websockets.asyncio.client import connect  # noqa: E402
 
@@ -45,6 +49,8 @@ STABLE_AFTER = 60          # a connection joined this long resets the backoff
 TICK = 10                  # watchdog ping and status write
 MODE_EVERY = 30
 MIRROR_EVERY = 600
+BENCHMARKS_EVERY = 1800    # the teaser's problems: one small read
+IDLE_FILE = 'idle-pattern'  # pb-idle writes it next to the status file, then sends SIGUSR2
 LED_STALL = 20             # the LED thread silent this long = stuck: exit, systemd restarts us
 
 
@@ -94,6 +100,8 @@ class Listener:
         self.pending = None
         self.cast_ready = asyncio.Event()
         self.mirror_wanted = asyncio.Event()
+        self.benchmarks_wanted = asyncio.Event()
+        self.idle_file = os.path.join(os.path.dirname(status_path), IDLE_FILE) if status_path else None
         self.stop = asyncio.Event()
         self.mirror_map = None
         self.mode, self.mode_reason = modelib.mode_now(self.cfg)
@@ -105,7 +113,8 @@ class Listener:
             'last_message_at': None, 'last_cast_at': None, 'last_cast_name': None,
             'casts_shown': 0, 'casts_ignored_night': 0, 'error_count': 0, 'last_error': None,
             'mirror_map_at': None, 'updated_at': now,
-            'leds': None, 'idle_fps': None, 'idle_frame_ms': None, 'idle_capped_frames': 0, 'led_write_errors': 0,
+            'leds': None, 'idle_pattern': None, 'idle_plan': None, 'idle_override': None, 'benchmarks': None,
+            'idle_fps': None, 'idle_frame_ms': None, 'idle_capped_frames': 0, 'led_write_errors': 0,
         }
 
     # -- status -------------------------------------------------------------
@@ -157,6 +166,23 @@ class Listener:
         log('SIGUSR1: idle now')
         self.leds.idle_now()
 
+    def idle_pattern(self):
+        """SIGUSR2 from pb-idle: its choice is in the idle file."""
+        try:
+            with open(self.idle_file, encoding='utf-8') as f:
+                spec = f.read(200).strip()
+        except (OSError, TypeError) as e:
+            warn('SIGUSR2 but no idle pattern to read: %s' % e)
+            return
+        log('SIGUSR2: idle pattern %r' % spec)
+        self.leds.set_pattern(spec)
+        # Show it in listener.json straight away (pb-idle reads it back), not at the next tick.
+        asyncio.get_running_loop().call_later(0.5, self.refresh_leds_status)
+
+    def refresh_leds_status(self):
+        self.status.update(self.leds.stats(reset=False))
+        self.write_status()
+
     # -- background tasks ---------------------------------------------------
 
     async def ticker(self):
@@ -207,6 +233,23 @@ class Listener:
             except Exception as e:
                 self.error('mirror map not loaded (%s): %s' % (
                     'keeping the last one' if self.mirror_map is not None else 'mirrored casts skipped', e))
+
+    async def benchmarks_loop(self):
+        while True:
+            try:
+                await asyncio.wait_for(self.benchmarks_wanted.wait(), BENCHMARKS_EVERY)
+            except asyncio.TimeoutError:
+                pass
+            self.benchmarks_wanted.clear()
+            try:
+                found = teaser.from_rows(await asyncio.to_thread(supa.fetch_benchmarks, self.cfg))
+            except Exception as e:      # only the teaser needs them: a warning, not an error
+                warn('benchmarks not loaded (the teaser keeps the last ones): %s: %s' % (type(e).__name__, e))
+                continue
+            if len(found) != self.status['benchmarks']:
+                log('benchmarks loaded: %d' % len(found))
+            self.status['benchmarks'] = len(found)
+            self.leds.set_benchmarks(found)
 
     async def worker(self):
         while True:
@@ -347,6 +390,8 @@ class Listener:
                     self.set_state('joined')
                     log('joined %s' % self.topic)
                     self.mirror_wanted.set()
+                    if self.status['benchmarks'] is None:
+                        self.benchmarks_wanted.set()
                     await self.pump(ws)
             except asyncio.CancelledError:
                 raise
@@ -371,13 +416,21 @@ class Listener:
                 pass                      # Windows, when testing on the laptop
         if hasattr(signal, 'SIGUSR1'):
             loop.add_signal_handler(signal.SIGUSR1, self.idle_now)
+            loop.add_signal_handler(signal.SIGUSR2, self.idle_pattern)
+        if self.idle_file:
+            try:
+                os.remove(self.idle_file)       # pb-idle's choice lasts until a restart
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                warn('could not remove %s: %s' % (self.idle_file, e))
         log('starting: %s, mode %s (%s)' % (self.topic, self.mode, self.mode_reason))
         await self.clear('start')
         self.leds.start()
         self.write_status()
         sd_notify('READY=1')
         tasks = [asyncio.create_task(c) for c in
-                 (self.ticker(), self.mirror_loop(), self.worker(), self.connection())]
+                 (self.ticker(), self.mirror_loop(), self.benchmarks_loop(), self.worker(), self.connection())]
         stopper = asyncio.create_task(self.stop.wait())
         done, _ = await asyncio.wait(tasks + [stopper], return_when=asyncio.FIRST_COMPLETED)
         for t in done:

@@ -25,9 +25,10 @@ if [ -f pi/config.env ] && grep -q $'\r' pi/config.env; then
 fi
 
 echo "== Copying pi/ to $HOST:~/$STAGE"
-ssh "$HOST" "rm -rf ~/$STAGE && mkdir -p ~/$STAGE/listener ~/$STAGE/ops ~/$STAGE/systemd/kiosk.service.d ~/$STAGE/conf"
+ssh "$HOST" "rm -rf ~/$STAGE && mkdir -p ~/$STAGE/listener/patterns ~/$STAGE/ops ~/$STAGE/systemd/kiosk.service.d ~/$STAGE/conf"
 scp -q pi/install.sh pi/config.env.example "$HOST:$STAGE/"
 scp -q pi/listener/*.py "$HOST:$STAGE/listener/"
+scp -q pi/listener/patterns/*.py "$HOST:$STAGE/listener/patterns/"
 scp -q pi/ops/* "$HOST:$STAGE/ops/"
 scp -q pi/systemd/*.service pi/systemd/*.timer "$HOST:$STAGE/systemd/"
 scp -q pi/systemd/kiosk.service.d/* "$HOST:$STAGE/systemd/kiosk.service.d/"

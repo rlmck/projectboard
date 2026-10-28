@@ -9,7 +9,7 @@ Everything that runs on the Pi 4 behind the board: the cast listener that lights
 | Unit | What it does |
 |---|---|
 | `leds-off-at-boot` | Clears the strip early in boot (`leds.py --off`). |
-| `pb-listener` | The cast listener (`listener/pb_listener.py`). It joins Supabase Realtime `board:HangoutPortland`, and on each `cast_problem` looks the problem up by name and lights it (contract §6). systemd restarts it if it exits, and its watchdog restarts it if it freezes for 30 s. When nobody has cast for 20 minutes it runs **Glisten**, an ambient animation (below). Status goes to `/run/projectboard/listener.json`. |
+| `pb-listener` | The cast listener (`listener/pb_listener.py`). It joins Supabase Realtime `board:HangoutPortland`, and on each `cast_problem` looks the problem up by name and lights it (contract §6). systemd restarts it if it exits, and its watchdog restarts it if it freezes for 30 s. When nobody has cast for 20 minutes it runs an **idle pattern** (below). Status goes to `/run/projectboard/listener.json`. |
 | `pb-health.timer` | Every 2 min, as root (`ops/pb-health`). Network: brings Wi-Fi back up, restarts NetworkManager, and reboots after 10 min down (at most 1 an hour and 3 a day). It also restarts Tailscale, a stuck listener or the webcam when needed, and logs temperature, disk and throttling. |
 | `pb-mode.timer` | Every minute (`ops/pb-mode`). Night (23:00–08:00 by default, from the clock) stops the kiosk and turns the screen off; day turns them back on. The listener clears the LEDs and ignores casts at night by itself. |
 | `pb-weekly-reboot.timer` | Monday 07:45, skipped if the Pi has been up under an hour. |
@@ -25,16 +25,33 @@ Also installed:
 
 **Relays:** not built. `listener/power.py` is the hook for switching the LED supplies at night once the relay module is fitted.
 
-## Glisten, the idle animation
+## Idle patterns
 
-From `IDLE_AFTER_S` (1200 s) after the last cast, and when the listener starts or the night ends in the daytime, the board shows Glisten: a slow navy, teal and violet shimmer with a touch of the app's pink, single cells sparkling cool white, and every 20–40 s a soft diagonal glint. It fades in over 1.5 s from whatever was lit. A cast cuts straight in, with no fade. At 23:00 everything fades to black over 3 s.
+From `IDLE_AFTER_S` (1200 s) after the last cast, and when the listener starts or the night ends in the daytime, the board runs an idle pattern. It fades in over 1.5 s from whatever was lit. A cast cuts straight in, with no fade. At 23:00 everything fades to black over 3 s. The same brightness, gamma (2.2), `IDLE_MAX_AMPS` cap and frame rate apply to every pattern.
 
-- **Code:** `listener/glisten.py` (the pattern, pure; every colour and speed is in its Tunables block) and `listener/renderer.py` (the LED thread: the only writer to the strip, with the cast / idle / night states). The event loop only posts to it, so casts, the heartbeat and the watchdog never wait on it. If Glisten throws, it's logged once, the strip is cleared and idle stays dark until a restart; casts carry on. If the LED thread itself dies or stops for 20 s, the listener exits and systemd restarts it.
-- **Settings** (`config.env`, a restart applies them): `IDLE_ANIMATION=on|off` (off just clears the strip when idle), `IDLE_AFTER_S`, `IDLE_BRIGHTNESS` (0–1), `IDLE_MAX_AMPS` (2.0: its own current cap, 60 mA a pixel at full white; the whole frame is scaled down and it's logged once if it goes over), `IDLE_FPS` (30).
-- **Cost on the Pi 4:** about 3 ms of pure Python a frame (no numpy) plus 6 ms of SPI (frames write the board's 248 pixels, not all 1200).
-- **Safety:** single-cell sparkles only, never two neighbours starting together, a cell at most once every 2 s; no full-board flashes.
-- **Preview on the laptop** (the same code, a scripted minute): `python tools/glisten_preview.py`, then double-click `tools/glisten-preview.html` (gitignored).
-- **On the Pi:** `ssh -t pi@projectboard 'sudo systemctl kill -s USR1 pb-listener'` goes idle now (from a lit problem, not at night). `pb-status` shows the LED state and the frame rate.
+| Pattern | What it does | Pi 4 ms/frame |
+|---|---|---|
+| `glisten` (default) | a navy, teal and violet shimmer, cool white sparkles, now and then a diagonal glint | 3.1 |
+| `chase` | four comets (pink, blue, green, gold) with fading tails chasing round a loop just inside the edge on an otherwise dark board, weaving, now and then one surging past | 3.3 |
+| `lava` | big soft blobs drifting slowly, merging (their colours blend) and glowing in and out | 4.1 |
+| `breathe` | the whole board breathing between two palette colours, each breath rising from the bottom row; the pair moves on every 5 breaths | 2.5 |
+| `aurora` | slow horizontal bands, green low to pink high, rippling across the board | 3.2 |
+| `rain` | soft drops falling down the columns with short trails | 2.4 |
+| `ripples` | rings spreading from random spots and fading | 2.8 |
+| `fireflies` | a handful of warm points fading in and out, drifting slightly | 2.6 |
+| `wave` (chosen 28 Oct) | a vertical band 15% of the board wide sweeping left to right and back every 8 s on a dark board: green in the bottom quarter (rows 1–3), red in the top three rows, blue between | 1.1 |
+| `teaser` | every 15–25 s a random benchmark problem fades in (its cast colours, dimmer), holds 5 s and fades out, over a turned-down shimmer | 3.2 |
+
+The colours come from the app's `tokens.css` (accent pink, the hold colours, gold), copied into `listener/patterns/common.py` (a test checks they still match). Frame times were measured on the Pi on 28 Oct 2026 with `pi/tools/idle_bench.py`, with the listener and kiosk running; SPI adds about 6 ms (frames write the board's 248 pixels, not all 1200). At a pattern change the new pattern is created in one frame: up to ~20 ms once, still inside the 33 ms frame.
+
+- **Settings** (`config.env`, a restart applies them): `IDLE_PATTERN` (a name, or `cycle`), `IDLE_CYCLE` (the names to cycle through, comma or space separated; empty = all ten), `IDLE_CYCLE_MIN` (minutes each, 10; a 3 s crossfade between them; the position follows the clock, so a cast doesn't send the cycle back to the start). Also `IDLE_ANIMATION=on|off` (off just clears the strip when idle), `IDLE_AFTER_S`, `IDLE_BRIGHTNESS` (0–1), `IDLE_MAX_AMPS` (2.0: 60 mA a pixel at full white; the whole frame is scaled down and it's logged once if it goes over), `IDLE_FPS` (30). An unknown name is logged and left out (Glisten if nothing's left).
+- **Try them live, no deploy:** `pb-idle` on the Pi (as pi). `pb-idle list` shows them and what's on; `pb-idle <name>` switches now with a crossfade, until the next listener restart or `pb-idle default`; `pb-idle cycle` runs `IDLE_CYCLE`; `pb-idle tour` shows each pattern for 60 s (each named in the journal: `journalctl -u pb-listener`) and follows along in the terminal, then goes back to the default; `pb-idle now` goes idle now (clears a lit problem). It writes `/run/projectboard/idle-pattern` and sends the listener SIGUSR2: the listener keeps running, a lit problem stays lit (the choice shows at the next idle) and night still wins. `pb-status` shows the pattern and the plan.
+- **Code:** `listener/patterns/`, one module per pattern (pure; each has a Tunables block), `common.py` (the grid, gamma, the palette, the `Pattern` base class: `levels(t)` gives perceptual colours for the 247 cells) and `idle.py` (the registry, `Plan` and `Idle`: plans, crossfades, brightness, gamma and the cap). `listener/renderer.py` is the LED thread, the only writer to the strip (cast / idle / night). The event loop only posts to it, so casts, the heartbeat and the watchdog never wait on it.
+- **Failures:** a pattern that throws, or returns a bad frame, is logged once and replaced by Glisten (and skipped from then on, until a restart). If Glisten itself throws, idle stays dark until a restart; casts carry on. If the LED thread dies or stops for 20 s, the listener exits and systemd restarts it.
+- **The teaser's problems:** the listener reads the benchmark problems (`is_benchmark`, one small read with the anon key) when it first joins and every 30 minutes; a failed read is a warning and keeps the last ones. Shown unmirrored.
+- **Safety:** nothing changes the whole board at once (breathe takes 9 s a breath and rises up the board); Glisten's sparkles are single cells, a cell at most once every 2 s. A test checks every pattern: at most 3 cells jump frame to frame.
+- **Preview on the laptop** (the same code): `python tools/idle_preview.py`, then double-click `tools/idle-preview.html` (gitignored, about 3 MB): every pattern side by side, a big view of the one you click, and a "cycle" tile showing the crossfades.
+- **Bench on the Pi** (no strip touched, the listener keeps running): see the docstring in `pi/tools/idle_bench.py`.
 
 ## Looking at it (Git Bash on the laptop, over Tailscale)
 
@@ -73,9 +90,9 @@ On the laptop (no Pi, no network):
 python -m unittest discover -s pi/tests
 ```
 
-The tests check the LED map against `tools/led_map.json`, the hold order and roles against the app's rules, mirroring, the brightness cap and day/night, and (`test_glisten.py`) the LED thread's states (a cast cuts into idle, idle after the timeout, night wins), the idle current cap, pixel 0 off and the sparkle limits. To try the listener on the laptop: `python pi/listener/pb_listener.py --dry-run --config pi/config.env --no-status`. It joins the real channel and prints the LEDs it would light, so a cast from `tools/cast-test.html` shows up there. On the Pi, `leds.py --show "<name>" [--mirror] [--dry-run]` lights one problem and `leds.py --off` clears the strip.
+The tests check the LED map against `tools/led_map.json`, the hold order and roles against the app's rules, mirroring, the brightness cap and day/night, `test_glisten.py` the LED thread's states (a cast cuts into idle, idle after the timeout, night wins), the idle current cap, pixel 0 off and the sparkle limits, and `test_patterns.py` every idle pattern (frame time, the 2 A cap, pixel 0, the board only, no flashes, brightness near Glisten's), the crossfade, the fallback to Glisten and pb-idle's commands. To try the listener on the laptop: `python pi/listener/pb_listener.py --dry-run --config pi/config.env --no-status`. It joins the real channel and prints the LEDs it would light, so a cast from `tools/cast-test.html` shows up there. On the Pi, `leds.py --show "<name>" [--mirror] [--dry-run]` lights one problem and `leds.py --off` clears the strip.
 
-**Stop the listener before any LED test on the Pi** (`leds.py`, `tools/led_test.py`): while `pb-listener` runs it keeps drawing Glisten, so whatever a test writes is overwritten straight away. `ssh -t pi@projectboard 'sudo systemctl stop pb-listener'`, test, then `sudo systemctl start pb-listener`.
+**Stop the listener before any LED test on the Pi** (`leds.py`, `tools/led_test.py`): while `pb-listener` runs it keeps drawing the idle pattern, so whatever a test writes is overwritten straight away. `ssh -t pi@projectboard 'sudo systemctl stop pb-listener'`, test, then `sudo systemctl start pb-listener`.
 
 The acceptance tests (kill, freeze, Wi-Fi drop, Supabase blocked, reboot mid-cast, the clock across 23:00 and 08:00, boot with no network) are a checklist in the plan doc, section R8.
 

@@ -57,7 +57,7 @@ There are no other fields: no message id, timestamp, sender, hold list, colours 
   - latest cast wins: a cast still being fetched when a newer one arrives is dropped;
   - loads the mirror map on every join and refreshes it every 10 min; a mirrored cast with no map loaded is skipped;
   - **night mode, 23:00–08:00 by the Pi's clock** (day if the clock hasn't synced): the strip is cleared and casts are ignored (logged, not shown), while the socket stays joined;
-  - **idle (Glisten):** `IDLE_AFTER_S` after the last cast (20 min by default), and on start or at the end of the night in the daytime, the problem crossfades (1.5 s) into an ambient animation; a cast cuts straight in. With `IDLE_ANIMATION=off` the strip is cleared instead. At night everything fades to black over 3 s. Details in `pi/README.md`;
+  - **idle (an idle pattern, Glisten by default):** `IDLE_AFTER_S` after the last cast (20 min by default), and on start or at the end of the night in the daytime, the problem crossfades (1.5 s) into an ambient animation (`IDLE_PATTERN`: one of ten patterns, or a cycle; `pb-idle` on the Pi tries them live; the teaser pattern reads the benchmark problems, unmirrored, every half hour); a cast cuts straight in. With `IDLE_ANIMATION=off` the strip is cleared instead. At night everything fades to black over 3 s. Details in `pi/README.md`;
   - clears the strip on stop. It sends no reply, so a cast at night or with the Pi down still shows "Cast: X" in the app (§7 item 2);
   - health checks, watchdogs and deploy are in `pi/README.md`.
 
@@ -162,6 +162,7 @@ Nothing below is decided.
 15. **Who may cast:** anyone, by decision. Does the Pi apply any checks of its own?
 
 ## Change history
+- **2026-10-28, Claude Code:** §5: idle patterns (ten, chosen by `IDLE_PATTERN` or `pb-idle`); the listener also reads the benchmark problems for the teaser pattern. No change to the channel, event or payload.
 - **2026-10-27, Claude Code:** §5 and §7 items 1 and 12: the listener's idle animation, Glisten. No change to the channel, event or payload.
 - **2026-10-27, Claude Code:** §4 and §7 item 14: the wall screen (`/?wall`, `app/wall.js`) casts through `castByName()` too. No change to the channel, event or payload.
 - **2026-10-26, Claude Code:** §5 describes the new Pi listener (`pi/listener/`), including night mode (casts ignored 23:00–08:00). No change to the channel, event or payload.

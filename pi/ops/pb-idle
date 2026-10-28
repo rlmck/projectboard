@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""pb-idle: try the board's idle patterns live, without a redeploy or a restart.
+
+    pb-idle                 what's showing, and the choices
+    pb-idle list            the same
+    pb-idle <name>          switch to that pattern now (crossfading), until the
+                            next listener restart or `pb-idle default`
+    pb-idle cycle           run IDLE_CYCLE (config.env) from its first pattern
+    pb-idle tour            every pattern for 60 s in turn (each named in the
+                            journal), then back to the default; follows along here
+    pb-idle default         back to config.env's IDLE_PATTERN
+    pb-idle now             go idle now (SIGUSR1; clears a lit problem)
+
+Run as pi (or with sudo). It writes the choice to /run/projectboard/idle-pattern
+and sends pb-listener SIGUSR2; the listener's LED thread picks it up. It never
+stops the listener, never cuts into a lit problem (the choice shows at the next
+idle), and night still wins. Permanent choice: IDLE_PATTERN in config.env, deploy.
+"""
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, '/opt/projectboard/listener')
+import mode as modelib  # noqa: E402
+import patterns  # noqa: E402
+
+RUN = '/run/projectboard'
+STATUS = os.path.join(RUN, 'listener.json')
+CHOICE = os.path.join(RUN, 'idle-pattern')
+
+
+def status():
+    try:
+        with open(STATUS, encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def listener_pid():
+    out = subprocess.run(['systemctl', 'show', '-p', 'MainPID', '--value', 'pb-listener'],
+                         capture_output=True, text=True).stdout.strip()
+    pid = int(out) if out.isdigit() else 0
+    if not pid:
+        sys.exit('pb-listener is not running (sudo systemctl start pb-listener)')
+    return pid
+
+
+def show():
+    s = status()
+    try:
+        cfg = modelib.load_config()
+    except OSError:
+        cfg = dict(modelib.DEFAULTS)
+    print('showing now   %s%s' % (s.get('leds') or '?', ', ' + s['idle_pattern'] if s.get('idle_pattern') else ''))
+    print('idle shows    %s' % (s.get('idle_plan') or '?'))
+    print('config.env    IDLE_PATTERN=%s  IDLE_CYCLE=%s  IDLE_CYCLE_MIN=%s' % (
+        cfg.get('IDLE_PATTERN') or 'glisten', cfg.get('IDLE_CYCLE') or '(every pattern)',
+        cfg.get('IDLE_CYCLE_MIN') or patterns.idle.DEFAULT_CYCLE_MIN))
+    print('\npatterns:')
+    for n in patterns.NAMES:
+        print('  %-10s %s' % (n, patterns.PATTERNS[n].about))
+    print('  %-10s %s' % ('cycle', 'IDLE_CYCLE in turn, IDLE_CYCLE_MIN each'))
+    print('  %-10s %s' % ('tour', 'every pattern for %d s, once, then the default' % patterns.TOUR_S))
+    print('  %-10s %s' % ('default', "back to config.env's IDLE_PATTERN"))
+
+
+def send(spec):
+    pid = listener_pid()
+    tmp = CHOICE + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        f.write(spec + '\n')
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, CHOICE)
+    os.kill(pid, signal.SIGUSR2)
+    time.sleep(1.0)
+    s = status()
+    leds = s.get('leds')
+    print('sent %r to pb-listener' % spec)
+    if leds == 'cast':
+        print('a problem is lit: this shows when the board next goes idle (pb-idle now goes idle now)')
+    elif leds == 'night':
+        print("it's night: the board stays dark; this shows in the morning (until a restart)")
+    elif leds == 'dark':
+        print('idle is dark (IDLE_ANIMATION=off, or Glisten failed: see journalctl -u pb-listener)')
+    else:
+        print('showing now   %s' % (s.get('idle_pattern') or leds))
+    return leds
+
+
+def tour():
+    leds = send('tour')
+    if leds in ('cast', 'night', 'dark', None):
+        return 0
+    start = time.time()
+    names = patterns.NAMES
+    print('\nthe tour (Ctrl+C stops following; the tour carries on, pb-idle default ends it):')
+    for i, n in enumerate(names):
+        print('  %s  %-10s %s' % (time.strftime('%H:%M:%S', time.localtime(start + i * patterns.TOUR_S)), n,
+                                  patterns.PATTERNS[n].about))
+    print()
+    try:
+        for i, n in enumerate(names):
+            wait = start + i * patterns.TOUR_S - time.time()
+            if wait > 0:
+                time.sleep(wait)
+            print('%s  now: %s (%d/%d)' % (time.strftime('%H:%M:%S'), n, i + 1, len(names)), flush=True)
+        time.sleep(max(0.0, start + len(names) * patterns.TOUR_S - time.time() + 1))
+        print('%s  tour over: %s' % (time.strftime('%H:%M:%S'), status().get('idle_pattern')))
+    except KeyboardInterrupt:
+        print()
+    return 0
+
+
+def main(argv):
+    arg = argv[0].strip().lower() if argv else 'list'
+    if arg in ('list', 'status', '-h', '--help', 'help'):
+        if arg in ('-h', '--help', 'help'):
+            print(__doc__)
+        show()
+        return 0
+    if arg == 'now':
+        os.kill(listener_pid(), signal.SIGUSR1)
+        print('pb-listener asked to go idle now (not at night)')
+        return 0
+    if arg == 'tour':
+        return tour()
+    if arg in patterns.PATTERNS or arg in ('cycle', 'default'):
+        send(arg)
+        return 0
+    print('no pattern called %r: one of %s, or cycle, tour, default, now' % (arg, ', '.join(patterns.NAMES)))
+    return 2
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))
