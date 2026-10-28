@@ -147,6 +147,7 @@ async function loadOverview(refresh) {
     const { status, data } = await apiJson('/api/overview' + (refresh ? '?refresh=1' : ''));
     if (status !== 200) throw new Error(data.error || status);
     overview = data;
+    $('stale').hidden = !!(window.PB.dash && data.metrics);
     if (window.PB.dash) window.PB.dash.render(data);
     $('no-helper').hidden = !(data.pi_ok && data.helper === false);
     const d = $('drift');
