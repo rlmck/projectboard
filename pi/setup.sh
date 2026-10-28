@@ -20,8 +20,11 @@
 #
 # Why step 5: after the first reboot the Pi joined the Wi-Fi but got no IPv4;
 # NetworkManager's netplan-backed connection had been rewritten at that boot.
-# The fix was a plain keyfile connection (autoconnect-priority 100, the
-# permanent MAC) plus no random MAC while scanning. Root cause not confirmed.
+# The fix was a plain keyfile connection (autoconnect-priority 100) plus no
+# random MAC while scanning. Root cause not confirmed.
+# 28 Oct 2026: the connection's MAC is now random per connection (it was
+# pinned to the permanent one): the access point stopped answering quick
+# rejoins with the same MAC (ASSOC-REJECT status_code=16). See pi/README.md.
 # Wi-Fi power saving is left at the default (turning it off didn't help).
 
 set -euo pipefail
@@ -132,7 +135,7 @@ autoconnect-priority=100
 [wifi]
 mode=infrastructure
 ssid=$WIFI_SSID
-cloned-mac-address=permanent
+cloned-mac-address=random
 
 [wifi-security]
 key-mgmt=wpa-psk

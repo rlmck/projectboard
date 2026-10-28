@@ -21,7 +21,7 @@ Everything that runs on the Pi 4 behind the board: the cast listener that lights
 Also installed:
 - the hardware watchdog (`RuntimeWatchdogSec=15`);
 - a 200 MB cap on the persistent journal;
-- no random Wi-Fi MAC.
+- no random Wi-Fi MAC while scanning (the connection itself uses a random one since 28 Oct: see "Wi-Fi").
 
 **Relays:** not built. `listener/power.py` is the hook for switching the LED supplies at night once the relay module is fitted.
 
@@ -82,6 +82,17 @@ The acceptance tests (kill, freeze, Wi-Fi drop, Supabase blocked, reboot mid-cas
 ## A fresh SD card
 
 `setup.sh` goes on the boot partition with `secrets.env` (`TS_AUTHKEY`, `WIFI_SSID`, `WIFI_PSK`) and `laptop_key.pub`. Run `sudo bash /boot/firmware/projectboard/setup.sh`, **reboot once to test the Wi-Fi**, then run `bash pi/deploy.sh` from the laptop.
+
+## Wi-Fi (28 Oct 2026)
+
+**Random hardware address per connection.** After a disconnect and quick rejoin with the same address, the gym's access point stopped answering the join (`CTRL-EVENT-ASSOC-REJECT bssid=00:00:00:00:00:00 status_code=16` in the wpa_supplicant log, before any password is used). This cut the Wi-Fi after reboots on 26 Oct (11:42, 16:48) and 28 Oct (12:11). `hangout-fixed` now has `802-11-wireless.cloned-mac-address=random` (it was `permanent`), and `setup.sh` writes the same for a fresh card. Verified 28 Oct with an immediate reconnect and two back-to-back reboots. The LAN IP now changes per connection; Tailscale, `projectboard` and `board-cam` (bound to the Tailscale IP) don't care.
+
+**Watchdog and rescue hotspot** (installed on the Pi outside `install.sh`, not yet copied into `pi/`):
+- `pb-netwatch` (`/usr/local/sbin/pb-netwatch.sh`, v2) checks every 30 s: it kicks the Hangout connection at 2 and 6 failed checks, restarts NetworkManager at 4, opens the rescue hotspot for 15 minutes at 8, and reboots at 12 (at most 3 times).
+- `pb-rescue` (`/etc/NetworkManager/system-connections/pb-rescue.nmconnection`): an access point with SSID `projectboard-rescue`, `ipv4.method=shared` (the Pi is 10.42.0.1), autoconnect off. **Working over the hotspot:** `sudo systemctl stop pb-netwatch` first, or it will tear the hotspot down.
+- `pb-netlog` now includes `-u wpa_supplicant`, and the wpa_supplicant logs are kept across boots.
+
+Still to do: copy `pb-netwatch.sh`, its unit, the `pb-rescue` profile (with the psk removed) and the new `pb-netlog` into `pi/`; remove the unused Imager profile `netplan-wlan0-Hangout` once the fix has held for a week; decide on Wi-Fi power saving (on, per the kernel log).
 
 ## Wiring (temporary but working, 28 Oct 2026)
 
