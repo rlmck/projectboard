@@ -17,10 +17,12 @@
 // Once any request of a page has fallen back to the cache, the rest of that page's
 // app files come from the cache too (fallbackClients), so one load doesn't mix old
 // and new copies of the eleven scripts, which share one global scope.
-// Bump CACHE on EVERY deploy that changes app code or data (CLAUDE.md): the new
-// worker's precache is then one consistent version, and old caches are cleared.
+// CACHE is stamped by build.sh: 'pb-local' here (local preview), and in the deployed
+// sw.js a hash of the shipped files, so it changes on every deploy that changes app
+// code or data and on no other. The new worker's precache is then one consistent
+// version, and old caches are cleared. Never edit it by hand.
 
-const CACHE = 'pb-v119';
+const CACHE = 'pb-local';
 // The app shell is precached as './' only (Cloudflare 307s /index.html -> /; the
 // navigate branch below keeps the shell under './'). precache() makes any other
 // redirected entry, such as privacy.html, safe to serve offline.

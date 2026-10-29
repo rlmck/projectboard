@@ -16,7 +16,6 @@ import re
 import shlex
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import types
@@ -125,6 +124,42 @@ def _git_files(files):
     if not isinstance(files, list) or not files or not all(isinstance(f, str) and f in listed for f in files):
         raise Invalid('files: choose from the changed files git status lists')
     return files
+
+
+STAGING_URL = 'https://dev-projectboard.rosslewismckechnie.workers.dev'
+
+
+def _fetch_ok(out):
+    code, o, e = gitops.git('fetch', 'origin', timeout=120)
+    out('$ git fetch origin\n%s%s' % (o, e))
+    return code == 0
+
+
+def _gate(out):
+    """The deploy gate: build.sh --check, as Cloudflare runs it."""
+    code, text = gitops.build_check()
+    out('$ bash build.sh --check\n' + text)
+    if code:
+        out('Stopped: build.sh --check failed, nothing pushed.')
+    return code == 0
+
+
+def _commit(files, msg, out):
+    """Stage exactly these files and commit them (the pre-commit secret scan runs). Exit code."""
+    code, o, e = gitops.git('add', '--', *files)
+    out(o + e)
+    if code:
+        return code
+    p = subprocess.run(['git', 'commit', '-F', '-', '--', *files], cwd=REPO, input=msg.encode(),
+                       capture_output=True, creationflags=procs.NO_WINDOW)
+    out(p.stdout.decode('utf-8', 'replace') + p.stderr.decode('utf-8', 'replace'))
+    return p.returncode
+
+
+def _push(argv, out):
+    p = subprocess.run(argv, cwd=REPO, capture_output=True, timeout=180, creationflags=procs.NO_WINDOW)
+    out('$ %s\n%s' % (' '.join(argv), (p.stdout + p.stderr).decode('utf-8', 'replace')))
+    return p.returncode
 
 
 def build(kind, args):
@@ -292,82 +327,106 @@ def build(kind, args):
         return func_action('pull-nm %s' % name, pull_nm, 'Copy the NetworkManager profile %r into the repo as %s, '
                            'with every password/psk/secret line removed on the Pi.' % (name, target), confirm=True)
 
-    # -- phase 7: app release ----------------------------------------------------------------------
+    # -- phase 7: app release (CLAUDE.md working rule 2: Ship = commit + push main) ------------------
     if kind == 'git-pull':
         def pull(app, out):
-            st = gitops.status()
-            steps = [['fetch', 'origin'], ['pull', '--ff-only']]
-            if st['branch'] == 'dev':
-                steps.append(['pull', '--ff-only', 'origin', 'main'])
-            for s in steps:
+            for s in (['fetch', 'origin'], ['pull', '--ff-only']):
                 code, o, e = gitops.git(*s, timeout=120)
                 out('$ git %s\n%s%s' % (' '.join(s), o, e))
                 if code:
                     return code
             return 0
-        return func_action('git pull', pull, 'Fetch and fast-forward (and on dev, take main too).')
-    if kind == 'git-commit':
-        msg = args.get('message')
-        if not isinstance(msg, str) or not msg.strip() or len(msg) > 5000:
-            raise Invalid('git-commit: a message')
-        files = _git_files(args.get('files'))
+        return func_action('git pull', pull, 'Fetch and fast-forward.')
+    if kind == 'ship':
+        st = gitops.status()
+        if st['branch'] != 'main':
+            raise Invalid('ship: work on main (on %s)' % st['branch'])
+        files = args.get('files') or []
+        msg = args.get('message') or ''
+        if files:
+            files = _git_files(files)
+            if not isinstance(msg, str) or not msg.strip() or len(msg) > 5000:
+                raise Invalid('ship: a commit message')
+        elif not st['unpushed']:
+            raise Invalid('ship: nothing to commit and nothing to push')
 
-        def commit(app, out):
-            code, o, e = gitops.git('add', '--', *files)
-            out(o + e)
+        def ship(app, out):
+            if not _fetch_ok(out):
+                return 1
+            if gitops.count('HEAD', 'origin/main'):
+                out('main on GitHub has commits this copy lacks: Pull first, then Ship.')
+                return 1
+            if not _gate(out):
+                return 1
+            if files and _commit(files, msg, out):
+                return 1
+            return _push(['git', 'push', 'origin', 'HEAD:main'], out)
+        what = ('Commit %d file(s) and push main: ' % len(files) if files else 'Push main: ')
+        return func_action('ship', ship, what + 'THIS DEPLOYS TO REAL USERS (symmetryboard.co.uk). Runs build.sh '
+                           '--check first; Cloudflare runs it again and keeps the last good version if it fails.',
+                           shown='bash build.sh --check && git commit && git push origin HEAD:main', confirm=True,
+                           timeout=300,
+                           preview={'log': '\n'.join(st['unpushed'] + (['(new) ' + msg.strip().splitlines()[0]]
+                                                                       if files else [])) or '(nothing)',
+                                    'diff': ''.join(gitops.diff(f, limit=60000) for f in files)[:200000]})
+    if kind == 'staging':
+        st = gitops.status()
+        if not st['staging_ff']:
+            raise Invalid("staging: dev on GitHub has commits this branch lacks, so pushing would need a force "
+                          "push (Ross's call, outside the console)")
+        if not st['dev_behind']:
+            raise Invalid('staging: dev already has every commit here (commit first: Staging pushes commits only)')
+        log = gitops.out('log', 'origin/dev..HEAD', '--format=%h %s')
+        dirty = [f['path'] for f in st['files'] if f['xy'] != '??']
+
+        def staging(app, out):
+            if not _fetch_ok(out) or not _gate(out):
+                return 1
+            return _push(['git', 'push', 'origin', 'HEAD:dev'], out)
+        return func_action('staging', staging, 'Push %s to dev: staging (%s) rebuilds from it. Live is untouched.'
+                           % (st['branch'], STAGING_URL) + (' Uncommitted changes are NOT included.' if dirty else ''),
+                           shown='bash build.sh --check && git push origin HEAD:dev', confirm=True, timeout=300,
+                           preview={'log': log or '(nothing)'})
+    if kind == 'rollback':
+        sha = args.get('commit')
+        st = gitops.status()
+        if not isinstance(sha, str) or sha not in {c['hash'] for c in st['recent_main']}:
+            raise Invalid('rollback: choose one of the last %d commits on main' % gitops.RECENT)
+        if st['branch'] != 'main':
+            raise Invalid('rollback: on main only (on %s)' % st['branch'])
+        if [f for f in st['files'] if f['xy'] != '??']:
+            raise Invalid('rollback: commit or discard the changes here first')
+        if st['ahead_main'] or st['behind_main']:
+            raise Invalid('rollback: this copy and main on GitHub differ (pull, or ship, first)')
+
+        def rollback(app, out):
+            if not _fetch_ok(out):
+                return 1
+            if gitops.count('HEAD', 'origin/main') or gitops.count('origin/main', 'HEAD'):
+                out('main moved on GitHub: pull, then try again.')
+                return 1
+            code, o, e = gitops.git('revert', '--no-edit', sha, timeout=60)
+            out('$ git revert --no-edit %s\n%s%s' % (sha, o, e))
             if code:
+                gitops.git('revert', '--abort')
+                out("The revert didn't apply cleanly (a later commit changed the same lines): nothing pushed.")
                 return code
-            p = subprocess.run(['git', 'commit', '-F', '-', '--', *files], cwd=REPO, input=msg.encode(),
-                               capture_output=True, creationflags=procs.NO_WINDOW)
-            out(p.stdout.decode('utf-8', 'replace') + p.stderr.decode('utf-8', 'replace'))
-            return p.returncode
-        return func_action('git commit', commit, 'Commit %d file(s) on %s: %s' % (len(files), gitops.out('rev-parse', '--abbrev-ref', 'HEAD'), ', '.join(files)),
-                           confirm=True, preview={'diff': ''.join(gitops.diff(f, limit=60000) for f in files)[:200000]})
-    if kind == 'push-dev':
-        st = gitops.status()
-        if st['branch'] != 'dev':
-            raise Invalid('push-dev: switch to dev first (on %s)' % st['branch'])
-        return local_action('push dev', ['git', 'push', 'origin', 'dev'],
-                            'Push dev to GitHub: staging rebuilds from it.', confirm=True,
-                            preview={'log': '\n'.join(st['unpushed']) or '(nothing to push)'}, timeout=120)
-    if kind == 'ff-main':
-        st = gitops.status()
-        if st['branch'] != 'dev':
-            raise Invalid('ff-main: on dev only')
-        return local_action('fast-forward main', ['git', 'push', 'origin', 'dev:main'],
-                            'Fast-forward main to dev: THIS DEPLOYS TO REAL USERS (symmetryboard.co.uk). Refused by '
-                            'git unless it is a fast-forward.', confirm=True,
-                            preview={'log': '\n'.join(st['to_main']) or '(main already has everything on origin/dev; '
-                                     'push dev first)', 'warnings': st['checks']['warnings']}, timeout=120)
-    if kind == 'cache-bump':
-        path = os.path.join(REPO, 'app', 'sw.js')
-
-        def bump(app, out):
-            with open(path, encoding='utf-8', newline='') as f:
-                text = f.read()
-            new = gitops.bumped(text)
-            with open(path, 'w', encoding='utf-8', newline='') as f:
-                f.write(new)
-            out('CACHE %s -> %s in app/sw.js (not committed)' % (gitops.cache_of(text), gitops.cache_of(new)))
-            return 0
-        return func_action('cache bump', bump, 'Move CACHE in app/sw.js on by one (%s -> next).'
-                           % gitops.checks()['cache'], confirm=True)
-    if kind == 'syntax-check':
+            if not _gate(out):
+                gitops.git('reset', '--hard', 'HEAD~1')
+                out('The reverted tree fails build.sh: the revert commit was dropped, nothing pushed.')
+                return 1
+            return _push(['git', 'push', 'origin', 'HEAD:main'], out)
+        return func_action('rollback %s' % sha, rollback, 'Revert %s on main and push: THIS DEPLOYS TO REAL USERS. '
+                           'A new commit undoes it; history is kept.' % sha,
+                           shown='git revert --no-edit %s && git push origin HEAD:main' % sha, confirm=True,
+                           timeout=300, preview={'diff': gitops.out('show', '--stat', '--format=%h %s%n%ad%n', sha)})
+    if kind == 'build-check':
         def check(app, out):
-            parts = []
-            for n in gitops.SCRIPTS:
-                with open(os.path.join(REPO, 'app', n), encoding='utf-8') as f:
-                    parts.append(f.read())
-            fd, tmp = tempfile.mkstemp(suffix='.js')
-            try:
-                with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                    f.write('\n'.join(parts))
-                p = subprocess.run(['node', '--check', tmp], capture_output=True, creationflags=procs.NO_WINDOW)
-            finally:
-                os.remove(tmp)
-            out((p.stdout + p.stderr).decode('utf-8', 'replace') or 'the eleven scripts parse (node --check)')
-            return p.returncode
-        return func_action('syntax check', check, 'node --check on the eleven app scripts joined.')
+            code, text = gitops.build_check()
+            out(text)
+            return code
+        return func_action('build check', check, 'bash build.sh --check: the syntax check and the three-places '
+                           'rule, as Cloudflare runs them.')
 
     # -- phase 8: LED mapping ------------------------------------------------------------------------
     if kind == 'ledmap':

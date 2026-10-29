@@ -7,9 +7,9 @@
 - **Working rules** (dev → staging → merge on approval, one feature per session, no schema changes without asking): `CLAUDE.md`.
 - **Architecture, data model, auth, caching, deploy mechanics and known issues:** this file. Where it disagrees with CLAUDE.md about the database, this file was checked against the live DB and CLAUDE.md wasn't. The discrepancies are listed at the end.
 - **Security findings:** `docs/security-findings.md`. It's **local only and never committed**, because the repo is public. If you don't have it, you're not on Ross's laptop; ask before touching RLS, grants, casting or sign-up.
-- **Also local only, on Ross's laptop:** `docs/changelog.md` (the feature-by-feature history that used to fill CLAUDE.md), `docs/project-notes.md` (hardware, the Pi, the original DTB system, the Circuits Phase 2 spec) and `db/README.md` (the index of every DB script).
+- **Also local only, on Ross's laptop:** `docs/changelog.md` (the feature-by-feature history that used to fill CLAUDE.md), `docs/project-notes.md` (hardware and the original DTB system) and `db/README.md` (the index of every DB script). The Circuits Phase 2 spec is committed as `docs/circuits-phase2.md`.
 
-> **Nickname accounts went live on 18 Oct 2026** (`pb-v108`, db/30 applied, the Edge Function deployed). Sections 2, 5, 6, 8, 12 and 15 describe them. The 7 existing accounts were moved across (placeholder email, new passphrase, Google data removed) by the local `db/30_go_live.py`; a pre-switch backup is in `Documents\_Archive\ProjectBoard\ProjectBoard-archive\pre-db30-backup-2026-10-18\`. `db/30_rollback.sql` restores the schema. CAPTCHA (Turnstile) is on and the Google provider is off (18 Oct 2026). The investigation behind it is `auth_audit.md` (repo root, local).
+> **Nickname accounts went live on 18 Oct 2026** (`pb-v108`, db/30 applied, the Edge Function deployed). Sections 2, 5, 6, 8, 12 and 15 describe them. The 7 existing accounts were moved across (placeholder email, new passphrase, Google data removed) by the local `db/30_go_live.py`; a pre-switch backup is in `Documents\_Archive\ProjectBoard\ProjectBoard-archive\pre-db30-backup-2026-10-18\`. `db/30_rollback.sql` restores the schema. CAPTCHA (Turnstile) is on and the Google provider is off (18 Oct 2026). The investigation behind it, `auth_audit.md`, is archived outside the repo (29 Oct 2026).
 
 ---
 
@@ -57,7 +57,7 @@ Since 11 Sep 2026 the tracked files are grouped by what they are:
 app/       the website: exactly the files that are deployed, flat (every URL stays at the site root)
 tools/     generators and dev tools, never deployed
 print/     the A5 poster and QR, never deployed
-docs/      two committed docs (the rest of docs/ is local only)
+docs/      the committed docs (overview, rollout plan, cast contract, console plan, circuits Phase 2, Pi plan, log/); the rest is local only
 build.sh  wrangler.jsonc  CLAUDE.md  .gitignore  .gitattributes   (the repo root)
 ```
 
@@ -108,7 +108,7 @@ Load order, set in `index.html`: **`state` → `core` → `problems` → `admin`
 **Upgrading `supabase-js`:**
 1. Download the new version's `package/dist/umd/supabase.js` from the npm tarball, and check the tarball against the registry's `dist.integrity`.
 2. Save it as `app/supabase-js-<version>.js` with the licence header.
-3. Update the three places, bump `CACHE`, and test on staging.
+3. Update the three places (`bash build.sh --check` checks them) and test on staging. `CACHE` changes by itself (the build stamps it).
 
 Never go back to a floating CDN URL: the CSP also blocks it.
 
@@ -385,7 +385,7 @@ Behind the scenes: `signUp({ email: 'u-<16 base32>@users.invalid', password, opt
 
 **Supabase Auth config** (dashboard, plan.md manual step 7): Email provider on, **Confirm email off**, minimum password length 15, Google off, sign-ups on, anonymous sign-ins off, manual linking off, security notifications off, CAPTCHA on (Turnstile secret). Site URL `https://symmetryboard.co.uk`.
 
-## 7. Service worker and caching (`sw.js`, `CACHE = 'pb-v78'` on 11 Sep 2026)
+## 7. Service worker and caching (`sw.js`; `CACHE` stamped by `build.sh` since 29 Oct 2026)
 
 | Request | Strategy |
 |---|---|
@@ -397,11 +397,11 @@ Behind the scenes: `signUp({ email: 'u-<16 base32>@users.invalid', password, opt
 
 - **Precache:** the `ASSETS` list goes through `precache()`, which re-wraps any redirected response as a plain copy. Cloudflare 307s every `*.html` to its extensionless form, and **a cached redirect can't answer a navigation.** Only plain same-origin 200s are ever cached. The shell is **never** cached under `./index.html`.
 - **Updates:**
-  - Code is network-first, so a fresh load gets the latest deploy. **Still bump `CACHE` on every deploy that changes app code or data** (since `pb-v101`): the new worker's precache is then one consistent version to fall back to, which the mixed-version guard above relies on.
-  - To reach **already-open** clients, bump `CACHE`. A new worker → `skipWaiting` → `clients.claim` → the page's `controllerchange` → reload.
+  - **`CACHE` is stamped by the build** (29 Oct 2026; it was bumped by hand, `pb-v1`…`pb-v119`, before). `app/sw.js` holds `const CACHE = 'pb-local'`, which local preview uses as is; `build.sh` writes `pb-` + the first 10 hex of a SHA-1 over `git ls-tree HEAD` for the allowlisted files into `public/sw.js`, so the stamp changes on exactly the deploys that change a shipped file (a docs-only push keeps it, and line endings don't matter). `bash build.sh --stamp <ref>` prints what a commit gets; PB Console compares that for `origin/main` with the live `sw.js`. Code is network-first, so a fresh load gets the latest deploy anyway; the new stamp gives the new worker's precache one consistent version to fall back to, which the mixed-version guard above relies on.
+  - **Already-open** clients get the update through the new stamp. A new worker → `skipWaiting` → `clients.claim` → the page's `controllerchange` → reload.
   - The reload is **deferred** while a create form or the outline editor has unsaved work (`hasUnsavedWork()`), and skipped on first install.
   - **It's also skipped when the page is already running the new code** (since `pb-v92`). The first launch after a deploy fetches the new code network-first, then finds the new worker, which claims the page. That used to reload it and play the splash a second time. A worker found while the page boots (`reg.installing`/`waiting` at registration, or `updatefound` until 3 s after the load's own `reg.update()` settles) doesn't reload, unless the old worker served any of the page from its cache: `sw.js` posts `pb-served-from-cache` to the client when a network-first fetch falls back. A worker found later (the app left open, then resumed) still reloads. Tested against a local copy by bumping `CACHE` between launches.
-  - Bump `CACHE` whenever `ASSETS` or the fetch logic changes.
+  - A change to `ASSETS` or the fetch logic is a change to `sw.js`, a shipped file, so it gets a new stamp too.
   - Registration uses `updateViaCache:'none'`, and `reg.update()` runs on load and on focus. `_headers` sets `/sw.js` and `/` to `no-cache`.
 - **What works offline:** only the shell. Since `pb-v75`, `supabase-js` is vendored and precached, so an offline launch boots past the splash. But no problem data is cached, so the list can't load. Treat the precache as a speed-up, not an offline mode.
 - **Stranded devices:** uninstalling the PWA doesn't clear its worker or caches. The fix is clearing site data (iOS: Settings → Safari → Advanced → Website Data; Chrome: Site settings → Clear & reset).
@@ -419,16 +419,18 @@ Behind the scenes: `signUp({ email: 'u-<16 base32>@users.invalid', password, opt
 
 ## 9. Build and deploy pipeline
 
-1. **Work on `dev`** → push. Cloudflare builds a preview version (uploaded, **not promoted**) at the stable alias `dev-projectboard.rosslewismckechnie.workers.dev`. Test on a real phone there.
-2. **Merge `dev` → `main` only when Ross approves.** Cloudflare builds and promotes it to symmetryboard.co.uk.
-3. **The build** runs `build.sh` from the repo root:
-   - It wipes `public/` and copies an **explicit allowlist** of files from `app/` into it, one-to-one (flat); anything unlisted never ships, even if it's in `app/`.
-   - A listed file that's missing fails the build, so Cloudflare deploys nothing and the previous version stays live.
+1. **Ship by default** (CLAUDE.md working rule 2, 29 Oct 2026): work on `main`; when a task is done and `bash build.sh --check` passes, commit and push `main` (`/ship`, or PB Console's Ship). Cloudflare builds and promotes it to symmetryboard.co.uk.
+2. **"Staging first":** push to `dev` only (`git push origin HEAD:dev`, a fast-forward). Cloudflare builds a preview version (uploaded, **not promoted**) at the stable alias `dev-projectboard.rosslewismckechnie.workers.dev`. Test on a real phone there. `dev` doesn't have to be level with `main`.
+   - **Rollback** is `git revert` + push `main` (`/rollback`, or the console's Rollback), never the Cloudflare dashboard.
+3. **The build** runs `build.sh` from the repo root. It's the **deploy gate**: any failed check exits non-zero, Cloudflare then skips the deploy, and the previous version stays live. The Workers Builds image has Node (24) and git.
+   - **The checks** (`bash build.sh --check` runs only these): every allowlisted file exists; every file in `app/` is allowlisted and `app/` has no folder; every `sw.js` `ASSETS` entry ships; every shipped file is in `ASSETS` except `NOT_PRECACHED`; every shipped `.js`/`.css` is referenced from `index.html` or `privacy.html`; the app scripts, joined in `index.html`'s order, and `sw.js` pass `node --check`; `app/sw.js` holds the `pb-local` placeholder exactly once.
+   - It then wipes `public/` and copies the **explicit allowlist** of files from `app/` into it, one-to-one (flat); anything unlisted never ships, even if it's in `app/`.
+   - **It stamps `CACHE`** in `public/sw.js` (section 7). A local build with uncommitted `app/` changes gets `-dirty` on the end.
    - `wrangler.jsonc` sets `assets.directory: ./public`, with no `main` and no `not_found_handling`, so unknown paths get Cloudflare's blank 404. There's no custom 404 page.
    - **Preview locally** with `python -m http.server 8000` inside `app/`: it's the same tree as the site.
-   - **Compare what Cloudflare would deploy** by building from a clean export: `git -c core.autocrlf=false archive HEAD` into a temp folder, then run `build.sh` there. The Windows checkout has CRLF line endings, so a build from the working tree doesn't match the live bytes.
-4. **The three-places rule:** a new deployable file lives in `app/`, and goes in the `build.sh` allowlist **and** `sw.js` `ASSETS` **and** is referenced from `index.html` (or another shipped page).
-   - Exception: `screenshot-*.png` are build-only.
+   - **Compare what Cloudflare would deploy** by building from a clean export: `git -c core.autocrlf=false archive HEAD` into a temp folder, then run `build.sh` there. The Windows checkout has CRLF line endings, so a build from the working tree doesn't match the live bytes (the stamp does: it comes from git's blob ids).
+4. **The three-places rule:** a new deployable file lives in `app/`, and goes in the `build.sh` allowlist **and** `sw.js` `ASSETS` **and** is referenced from `index.html` (or another shipped page). `build.sh` enforces it.
+   - Exceptions, shipped but not precached (`NOT_PRECACHED`): `sw.js`, `_headers`, `_redirects`, `ProjectBoard.png`, `screenshot-*.png`.
    - A new PNG also needs a `.gitignore` `!app/…` exception.
 5. **`_headers`:**
    - `no-cache` on `/sw.js` and `/`.
@@ -439,7 +441,8 @@ Behind the scenes: `signUp({ email: 'u-<16 base32>@users.invalid', password, opt
    - **Any new third-party origin (CDN, font, API) must be added to the CSP, or it's silently blocked.**
    - Checked on 10 Sep 2026 by driving every view in headless Chrome with the policy enforced: zero violations.
 6. **`_redirects`:** `/scan  /?src=qr  302`. The printed QR encodes `/scan`, so change its destination here, **never by reprinting**. Paths are case-sensitive.
-7. **`.gitattributes`** pins `build.sh`, `app/_headers` and `app/_redirects` to LF, so Git Bash can run `build.sh` from a Windows clone.
+7. **`.gitattributes`** pins `build.sh`, `app/_headers`, `app/_redirects`, `pi/**`, `console/**` and `.githooks/**` to LF, so Git Bash (and the Pi) can run them from a Windows clone.
+   - **The pre-commit hook** (`.githooks/pre-commit`, on per clone with `git config core.hooksPath .githooks`) refuses service-role keys, `db/.env` values, `psk=`/`password=` lines with literal values, `secrets.env` and `pi/config.env`. `bash .githooks/test-pre-commit.sh` tests it with fake keys in a throwaway clone.
 8. **Manifest screenshots are hand-captured** (`screenshot-list.png`, `screenshot-detail.png`), so they don't update with the app. Regenerate them when the list or detail view changes materially, or Android's install sheet shows a stale app. How they were made:
    - a local build, in headless Chrome with CDP mobile emulation at 412×915 CSS px and DPR 2 (so 824×1830);
    - as a guest, with the install banner suppressed (`pb-install-dismissed`);
@@ -471,7 +474,7 @@ All of these live in `tools/`. The Python scripts find their files relative to t
 
 | Tool | Does | Needs |
 |---|---|---|
-| `snapshot_board.py` | **The board fallback.** Copies the live `board_config` (photo, hold map, mirror map, published outlines) into `app/` from one read, so the four always match; refuses if the published outlines belong to another board version. Run it after anything changes on the live board, then bump `CACHE` and deploy | network, Pillow |
+| `snapshot_board.py` | **The board fallback.** Copies the live `board_config` (photo, hold map, mirror map, published outlines) into `app/` from one read, so the four always match; refuses if the published outlines belong to another board version. Run it after anything changes on the live board, then ship (the build re-stamps `CACHE`) | network, Pillow |
 | `register_holds.py` | **Retired history.** Built the original fallback map on the old drawing (June 2026) by fitting Gareth's labelled layout onto Ross's 187 dots (`tools/hold_positions.json`). Now writes `tools/hold_map_drawing.json` (ignored), never `app/` | `reference/` (local) |
 | `register_mirror.py` | **Retired history.** Gareth's `MirrorDic.txt` → a repaired table. The live table has since been edited, so it now writes `tools/mirror_map_gareth.json` (ignored), never `app/` | `reference/` |
 | `register_shapes.py` | Auto-traces hold outlines from the **live** board (or, offline, the bundled snapshot) → `app/hold_shapes.json`; merges by default, `--overwrite` to replace. Writes a `tools/shapes_preview.png` (ignored). It writes the **file**, not the live copy: deploy it, then in the outline editor use ⋮ → *Load the shipped copy*, review, and Publish; then `snapshot_board.py` to refresh the fallback | network; run after every recalibration |
@@ -549,7 +552,7 @@ The domain `symmetryboard.co.uk` doesn't contain the brand, so **a name change d
 2. Update the inline copies in `print/poster.html`. The legacy page's copy can stay.
 3. If the colour changes: `--accent`/`--accent-hover` and the `--accent-aNN` alpha variants in `tokens.css`, `PINK` in `make_icons.py`, the poster CSS, and `theme_color`/`background_color` if the dark ground changes.
 4. `og:image` points at `icon-maskable-512.png`, so it updates by itself.
-5. Bump `CACHE`: icons are stale-while-revalidate, and the bump pushes them to installed clients.
+5. Ship: icons are stale-while-revalidate, and the new `CACHE` stamp (the build's, since the icons changed) pushes them to installed clients.
 6. Regenerate the manifest screenshots if they show the old mark.
 
 **Don't rename, as part of a rebrand:**

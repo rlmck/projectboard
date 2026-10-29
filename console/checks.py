@@ -45,10 +45,12 @@ def cache_version(text):
 
 
 def repo_cache():
+    """The CACHE live should show: build.sh's stamp for origin/main (app/sw.js itself only
+    holds the 'pb-local' placeholder; the build stamps the deployed copy)."""
     try:
-        with open(os.path.join(REPO, 'app', 'sw.js'), encoding='utf-8') as f:
-            return cache_version(f.read())
-    except OSError:
+        import gitops
+        return gitops.stamp('origin/main')
+    except Exception:
         return None
 
 

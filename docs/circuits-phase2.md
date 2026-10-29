@@ -1,0 +1,25 @@
+# Circuits Phase 2: the design spec
+
+Agreed 15 June 2026. Moved here on 29 Oct 2026 from the local-only `docs/project-notes.md` so the claude.ai chat can read it; nothing else from that file came with it. When it's built, the new `cast_circuit` and `stop` events go into `docs/cast-contract.md` in the same commit (CLAUDE.md → Session rules).
+
+Phase 1 (browse, create, in-app Play preview) is built. This is the spec for Phase 2, which isn't.
+
+A **circuit** is its own entity (not a grouping of problems): a long route that mimics a roped **sport** climb.
+- Lowercase French **sport** grade ladder: `4, 5a … 8b`.
+- A single **ordered hold sequence**: 1–2 start holds → moves → finish. **Holds may repeat.**
+- **Loop:** a setter-defined flag; the **caster can also toggle loop** at cast time. A looping circuit runs until Stop.
+- Anyone can cast; **only signed-in users' runs are logged**.
+
+**Cast = a moving-window LED animation** (not all-on like a problem):
+- **5-second countdown with sounds** (Web Audio beeps); during it the start holds pulse green and the first 2 moves show blue.
+- **A window of 4 holds** lit at once: at go, 2 starts (green) + the next 2 moves (blue). Each interval the next hold lights and the oldest turns off. A matched/single start stays lit one move longer.
+- **Speed:** a global default the caster adjusts in **0.1 s** steps at cast time. Not stored per circuit; the Pi runs the loop itself.
+- **Move counter:** 1 move = one LED advance, counting up across loops. A big **STOP** button ends the run, clears the board and logs the move count (for future PBs and comps).
+- The phone doesn't mirror the animation during the climb (the in-app Play preview does that beforehand).
+- Reuse the problem cast's geofence gate (`ensureCastLocation`).
+
+**Data:** `circuit_logs` (`user_id`, `circuit_id`, `moves`, `looped`, `speed`, `created_at`) already exists with own-rows RLS (db/14). Writing to it is what activates the circuits "Exclude Done" pill.
+
+**Cast contract (planned):** a new `cast_circuit` broadcast on `board:HangoutPortland` (`circuit_name`, `interval`, `loop`, `mirror`, a run token) plus a `stop` event. The Pi fetches the sequence from the `circuits` table (the same DB-read pattern the listener uses for problems) and runs the window loop itself.
+
+**Phasing:** Phase 2 = cast screen + broadcast + `circuit_logs` + Pi listener update. Phase 3 = personal bests, leaderboards, competitions from `circuit_logs`.

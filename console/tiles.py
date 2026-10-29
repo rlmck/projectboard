@@ -240,7 +240,8 @@ def laptop_tiles(c):
         sl, sv = OK, live.get('cache') or 'up'
     site = tile('site', 'Live site', sl, sv, [
         '%s: %s in %s ms' % (live.get('url'), live.get('status'), live.get('ms')),
-        'sw.js CACHE %s; repo %s%s' % (live.get('cache'), repo, '' if live.get('cache') == repo else ' (differ)')])
+        "sw.js CACHE %s; main's stamp %s%s" % (live.get('cache'), repo,
+                                                '' if live.get('cache') == repo else ' (differ: deploying, or a failed build)')])
     sb, rt = c.get('supabase') or {}, c.get('realtime')
     lvl = OK if sb.get('status') == 200 else BAD
     lines = ['REST: %s in %s ms' % (sb.get('status') or 'no answer', sb.get('ms'))]

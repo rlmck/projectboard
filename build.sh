@@ -2,7 +2,10 @@
 #
 # Build the deployable asset directory for Cloudflare Workers (static assets).
 #
-#   bash build.sh      ->  ./public
+#   bash build.sh              check, then build ./public and stamp its sw.js CACHE
+#   bash build.sh --check      only the checks (PB Console, /ship, before a push)
+#   bash build.sh --stamp REF  print the CACHE stamp a build of REF (a commit, branch
+#                              or origin/main) would get, and nothing else
 #
 # public/ is the ONLY thing Cloudflare serves, and it is built from an explicit
 # allowlist of files in app/ (the website's source, one-to-one with the deployed
@@ -10,9 +13,24 @@
 # reaches the internet — so CLAUDE.md, tools/, db/, pi/, docs/ and the reference
 # material stay private without relying on an ignore rule.
 #
-# Adding a deployable file? Put it in app/, and add it here AND to app/sw.js's ASSETS.
-# A file listed here but missing on disk is a hard error: the build stops rather
-# than silently shipping an incomplete app.
+# The build is the gate: any failed check exits non-zero, Cloudflare then skips the
+# deploy, and live keeps the last good version. The checks:
+#   - every allowlisted file exists, and every file in app/ is allowlisted (no subfolders);
+#   - the three-places rule: every sw.js ASSETS entry ships, every shipped file is in
+#     ASSETS (except the NOT_PRECACHED ones below), every shipped .js/.css is
+#     referenced from index.html or privacy.html;
+#   - the syntax check: the app's scripts, in index.html's order, joined and run through
+#     node --check (they share one global scope), and sw.js on its own;
+#   - app/sw.js holds the CACHE placeholder exactly once.
+#
+# CACHE: app/sw.js keeps const CACHE = 'pb-local' (so local preview works as is);
+# the build writes the stamp into public/sw.js. The stamp is 'pb-' plus a hash of the
+# git blob ids of the shipped files at HEAD: it changes exactly when a shipped file
+# changes (a docs-only push leaves it alone), it doesn't depend on line endings, and
+# PB Console gets the same value for origin/main from --stamp. Never edit CACHE by hand.
+#
+# Adding a deployable file? Put it in app/, add it here AND to app/sw.js's ASSETS
+# (unless it's one of NOT_PRECACHED), and reference it from a page.
 
 set -euo pipefail
 
@@ -20,6 +38,7 @@ cd "$(dirname "$0")"
 
 SRC=app
 OUT=public
+PLACEHOLDER="const CACHE = 'pb-local';"
 
 FILES=(
   # markup
@@ -33,7 +52,7 @@ FILES=(
   # vendored, pinned supabase-js (loaded before state.js)
   supabase-js-2.116.0.js
 
-  # app logic — ordered classic scripts (see CLAUDE.md "Where things are")
+  # app logic — ordered classic scripts (the order itself is index.html's)
   state.js
   core.js
   problems.js
@@ -81,22 +100,132 @@ FILES=(
   _redirects
 )
 
-rm -rf "$OUT"
-mkdir "$OUT"
+# Shipped but deliberately not precached by sw.js.
+NOT_PRECACHED=(sw.js _headers _redirects ProjectBoard.png screenshot-list.png screenshot-detail.png)
 
-missing=()
-for f in "${FILES[@]}"; do
-  [[ -f "$SRC/$f" ]] || missing+=("$SRC/$f")
-done
+in_list() {  # in_list NEEDLE ITEM...
+  local n=$1; shift
+  local x
+  for x in "$@"; do [[ "$x" == "$n" ]] && return 0; done
+  return 1
+}
 
-if (( ${#missing[@]} )); then
-  echo "build.sh: ERROR — allowlisted file(s) not found in $(pwd):" >&2
-  printf '  %s\n' "${missing[@]}" >&2
-  exit 1
+# -- the stamp ----------------------------------------------------------------------
+stamp_of() {  # stamp_of REF
+  local ref=$1 paths=() f listing
+  for f in "${FILES[@]}"; do paths+=("$SRC/$f"); done
+  if command -v git >/dev/null 2>&1 && git rev-parse --verify -q "$ref^{commit}" >/dev/null 2>&1; then
+    listing=$(git ls-tree "$ref" -- "${paths[@]}")
+    [[ -n "$listing" ]] || { echo "build.sh: ERROR — no app files in $ref" >&2; return 1; }
+    echo "pb-$(printf '%s\n' "$listing" | sha1sum | cut -c1-10)"
+  else
+    # No git (or no such ref): hash the files themselves. Won't match PB Console's
+    # expectation, which the console then shows; Workers Builds always has git.
+    echo "pb-f$(cat "${paths[@]}" | sha1sum | cut -c1-9)"
+  fi
+}
+
+if [[ "${1:-}" == "--stamp" ]]; then
+  stamp_of "${2:-HEAD}"
+  exit 0
 fi
 
+CHECK_ONLY=0
+case "${1:-}" in
+  "") ;;
+  --check) CHECK_ONLY=1 ;;
+  *) echo "usage: bash build.sh [--check | --stamp REF]" >&2; exit 2 ;;
+esac
+
+# -- the checks ---------------------------------------------------------------------
+errors=()
+
+for f in "${FILES[@]}"; do
+  [[ -f "$SRC/$f" ]] || errors+=("allowlisted file missing: $SRC/$f")
+done
+
+for p in "$SRC"/* "$SRC"/.[!.]*; do
+  [[ -e "$p" ]] || continue
+  name=${p#"$SRC"/}
+  if [[ -d "$p" ]]; then
+    errors+=("$p/ is a folder: app/ stays flat (a subfolder changes live URLs)")
+  elif ! in_list "$name" "${FILES[@]}"; then
+    errors+=("$p is not in build.sh's allowlist, so it would never ship (the three-places rule)")
+  fi
+done
+
+SW="$SRC/sw.js"
+if [[ -f "$SW" ]]; then
+  # ASSETS: the './name' strings between 'const ASSETS = [' and '];'. './' is the shell.
+  mapfile -t ASSETS < <(sed -n '/^const ASSETS = \[/,/^\];/p' "$SW" | grep -o "'\./[^']*'" | tr -d "'" | sed 's#^\./##; s#^$#index.html#')
+  (( ${#ASSETS[@]} )) || errors+=("no ASSETS list found in $SW")
+  for a in "${ASSETS[@]}"; do
+    in_list "$a" "${FILES[@]}" || errors+=("sw.js ASSETS has '$a', which build.sh doesn't ship: the worker's install would fail")
+  done
+  for f in "${FILES[@]}"; do
+    in_list "$f" "${NOT_PRECACHED[@]}" && continue
+    in_list "$f" "${ASSETS[@]}" || errors+=("$f ships but isn't in sw.js ASSETS (the three-places rule; or add it to NOT_PRECACHED)")
+  done
+  n=$(grep -cF "$PLACEHOLDER" "$SW" || true)
+  [[ "$n" == 1 ]] || errors+=("$SW must hold \"$PLACEHOLDER\" exactly once (found $n): CACHE is stamped by the build, never by hand")
+fi
+
+PAGES="$SRC/index.html $SRC/privacy.html"
+for f in "${FILES[@]}"; do
+  case "$f" in
+    sw.js) continue ;;   # registered by app.js
+    *.js|*.css)
+      grep -qE "(src|href)=\"$f\"" $PAGES 2>/dev/null || errors+=("$f ships but neither index.html nor privacy.html references it (the three-places rule)") ;;
+  esac
+done
+
+# The syntax check: the app scripts in index.html's order (the vendored supabase-js
+# aside), joined, so a name declared twice across files fails as it would in the page.
+mapfile -t SCRIPTS < <(grep -o '<script src="[^"]*"' "$SRC/index.html" | sed 's/<script src="//; s/"$//' | grep -v '^supabase-js-')
+if ! command -v node >/dev/null 2>&1; then
+  errors+=("node isn't on the PATH: the syntax check can't run")
+elif (( ${#SCRIPTS[@]} == 0 )); then
+  errors+=("no <script src> tags found in index.html")
+else
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  ok=1
+  for s in "${SCRIPTS[@]}"; do
+    [[ -f "$SRC/$s" ]] || { errors+=("index.html loads $s, which isn't in app/"); ok=0; }
+  done
+  if (( ok )); then
+    ( cd "$SRC" && cat "${SCRIPTS[@]}" ) > "$tmp/all.js"
+    if ! out=$(node --check "$tmp/all.js" 2>&1); then
+      errors+=("syntax check failed on the ${#SCRIPTS[@]} scripts joined (${SCRIPTS[*]}):"$'\n'"$out")
+    fi
+  fi
+  if [[ -f "$SW" ]] && ! out=$(node --check "$SW" 2>&1); then
+    errors+=("syntax check failed on sw.js:"$'\n'"$out")
+  fi
+fi
+
+if (( ${#errors[@]} )); then
+  echo "build.sh: FAILED — nothing built, live keeps the last good version:" >&2
+  printf '  - %s\n' "${errors[@]}" >&2
+  exit 1
+fi
+echo "build.sh: checks passed (${#FILES[@]} files, ${#SCRIPTS[@]} scripts, ${#ASSETS[@]} precached)"
+if (( CHECK_ONLY )); then exit 0; fi
+
+# -- the build ----------------------------------------------------------------------
+STAMP=$(stamp_of HEAD)
+if command -v git >/dev/null 2>&1 && git rev-parse -q --verify HEAD >/dev/null 2>&1 \
+   && ! git diff --quiet HEAD -- "$SRC" 2>/dev/null; then
+  STAMP="$STAMP-dirty"   # local only: app/ has uncommitted changes the stamp doesn't cover
+fi
+
+rm -rf "$OUT"
+mkdir "$OUT"
 for f in "${FILES[@]}"; do
   cp "$SRC/$f" "$OUT/$f"
 done
 
-echo "build.sh: copied ${#FILES[@]} files from $SRC/ into $OUT/"
+sed -i "s/$PLACEHOLDER/const CACHE = '$STAMP';/" "$OUT/sw.js"
+grep -qF "const CACHE = '$STAMP';" "$OUT/sw.js" || { echo "build.sh: ERROR — couldn't stamp $OUT/sw.js" >&2; exit 1; }
+
+echo "build.sh: copied ${#FILES[@]} files from $SRC/ into $OUT/, CACHE = $STAMP${WORKERS_CI_COMMIT_SHA:+ (commit ${WORKERS_CI_COMMIT_SHA:0:7})}"

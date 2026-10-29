@@ -1,18 +1,22 @@
-"""App release (phase 7): the repo's state, read with the git CLI, and the checks
-CLAUDE.md asks for before a deploy: CACHE bumped when app/ changed, the
-three-places rule for a new app/ file, and the scripts' syntax check.
-Read-only here; the writes (commit, push, bump) are actions in actions.py.
+"""App release (phase 7): the repo's state, read with the git CLI, and the CACHE
+stamp a deploy gets. Read-only here; the writes (ship, staging, rollback) are
+actions in actions.py.
+
+Deploys follow CLAUDE.md's working rule 2: work on main; Ship commits and pushes
+main (live), Staging pushes HEAD to dev (a fast-forward only), Rollback reverts a
+commit on main and pushes. The gate is build.sh itself (`bash build.sh --check`:
+the syntax check and the three-places rule), the same one Cloudflare runs, and
+the CACHE stamp comes from `bash build.sh --stamp <ref>`, so neither is written twice.
 """
-import os
 import re
-import shutil
 import subprocess
 
+import procs
 from procs import NO_WINDOW, REPO
 
-SCRIPTS = ['state.js', 'core.js', 'problems.js', 'admin.js', 'account.js', 'authoring.js', 'circuits.js',
-           'challenge.js', 'leaderboard.js', 'wall.js', 'app.js']
-NOT_DEPLOYED = {'app/sw.js'}          # changes to it alone are the bump itself
+RECENT = 15                 # commits on origin/main offered for a rollback
+SHA = re.compile(r'^[0-9a-f]{7,40}$')
+_stamps = {}                # commit sha -> stamp (a commit's stamp never changes)
 
 
 def git(*args, timeout=30):
@@ -29,9 +33,35 @@ def cache_of(text):
     return m.group(1) if m else None
 
 
-def file_at(ref, path):
-    code, text, _ = git('show', '%s:%s' % (ref, path))
-    return text if code == 0 else None
+def stamp(ref):
+    """The CACHE a build of ref gets (build.sh --stamp), or None."""
+    sha = out('rev-parse', '--verify', '-q', ref + '^{commit}')
+    if not sha:
+        return None
+    if sha not in _stamps:
+        p = subprocess.run([procs.find_bash(), 'build.sh', '--stamp', sha], cwd=REPO, capture_output=True,
+                           timeout=60, creationflags=NO_WINDOW)
+        s = p.stdout.decode('utf-8', 'replace').strip()
+        if p.returncode or not s.startswith('pb-'):
+            return None
+        _stamps[sha] = s
+    return _stamps[sha]
+
+
+def count(a, b):
+    code, text, _ = git('rev-list', '--count', '%s..%s' % (a, b))
+    return int(text.strip()) if code == 0 and text.strip().isdigit() else None
+
+
+def is_ancestor(a, b):
+    return git('merge-base', '--is-ancestor', a, b)[0] == 0
+
+
+def recent_main():
+    """[{hash, date, subject}] of origin/main's last RECENT commits: what Rollback may revert."""
+    rows = [l.split('\x1f') for l in out('log', 'origin/main', '-%d' % RECENT, '--no-merges',
+                                         '--format=%h\x1f%ad\x1f%s', '--date=format:%d %b %H:%M').splitlines()]
+    return [{'hash': h, 'date': d, 'subject': s} for h, d, s in rows]
 
 
 def status():
@@ -40,61 +70,17 @@ def status():
     for line in git('status', '--porcelain=v1', '-uall')[1].splitlines():
         if len(line) > 3:
             files.append({'xy': line[:2], 'path': line[3:].strip('"')})
-
-    def count(a, b):
-        code, text, _ = git('rev-list', '--count', '%s..%s' % (a, b))
-        return int(text.strip()) if code == 0 and text.strip().isdigit() else None
     log = [l.split('\x1f') for l in out('log', '-12', '--format=%h\x1f%ad\x1f%s', '--date=format:%d %b %H:%M').splitlines()]
     return {
         'branch': branch, 'files': files, 'head': out('rev-parse', '--short', 'HEAD'),
-        'ahead_dev': count('origin/dev', 'HEAD'), 'behind_dev': count('HEAD', 'origin/dev'),
-        'dev_ahead_main': count('origin/main', 'origin/dev'), 'local_ahead_main': count('origin/main', 'HEAD'),
-        'main_ahead_local': count('HEAD', 'origin/main'),
+        'ahead_main': count('origin/main', 'HEAD'), 'behind_main': count('HEAD', 'origin/main'),
+        'dev_behind': count('origin/dev', 'HEAD'),
+        'staging_ff': is_ancestor('origin/dev', 'HEAD'),
         'log': [{'hash': h, 'date': d, 'subject': s} for h, d, s in log],
-        'unpushed': out('log', 'origin/dev..HEAD', '--format=%h %s').splitlines(),
-        'to_main': out('log', 'origin/main..origin/dev', '--format=%h %s').splitlines(),
-        'checks': checks(),
-        'node': bool(shutil.which('node')),
+        'unpushed': out('log', 'origin/main..HEAD', '--format=%h %s').splitlines(),
+        'recent_main': recent_main(),
+        'checks': {'stamp_main': stamp('origin/main'), 'stamp_head': stamp('HEAD')},
     }
-
-
-def changed_vs_main():
-    """Paths changed between origin/main and the working tree (committed or not)."""
-    names = set(out('diff', '--name-only', 'origin/main').splitlines())
-    names |= {l[3:].strip('"') for l in git('status', '--porcelain=v1', '-uall')[1].splitlines() if len(l) > 3}
-    return sorted(n for n in names if n)
-
-
-def checks():
-    """Warnings before shipping: CACHE, the three-places rule."""
-    warn = []
-    changed = changed_vs_main()
-    app = [p for p in changed if p.startswith('app/') and p not in NOT_DEPLOYED]
-    try:
-        with open(os.path.join(REPO, 'app', 'sw.js'), encoding='utf-8') as f:
-            sw = f.read()
-    except OSError:
-        sw = ''
-    here, live = cache_of(sw), cache_of(file_at('origin/main', 'app/sw.js'))
-    if app and here == live:
-        warn.append('app/ changed since main (%s) but CACHE is still %s: bump it' % (', '.join(app[:6]), here))
-    try:
-        with open(os.path.join(REPO, 'build.sh'), encoding='utf-8') as f:
-            build = f.read()
-        with open(os.path.join(REPO, 'app', 'index.html'), encoding='utf-8') as f:
-            index = f.read()
-    except OSError:
-        build = index = ''
-    tracked = set(out('ls-files', 'app').splitlines())
-    for p in sorted(set(changed) - tracked):
-        if not p.startswith('app/') or '/' in p[4:]:
-            continue
-        name = p[4:]
-        missing = [w for w, ok in (('build.sh', name in build), ('sw.js ASSETS', name in sw),
-                                   ('a page', name in index or name.startswith('screenshot-'))) if not ok]
-        if missing:
-            warn.append('new file %s is not in %s (the three-places rule)' % (p, ', '.join(missing)))
-    return {'warnings': warn, 'cache': here, 'cache_main': live, 'app_changed': app}
 
 
 def diff(path=None, staged=False, limit=400000):
@@ -110,10 +96,8 @@ def diff(path=None, staged=False, limit=400000):
     return text[:limit] + ('\n… (cut)' if len(text) > limit else '')
 
 
-def bumped(sw_text):
-    """sw.js text with CACHE moved on by one (pb-v119 -> pb-v120)."""
-    m = re.search(r"(const CACHE\s*=\s*'pb-v)(\d+)(')", sw_text)
-    if not m:
-        raise ValueError("no const CACHE = 'pb-vN' in app/sw.js")
-    return sw_text[:m.start()] + m.group(1) + str(int(m.group(2)) + 1) + m.group(3) + sw_text[m.end():]
-
+def build_check():
+    """(exit code, output) of `bash build.sh --check`: the deploy gate."""
+    p = subprocess.run([procs.find_bash(), 'build.sh', '--check'], cwd=REPO, capture_output=True, timeout=120,
+                       creationflags=NO_WINDOW)
+    return p.returncode, (p.stdout + p.stderr).decode('utf-8', 'replace')

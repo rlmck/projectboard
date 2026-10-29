@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+#
+# pre-commit: refuse a commit that would put a secret in this public repo.
+#
+# Turned on per clone with:   git config core.hooksPath .githooks
+# (/start does it; nothing to install.) It reads only what's staged, and it never
+# prints a secret: only the file and the kind of thing it found.
+#
+# Blocks:
+#   - files that must never be committed: secrets.env, pi/config.env, db/, .env files,
+#     docs/security-findings.md;
+#   - a Supabase key whose role isn't anon (the service-role key), and sb_secret_ keys;
+#   - any secret value from db/.env (the service key, the direct-Postgres URL and its password);
+#   - psk= / password= / secret= / private-key= lines with a literal value ($VAR, <placeholder>
+#     and empty pass). This is what guards NetworkManager profiles pulled into pi/conf/
+#     (the console strips those lines on the Pi; this catches one that slipped through).
+#
+# A false alarm? Fix the line. Never bypass this with --no-verify.
+
+set -uo pipefail
+
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT"
+
+problems=()
+
+# -- files that must never be committed ---------------------------------------------
+while IFS= read -r f; do
+  [[ -n "$f" ]] || continue
+  case "$f" in
+    secrets.env|*/secrets.env|pi/config.env|db/*|docs/security-findings.md|.env|*/.env|*.env.local)
+      problems+=("$f: this file must never be committed") ;;
+  esac
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+
+# -- secret values from db/.env (names only ever reported) ---------------------------
+secret_names=()
+secret_values=()
+if [[ -f db/.env ]]; then
+  while IFS= read -r line; do
+    line=${line%$'\r'}
+    [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]] || continue
+    k=${BASH_REMATCH[1]} v=${BASH_REMATCH[2]}
+    v=${v#\"}; v=${v%\"}; v=${v#\'}; v=${v%\'}
+    # Only the secret ones: SUPABASE_URL is public and already in the repo.
+    [[ "$k" =~ (KEY|SECRET|PASSWORD|TOKEN|DB_URL) ]] || continue
+    (( ${#v} >= 8 )) || continue
+    secret_names+=("$k"); secret_values+=("$v")
+    # The password inside a postgres URL, on its own.
+    if [[ "$v" =~ ^postgres(ql)?://[^:/@]+:([^@]+)@ ]] && (( ${#BASH_REMATCH[2]} >= 6 )); then
+      secret_names+=("$k (its password)"); secret_values+=("${BASH_REMATCH[2]}")
+    fi
+  done < db/.env
+fi
+
+b64url_decode() {  # decode one base64url segment, ignoring errors
+  local s
+  s=$(printf '%s' "$1" | tr '_-' '/+')
+  case $(( ${#s} % 4 )) in 2) s="$s==" ;; 3) s="$s=" ;; esac
+  printf '%s' "$s" | base64 -d 2>/dev/null
+}
+
+# -- the added lines, file by file ---------------------------------------------------
+file=""
+added=""
+check_file() {
+  [[ -n "$file" && -n "$added" ]] || return 0
+  local i jwt payload
+  for i in "${!secret_values[@]}"; do
+    if grep -qF -- "${secret_values[$i]}" <<<"$added"; then
+      problems+=("$file: contains the value of ${secret_names[$i]} from db/.env")
+    fi
+  done
+  while IFS= read -r jwt; do
+    [[ -n "$jwt" ]] || continue
+    payload=$(b64url_decode "$(cut -d. -f2 <<<"$jwt")")
+    if [[ "$payload" == *'"role"'* && "$payload" != *'"role":"anon"'* ]]; then
+      problems+=("$file: a Supabase key with a role other than anon (the service-role key?)")
+    elif [[ "$payload" == *service_role* ]]; then
+      problems+=("$file: a service_role token")
+    fi
+  done < <(grep -oE 'eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+' <<<"$added" | sort -u)
+  if grep -qE 'sb_secret_[A-Za-z0-9_-]{8,}' <<<"$added"; then
+    problems+=("$file: a Supabase secret key (sb_secret_…)")
+  fi
+  # psk= / password= lines (ini, env, NetworkManager, shell): a literal value is refused.
+  local bad
+  bad=$(grep -iE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_]*(psk|password|passwd|_pw|secret|private-key)[[:space:]]*=' <<<"$added" \
+        | grep -viE '=[[:space:]]*("|'"'"')?([$<]|$)' | head -1)
+  if [[ -n "$bad" ]]; then
+    problems+=("$file: a psk=/password=/secret= line with a literal value")
+  fi
+}
+
+while IFS= read -r line; do
+  if [[ "$line" == "+++ "* ]]; then
+    check_file
+    file=${line#+++ }; file=${file#b/}; added=""
+  elif [[ "$line" == "+"* ]]; then
+    added+="${line#+}"$'\n'
+  fi
+done < <(git diff --cached -U0 --no-color --no-ext-diff --diff-filter=ACMR)
+check_file
+
+if (( ${#problems[@]} )); then
+  echo "pre-commit: refused. This repo is public, and the commit would include:" >&2
+  printf '  - %s\n' "${problems[@]}" >&2
+  echo "Unstage or fix it (git restore --staged <file>). Never bypass this with --no-verify." >&2
+  exit 1
+fi
+exit 0

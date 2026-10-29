@@ -46,6 +46,8 @@ Cloudflare has merged Pages into Workers in the dashboard. New projects created 
 
 Build settings in the dashboard: build command `bash build.sh`, deploy command `npx wrangler deploy`, non-production branch builds enabled, Cloudflare Access off.
 
+> **Since 29 Oct 2026** `build.sh` is also the deploy gate (the three-places rule and the syntax check; a failure keeps the last good version live) and stamps `CACHE` itself, and the deploy flow is ship-by-default to `main` (CLAUDE.md working rule 2). The `dev`-then-merge flow and the hand-bumped `CACHE` below are history.
+
 ---
 
 ## Part A: dashboard work — ✅ DONE

@@ -205,8 +205,8 @@ def r_git_diff(app, q):
 
 def r_live(app, q):
     s = checks.site(checks.LIVE)
-    return {'cache': s.get('cache'), 'status': s.get('status'), 'repo': gitops.checks()['cache'],
-            'staging': checks.site(checks.STAGING).get('cache')}
+    return {'cache': s.get('cache'), 'status': s.get('status'), 'repo': gitops.stamp('origin/main'),
+            'head': gitops.stamp('HEAD'), 'staging': checks.site(checks.STAGING).get('cache')}
 
 
 def r_ledmap(app, q):

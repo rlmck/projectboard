@@ -5,3 +5,6 @@ app/_redirects text eol=lf
 pi/**         text eol=lf
 # PB Console runs from Git Bash (start.sh) and sends probe.py to the Pi: keep LF
 console/**    text eol=lf
+
+# Git hooks run under bash: a CRLF hook breaks
+.githooks/** text eol=lf

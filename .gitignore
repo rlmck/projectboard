@@ -5,14 +5,17 @@ pi/_old/
 pi/config.env
 laptop_key.pub
 db/
-# docs/ stays private, except the rollout plan (hosting source of truth) and the
-# codebase overview and the cast contract. Must be docs/* not docs/ — git can't re-include a file inside
-# an ignored directory. NEVER add an exception for docs/security-findings.md.
+# docs/ stays private, except the documents below (each checked for anything personal
+# or secret before it was added). Must be docs/* not docs/ — git can't re-include a file
+# inside an ignored directory. NEVER add an exception for docs/security-findings.md.
 docs/*
 !docs/rollout-plan.md
 !docs/codebase-overview.md
 !docs/cast-contract.md
 !docs/console-plan.md
+!docs/circuits-phase2.md
+!docs/pi4-listener-kiosk-plan.md
+!docs/log/
 !docs/screenshots/
 reference/
 # Archived outside the repo (11 Sep 2026). Still ignored in case they come back:

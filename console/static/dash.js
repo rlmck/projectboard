@@ -318,8 +318,8 @@
     const row = (ok, name, val) => '<li class="' + (ok == null ? 'unknown' : ok ? 'ok' : 'bad') + '"><span class="dot"></span><span class="grow">' +
       esc(name) + '</span><span class="when">' + esc(val) + '</span></li>';
     setTile('t-site', head('Live site & Supabase', level) +
-      '<div><div class="big mid">' + esc(s.cache || '?') + ' ' + (s.cache ? same ? '<span class="tag ok">= repo</span>' :
-        '<span class="tag bad">repo ' + esc(s.repo) + '</span>' : '') + '</div><div class="sub">service worker CACHE on symmetryboard.co.uk</div></div>' +
+      '<div><div class="big mid">' + esc(s.cache || '?') + ' ' + (s.cache ? same ? '<span class="tag ok">= main</span>' :
+        '<span class="tag bad">main ' + esc(s.repo) + '</span>' : '') + '</div><div class="sub">service worker CACHE on symmetryboard.co.uk</div></div>' +
       '<ul class="list">' +
       row(s.status == null ? null : s.status === 200, 'Live site', (s.status || 'no answer') + (s.ms != null ? ' · ' + s.ms + ' ms' : '')) +
       row(sb.status == null ? null : sb.status === 200, 'Supabase REST', (sb.status || 'no answer') + (sb.ms != null ? ' · ' + sb.ms + ' ms' : '')) +
@@ -329,15 +329,16 @@
 
   function renderRelease() {
     if (!git) return setTile('t-release', head('Release', null, goBtn('release', 'Release')) + '<p class="empty">Reading the repo…</p>');
-    const changed = git.files.length, unpushed = git.ahead_dev || 0, toMain = git.dev_ahead_main || 0, warns = git.checks.warnings.length;
-    const level = warns ? 'warn' : changed || unpushed || toMain ? 'warn' : 'ok';
-    const todo = [changed && changed + ' changed file' + (changed === 1 ? '' : 's'), unpushed && unpushed + ' to push', toMain && toMain + ' not live'].filter(Boolean);
+    const changed = git.files.length, unshipped = git.ahead_main || 0, behind = git.behind_main || 0;
+    const level = git.branch !== 'main' || behind ? 'warn' : changed || unshipped ? 'warn' : 'ok';
+    const todo = [changed && changed + ' changed file' + (changed === 1 ? '' : 's'), unshipped && unshipped + ' not shipped',
+      behind && behind + ' to pull'].filter(Boolean);
     setTile('t-release', head('Release', level, goBtn('release', 'Release')) +
-      '<div><div class="big mid">' + esc(todo.length ? todo.join(' · ') : 'dev = main, all pushed') + '</div><div class="sub">' +
+      '<div><div class="big mid">' + esc(todo.length ? todo.join(' · ') : 'all shipped') + '</div><div class="sub">' +
       esc(git.branch + ' at ' + git.head) + '</div></div>' +
-      '<dl class="kv"><dt>CACHE</dt><dd>' + esc(git.checks.cache) + ' here · ' + esc(git.checks.cache_main) + ' on main</dd>' +
+      '<dl class="kv"><dt>CACHE</dt><dd>' + esc(git.checks.stamp_main || '?') + ' for main</dd>' +
       '<dt>Last commit</dt><dd>' + esc(git.log[0] ? git.log[0].subject : '-') + '</dd></dl>' +
-      (warns ? '<p class="banner warn">' + esc(git.checks.warnings[0]) + '</p>' : ''), level);
+      (git.branch !== 'main' ? '<p class="banner warn">On ' + esc(git.branch) + ': Ship works on main.</p>' : ''), level);
     const dot = $('nav-dot-release');
     if (dot) dot.className = 'nav-dot ' + level;
   }

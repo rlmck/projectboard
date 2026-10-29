@@ -211,26 +211,27 @@
   </section>
 
   <section id="tab-release" class="tab" hidden>
-    <header class="page-head"><h1>Release</h1><p>Commit, push and ship the app.</p></header>
+    <header class="page-head"><h1>Release</h1><p>Ship the app (commit + push main), push to staging, or roll back.</p></header>
     <div class="board-grid">
       <div class="controls">
         <div class="card"><h2>Repo <button class="btn small" id="git-reload">Refresh</button> <button class="btn small" id="git-pull">Pull</button></h2><div id="git-status"></div></div>
         <div class="card">
-          <h2>Commit</h2>
+          <h2>Ship</h2>
           <div id="git-files" class="rows"></div>
           <textarea id="git-msg" rows="3" placeholder="What changed and why"></textarea>
-          <div class="btn-row"><button class="btn" id="git-alldiff">Show the whole diff</button><button class="btn primary" id="git-commit">Commit the ticked files</button></div>
+          <div class="btn-row">
+            <button class="btn" id="git-alldiff">Show the whole diff</button>
+            <button class="btn" id="git-check">Build check</button>
+            <button class="btn danger" id="git-ship">Ship (commit + push main)</button>
+          </div>
+          <p class="note">Ship commits the ticked files (none ticked: it pushes what's committed) and pushes main, which deploys to real users, after one confirm. <code>bash build.sh --check</code> (the syntax check and the three-places rule) runs first, and Cloudflare runs it again: a failed build keeps the last good version live. CACHE is stamped by the build. Afterwards the live <code>sw.js</code> is polled until it shows the new stamp.</p>
         </div>
         <div class="card">
-          <h2>Ship</h2>
-          <div class="btn-row">
-            <button class="btn" id="git-bump">Bump CACHE</button>
-            <button class="btn" id="git-syntax">Syntax check</button>
-            <button class="btn" id="git-push">Push dev (staging)</button>
-            <button class="btn danger" id="git-main">Fast-forward main (live)</button>
-          </div>
-          <p class="note" id="rel-node" hidden>node isn't on the PATH, so the syntax check can't run.</p>
-          <p class="note">Commit, push and main are separate, each showing what it sends first. After main, the live <code>sw.js</code> is polled until the new CACHE shows. <a href="https://dev-projectboard.rosslewismckechnie.workers.dev" target="_blank" rel="noopener">Staging</a> · <a href="https://symmetryboard.co.uk" target="_blank" rel="noopener">Live</a></p>
+          <h2>Staging and rollback</h2>
+          <div class="btn-row"><button class="btn" id="git-staging">Push to staging (dev)</button></div>
+          <p class="note">Pushes the committed work here to <code>dev</code> (a fast-forward only). <a href="https://dev-projectboard.rosslewismckechnie.workers.dev" target="_blank" rel="noopener">Staging</a> · <a href="https://symmetryboard.co.uk" target="_blank" rel="noopener">Live</a></p>
+          <div class="btn-row"><select id="git-rollback-pick"></select> <button class="btn danger" id="git-rollback">Roll back (revert + push main)</button></div>
+          <p class="note">Rollback is always a revert and a push, never the Cloudflare dashboard.</p>
           <div class="btn-row"><button class="btn small" id="git-poll">Check the live CACHE</button> <span id="live-cache" class="muted"></span></div>
         </div>
       </div>

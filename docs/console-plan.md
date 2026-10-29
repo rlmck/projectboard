@@ -37,7 +37,7 @@ Edit the Pi's `config.env` in a form.
 
 ## Phase 7: App release
 
-**Built 28 Oct 2026.** New (untracked) files start unticked in the commit list, so nothing unrelated gets committed by default. Console commits carry no attribution lines.
+**Built 28 Oct 2026; reworked 29 Oct 2026** for the ship-by-default rule (CLAUDE.md working rule 2): the separate commit, push-dev, fast-forward-main and CACHE-bump steps became **Ship** (commit the ticked files + push `main`, one confirm), **Staging** (push `HEAD` to `dev`, fast-forward only) and **Rollback** (revert one of `main`'s last 15 commits + push), all through the action table, the audit and the lock. Each runs `bash build.sh --check` first: the syntax check and the three-places rule now live in `build.sh` (the Cloudflare build gate), not in the console. CACHE is stamped by the build; the console asks `bash build.sh --stamp <ref>` what live should show. New (untracked) files start unticked, so nothing unrelated gets committed by default. Console commits carry no attribution lines. The bullets below are the original 28 Oct plan.
 
 - **Status:** `git status`, the branch, ahead/behind `origin/dev` and `origin/main`, `git pull --ff-only` (and `git pull --ff-only origin main` on `dev`, as CLAUDE.md asks).
 - **Diff:** `git diff` and `git diff --stat` for what would be committed; staged and unstaged shown apart.
@@ -103,7 +103,7 @@ Admin edits to the board data with a preview and an undo record.
 
 **How it's stored (checked 28 Oct 2026):**
 - `board_config`: one row, `wall = 'HangoutPortland'`: `hold_map` (hold id → position on the photo, 188 real holds since db/32), `mirror_map` (hold id → partner, a lookup table, not grid arithmetic: the board is staggered), `hold_shapes` (traced outlines, with `__meta.board_updated_at` and `__meta.smooth`), `image_path`, `updated_at`. Public read, admin write (RLS).
-- **`updated_at` is the board version the outlines are pinned to**: `shapesUsable()` falls back to dots unless it matches `hold_shapes.__meta.board_updated_at`. db/32 relabelled holds by moving entries in `hold_map`, `hold_shapes` and `mirror_map` together, **without touching `updated_at`**, and moved the hold ids of app-made problems with them. Any hold-label edit must do the same: one transaction, all three maps, the same problems, `updated_at` untouched, then `tools/snapshot_board.py`, a `CACHE` bump and an app deploy (phase 7), and `bash pi/deploy.sh` so pb-ledmap's copy matches.
+- **`updated_at` is the board version the outlines are pinned to**: `shapesUsable()` falls back to dots unless it matches `hold_shapes.__meta.board_updated_at`. db/32 relabelled holds by moving entries in `hold_map`, `hold_shapes` and `mirror_map` together, **without touching `updated_at`**, and moved the hold ids of app-made problems with them. Any hold-label edit must do the same: one transaction, all three maps, the same problems, `updated_at` untouched, then `tools/snapshot_board.py` and Ship (phase 7; the build re-stamps `CACHE`), and `bash pi/deploy.sh` so pb-ledmap's copy matches.
 - Problem holds are stored inverted (CLAUDE.md "Data traps"); a label move rewrites ids in `start_holds`, `intermediate_holds`, `finish_hold`, never their order.
 - **Benchmarks:** `problems.is_benchmark`; only admins set it (the app's ⋮ menu); once set, only admins can edit or delete the problem (RLS); only benchmarks score (db/27).
 

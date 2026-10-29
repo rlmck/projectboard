@@ -14,8 +14,11 @@ import os
 import re
 import sys
 import tempfile
+import shutil
+import subprocess
 import time
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONSOLE = os.path.dirname(HERE)
@@ -116,17 +119,107 @@ class Drift(unittest.TestCase):
         self.assertEqual(drift.nm_target('pb rescue/x'), 'pi/conf/pb-rescue-x.nmconnection')
 
 
-class Release(unittest.TestCase):
-    def test_bump(self):
-        self.assertIn("const CACHE = 'pb-v120';", gitops.bumped("x\nconst CACHE = 'pb-v119';\ny"))
-        with self.assertRaises(ValueError):
-            gitops.bumped('no cache here')
+def git_state(**kw):
+    """A gitops.status() as the release actions see it: on main, level with GitHub, clean."""
+    st = {'branch': 'main', 'files': [], 'head': 'aaaaaaa', 'ahead_main': 0, 'behind_main': 0, 'dev_behind': 1,
+          'staging_ff': True, 'log': [], 'unpushed': [],
+          'recent_main': [{'hash': 'abc1234', 'date': '29 Oct 10:00', 'subject': 'x'}],
+          'checks': {'stamp_main': 'pb-0000000000', 'stamp_head': 'pb-0000000000'}}
+    st.update(kw)
+    return st
 
-    def test_commit_takes_only_listed_files(self):
-        with self.assertRaises(actions.Invalid):
-            actions.build('git-commit', {'message': 'x', 'files': ['../outside.txt']})
-        with self.assertRaises(actions.Invalid):
-            actions.build('git-commit', {'message': '', 'files': []})
+
+class Release(unittest.TestCase):
+    """Ship (commit + push main), Staging (push dev), Rollback (revert + push): the refusals.
+    Nothing here runs git for real: each action is only built, never started."""
+
+    def build(self, kind, args, **state):
+        with mock.patch.object(gitops, 'status', return_value=git_state(**state)), \
+                mock.patch.object(gitops, 'diff', return_value=''), mock.patch.object(gitops, 'out', return_value=''):
+            return actions.build(kind, args)
+
+    def test_old_actions_are_gone(self):
+        for kind in ('git-commit', 'push-dev', 'ff-main', 'cache-bump', 'syntax-check'):
+            with self.assertRaises(actions.Invalid):
+                self.build(kind, {})
+
+    def test_ship(self):
+        changed = [{'xy': ' M', 'path': 'app/core.js'}]
+        a = self.build('ship', {'message': 'Fix it', 'files': ['app/core.js']}, files=changed)
+        self.assertTrue(a.confirm)
+        self.assertIn('REAL USERS', a.describe)
+        self.assertIn('git push origin HEAD:main', a.shown)
+        self.assertIn('(new) Fix it', a.preview['log'])
+        a = self.build('ship', {}, unpushed=['abc1234 a commit'])          # nothing to commit: push only
+        self.assertIn('Push main', a.describe)
+
+    def test_ship_refusals(self):
+        changed = [{'xy': ' M', 'path': 'app/core.js'}]
+        with self.assertRaises(actions.Invalid):                       # not on main
+            self.build('ship', {'message': 'x', 'files': ['app/core.js']}, files=changed, branch='dev')
+        with self.assertRaises(actions.Invalid):                       # a file git status doesn't list
+            self.build('ship', {'message': 'x', 'files': ['../outside.txt']}, files=changed)
+        with self.assertRaises(actions.Invalid):                       # files but no message
+            self.build('ship', {'message': ' ', 'files': ['app/core.js']}, files=changed)
+        with self.assertRaises(actions.Invalid):                       # nothing at all
+            self.build('ship', {})
+
+    def test_staging(self):
+        a = self.build('staging', {})
+        self.assertIn('HEAD:dev', a.shown)
+        self.assertIn('Live is untouched', a.describe)
+        a = self.build('staging', {}, files=[{'xy': ' M', 'path': 'x'}])
+        self.assertIn('NOT included', a.describe)
+        with self.assertRaises(actions.Invalid):                       # dev diverged: a force push, refused
+            self.build('staging', {}, staging_ff=False)
+        with self.assertRaises(actions.Invalid):                       # dev has it all already
+            self.build('staging', {}, dev_behind=0)
+
+    def test_rollback(self):
+        a = self.build('rollback', {'commit': 'abc1234'})
+        self.assertIn('git revert --no-edit abc1234', a.shown)
+        self.assertTrue(a.confirm)
+        for args, state in (({'commit': 'def5678'}, {}),                # not one of the listed commits
+                            ({'commit': 'abc1234; rm -rf /'}, {}),
+                            ({}, {}),
+                            ({'commit': 'abc1234'}, {'branch': 'dev'}),
+                            ({'commit': 'abc1234'}, {'files': [{'xy': ' M', 'path': 'x'}]}),
+                            ({'commit': 'abc1234'}, {'ahead_main': 1}),
+                            ({'commit': 'abc1234'}, {'behind_main': 2})):
+            with self.assertRaises(actions.Invalid, msg=repr((args, state))):
+                self.build('rollback', args, **state)
+
+
+@unittest.skipUnless(shutil.which('git') and os.path.isdir(os.path.join(REPO, '.git')), 'needs the git repo')
+class Stamp(unittest.TestCase):
+    """The CACHE stamp comes from build.sh alone; the console asks it (build.sh --stamp)."""
+
+    def test_stamp_shape_and_same_as_build_sh(self):
+        s = gitops.stamp('HEAD')
+        self.assertRegex(s, r'^pb-[0-9a-f]{10}$')
+        p = subprocess.run([actions.procs.find_bash(), 'build.sh', '--stamp', 'HEAD'], cwd=REPO, capture_output=True)
+        self.assertEqual(p.stdout.decode().strip(), s)
+        self.assertIsNone(gitops.stamp('no-such-ref-here'))
+
+    def test_stamp_is_the_shipped_blobs(self):
+        """pb- + sha1 of `git ls-tree` for the allowlisted files: line endings don't matter, and a
+        commit that ships nothing new keeps the stamp."""
+        with open(os.path.join(REPO, 'build.sh'), encoding='utf-8') as f:
+            block = f.read().split('\nFILES=(\n', 1)[1].split('\n)\n', 1)[0]
+        files = [l.strip() for l in block.splitlines() if l.strip() and not l.strip().startswith('#')]
+        import hashlib
+        listing = subprocess.run(['git', 'ls-tree', 'HEAD', '--'] + ['app/' + f for f in files], cwd=REPO,
+                                 capture_output=True).stdout.decode().rstrip('\n') + '\n'
+        self.assertEqual(gitops.stamp('HEAD'), 'pb-' + hashlib.sha1(listing.encode()).hexdigest()[:10])
+
+    def test_build_check_passes(self):
+        code, text = gitops.build_check()
+        self.assertEqual(code, 0, text)
+        self.assertIn('checks passed', text)
+
+    def test_sw_holds_the_placeholder(self):
+        with open(os.path.join(REPO, 'app', 'sw.js'), encoding='utf-8') as f:
+            self.assertEqual(f.read().count("const CACHE = 'pb-local';"), 1)
 
 
 class NewActions(unittest.TestCase):

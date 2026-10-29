@@ -431,7 +431,7 @@ class TileTests(unittest.TestCase):
         self.assertEqual(t['svc-pb-listener']['level'], tiles.WARN)
 
     def test_site_version(self):
-        lap = {'live': {'status': 200, 'cache': 'pb-v119'}, 'repo_cache': 'pb-v120', 'supabase': {'status': 200},
+        lap = {'live': {'status': 200, 'cache': 'pb-5557a7c0a3'}, 'repo_cache': 'pb-0123456789', 'supabase': {'status': 200},
                'realtime': {'ok': True, 'ms': 300, 'at': time.time()}}
         site, sb = tiles.laptop_tiles(lap)
         self.assertEqual(site['level'], tiles.WARN)
@@ -446,13 +446,13 @@ class TileTests(unittest.TestCase):
              'wifi': {'ssid': 'Hangout', 'signal': 70}, 'listener': {'state': 'joined'}, 'casts_24h': 3,
              'casts_recent': [{'at': 'x', 'name': 'a', 'mirror': False}],
              'errors': {'last24h': {'kernel': 5, 'kiosk': 2}, 'before': {'kernel': 1}}, 'health': {}}
-        m = tiles.metrics(p, {'live': {'status': 200, 'cache': 'pb-v119'}, 'repo_cache': 'pb-v119'})
+        m = tiles.metrics(p, {'live': {'status': 200, 'cache': 'pb-5557a7c0a3'}, 'repo_cache': 'pb-5557a7c0a3'})
         self.assertAlmostEqual(m['hw']['disk_used'], 0.4)
         self.assertAlmostEqual(m['hw']['mem_used'], 0.5)
         self.assertEqual(m['errors']['total'], 7)
         self.assertEqual(m['errors']['sources'][0], ['kernel', 5, 1])
         self.assertEqual(m['listener']['casts_24h'], 3)
-        self.assertEqual(m['site']['cache'], 'pb-v119')
+        self.assertEqual(m['site']['cache'], 'pb-5557a7c0a3')
         down = tiles.metrics({'ok': False}, None)
         self.assertFalse(down['pi_ok'])
         self.assertNotIn('hw', down)

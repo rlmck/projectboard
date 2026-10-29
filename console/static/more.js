@@ -111,18 +111,19 @@
     const c = git.checks;
     box.innerHTML =
       '<div class="kv"><span class="k">Branch</span><span>' + esc(git.branch) + ' at ' + esc(git.head) + '</span>' +
-      '<span class="k">Not pushed to dev</span><span>' + esc(git.ahead_dev) + ' commit(s)</span>' +
-      '<span class="k">Behind origin/dev</span><span>' + esc(git.behind_dev) + '</span>' +
-      '<span class="k">dev ahead of main</span><span>' + esc(git.dev_ahead_main) + ' commit(s) not live</span>' +
-      '<span class="k">CACHE</span><span>' + esc(c.cache) + ' here, ' + esc(c.cache_main) + ' on main</span></div>' +
-      (c.warnings.length ? c.warnings.map((w) => '<p class="banner warn">' + esc(w) + '</p>').join('') : '') +
-      (git.branch !== 'dev' ? '<p class="banner warn">Not on dev: push and fast-forward are off.</p>' : '');
+      '<span class="k">Not shipped</span><span>' + esc(git.ahead_main) + ' commit(s) ahead of main</span>' +
+      '<span class="k">Behind main</span><span>' + esc(git.behind_main) + (git.behind_main ? ' (Pull first)' : '') + '</span>' +
+      '<span class="k">Staging</span><span>' + esc(git.dev_behind) + ' commit(s) not on dev' + (git.staging_ff ? '' : ' (dev has diverged)') + '</span>' +
+      '<span class="k">CACHE</span><span>' + esc(c.stamp_main || '?') + ' for main' +
+        (c.stamp_head && c.stamp_head !== c.stamp_main ? ', ' + esc(c.stamp_head) + ' after Ship' : '') + '</span></div>' +
+      (git.branch !== 'main' ? '<p class="banner warn">On ' + esc(git.branch) + ': Ship and Rollback work on main.</p>' : '');
+    $('git-rollback-pick').innerHTML = git.recent_main.map((r) =>
+      '<option value="' + esc(r.hash) + '">' + esc(r.hash + ' ' + r.date + ' ' + r.subject.slice(0, 60)) + '</option>').join('');
     $('git-files').innerHTML = git.files.length ? git.files.map((f) =>
       '<label class="check-row"><input type="checkbox" data-file="' + esc(f.path) + '"' + (f.xy === '??' ? '' : ' checked') + '> <code>' +
       esc(f.xy) + '</code> ' + esc(f.path) + ' <button class="btn small" type="button" data-diff="' + esc(f.path) + '">diff</button></label>').join('')
       : '<p class="muted">Nothing to commit.</p>';
     $('git-log').textContent = git.log.map((l) => l.hash + '  ' + l.date + '  ' + l.subject).join('\n');
-    $('rel-node').hidden = git.node;
   }
 
   async function showDiff(path) {
@@ -132,24 +133,26 @@
     } catch (e) { $('git-diff').textContent = e.message; }
   }
 
-  async function commit() {
+  async function ship() {
     const files = Array.from(document.querySelectorAll('#git-files [data-file]:checked')).map((el) => el.dataset.file);
     const message = $('git-msg').value.trim();
-    if (!files.length) { PB.toast('Tick the files to commit'); return; }
-    if (!message) { PB.toast('Write a commit message'); $('git-msg').focus(); return; }
-    if (await PB.runAction('git-commit', { message, files }, 'Commit')) { $('git-msg').value = ''; loadGit(); }
+    if (files.length && !message) { PB.toast('Write a commit message'); $('git-msg').focus(); return; }
+    if (await PB.runAction('ship', { message, files }, 'Ship')) $('git-msg').value = '';
   }
 
-  function pollLive() {
+  // Waits for the stamp of what was just pushed (HEAD): on live after Ship or Rollback,
+  // on staging after Staging. A push that changes no shipped file keeps the same stamp.
+  function pollLive(where) {
     clearInterval(pollTimer);
-    const want = git && git.checks.cache;
+    const site = where === 'staging' ? 'staging' : 'cache';
     const started = Date.now();
     const tick = async () => {
       try {
         const l = await get('/api/live');
-        $('live-cache').textContent = 'live ' + l.cache + ' · staging ' + l.staging + ' · repo ' + l.repo +
-          (l.cache === want ? ' ✓ live shows it' : ' · waiting for ' + want + '…');
-        if (l.cache === want || Date.now() - started > 600000) clearInterval(pollTimer);
+        const want = l.head;
+        $('live-cache').textContent = 'live ' + l.cache + ' · staging ' + l.staging + ' · main ' + l.repo +
+          (l[site] === want ? ' ✓ ' + (site === 'cache' ? 'live' : 'staging') + ' shows ' + want : ' · waiting for ' + want + '…');
+        if (l[site] === want || Date.now() - started > 600000) clearInterval(pollTimer);
       } catch (e) { $('live-cache').textContent = e.message; }
     };
     tick();
@@ -305,8 +308,9 @@
   PB.afterAction = (action) => {
     if (action.startsWith('config')) loadConfig();
     if (action === 'deploy' || action.startsWith('pull')) loadDrift();
-    if (/^(git|push|ff|cache|syntax)/.test(action)) loadGit();
-    if (action === 'ff-main' || action === 'push-dev') pollLive();
+    if (/^(git|ship|staging|rollback|build)/.test(action)) loadGit();
+    if (action === 'ship' || action === 'rollback') pollLive('live');
+    if (action === 'staging') pollLive('staging');
     if (action === 'ledmap') setTimeout(loadLedmap, 1500);
     if (action.startsWith('backup')) loadBackups();
   };
@@ -330,12 +334,14 @@
   $('git-reload').addEventListener('click', loadGit);
   $('git-pull').addEventListener('click', () => PB.runAction('git-pull', {}, 'git pull'));
   $('git-alldiff').addEventListener('click', () => showDiff(''));
-  $('git-commit').addEventListener('click', commit);
-  $('git-push').addEventListener('click', () => PB.runAction('push-dev', {}, 'Push dev'));
-  $('git-main').addEventListener('click', () => PB.runAction('ff-main', {}, 'Fast-forward main (live)'));
-  $('git-bump').addEventListener('click', () => PB.runAction('cache-bump', {}, 'Bump CACHE'));
-  $('git-syntax').addEventListener('click', () => PB.runAction('syntax-check', {}, 'Syntax check'));
-  $('git-poll').addEventListener('click', pollLive);
+  $('git-ship').addEventListener('click', ship);
+  $('git-check').addEventListener('click', () => PB.runAction('build-check', {}, 'Build check'));
+  $('git-staging').addEventListener('click', () => PB.runAction('staging', {}, 'Push to staging'));
+  $('git-rollback').addEventListener('click', () => {
+    const commit = $('git-rollback-pick').value;
+    if (commit) PB.runAction('rollback', { commit }, 'Roll back ' + commit);
+  });
+  $('git-poll').addEventListener('click', () => pollLive('live'));
   $('ledmap-start').addEventListener('click', () => PB.runAction('ledmap', { state: 'start' }, 'Start LED mapping'));
   $('ledmap-stop').addEventListener('click', () => PB.runAction('ledmap', { state: 'stop' }, 'Stop LED mapping'));
   $('ledmap-file').addEventListener('change', uploadLedmap);
