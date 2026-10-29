@@ -24,6 +24,15 @@ def load(*p):
         return json.load(f)
 
 
+class Origin(unittest.TestCase):
+    def test_tag(self):
+        self.assertEqual(board.origin({'problem_name': 'x'}), '')                 # an older app
+        self.assertEqual(board.origin({'source': 'wall', 'signed_in': False}), ' [wall, guest]')
+        self.assertEqual(board.origin({'source': 'phone', 'signed_in': True}), ' [phone, member]')
+        self.assertEqual(board.origin({'source': 'console'}), ' [console, unknown]')
+        self.assertEqual(board.origin({'source': 'x] evil', 'signed_in': 'yes'}), ' [unknown, unknown]')
+
+
 class LedMap(unittest.TestCase):
     def test_all_247_match_led_map_json(self):
         m = load('tools', 'led_map.json')

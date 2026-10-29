@@ -126,6 +126,8 @@ async function run() {
   let hits = since(t0);
   check(got && hits[0].payload.problem_name === A.name && !('mirror' in hits[0].payload),
     `Cast on A delivers { problem_name: "${A.name}" } (got ${got ? JSON.stringify(hits[0].payload) : 'nothing'})`);
+  check(got && hits[0].payload.source === 'phone' && typeof hits[0].payload.signed_in === 'boolean',
+    `It says where it came from and whether someone was signed in, never who (contract §3)`);
   check(/Cast: ~cast-test-A/.test(toast()), `Success toast names A (“${toast()}”)`);
   await waitFor(idle, 3000);
   check(idle(), 'Cast button returns to normal after the “sent” state');

@@ -4,7 +4,9 @@
 
 Double-clicking it opens a Git Bash window that runs `bash console/start.sh` (a fresh
 token, the backend, the browser), exactly as typing it would. Closing that window, or
-Ctrl+C in it, stops the console. The icon, console/pb-console.ico, is drawn here from
+Ctrl+C in it, stops the console. Double-clicking again while it runs just opens the
+running console in the browser (console/session.py), and a console left running on
+older code is replaced. The icon, console/pb-console.ico, is drawn here from
 the same shapes as console/static/icon.svg (Pillow, which the tools already use).
 """
 import os
@@ -42,8 +44,10 @@ def desktop():
 
 def make_shortcut(lnk):
     repo_posix = '/' + REPO[0].lower() + REPO[2:].replace('\\', '/')        # C:\x -> /c/x for Git Bash
-    command = ("cd '%s' && bash console/start.sh; echo; "
-               "read -p 'PB Console has stopped. Press Enter to close this window.'" % repo_posix)
+    # Already running? start.sh opens that one and exits 0, so the window just closes; it
+    # stays open only when something failed, so the message can be read.
+    command = ("cd '%s' && bash console/start.sh || "
+               "read -p 'PB Console could not start (above). Press Enter to close this window.'" % repo_posix)
     ps = ("$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:PB_LNK); "
           "$s.TargetPath = $env:PB_BASH; $s.Arguments = $env:PB_ARGS; $s.WorkingDirectory = $env:PB_REPO; "
           "$s.IconLocation = $env:PB_ICO + ',0'; $s.Description = 'Start PB Console (the Project Board admin console)'; "

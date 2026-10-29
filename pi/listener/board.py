@@ -103,6 +103,21 @@ def scale(leds, brightness, budget_ma, ma_per_channel):
     return out, cap, ma * cap
 
 
+SOURCES = ('wall', 'phone', 'console')       # contract 3: where a cast was sent from
+
+
+def origin(body):
+    """' [wall, guest]' for a cast's optional source / signed_in (contract 3), for the log
+    line PB Console's Activity reads; '' when neither is sent (older apps). Never refuses
+    a cast: an unknown value just reads 'unknown'."""
+    src, who = body.get('source'), body.get('signed_in')
+    if src is None and who is None:
+        return ''
+    src = src if src in SOURCES else 'unknown'
+    who = 'member' if who is True else 'guest' if who is False else 'unknown'
+    return ' [%s, %s]' % (src, who)
+
+
 def check_mirror_map(mm):
     """Validate board_config.mirror_map: a dict of hold id -> hold id."""
     if isinstance(mm, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in mm.items()):

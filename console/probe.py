@@ -44,15 +44,23 @@ def show(unit, props):
     return dict(line.split('=', 1) for line in out.splitlines() if '=' in line)
 
 
+# The listener's lines: "cast received: 'Name' mirrored [wall, guest]" and
+# "cast 'Name' mirrored ignored: night mode [wall, guest]". The mirrored and the
+# [source, who] parts are optional (no [..] from apps before 29 Oct 2026), and %r
+# quotes a name containing ' with ".
+CAST_LINE = re.compile(r"^(\S+) \S+ \S+: cast (?:received: )?(['\"])(.*)\2( mirrored)?"
+                       r"( ignored: night mode)?(?: \[(\w+), (\w+)\])?$")
+
+
 def casts_since(seconds):
-    """[(iso time, name, mirrored)] from the listener's 'cast received' lines."""
+    """[{at, name, mirror}] from the listener's 'cast received' lines."""
     out = sh('journalctl', '-u', 'pb-listener', '--since', '-%ds' % seconds, '-o', 'short-iso',
              '--no-pager', '-q', '--grep', 'cast received')
     casts = []
     for line in out.splitlines():
-        m = re.match(r"^(\S+) \S+ \S+: cast received: '(.*)'( mirrored)?$", line)
-        if m:
-            casts.append({'at': m.group(1), 'name': m.group(2), 'mirror': bool(m.group(3))})
+        m = CAST_LINE.match(line)
+        if m and not m.group(5):
+            casts.append({'at': m.group(1), 'name': m.group(3), 'mirror': bool(m.group(4))})
     return casts
 
 
@@ -195,14 +203,15 @@ def everything():
 
 
 def activity(days):
-    """Casts from the listener's journal over the last `days` days (phase 10): [at, name, mirror, shown]."""
+    """Casts from the listener's journal over the last `days` days (phase 10):
+    [at, name, mirror, shown, source, who] (source/who None before the app sent them)."""
     out = sh('journalctl', '-u', 'pb-listener', '--since', '-%dd' % days, '-o', 'short-iso', '--no-pager', '-q',
              '--grep', r'cast received|ignored: night mode', timeout=60)
     casts = []
     for line in out.splitlines():
-        m = re.match(r"^(\S+) \S+ \S+: cast (?:received: )?'(.*?)'( mirrored)?( ignored: night mode)?$", line)
+        m = CAST_LINE.match(line)
         if m:
-            casts.append([m.group(1), m.group(2), bool(m.group(3)), not m.group(4)])
+            casts.append([m.group(1), m.group(3), bool(m.group(4)), not m.group(5), m.group(6), m.group(7)])
     boots = [l for l in sh('journalctl', '--list-boots', '--no-pager', '-q').splitlines() if l.strip()]
     first = boots[0].split() if boots else []
     # the oldest boot line: IDX BOOT-ID Day YYYY-MM-DD HH:MM:SS ZONE ...: the journal starts there

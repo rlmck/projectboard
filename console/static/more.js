@@ -218,18 +218,62 @@
     }).join('') + '</svg>';
   }
 
+  const FROM = { wall: 'Wall kiosk', phone: 'Phone', console: 'PB Console (test)' };
+  const WHO = { member: 'Member', guest: 'Guest' };
+  const DAY = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  const TIME = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  function when(iso) {
+    const t = new Date(iso);
+    return DAY.format(t) + ', ' + TIME.format(t);
+  }
+
+  function ago(iso) {
+    const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 90) return 'just now';
+    if (s < 5400) return Math.round(s / 60) + ' min ago';
+    if (s < 129600) return Math.round(s / 3600) + ' h ago';
+    return Math.round(s / 86400) + ' days ago';
+  }
+
+  // From the wall or a phone, member or guest: '—' for casts made before the app sent it (29 Oct 2026).
+  const from = (c) => c.source ? FROM[c.source] || c.source : '—';
+  const who = (c) => c.who ? WHO[c.who] || c.who : '—';
+
+  function castRows(rows) {
+    if (!rows.length) return '<p class="muted">No casts in this period.</p>';
+    return '<table class="audit"><tr><th>Date and time</th><th>Climb</th><th>From</th><th>Who</th><th></th></tr>' +
+      rows.map((c) => '<tr><td>' + esc(when(c.at)) + '</td><td><strong>' + esc(c.name) + '</strong></td><td>' + esc(from(c)) +
+        '</td><td>' + esc(who(c)) + '</td><td>' + (c.mirror ? '<span class="tag dim">mirrored</span> ' : '') +
+        (c.shown ? '' : '<span class="tag bad">ignored: night</span>') + '</td></tr>').join('') + '</table>';
+  }
+
   async function loadActivity() {
     const box = $('activity-out');
     box.innerHTML = '<p class="muted">Reading the listener\'s journal…</p>';
     let a;
     try { a = await get('/api/activity?days=' + $('activity-days').value); } catch (e) { return fail(box, e); }
+    const last = a.last;
+    const split = (counts, names) => Object.keys(counts || {}).sort((x, y) => counts[y] - counts[x])
+      .map((k) => (names[k] || 'not recorded') + ' ' + counts[k]).join(' · ');
     box.innerHTML =
+      '<h3>Last used</h3>' + (last
+        ? '<div class="big mid">' + esc(when(last.at)) + ' <span class="muted">(' + esc(ago(last.at)) + ')</span></div>' +
+          '<p><strong>' + esc(last.name) + '</strong>' + (last.mirror ? ' (mirrored)' : '') + ' · ' + esc(from(last)) + ' · ' + esc(who(last)) +
+          (last.shown ? '' : ' · ignored: night mode') + '</p>'
+        : '<p class="muted">No casts in this period.</p>') +
+      '<h3>Latest casts</h3>' + castRows(a.recent || []) +
+      (a.recent && a.recent.length >= 100 ? '<p class="note">The latest 100 shown.</p>' : '') +
+      '<h3>Summary</h3>' +
       '<p><strong>' + a.total + '</strong> casts shown' + (a.total ? ', ' + a.mirrored + ' mirrored (' + Math.round(100 * a.mirrored / a.total) + '%)' : '') +
       ', ' + a.ignored_night + ' ignored at night. The journal goes back to ' + esc(a.journal_from || '?') + '.</p>' +
+      (a.total ? '<p>From: ' + esc(split(a.sources, FROM)) + '<br>Who: ' + esc(split(a.who, WHO)) + '</p>' : '') +
       '<h3>Casts per day</h3>' + bars(a.per_day, (d, short) => short ? d.slice(8) : d) +
       '<h3>Casts by hour of the day</h3>' + bars(a.per_hour, (h) => String(h).padStart(2, '0')) +
       '<h3>Most cast</h3><ol>' + a.top.map(([n, c]) => '<li>' + esc(n) + ' <span class="muted">' + c + '</span></li>').join('') + '</ol>' +
-      '<p class="note">From the Pi only (problem names, no people). Ticks and active users need the admin data path (phase 13).</p>';
+      '<p class="note">From the Pi\'s journal. Each cast says where it was sent from and whether someone was signed in, never who ' +
+      '(<code>docs/cast-contract.md</code> §3); casts before 29 Oct 2026, or before the Pi\'s listener was updated, show —. ' +
+      'Ticks and active users need the admin data path (phase 13).</p>';
   }
 
   // -- Acceptance tests (phase 11) ---------------------------------------------------------------------

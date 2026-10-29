@@ -170,7 +170,8 @@ What each view does in detail (fullscreen viewer, create, the outline editor, ci
 
 ```javascript
 await channel.httpSend('cast_problem',
-  { problem_name: 'Good Bug', mirror: true },   // mirror only when the mirrored view is shown
+  { problem_name: 'Good Bug', mirror: true,     // mirror only when the mirrored view is shown
+    source: 'wall', signed_in: false },         // where from + signed in or not (never who): Activity log only
   { timeout: 10000 });
 // channel: sb.channel('board:HangoutPortland'), never subscribed: the app holds no socket
 ```

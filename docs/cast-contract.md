@@ -24,16 +24,18 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
 ## 3. Payload
 
 ```json
-{ "problem_name": "Good Bug" }
-{ "problem_name": "Good Bug", "mirror": true }
+{ "problem_name": "Good Bug", "source": "phone", "signed_in": false }
+{ "problem_name": "Good Bug", "mirror": true, "source": "wall", "signed_in": false }
 ```
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `problem_name` | string | yes | `problems.name` exactly as stored. Unique, 1–60 characters, no grade in it. |
 | `mirror` | boolean, always `true` when present | no | Sent only when the mirrored view is on screen. Absent means not mirrored; the app never sends `false`. |
+| `source` | `"wall"`, `"phone"` or `"console"` | no | Where the cast was sent from: the wall kiosk (`/?wall`), the app anywhere else (`"phone"`), or a PB Console test cast. Since 29 Oct 2026; for PB Console's Activity log only, never used for the LEDs. |
+| `signed_in` | boolean | no | Whether someone was signed in when they cast. **Only that: never a user id or nickname.** Since 29 Oct 2026; Activity log only. |
 
-There are no other fields: no message id, timestamp, sender, hold list, colours or version. A subscriber receives the usual broadcast envelope, `{ "type": "broadcast", "event": "cast_problem", "payload": { … } }`.
+`source` and `signed_in` are informational and unauthenticated (anyone with the anon key can send anything). The listener never refuses a cast over them: a missing or unknown value is logged as `unknown`. There are no other fields: no message id, timestamp, user, hold list, colours or version. A subscriber receives the usual broadcast envelope, `{ "type": "broadcast", "event": "cast_problem", "payload": { … } }`.
 
 ## 4. Sender: the PWA
 
@@ -52,6 +54,7 @@ There are no other fields: no message id, timestamp, sender, hold list, colours 
   - joins `realtime:board:HangoutPortland` with the anon key and checks the join reply;
   - sends a Phoenix heartbeat every 25 s; no reply for 60 s means a dead socket, and it reconnects with backoff from 1 s to 60 s, with jitter;
   - on `cast_problem`, checks the payload (§3: `problem_name` a string of 1–60 characters, `mirror` true or absent) and logs and skips anything else;
+  - logs each cast with its origin, e.g. `cast received: 'Good Bug' mirrored [wall, guest]` (or `cast 'Good Bug' ignored: night mode [phone, member]`); the `[source, who]` part is left off when the app sent neither (before 29 Oct 2026). PB Console's Activity tab reads these lines;
   - looks the problem up by exact name over REST (one retry); an unknown name leaves the board as it is;
   - builds the frame by §6.2–6.4: roles are classified on the stored ids first, ids off the grid are then dropped and logged, and with `mirror` each hold moves to its partner, keeping its role. Brightness is 0.5, with a whole-frame current cap;
   - latest cast wins: a cast still being fetched when a newer one arrives is dropped;
@@ -164,6 +167,7 @@ Nothing below is decided.
 15. **Who may cast:** anyone, by decision. Does the Pi apply any checks of its own?
 
 ## Change history
+- **2026-10-29, Claude Code:** §3, §4, §5: two optional, informational payload fields, `source` (`wall` / `phone` / `console`) and `signed_in` (a boolean, never who), sent by `castByName()` and PB Console's test cast and logged by the listener for PB Console's Activity log. The channel and event are unchanged, and the listener before this change ignores both fields, so either side can be deployed first.
 - **2026-10-28, Claude Code:** §6.1, §6.3, §6.4, §7 item 11: the LED map checked on the wall with `pb-ledmap`; three hold labels fixed in the board data (db/32), 188 real holds, the mirror differences now 5. No change to the channel, event or payload.
 - **2026-10-28, Claude Code:** §5: idle patterns (ten, chosen by `IDLE_PATTERN` or `pb-idle`); the listener also reads the benchmark problems for the teaser pattern. No change to the channel, event or payload.
 - **2026-10-27, Claude Code:** §5 and §7 items 1 and 12: the listener's idle animation, Glisten. No change to the channel, event or payload.

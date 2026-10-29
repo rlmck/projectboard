@@ -345,6 +345,10 @@
 
     const payload = { problem_name: name };
     if (mirror) payload.mirror = true;
+    // Where it came from and whether someone was signed in (no user id, nothing
+    // personal): PB Console's Activity shows it. The Pi ignores both for the LEDs.
+    payload.source = WALL ? 'wall' : 'phone';
+    payload.signed_in = !!session;
 
     try {
       // One REST POST (no socket, see state.js). Resolves once the Realtime server

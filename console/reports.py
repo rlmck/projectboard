@@ -38,18 +38,29 @@ def save_json(path, obj):
 
 # -- activity ------------------------------------------------------------------------
 
+RECENT_CASTS = 100          # the latest casts listed on the Activity tab
+
+
 def activity(raw):
-    """Casts per day, per hour of the day, mirrored share, ignored at night, top problems.
-    raw: the probe's {'casts': [[iso, name, mirror, shown]], ...}. No user data: the casts carry none."""
+    """The latest casts (when, which climb, from the wall, a phone or the console, member or
+    guest), casts per day and per hour, mirrored share, ignored at night, top problems.
+    raw: the probe's {'casts': [[iso, name, mirror, shown, source, who]], ...}. No user data:
+    a cast says only whether someone was signed in, never who."""
     per_day, per_hour, names = collections.Counter(), collections.Counter(), collections.Counter()
+    sources, whos = collections.Counter(), collections.Counter()
     mirrored = ignored = 0
-    for at, name, mirror, shown in raw.get('casts') or []:
+    recent = []
+    for row in raw.get('casts') or []:
+        at, name, mirror, shown = row[:4]
+        source, who = (list(row[4:6]) + [None, None])[:2]
         if name.startswith('~cast-test'):
             continue
         try:
             t = datetime.datetime.fromisoformat(at).astimezone()
         except ValueError:
             continue
+        recent.append({'at': t.isoformat(timespec='seconds'), 'name': name, 'mirror': bool(mirror),
+                       'shown': bool(shown), 'source': source, 'who': who})
         if not shown:
             ignored += 1
             continue
@@ -57,7 +68,10 @@ def activity(raw):
         per_hour[t.hour] += 1
         names[name] += 1
         mirrored += bool(mirror)
+        sources[source or 'unknown'] += 1
+        whos[who or 'unknown'] += 1
     total = sum(per_day.values())
+    recent.sort(key=lambda r: r['at'], reverse=True)
     days = []
     if per_day or raw.get('days'):
         end = datetime.date.today()
@@ -66,7 +80,8 @@ def activity(raw):
             days.append([d, per_day.get(d, 0)])
     return {'total': total, 'per_day': days, 'per_hour': [[h, per_hour.get(h, 0)] for h in range(24)],
             'mirrored': mirrored, 'ignored_night': ignored, 'top': names.most_common(10),
-            'journal_from': raw.get('journal_from')}
+            'recent': recent[:RECENT_CASTS], 'last': recent[0] if recent else None,
+            'sources': dict(sources), 'who': dict(whos), 'journal_from': raw.get('journal_from')}
 
 
 # -- acceptance tests (plan R8) ---------------------------------------------------------

@@ -16,6 +16,8 @@ action at a time (a lock); every action goes to console/audit.log.
     GET  /api/logs?source=&since=&until=&lines=&filter=&follow=1   streamed text
     POST /api/preview {action, args}                 what a confirm would say, and the busy check
     POST /api/action  {action, args, confirm, override_busy}   streamed output, then '@@result {...}'
+    GET  /api/whoami                 pid, code stamp, busy: a new launch reuses or replaces this one (session.py)
+    POST /api/shutdown               stop, for a newer launch (refused mid-action)
 """
 import argparse
 import json
@@ -42,8 +44,11 @@ import gitops  # noqa: E402
 import reports  # noqa: E402
 import supabase_api as supa  # noqa: E402
 import security  # noqa: E402
+import session  # noqa: E402
 import tiles  # noqa: E402
 from remote import Remote  # noqa: E402
+
+CODE = session.code_stamp()        # this process's code, for /api/whoami
 
 STATIC = {
     '/': ('static/index.html', 'text/html; charset=utf-8'),
@@ -104,6 +109,7 @@ class Console:
         self.err_bad = int(self.env.get('PB_ERR_BAD') or 500)
         self.lock = threading.Lock()          # one action at a time
         self.current = None
+        self.httpd = None                  # set by main(): /api/shutdown stops it
         self._pi, self._pi_at, self._pi_lock = None, 0.0, threading.Lock()
         self._lap, self._lap_at, self._rt_at, self._lap_lock = None, 0.0, 0.0, threading.Lock()
 
@@ -330,6 +336,8 @@ def make_handler(app):
                 return self._json(200, app.overview(q.get('refresh') == '1'))
             if path == '/api/realtime':
                 return self._json(200, app.laptop_checks(realtime=True).get('realtime') or {})
+            if path == '/api/whoami':           # a new launch asks before reusing or replacing this console
+                return self._json(200, {'pid': os.getpid(), 'code': CODE, 'busy': app.current})
             if path == '/api/state':
                 return self._json(200, {'busy': app.current, 'host': app.remote.host, 'cam_url': app.cam_url,
                                         'patterns': actions.pattern_names(), 'audit': actions.audit_tail(30),
@@ -365,6 +373,14 @@ def make_handler(app):
                     return self._json(200, {'saved': reports.ledmap_save(body.get('results'))})
                 except ValueError as e:
                     return self._json(400, {'error': str(e)})
+            if path == '/api/shutdown':         # a newer launch replacing this one; never mid-action
+                if app.current:
+                    return self._json(409, {'error': 'busy: %s' % app.current})
+                actions.audit('console stop', 'ok', 'replaced by a newer launch')
+                self._json(200, {'ok': True})
+                if app.httpd:
+                    threading.Thread(target=app.httpd.shutdown, daemon=True).start()
+                return
             if path == '/api/preview':
                 return self.preview(body)
             if path == '/api/action':
@@ -554,15 +570,29 @@ def main(argv):
     ap.add_argument('--open', action='store_true', help='open the browser once listening')
     a = ap.parse_args(argv)
     env = load_env(os.path.join(HERE, '.env.local'))
-    port = a.port or int(env.get('PB_CONSOLE_PORT') or 8765)
+    first = a.port or int(env.get('PB_CONSOLE_PORT') or 8765)
     token = os.environ.get('PB_CONSOLE_TOKEN', '')
     if len(token) < 20:
         sys.exit('PB_CONSOLE_TOKEN is not set: start it with  bash console/start.sh')
-    app = Console(token, port, env)
-    try:
-        httpd = ConsoleServer(('127.0.0.1', port), make_handler(app))
-    except OSError as e:
-        sys.exit('port %d is taken (%s): is the console already running? Or set PB_CONSOLE_PORT' % (port, e))
+    running = session.existing(log=lambda m: print(m, flush=True))
+    if running:                         # already up (and current, or busy): open that one
+        print('PB Console is already running: opened it in the browser (%s).' % session.url(running), flush=True)
+        if a.open:
+            webbrowser.open(session.url(running))
+        return 0
+    httpd = app = None
+    for port in range(first, first + session.PORTS):
+        app = Console(token, port, env)
+        try:
+            httpd = ConsoleServer(('127.0.0.1', port), make_handler(app))
+            break
+        except OSError as e:
+            print('port %d is taken (%s); trying the next one' % (port, e.strerror or e), flush=True)
+    if httpd is None:
+        sys.exit('ports %d-%d are all taken: set PB_CONSOLE_PORT in console/.env.local'
+                 % (first, first + session.PORTS - 1))
+    app.httpd = httpd
+    session.write(port, token)
     url = 'http://127.0.0.1:%d/#t=%s' % (port, token)
     print('PB Console on http://127.0.0.1:%d/  (Pi: %s)' % (port, app.remote.host), flush=True)
     print('this launch: %s' % url, flush=True)
@@ -576,6 +606,7 @@ def main(argv):
         pass
     finally:
         actions.audit('console stop', 'ok')
+        session.remove(token)
         httpd.server_close()
     return 0
 

@@ -31,6 +31,7 @@ import drift  # noqa: E402
 import gitops  # noqa: E402
 import reports  # noqa: E402
 import supabase_api as supa  # noqa: E402
+import probe  # noqa: E402  (the script the console runs on the Pi)
 from test_console import ServerBase  # noqa: E402
 
 GOOD = ('SUPABASE_URL=https://uqirowyfqwiceyjznosl.supabase.co\nSUPABASE_ANON_KEY=eyJa.eyJb.c_d-e\n'
@@ -284,6 +285,31 @@ class Reports(unittest.TestCase):
         self.assertEqual(a['ignored_night'], 1)
         self.assertEqual(a['top'], [('A', 2)])
         self.assertEqual(len(a['per_day']), 3)
+
+    def test_activity_latest_casts(self):
+        raw = {'days': 2, 'casts': [
+            ['2026-10-29T18:00:00+00:00', 'Old app', False, True],                    # before source/who
+            ['2026-10-29T19:42:05+00:00', 'Good Bug', True, True, 'wall', 'guest'],
+            ['2026-10-29T19:30:00+00:00', 'Crimp', False, True, 'phone', 'member'],
+            ['2026-10-29T23:10:00+00:00', 'Late', False, False, 'phone', 'guest'],
+            ['2026-10-29T19:45:00+00:00', '~cast-test-A', False, True, 'console', None]]}
+        a = reports.activity(raw)
+        self.assertEqual(a['last']['name'], 'Late')                                   # newest first, night too
+        self.assertFalse(a['last']['shown'])
+        self.assertEqual([r['name'] for r in a['recent']], ['Late', 'Good Bug', 'Crimp', 'Old app'])
+        self.assertEqual((a['recent'][1]['source'], a['recent'][1]['who'], a['recent'][1]['mirror']), ('wall', 'guest', True))
+        self.assertIsNone(a['recent'][3]['source'])
+        self.assertEqual(a['sources'], {'wall': 1, 'phone': 1, 'unknown': 1})
+        self.assertEqual(a['who'], {'guest': 1, 'member': 1, 'unknown': 1})
+
+    def test_probe_reads_every_cast_line(self):
+        m = probe.CAST_LINE.match
+        r = m("2026-10-29T19:42:05+00:00 projectboard python3[812]: cast received: 'Good Bug' mirrored [wall, guest]")
+        self.assertEqual(r.group(3, 4, 5, 6, 7), ('Good Bug', ' mirrored', None, 'wall', 'guest'))
+        r = m("2026-10-29T19:42:05+00:00 projectboard python3[812]: cast received: 'Good Bug'")       # an older line
+        self.assertEqual(r.group(3, 6), ('Good Bug', None))
+        r = m('2026-10-29T23:42:05+00:00 projectboard python3[812]: cast "Pat\'s" ignored: night mode [phone, member]')
+        self.assertEqual(r.group(3, 5, 6, 7), ("Pat's", ' ignored: night mode', 'phone', 'member'))
 
     def test_night_report(self):
         raw = {'start': 's', 'end': 'e', 'ignored': ['x'],

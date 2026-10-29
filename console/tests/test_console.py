@@ -30,6 +30,7 @@ sys.dont_write_bytecode = True
 import actions  # noqa: E402
 import security  # noqa: E402
 import server  # noqa: E402
+import session  # noqa: E402
 import tiles  # noqa: E402
 
 TOKEN = 'test-token-0123456789abcdefghijkl'
@@ -456,6 +457,66 @@ class TileTests(unittest.TestCase):
         down = tiles.metrics({'ok': False}, None)
         self.assertFalse(down['pi_ok'])
         self.assertNotIn('hw', down)
+
+
+class Launch(ServerBase):
+    """session.py: a second launch reuses a running console on the same code, replaces an
+    idle one on older code, and ignores a stale session file."""
+
+    def setUp(self):
+        super().setUp()
+        self.app.httpd = self.httpd
+        self.path = os.path.join(self.tmp, 'session.json')
+        with open(self.path, 'w') as f:
+            json.dump({'pid': 1, 'port': self.port, 'token': TOKEN}, f)
+        self._code = server.CODE
+
+    def tearDown(self):
+        server.CODE = self._code
+        super().tearDown()
+
+    def test_whoami_needs_the_token(self):
+        self.assertEqual(self.req('GET', '/api/whoami', token=None)[0], 401)
+        status, body, _ = self.req('GET', '/api/whoami')
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)['code'], server.CODE)
+
+    def test_reuses_a_current_console(self):
+        s = session.existing(log=lambda m: None, path=self.path)
+        self.assertEqual(s['port'], self.port)
+        self.assertEqual(self.req('GET', '/api/whoami')[0], 200)          # still running
+
+    def test_reuses_a_busy_one_even_if_older(self):
+        server.CODE = 'older'
+        self.app.current = 'deploy'
+        self.assertIsNotNone(session.existing(log=lambda m: None, path=self.path))
+        self.assertEqual(self.req('POST', '/api/shutdown', {})[0], 409)   # never stopped mid-action
+        self.app.current = None
+
+    def test_replaces_an_idle_older_one(self):
+        server.CODE = 'older'
+        self.assertIsNone(session.existing(log=lambda m: None, path=self.path))
+        self.assertIsNone(session.ask({'port': self.port, 'token': TOKEN}, 'GET', '/api/whoami', timeout=1)[0])
+        with open(actions.AUDIT, encoding='utf-8') as f:
+            self.assertIn('replaced by a newer launch', f.read())
+        # tearDown's shutdown() on a stopped server would wait forever: start a fresh one for it
+        self.httpd.server_close()
+        self.httpd = server.ConsoleServer(('127.0.0.1', 0), server.make_handler(self.app))
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def test_stale_file_and_wrong_token(self):
+        with open(self.path, 'w') as f:
+            json.dump({'pid': 1, 'port': self.port, 'token': 'not-the-token-' * 3}, f)
+        self.assertIsNone(session.existing(log=lambda m: None, path=self.path))
+        os.remove(self.path)
+        self.assertIsNone(session.existing(log=lambda m: None, path=self.path))
+
+    def test_write_and_remove_only_its_own(self):
+        session.write(self.port, 'tok-a' * 5, path=self.path)
+        session.remove('tok-b' * 5, path=self.path)
+        self.assertTrue(os.path.exists(self.path))
+        session.remove('tok-a' * 5, path=self.path)
+        self.assertFalse(os.path.exists(self.path))
 
 
 if __name__ == '__main__':

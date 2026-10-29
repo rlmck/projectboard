@@ -88,11 +88,12 @@ def holds_with_mirror(row, mirror_map):
 
 def cast(name, mirror=False, env=None):
     """The app's cast exactly (contract 3): HTTPS POST to Realtime's broadcast endpoint,
-    {problem_name, mirror: true only when mirrored}. Returns (http status, ms, sent at)."""
+    {problem_name, mirror: true only when mirrored}, plus source 'console' so Activity can tell
+    a test cast from a climber's. Returns (http status, ms, sent at)."""
     if not isinstance(name, str) or not 1 <= len(name) <= 60:
         raise ValueError('problem_name: 1-60 characters')
     url, key = supabase_settings(env)
-    payload = {'problem_name': name}
+    payload = {'problem_name': name, 'source': 'console'}   # contract 3: shows as the console in Activity
     if mirror:
         payload['mirror'] = True
     endpoint = '%s/realtime/v1/api/broadcast/%s/events/%s' % (url, urllib.parse.quote(TOPIC, safe=''), EVENT)

@@ -302,12 +302,13 @@ class Listener:
         if mirror not in (True, False):
             warn('cast_problem with a bad mirror ignored: %r' % (body,))
             return
+        tag = board.origin(body)            # ' [wall, guest]': PB Console's Activity reads it
         if self.mode == 'night':
             self.status['casts_ignored_night'] += 1
-            log('cast %r%s ignored: night mode' % (name, ' mirrored' if mirror else ''))
+            log('cast %r%s ignored: night mode%s' % (name, ' mirrored' if mirror else '', tag))
             self.write_status()
             return
-        log('cast received: %r%s' % (name, ' mirrored' if mirror else ''))
+        log('cast received: %r%s%s' % (name, ' mirrored' if mirror else '', tag))
         self.pending = (name, mirror, time.monotonic())
         self.cast_ready.set()
 
