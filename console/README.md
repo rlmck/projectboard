@@ -10,7 +10,9 @@ bash console/start.sh
 
 It makes a new random session token, starts the backend on `127.0.0.1:8765` and opens `http://127.0.0.1:8765/#t=<token>` in the default browser. The page keeps the token for that tab and takes it out of the address bar. **Ctrl+C** in Git Bash stops it. If the browser opens the page without the token (it then says so), open the `this launch:` address that Git Bash printed. A tab left open from an earlier launch stops working (its token is old): start again and use the new tab.
 
-Needs: Python 3 (the standard library only), Git Bash's `ssh`, and `ssh pi@projectboard` working without a password (it does: the laptop's key). Optional settings go in `console/.env.local` (gitignored): copy `console/.env.local.example`.
+**From the desktop:** `python console/desktop_shortcut.py` (once) puts a **PB Console** icon on the Windows desktop (`console/pb-console.ico`). Double-clicking it opens a Git Bash window running `bash console/start.sh`; closing that window (or Ctrl+C in it) stops the console. Run the script again if the repo moves.
+
+Needs: Python 3 (the standard library only; Pillow only for the desktop icon), Git Bash's `ssh`, and `ssh pi@projectboard` working without a password (it does: the laptop's key). Optional settings go in `console/.env.local` (gitignored): copy `console/.env.local.example`.
 
 **One-time on the Pi:** the Services tab, night mode and the screen buttons use `pb-console-helper`, which a deploy installs (`bash pi/deploy.sh`, the Pi's password once). Until then the page says so and those buttons fail; everything else works.
 
