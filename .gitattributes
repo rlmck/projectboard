@@ -8,3 +8,6 @@ console/**    text eol=lf
 
 # Git hooks run under bash: a CRLF hook breaks
 .githooks/** text eol=lf
+# ...except binary files under console/ (the desktop icon)
+console/**/*.ico binary
+console/*.ico binary
