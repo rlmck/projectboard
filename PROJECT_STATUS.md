@@ -33,6 +33,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 10. Known bugs to triage: `docs/codebase-overview.md` §13.
 
 ## Waiting on
+- Ross: behind the board on 30 Oct, find out why the wall screen is black even though the Pi is sending it a picture (monitor power/standby, cables, input, relays).
 - Ross: the relay module (eBay) and 74AHCT125 level shifter (Amazon) to arrive.
 - Ross: an on-site check of the cast geofence centre (a non-admin phone by the board and at the far end of the gym).
 - Ross: delete the local passphrase hand-out file in the archive (then empty the Recycle Bin) once all 7 migrated accounts have signed in.
@@ -59,6 +60,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-10-29 evening, Claude Code (the wall screen is black).**
+  - **Found:** the Pi side is healthy. `kiosk` is up with no crashes, it's day mode with no screen-off flag, and HDMI-A-2 is connected (EDID: ASUS VT168), 1280×720, DPMS On. A `grim` screenshot taken as the `kiosk` user shows the wall page drawn correctly. So the fault is in the monitor or its power: its standby/power button, the HDMI/power cables, its input source, or the box's relays (BCM 23/24) if they feed the screen.
+  - **Odd:** `/sys/class/graphics/fb0/blank` read `4` (powerdown) on a fresh boot, with `consoleblank=0`; it was cleared to `0` with `pb-console-helper screen off` then `screen on`. That doesn't seem to be the cause (Chromium draws either way), but if it keeps coming back, `pb-mode` could clear it before starting the kiosk.
+  - **Changed:** nothing in the repo or on the Pi apart from that screen toggle.
+  - **Left:** Ross checks behind the board on 30 Oct.
+
 - **2026-10-29, Claude Code (ways of working: ship by default, the build gate, the stamped CACHE).**
   - **Changed:** CLAUDE.md rule 2 (ship by default; staging first on request; gated list; rollback = revert). `build.sh` is the Cloudflare gate (every `app/` file allowlisted, no folders, `ASSETS` ⇄ allowlist, scripts referenced, `node --check` on the scripts in `index.html`'s order and on `sw.js`, the placeholder present) and stamps `CACHE` (`pb-` + SHA-1 of `git ls-tree` over the shipped files; `--check`, `--stamp REF`); `app/sw.js` holds `pb-local`. `.githooks/pre-commit` secret scan + `test-pre-commit.sh`. `.claude/settings.json` and six slash commands. PB Console Release: Ship / Staging / Rollback / Build check through the action table; live checks compare against `build.sh --stamp origin/main`. CLAUDE.md is rules and pointers only; this file rewritten (the old log is in `docs/log/2026-10.md`). Newly committed: `docs/circuits-phase2.md` (from the local notes) and `docs/pi4-listener-kiosk-plan.md`. Three old audit files moved from the repo root to the archive.
   - **Tested:** every build-gate failure in a scratch copy (a duplicate declaration, a syntax error, an unlisted file, an `ASSETS` entry not shipped, a shipped file not precached, a hand-edited CACHE, an unreferenced script, no node); the hook with fake keys (15 cases); console tests 65 pass (58 before), Pi tests 86 pass.
@@ -72,5 +79,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
 - **2026-10-28 evening, Claude Code (PB Console, phases 5–12, 14, 15).** Built Config, Deploy (`deploy.sh --sudo-stdin`, the drift check, pulling Pi-only files with secrets stripped), Release, LED map, Test cast, Activity, Tests (R8), Backups, Power (disabled), Runbook; new helper verbs, each refusing anything off its list. Found the night of 27 Oct switched correctly both ways. Full entry: `docs/log/2026-10.md`.
 
 - **2026-10-28, Claude Code (PB Console, phases 1–4).** The console's foundation: a stdlib backend on 127.0.0.1 with a per-launch token and Host/Origin/Sec-Fetch-Site checks, confirms, the 5-minute busy check, one action at a time, an audit log; the overview, services, board controls and logs. On the Pi: `pb-console-helper` with its own sudoers rule (deployed and checked), `pb-idle off` and `brightness`, pb-mode's screen-off flag. Full entry: `docs/log/2026-10.md`.
-
-- **2026-10-28, Claude Code (LED mapping tool).** Built `pb-ledmap` (`pi/ledmap/`, Tailscale only, `Conflicts=pb-listener`). Ross mapped every hold: 186 of 189 right; the three wrong were app labels (K9, N13, I12), fixed by db/32 (188 real holds), `pb-v119`, rechecked on the wall. Left: mirrored casts on the wall; the B1/B2 decision. Full entry: `docs/log/2026-10.md`.
