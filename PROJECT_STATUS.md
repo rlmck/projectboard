@@ -27,8 +27,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
-- **Ross, once: `! bash pi/deploy.sh`** (the last deploy that asks for the Pi's password). It installs the feet-rule listener and `/etc/sudoers.d/pb-deploy`; from then on Claude and PB Console deploy without a password. Until it runs, the Pi lights no feet sign (db/33 took them out of the hold lists). Then on the wall: Orange-only lights B2 only, Black-only B1 only, Any neither; the same mirrored (the first mirrored-cast check).
-- Ross: add these to `.claude/settings.json` → `allow` (Claude was blocked from editing its own permissions): `Bash(python db/apply.py *)`, `Bash(bash pi/deploy.sh*)`, `Bash(ssh pi@projectboard python3 - busy < console/probe.py)`, `Bash(ssh pi@projectboard pb-status*)`.
+- **Ross: test the feet rule on the wall** (the listener is deployed, 30 Oct): Orange-only lights B2 only, Black-only B1 only, Any neither; the same mirrored (the first mirrored-cast check).
 - Ross: the relay module (eBay) and 74AHCT125 level shifter (Amazon) to arrive.
 - Ross: an on-site check of the cast geofence centre (a non-admin phone by the board and at the far end of the gym).
 - Ross: delete the local passphrase hand-out file in the archive (then empty the Recycle Bin) once all 7 migrated accounts have signed in.
@@ -51,7 +50,8 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Tested:** 360/375/390/412 px phones and `/?wall` locally; Pi tests 92 pass.
   - **Live:** `bf3c993`, `aadc1ba`, `d1c8116`; CACHE `pb-e0bd53c890` seen live.
   - **Later:** passwordless Pi deploys (`pi/conf/pb-deploy.sudoers`, `deploy.sh`, PB Console's Deploy with the password optional) and CLAUDE.md rule 2: Claude applies migrations (`db/apply.py`) and deploys the Pi itself; still gated: deleting user data, force pushes, secrets (`945bb6f`).
-  - **Left:** Ross's one last password deploy, then the wall test (Waiting on).
+  - **Then:** Ross ran the last password deploy (listener joined, feet code live, passwordless sudo on; a passwordless dry run checked). PB Console: no deploy password, Release rows in plain English; `dev` fast-forwarded to `main` (`0501a57`).
+  - **Left:** the wall test (Waiting on).
 
 - **2026-10-30, chat (one to-do list).**
   - **Changed:** new `TODO.md` at the root: one flat, ordered list (top = now), built from the old Next and Backlog sections, which are gone from this file. "What's on my to-do list?" shows the top 3; Ross adds, removes and reorders by asking. `CLAUDE.md`, `/start` and `/wrap` read and update it. No app change, so the CACHE stays.
