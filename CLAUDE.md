@@ -29,7 +29,7 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 
 ## Working rules
 
-1. **Read this file, `PROJECT_STATUS.md` and `docs/codebase-overview.md` at the start of every session** (`/start`).
+1. **Read this file, `PROJECT_STATUS.md`, `TODO.md` and `docs/codebase-overview.md` at the start of every session** (`/start`).
 2. **Deploying (Ross, 29 Oct 2026; replaces the 19 Oct two-confirmation rule).**
    - **By default, ship:** when a task is done and the checks pass (`bash build.sh --check`, plus `console/tests` or `pi/tests` when those changed), commit and push `main` in one step, without asking (`/ship`). Stage only the files the task changed, by name. Then, if a shipped file in `app/` changed, confirm the live `sw.js` shows the new `CACHE` stamp (`bash build.sh --stamp HEAD`); if the session can't reach the live site, say so rather than skipping it silently.
    - **"Staging first"** (Ross says so): commit, push to `dev` only, give him the staging URL (`/staging`). There's no rule about keeping `dev` and `main` level; `dev` is just the staging branch.
