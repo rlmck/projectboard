@@ -1,6 +1,6 @@
 # ProjectBoard: CLAUDE.md
 
-Read this at the start of every session (or run `/start`). It holds the rules, the things that must not break, and the traps, and points to everything else. **What's happening now** (current state, next steps, waiting on, open questions) lives only in `PROJECT_STATUS.md`.
+Read this at the start of every session (or run `/start`). It holds the rules, the things that must not break, and the traps, and points to everything else. **What's happening now** (current state, waiting on, open questions) lives only in `PROJECT_STATUS.md`; **what to do next** lives only in `TODO.md`.
 
 ## What this is
 
@@ -15,7 +15,8 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 | **Local path** | `C:\Users\rossl\Documents\ProjectBoard\` (the repo root; there's no subfolder) |
 
 **Which document to trust:**
-- **Now:** `PROJECT_STATUS.md` (current state, decisions, next, waiting on, open questions, backlog, the last 5 sessions). Older sessions: `docs/log/<yyyy-mm>.md`.
+- **Now:** `PROJECT_STATUS.md` (current state, decisions, waiting on, open questions, the last 5 sessions). Older sessions: `docs/log/<yyyy-mm>.md`.
+- **To-do:** `TODO.md`, Ross's one ordered list (top item = now). Asked "what's on my to-do list?", show the top 3; the rest only if asked. He adds, removes and reorders by asking; edit it, then ship it.
 - **Architecture, data model, auth, caching, deploy mechanics, known issues:** `docs/codebase-overview.md`. Read it at the start of a session. It was checked against the live database.
 - **Hosting, rollout and the install flow:** `docs/rollout-plan.md`.
 - **The cast contract:** `docs/cast-contract.md`. **Circuits Phase 2 spec:** `docs/circuits-phase2.md`.
@@ -67,10 +68,10 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 
 This repo is the single source of truth shared by Claude Code and the claude.ai project chat, which reads and commits through GitHub (to `main`). The chat can't see local-only files (`docs/*` except the committed ones, `db/`, `pi/_old/`, `reference/`), so `PROJECT_STATUS.md` and the committed docs must stand on their own.
 
-- **Start of every session (`/start`):** `git fetch` and `git pull --ff-only` on `main` (the chat may have committed), check the hook is on, read `PROJECT_STATUS.md`, summarise. Read `docs/cast-contract.md` too if the work touches casting, Supabase Realtime or the Pi.
-- **End of every session (`/wrap`):** a Session log entry at the top of `PROJECT_STATUS.md` (date, Claude Code or chat, what changed, what's left, new questions); keep the 5 newest there and move older ones word for word to `docs/log/<yyyy-mm>.md`; update Current state, Decisions, Next, Waiting on, Open questions and Backlog. Keep the file under 15 KB. Then ship it.
+- **Start of every session (`/start`):** `git fetch` and `git pull --ff-only` on `main` (the chat may have committed), check the hook is on, read `PROJECT_STATUS.md` and `TODO.md`, summarise. Read `docs/cast-contract.md` too if the work touches casting, Supabase Realtime or the Pi.
+- **End of every session (`/wrap`):** a Session log entry at the top of `PROJECT_STATUS.md` (date, Claude Code or chat, what changed, what's left, new questions); keep the 5 newest there and move older ones word for word to `docs/log/<yyyy-mm>.md`; update Current state, Decisions, Waiting on and Open questions; in `TODO.md`, remove what's done and add what Ross agreed to (keep the order). Keep the status file under 15 KB. Then ship both.
 - **Any change to the cast channel, event or payload** updates `docs/cast-contract.md` in the same commit, with a Change history line.
-- **`PROJECT_STATUS.md` may be edited from the chat**, so never assume your local copy is current: pull first.
+- **`PROJECT_STATUS.md` and `TODO.md` may be edited from the chat**, so never assume your local copy is current: pull first.
 - **Never record personal data about users** in these files. The repo is public: no personal circumstances, no secrets either, and nothing copied from `docs/security-findings.md`. A local-only doc is checked for both before it's ever committed.
 - **The Supabase MCP server is read-only and scoped to this project** (`project_ref=uqirowyfqwiceyjznosl&read_only=true&features=database`, in Ross's local Claude config, not the repo). Use it to check the live schema and data instead of guessing. **Never paste live query results into repo files** (nicknames, user ids, attempt or tick rows, any row data): describe what you found (counts, column names, yes/no) rather than copying values. **Migrations are still applied by Ross in the SQL editor**; the MCP can't apply them and must not be reconfigured to.
 - **Claude Code config is committed:** `.claude/settings.json` (what's allowed and denied: no force push, no reading `db/.env` or `secrets.env`, no `rm -rf`) and the slash commands in `.claude/commands/` (`/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`). Per-machine settings stay in the gitignored `.claude/settings.local.json`.

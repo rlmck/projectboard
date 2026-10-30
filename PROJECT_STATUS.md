@@ -1,6 +1,6 @@
 # Project status
 
-Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". Keep this file under 15 KB: the 5 newest session entries live here, older ones in `docs/log/` (October 2026: `docs/log/2026-10.md`).
+Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 15 KB: the 5 newest session entries live here, older ones in `docs/log/` (October 2026: `docs/log/2026-10.md`).
 
 ## Current state (as of 2026-10-29)
 - **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). Since 29 Oct its service-worker `CACHE` is stamped by `build.sh` (`pb-` + a hash of the shipped files): `pb-49c7ccc80d` live since 29 Oct (was `pb-v119`). Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
@@ -20,17 +20,8 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - PB Console's Data phase (13) writes through direct Postgres with `db/.env`, never the service key in the console (28 Oct).
 - The Supabase MCP server (read-only, this project only) may be used to check live schema and data; results never go into repo files; migrations stay Ross's, in the SQL editor.
 
-## Next (in priority order)
-1. **Deploy the listener** (`/pi-deploy`, when the gym is closed: it restarts the listener) so casts are logged with where they came from and member/guest; until then PB Console's Activity shows — for both.
-2. **Check mirrored casts on the wall** (PB Console → Test cast, mirrored, against the webcam and the mirror pairs).
-3. **The R8 acceptance tests** (PB Console → Tests; `docs/pi4-listener-kiosk-plan.md` R8): kill, freeze, Wi-Fi drop, Supabase blocked, reboot mid-cast, the clock across 23:00/08:00, boot with no network (on-site), the weekly-reboot skip.
-4. **Try the wall mode on the touchscreen:** the rail with a real finger, whether ~8 rows feels right, the 20-minute idle, a first real cast from the wall.
-5. **Pull the Pi-only files into `pi/`** (PB Console → Deploy): `pb-netwatch.sh` v2 and its unit, the `pb-rescue` profile (secrets stripped), the newer `pb-netlog` unit; then add their `install.sh` lines. Look at the kernel errors seen on 28 Oct (about 3,460 in 24 h, nearly all kernel) in Logs once the gym is closed.
-6. **Hardware:** tidy and box the wiring; when they arrive, fit the relay module and the 74AHCT125; then relay control in `pb-mode` (`pi/listener/power.py` is the hook) and the console's Power phase. `pb-mode` mustn't cut the LED supplies while `pb-ledmap` runs.
-7. **PB Console phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
-8. **Circuits Phase 2:** the cast screen, `cast_circuit`/`stop` broadcasts, `circuit_logs`, the Pi listener update (`docs/circuits-phase2.md`).
-9. **Problem name/setter editing** (changes the cast key: contract open questions).
-10. Known bugs to triage: `docs/codebase-overview.md` §13.
+## To-do
+The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
 - Ross: behind the board on 30 Oct, find out why the wall screen is black even though the Pi is sending it a picture (monitor power/standby, cables, input, relays).
@@ -49,16 +40,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 6. Hardware: what each relay will switch; final cast brightness (the stopgap used 0.5).
 7. Should the wall show circuits too (left out: they can't be cast yet)?
 
-## Backlog
-- Wall screen, faster updates (parked 27 Oct): check every 5 min instead of hourly and apply a waiting update after ~2 min untouched, keeping the chosen problem and scroll position.
-- A heartbeat from the Pi to Supabase so the app can show "board online".
-- More challenges (a row in `challenges`), monthly boards, a metronome, casting the circuit at Start once Circuits Phase 2 exists.
-- Admins adding climbs to benchmarks exists per problem (detail ⋮ → "Mark as benchmark"); clarify what more is wanted.
-- A mock listener on the laptop that turns a cast into LED indices (lower priority now the webcam shows the real board).
-- Don't build yet: the feet indicators, Circuits Phase 3 (PBs, leaderboards), tags, session/logbook tracking beyond ticks, the Flutter migration.
-
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-10-30, chat (one to-do list).**
+  - **Changed:** new `TODO.md` at the root: one flat, ordered list (top = now), built from the old Next and Backlog sections, which are gone from this file. "What's on my to-do list?" shows the top 3; Ross adds, removes and reorders by asking. `CLAUDE.md`, `/start` and `/wrap` read and update it. No app change, so the CACHE stays.
+  - **Left:** nothing.
 
 - **2026-10-29 evening, Claude Code (the wall screen is black).**
   - **Found:** the Pi side is healthy. `kiosk` is up with no crashes, it's day mode with no screen-off flag, and HDMI-A-2 is connected (EDID: ASUS VT168), 1280×720, DPMS On. A `grim` screenshot taken as the `kiosk` user shows the wall page drawn correctly. So the fault is in the monitor or its power: its standby/power button, the HDMI/power cables, its input source, or the box's relays (BCM 23/24) if they feed the screen.
@@ -77,5 +64,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
 - **2026-10-28 late evening, Claude Code (PB Console look and feel).** The overview became a tiled dashboard with a grouped sidebar and a Ctrl+K palette (`console/static/dash.js`, `tiles.metrics()`); the webcam stops when the overview is hidden. Noticed: about 3,460 journal errors in 24 h (nearly all kernel) and 19 self-healing actions around 15:20 (network down, no IPv4). Decided: phase 13 writes through direct Postgres. Full entry: `docs/log/2026-10.md`.
 
 - **2026-10-28 evening, Claude Code (PB Console, phases 5–12, 14, 15).** Built Config, Deploy (`deploy.sh --sudo-stdin`, the drift check, pulling Pi-only files with secrets stripped), Release, LED map, Test cast, Activity, Tests (R8), Backups, Power (disabled), Runbook; new helper verbs, each refusing anything off its list. Found the night of 27 Oct switched correctly both ways. Full entry: `docs/log/2026-10.md`.
-
-- **2026-10-28, Claude Code (PB Console, phases 1–4).** The console's foundation: a stdlib backend on 127.0.0.1 with a per-launch token and Host/Origin/Sec-Fetch-Site checks, confirms, the 5-minute busy check, one action at a time, an audit log; the overview, services, board controls and logs. On the Pi: `pb-console-helper` with its own sudoers rule (deployed and checked), `pb-idle off` and `brightness`, pb-mode's screen-off flag. Full entry: `docs/log/2026-10.md`.
