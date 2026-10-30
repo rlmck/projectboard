@@ -53,7 +53,7 @@ changed() {   # changed PATTERN...: did anything matching change?
 run() { if [ $DRY -eq 1 ]; then echo "   would run: $*"; else echo "   $*"; "$@"; fi; }
 
 echo "== Files"
-for f in board.py supa.py power.py renderer.py; do put "listener/$f" "/opt/projectboard/listener/$f" 0644; done
+for f in board.py circuit.py supa.py power.py renderer.py; do put "listener/$f" "/opt/projectboard/listener/$f" 0644; done
 for f in "$SRC"/listener/patterns/*.py; do
     put "listener/patterns/$(basename "$f")" "/opt/projectboard/listener/patterns/$(basename "$f")" 0644
 done
