@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Project Board cast listener (pb-listener.service).
 
-Supabase Realtime broadcast `cast_problem` on board:<wall> -> the WS2801 strip.
+Supabase Realtime broadcasts on board:<wall> -> the WS2801 strip: `cast_problem`
+lights a problem, `cast_circuit` runs a circuit (circuit.py), `stop` ends it.
 Built to docs/cast-contract.md; the resilience rules are in the local
 docs/pi4-listener-kiosk-plan.md, section R1:
 
@@ -33,6 +34,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import board  # noqa: E402
+import circuit  # noqa: E402
 import leds as ledlib  # noqa: E402
 import mode as modelib  # noqa: E402
 import renderer  # noqa: E402
@@ -111,7 +113,7 @@ class Listener:
             'pid': os.getpid(), 'started_at': now, 'mode': self.mode, 'mode_reason': self.mode_reason,
             'state': 'starting', 'connected_since': None, 'disconnected_since': now,
             'last_message_at': None, 'last_cast_at': None, 'last_cast_name': None,
-            'casts_shown': 0, 'casts_ignored_night': 0, 'error_count': 0, 'last_error': None,
+            'casts_shown': 0, 'circuits_shown': 0, 'casts_ignored_night': 0, 'error_count': 0, 'last_error': None,
             'mirror_map_at': None, 'updated_at': now,
             'leds': None, 'idle_pattern': None, 'idle_plan': None, 'idle_override': None, 'benchmarks': None,
             'idle_fps': None, 'idle_frame_ms': None, 'idle_capped_frames': 0, 'led_write_errors': 0,
@@ -257,15 +259,17 @@ class Listener:
             self.cast_ready.clear()
             job, self.pending = self.pending, None
             if job:
+                kind, args = job[0], job[1:]
                 try:
-                    await self.show(*job)
+                    await (self.show_circuit if kind == 'circuit' else self.show)(*args)
                 except Exception as e:
-                    self.error('cast %r failed: %s: %s' % (job[0], type(e).__name__, e))
+                    self.error('%s %r failed: %s: %s' % (
+                        'circuit' if kind == 'circuit' else 'cast', args[0], type(e).__name__, e))
 
     async def show(self, name, mirror, t0):
         row = await asyncio.to_thread(supa.fetch_problem, self.cfg, name)
         if self.pending:
-            log('cast %r superseded by %r before it was shown' % (name, self.pending[0]))
+            log('cast %r superseded by %r before it was shown' % (name, self.pending[1]))
             return
         if row is None:
             warn('unknown problem %r: board left as it is' % name)
@@ -288,6 +292,33 @@ class Listener:
             name, ' mirrored' if mirror else '', len(out), ma,
             ' (capped x%.2f)' % cap if cap < 1 else '', (time.monotonic() - t0) * 1000))
 
+    async def show_circuit(self, name, interval, loop, mirror, token, t0):
+        row = await asyncio.to_thread(supa.fetch_circuit, self.cfg, name)
+        if self.pending:
+            log('circuit %r superseded by %r before it started' % (name, self.pending[1]))
+            return
+        if row is None:
+            warn('unknown circuit %r: board left as it is' % name)
+            return
+        if mirror and self.mirror_map is None:
+            self.error('mirrored circuit %r skipped: no mirror map loaded' % name)
+            return
+        if loop is None:
+            loop = bool(row.get('loops'))
+        run = circuit.Run(name, row.get('hold_sequence'), row.get('start_count'), interval, loop, token,
+                          self.mirror_map if mirror else None)
+        if run.dropped:
+            warn('circuit %r: hold ids off the grid ignored: %s' % (name, sorted(run.dropped)))
+        if self.mode == 'night':
+            log('circuit %r ignored: night began while it was fetched' % name)
+            return
+        self.leds.circuit(run)      # the countdown starts now
+        self.status['circuits_shown'] += 1
+        self.set(last_cast_at=time.time(), last_cast_name='circuit: ' + name)
+        log('circuit started %r%s: %d holds, %d moves, %g s a move, %s, run %s, in %d ms' % (
+            name, ' mirrored' if mirror else '', run.L, run.moves, interval, 'loop' if loop else 'once',
+            token or '-', (time.monotonic() - t0) * 1000))
+
     # -- casts --------------------------------------------------------------
 
     def on_cast(self, body):
@@ -309,10 +340,53 @@ class Listener:
             self.write_status()
             return
         log('cast received: %r%s%s' % (name, ' mirrored' if mirror else '', tag))
-        self.pending = (name, mirror, time.monotonic())
+        self.pending = ('problem', name, mirror, time.monotonic())
         self.cast_ready.set()
 
-    EVENTS = {'cast_problem': on_cast}     # cast_circuit and stop slot in here (Circuits Phase 2)
+    def on_circuit(self, body):
+        """cast_circuit (contract 8): circuit_name, interval (s a move), loop, mirror, run token."""
+        if not isinstance(body, dict):
+            warn('cast_circuit with a non-object payload ignored: %r' % (body,))
+            return
+        name, interval = body.get('circuit_name'), body.get('interval')
+        loop, mirror, token = body.get('loop'), body.get('mirror', False), body.get('run')
+        if not isinstance(name, str) or not 1 <= len(name) <= 60:
+            warn('cast_circuit with a bad circuit_name ignored: %r' % (body,))
+            return
+        if isinstance(interval, bool) or not isinstance(interval, (int, float)) \
+                or not circuit.MIN_INTERVAL <= interval <= circuit.MAX_INTERVAL:
+            warn('cast_circuit with a bad interval ignored: %r' % (body,))
+            return
+        if loop not in (True, False, None) or mirror not in (True, False):
+            warn('cast_circuit with a bad loop or mirror ignored: %r' % (body,))
+            return
+        if token is not None and (not isinstance(token, str) or not 1 <= len(token) <= 64):
+            warn('cast_circuit with a bad run token ignored: %r' % (body,))
+            return
+        tag = board.origin(body)
+        if self.mode == 'night':
+            self.status['casts_ignored_night'] += 1
+            log('circuit %r ignored: night mode%s' % (name, tag))
+            self.write_status()
+            return
+        how = 'loop' if loop else 'once' if loop is False else "the circuit's loop setting"
+        log('circuit received: %r%s, %g s a move, %s%s' % (name, ' mirrored' if mirror else '', interval, how, tag))
+        self.pending = ('circuit', name, float(interval), loop, mirror, token, time.monotonic())
+        self.cast_ready.set()
+
+    def on_stop(self, body):
+        """stop (contract 8): ends the circuit run with this run token, or any run without one."""
+        body = body if isinstance(body, dict) else {}
+        token = body.get('run')
+        if token is not None and not isinstance(token, str):
+            warn('stop with a bad run token ignored: %r' % (body,))
+            return
+        if self.pending and self.pending[0] == 'circuit' and token in (None, self.pending[5]):
+            self.pending = None             # stopped before it was even fetched
+        log('stop received: run %s%s' % (token or 'any', board.origin(body)))
+        self.leds.stop_circuit(token)
+
+    EVENTS = {'cast_problem': on_cast, 'cast_circuit': on_circuit, 'stop': on_stop}
 
     # -- the socket ---------------------------------------------------------
 

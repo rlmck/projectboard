@@ -668,9 +668,11 @@
     }
     .detail-title-row .detail-name { margin-bottom: 0; }
     /* Across the row, the name takes what's left after Cast (and may shrink to it). */
-    #view-detail .detail-title-row .detail-name { flex: 1 1 0; min-width: 0; }
+    #view-detail .detail-title-row .detail-name,
+    #view-circuit-detail .detail-title-row .detail-name { flex: 1 1 0; min-width: 0; }
     /* Neither child may be squeezed to fit the locked height — they overflow it. */
     #view-detail .detail-title-row,
+    #view-circuit-detail .detail-title-row,
     #view-detail .detail-name,
     #view-detail .detail-meta,
     #view-circuit-detail .detail-name,
@@ -1857,6 +1859,23 @@
       color: var(--text-muted);
     }
     .circuit-speed { flex: 1; min-width: 0; height: 28px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+
+    /* Cast sheet: options, then the run (a big countdown / move count and Stop), then the result */
+    .cast-sheet .cc-seg-btn { padding: 8px 14px; }
+    .cast-sheet-key { font-size: 13px; line-height: 1.5; color: var(--text-muted); margin: 4px 0 14px; }
+    .cast-sheet-key .key-int { color: var(--int-text); }
+    .cast-sheet-key .key-amber { color: var(--led-amber); }
+    .cast-sheet-key .key-finish { color: var(--finish-text); }
+    .cast-run-big {
+      font-size: var(--cast-run-big); font-weight: 800; line-height: 1;
+      text-align: center; font-variant-numeric: tabular-nums;
+      margin: 8px 0 6px;
+    }
+    .cast-run-sub { text-align: center; font-size: 15px; font-weight: 600; color: var(--text-muted); margin-bottom: 20px; }
+    .cast-run-stop { font-size: 20px; padding-top: 18px; padding-bottom: 18px; }
+    /* .modal-close and .btn-block set display, which beats the bare [hidden] UA rule. */
+    #cast-sheet-close[hidden], #cast-done-stop[hidden] { display: none; }
+    .cast-done-log { text-align: center; font-size: 13px; color: var(--text-muted); min-height: 1.5em; margin: 0 0 14px; }
 
     /* Circuit create — board + option rows */
     #view-circuit-create .board-graphic { width: 100%; height: auto; display: block; border-radius: var(--radius-md); }

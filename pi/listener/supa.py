@@ -54,3 +54,13 @@ def fetch_benchmarks(cfg):
     if not isinstance(rows, list):
         raise ValueError('benchmarks lookup returned %s' % type(rows).__name__)
     return rows
+
+
+def fetch_circuit(cfg, name):
+    """The circuit row by exact name (contract 8), or None if there's no such circuit."""
+    rows = _retry_once(lambda: _get(cfg, 'circuits', {
+        'select': 'name,hold_sequence,start_count,loops',
+        'name': 'eq.' + name}))
+    if not isinstance(rows, list):
+        raise ValueError('circuits lookup returned %s' % type(rows).__name__)
+    return rows[0] if rows else None

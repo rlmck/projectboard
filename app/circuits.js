@@ -1,12 +1,12 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: circuits - load, list, detail, swipe, info, Play preview, create, delete.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: circuits - load, list, detail, swipe, info, Play preview, cast + run screen, create, delete.
 //
 // Circuits are built to look and behave like problems: the same cards and grade
 // tabs (tap = one grade, hold = several), pull-to-refresh, a pinned detail view
 // you swipe through, the traced hold outlines over a dimmed board, and the ⋮
-// menu's Information sheet. What's circuit-only: move numbers on the holds, and
-// the Play preview in a panel under the board.
+// menu's Information sheet. What's circuit-only: move numbers on the holds, the
+// Play preview in a panel under the board, and the Cast sheet (a timed run on the wall).
 
   // A sequence position's role: finish (last) wins over start (first N), else move.
   function circuitRole(seq, startCount, pos) {
@@ -116,7 +116,7 @@
     let arr = allCircuits;
     if (circuitFavesOnly) arr = arr.filter(c => isCircuitFaved(c.id));
     if (circuitLoopOnly) arr = arr.filter(c => c.loops);
-    // circuitExcludeDone: no-op until Phase 2 completion logging exists
+    // circuitExcludeDone: still a no-op. Runs are logged to circuit_logs now, but what counts as "done" isn't decided
     if (activeCircuitGrades.size) arr = arr.filter(c => activeCircuitGrades.has(c.grade));
     const q = searchNorm(circuitSearch);
     if (q) {
@@ -196,6 +196,7 @@
   // centred, with the Play panel held at the bottom so the board sits in the same
   // place on every circuit you swipe to.
   const PLAY_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z"/></svg>';
+  const CAST_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zM21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>';   // as the problem view's
   const STOP_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
 
   function renderCircuitDetail(id) {
@@ -232,7 +233,10 @@
     wrap.innerHTML = `
       <div class="circuit-stage">
         <div class="detail-head-info">
-          <h1 class="detail-name">${escHtml(circuitName(c))}</h1>
+          <div class="detail-title-row">
+            <h1 class="detail-name">${escHtml(circuitName(c))}</h1>
+            <button class="cast-btn title-cast cast-icon-btn" id="circuit-cast-open" type="button" aria-label="Cast to board">${CAST_ICON}Cast</button>
+          </div>
           <div class="detail-meta">
             <span class="grade-badge">${escHtml(c.grade || '—')}</span>
             ${newBadgeHtml(c)}
@@ -266,6 +270,7 @@
       </div>`;
 
     document.getElementById('circuit-play-btn').addEventListener('click', toggleCircuitPlay);
+    document.getElementById('circuit-cast-open').addEventListener('click', openCircuitCast);
     const speed = document.getElementById('circuit-speed');
     speed.value = speedToSlider(playIntervalMs);
     speed.addEventListener('input', () => setPlaySpeed(sliderToSpeed(+speed.value)));
@@ -310,6 +315,11 @@
           c.loops ? 'It loops: the top comes back down near the start, so you can go round again.' : 'It finishes at the top.'}</div>
       </div>
       <div class="info-row">
+        <div class="info-label">Cast</div>
+        <div class="info-value">Lights the circuit on the wall at your speed: a 5-second countdown on the start holds, then one move at a time. Solid blue is the hold to go to, amber the one after, and the hold you've just let go of fades out in red. ${
+          c.loops ? 'It loops until you press Stop.' : 'At the top the route runs up in green.'} Signed in, each run is saved to your log.</div>
+      </div>
+      <div class="info-row">
         <div class="info-label">Play preview</div>
         <div class="info-value">Lights four holds at a time and moves up the route one hold per step${c.loops ? ', looping until you stop it' : ''}. Set how long each step lasts with the speed slider.</div>
       </div>
@@ -318,7 +328,7 @@
   }
 
   // ── Play engine (moving 4-hold window) ──────────────────────────────────────────
-  // Same logic will drive the Phase-2 cast-screen move timing. The lit window is the
+  // The phone's preview only: a cast's look is the Pi's (pi/listener/circuit.py). The lit window is the
   // up-to-4 most-recent holds ending at the current tick; wrapping for loops. Speed
   // is a live preview control (0.1s steps), not stored per circuit — the agreed
   // design sets speed at cast time, so this is the same kind of knob. The slider
@@ -417,6 +427,224 @@
     draw();
     playTimer = setInterval(draw, playIntervalMs);
   }
+
+  // ── Cast a circuit (Circuits Phase 2; cast contract §8) ───────────────────────────
+  // The Cast button under the board opens a sheet: speed and loop, then Start sends
+  // cast_circuit and the sheet becomes the run screen (the countdown with beeps, the
+  // move counter, a big Stop). The Pi runs the lights itself (pi/listener/circuit.py);
+  // the phone keeps its own clock from the moment the cast was accepted, so the
+  // counter stays right after the screen sleeps. Stop sends `stop` with the run's
+  // token. A signed-in climber's run is logged to circuit_logs when it ends (stop or
+  // the top); a guest's isn't.
+  const CAST_SPEEDS = [5, 3, 2];          // seconds a move: Slow, Med, Fast
+  const CAST_SPEED_KEY = 'pb-circuit-speed';
+  const CAST_COUNTDOWN = 5;               // as the Pi's circuit.COUNTDOWN
+  const CAST_LAG_MS = 250;                // the Pi starts after reading the circuit: roughly this later
+  let castSheetCircuit = null;            // the circuit the open sheet is for
+  let castSpeed = CAST_SPEEDS.includes(+lsGet(CAST_SPEED_KEY)) ? +lsGet(CAST_SPEED_KEY) : 3;
+  let castLoop = false;
+  let circuitRun = null;                  // { c, interval, loop, token, t0, s, L, moves, beeped, ended, ... }
+  let circuitRunTicker = null;
+  let circuitWake = null;
+
+  function openCircuitCast() {
+    const c = currentCircuit;
+    if (!c) return;
+    if (circuitRun && !circuitRun.ended) { document.getElementById('circuit-cast-modal').classList.add('show'); return; }
+    stopCircuitPlay(true);
+    castSheetCircuit = c;
+    castLoop = !!c.loops;
+    document.getElementById('cast-sheet-title').textContent = circuitName(c);
+    document.getElementById('cast-sheet-error').textContent = '';
+    showCastPane('setup');
+    syncCastOptions();
+    document.getElementById('circuit-cast-modal').classList.add('show');
+  }
+
+  // Closes only from its buttons while nothing is running (a stray tap mustn't
+  // hide the Stop button of a run that's lighting the board).
+  function closeCircuitCast() {
+    if (circuitRun && !circuitRun.ended) return;
+    document.getElementById('circuit-cast-modal').classList.remove('show');
+    circuitRun = null;
+  }
+
+  function showCastPane(which) {
+    ['setup', 'run', 'done'].forEach(p => { document.getElementById('cast-sheet-' + p).hidden = p !== which; });
+    document.getElementById('cast-sheet-close').hidden = which === 'run';
+  }
+
+  function syncCastOptions() {
+    document.querySelectorAll('#cast-sheet-speed .cc-seg-btn').forEach(b =>
+      b.classList.toggle('active', +b.dataset.s === castSpeed));
+    document.getElementById('cast-sheet-speed-val').textContent = `${castSpeed} s a move`;
+    const lb = document.getElementById('cast-sheet-loop');
+    lb.classList.toggle('on', castLoop);
+    lb.setAttribute('aria-pressed', castLoop ? 'true' : 'false');
+  }
+
+  function setCastSpeed(s) {
+    if (!CAST_SPEEDS.includes(s)) return;
+    castSpeed = s;
+    lsSet(CAST_SPEED_KEY, String(s));
+    syncCastOptions();
+  }
+  function toggleCastLoop() { castLoop = !castLoop; syncCastOptions(); }
+
+  function castRunToken() {
+    const a = new Uint8Array(8);
+    crypto.getRandomValues(a);
+    return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function startCircuitCast() {
+    const c = castSheetCircuit;
+    const btn = document.getElementById('cast-sheet-start');
+    const errEl = document.getElementById('cast-sheet-error');
+    if (!c || btn.disabled) return;
+    errEl.textContent = '';
+    chEnsureAudio();                      // a tap: browsers allow sound from here on
+    btn.disabled = true; btn.textContent = 'Locating…';
+    const done = () => { btn.disabled = false; btn.textContent = 'Start on the board'; };
+
+    // The same lenient geofence as a problem cast (admins skip it).
+    const fence = await ensureCastLocation();
+    const modal = document.getElementById('circuit-cast-modal');
+    if (castSheetCircuit !== c || !modal.classList.contains('show')) { done(); return; }
+    if (!fence.ok) { done(); errEl.textContent = 'Casting only works at the gym.'; return; }
+
+    btn.textContent = 'Sending…';
+    const token = castRunToken();
+    const interval = castSpeed, loop = castLoop;
+    const payload = { circuit_name: circuitName(c), interval, loop, run: token,
+                      source: WALL ? 'wall' : 'phone', signed_in: !!session };
+    try {
+      await channel.httpSend('cast_circuit', payload, { timeout: 10000 });
+    } catch (err) {
+      done();
+      errEl.textContent = 'Cast failed — check your connection.';
+      console.error(err);
+      return;
+    }
+    done();
+    const seq = circuitSeq(c), L = seq.length, s = Math.max(1, Math.min(c.start_count || 1, 2, L));
+    circuitRun = { c, interval, loop, token, t0: Date.now() + CAST_LAG_MS, L, s, moves: L - s,
+                   beeped: -1, ended: false, stopSent: false, movesDone: 0 };
+    showCastPane('run');
+    document.getElementById('cast-run-stop').textContent = 'Stop';
+    if (!circuitRunTicker) circuitRunTicker = setInterval(tickCircuitRun, 100);
+    acquireCircuitWake();
+    tickCircuitRun();
+  }
+
+  // Seconds since the Pi started, and what it's showing: as circuit.Run.moves_at().
+  function circuitRunNow(r) {
+    const t = (Date.now() - r.t0) / 1000;
+    if (t < CAST_COUNTDOWN) return { t, phase: 'count', moves: 0 };
+    const b = Math.floor((t - CAST_COUNTDOWN) / r.interval);
+    if (!r.loop && b >= r.moves) return { t, phase: 'top', moves: r.moves };
+    return { t, phase: 'climb', moves: b, beat: b };
+  }
+
+  function tickCircuitRun() {
+    const r = circuitRun;
+    if (!r || r.ended) { clearInterval(circuitRunTicker); circuitRunTicker = null; return; }
+    const now = circuitRunNow(r);
+    const big = document.getElementById('cast-run-big'), sub = document.getElementById('cast-run-sub');
+    if (now.phase === 'count') {
+      const left = Math.min(CAST_COUNTDOWN, Math.max(1, Math.ceil(CAST_COUNTDOWN - now.t)));
+      const sec = Math.floor(Math.max(0, now.t));
+      if (sec !== r.beeped && now.t >= 0) { r.beeped = sec; chBeep(880, 120); }      // 5, 4, 3, 2, 1
+      big.textContent = String(left);
+      sub.textContent = 'Get on the start holds';
+      return;
+    }
+    if (r.beeped < CAST_COUNTDOWN) {          // go! (not when the screen wakes long after)
+      r.beeped = CAST_COUNTDOWN;
+      if (now.t < CAST_COUNTDOWN + 1) chBeep(1320, 380, 0.4);
+    }
+    if (now.phase === 'top') { endCircuitRun(r.moves, true); return; }
+    const lap = Math.floor((r.s - 1 + now.beat) / r.L) + 1;
+    big.textContent = String(now.moves);
+    sub.textContent = r.loop ? `moves · lap ${lap}` : `of ${r.moves} moves`;
+  }
+
+  async function stopCircuitRun() {
+    const r = circuitRun;
+    if (!r) return;
+    const btn = document.getElementById('cast-run-stop');
+    if (!r.ended) endCircuitRun(circuitRunNow(r).moves, false);
+    if (r.stopSent) return;
+    btn.disabled = true;
+    try {
+      await channel.httpSend('stop', { run: r.token, source: WALL ? 'wall' : 'phone', signed_in: !!session },
+                             { timeout: 10000 });
+      r.stopSent = true;
+      document.getElementById('cast-done-stop').hidden = true;
+    } catch (err) {
+      console.error(err);
+      showToast('Stop didn’t reach the board — tap Stop the lights', 'error');
+      document.getElementById('cast-done-stop').hidden = false;
+    }
+    btn.disabled = false;
+  }
+
+  // The run is over on the phone (the top, or Stop): the done pane, and the log.
+  function endCircuitRun(moves, top) {
+    const r = circuitRun;
+    if (!r || r.ended) return;
+    r.ended = true;
+    r.movesDone = moves;
+    clearInterval(circuitRunTicker); circuitRunTicker = null;
+    releaseCircuitWake();
+    if (top) { chBeep(660, 160); setTimeout(() => chBeep(880, 160), 170); setTimeout(() => chBeep(1320, 420, 0.4), 340); }
+    document.getElementById('cast-done-big').textContent = top ? 'Top!' : String(moves);
+    document.getElementById('cast-done-sub').textContent = top
+      ? `${moves} move${moves === 1 ? '' : 's'} done`
+      : `move${moves === 1 ? '' : 's'}${r.loop ? ` · ${r.L}-hold loop` : ` of ${r.moves}`}`;
+    document.getElementById('cast-done-log').textContent = '';
+    document.getElementById('cast-done-stop').hidden = true;
+    showCastPane('done');
+    logCircuitRun(r);
+  }
+
+  async function logCircuitRun(r) {
+    const el = document.getElementById('cast-done-log');
+    if (!r.movesDone) return;
+    if (!session) { el.textContent = 'Sign in to keep a log of your runs.'; return; }
+    const { error } = await sb.from('circuit_logs').insert({
+      user_id: session.user.id, circuit_id: r.c.id, moves: r.movesDone, looped: r.loop, speed: r.interval });
+    if (circuitRun !== r) return;
+    if (error) { el.textContent = 'Couldn’t save this run to your log.'; console.warn('circuit log failed', error); }
+    else el.textContent = 'Saved to your log.';
+  }
+
+  function castCircuitAgain() {
+    if (circuitRun && !circuitRun.ended) return;
+    circuitRun = null;
+    document.getElementById('cast-sheet-error').textContent = '';
+    showCastPane('setup');
+    syncCastOptions();
+  }
+
+  // The screen stays on while a run is going (the climber's phone is on the mat).
+  async function acquireCircuitWake() {
+    if (circuitWake || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+    try {
+      circuitWake = await navigator.wakeLock.request('screen');
+      circuitWake.addEventListener('release', () => { circuitWake = null; });
+    } catch (e) { /* refused or unsupported: the run carries on */ }
+  }
+  function releaseCircuitWake() {
+    if (circuitWake) { try { circuitWake.release(); } catch (e) {} circuitWake = null; }
+  }
+  // Back from the lock screen: catch the counter up, and take the wake lock again.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && circuitRun && !circuitRun.ended) {
+      acquireCircuitWake();
+      tickCircuitRun();
+    }
+  });
 
   // ── Delete a circuit (owner / admin; the DB enforces it via RLS) ─────────────────
   function openCircuitDelete() {

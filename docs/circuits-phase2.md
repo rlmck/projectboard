@@ -2,7 +2,14 @@
 
 Agreed 15 June 2026. Moved here on 29 Oct 2026 from the local-only `docs/project-notes.md` so the claude.ai chat can read it; nothing else from that file came with it. When it's built, the new `cast_circuit` and `stop` events go into `docs/cast-contract.md` in the same commit (CLAUDE.md → Session rules).
 
-Phase 1 (browse, create, in-app Play preview) is built. This is the spec for Phase 2, which isn't.
+Phase 1 (browse, create, in-app Play preview) is built. **Phase 2 was built on 30 Oct 2026**: what was built is in `docs/cast-contract.md` §8, and it differs from the spec below where Ross chose differently:
+- **The look** is "Pulse and fade" (direction 4 of `tools/circuit-led-simulator.html`, chosen 30 Oct 2026), not the 4-hold window: the start holds flash **red** in the countdown; then the hold to go to is solid blue, the one after swells amber, the one let go of fades out in red; a match stays solid; at the top the route runs up in green.
+- **Speed** is three steps, Slow 5 s / Med 3 s / Fast 2 s a move, not 0.1 s steps.
+- **The phone** shows the countdown (with beeps), the move count and a big Stop; it doesn't mirror the lights.
+- **Stop and the finish** crossfade the board into the idle pattern; a forgotten loop ends after 30 minutes (`CIRCUIT_MAX_S`).
+- **Not built:** mirroring from the app (the Pi takes `mirror`, the app has no mirrored circuit view), and the "Exclude Done" pill (runs are logged, but "done" isn't defined).
+
+The original spec follows.
 
 A **circuit** is its own entity (not a grouping of problems): a long route that mimics a roped **sport** climb.
 - Lowercase French **sport** grade ladder: `4, 5a … 8b`.

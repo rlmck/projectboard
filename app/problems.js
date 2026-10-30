@@ -263,7 +263,7 @@
   // a timeout, an imprecise fix, or no Geolocation support all ALLOW the cast — so
   // we never falsely lock someone out indoors. Admins bypass the check entirely
   // (so casts can be tested off-site). Browsing/creating problems is unaffected.
-  // Reusable for the Phase-2 circuit cast (call ensureCastLocation() there too).
+  // The circuit cast uses it too (startCircuitCast in circuits.js).
   const GYM_GEOFENCE = {
     lat: 50.53,      // The Hangout, Southwell Business Park, Portland DT5
     lng: -2.4525,

@@ -9,7 +9,7 @@ Everything that runs on the Pi 4 behind the board: the cast listener that lights
 | Unit | What it does |
 |---|---|
 | `leds-off-at-boot` | Clears the strip early in boot (`leds.py --off`). |
-| `pb-listener` | The cast listener (`listener/pb_listener.py`). It joins Supabase Realtime `board:HangoutPortland`, and on each `cast_problem` looks the problem up by name and lights it (contract §6). systemd restarts it if it exits, and its watchdog restarts it if it freezes for 30 s. When nobody has cast for 20 minutes it runs an **idle pattern** (below). Status goes to `/run/projectboard/listener.json`. |
+| `pb-listener` | The cast listener (`listener/pb_listener.py`). It joins Supabase Realtime `board:HangoutPortland`, and on each `cast_problem` looks the problem up by name and lights it (contract §6). On `cast_circuit` it reads the circuit and runs it (`listener/circuit.py`: countdown, moving holds, finish) until it finishes, a `stop` with its run token, or `CIRCUIT_MAX_S` (contract §8). systemd restarts it if it exits, and its watchdog restarts it if it freezes for 30 s. When nobody has cast for 20 minutes it runs an **idle pattern** (below). Status goes to `/run/projectboard/listener.json`. |
 | `pb-health.timer` | Every 2 min, as root (`ops/pb-health`). Network: brings Wi-Fi back up, restarts NetworkManager, and reboots after 10 min down (at most 1 an hour and 3 a day). It also restarts Tailscale, a stuck listener or the webcam when needed, and logs temperature, disk and throttling. |
 | `pb-mode.timer` | Every minute (`ops/pb-mode`). Night (23:00–08:00 by default, from the clock) stops the kiosk and turns the screen off; day turns them back on. The listener clears the LEDs and ignores casts at night by itself. In the day the screen also stays off while `/run/projectboard/screen-off` exists (PB Console's Screen off; gone at the next reboot). |
 | `pb-weekly-reboot.timer` | Monday 07:45, skipped if the Pi has been up under an hour. |
@@ -25,6 +25,10 @@ Also installed:
 - no random Wi-Fi MAC while scanning (the connection itself uses a random one since 28 Oct: see "Wi-Fi").
 
 **Relays:** not built. `listener/power.py` is the hook for switching the LED supplies at night once the relay module is fitted.
+
+## Circuits (30 Oct 2026)
+
+A `cast_circuit` (contract §8) runs a circuit: a 5 s countdown on the start holds, then one move every `interval` seconds in Ross's "Pulse and fade" look (solid blue to go to, amber swelling for the one after, soft red fading on the hold let go of; a match stays solid; at the top of a run done once, the route runs up in green). `listener/circuit.py` is a port of direction 4 in `tools/circuit-led-simulator.html`: change both together. A `stop` with the run's token (or none), the finish, a problem cast, night, or `CIRCUIT_MAX_S` (1800 s) ends it, and the board crossfades into idle. The journal shows `circuit received`, `circuit started`, `stop received` and the `LEDs: idle …` line. Tests: `pi/tests/test_circuit.py`.
 
 ## Idle patterns
 

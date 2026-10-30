@@ -1,6 +1,6 @@
 # Cast contract
 
-How a cast gets from the app to the LEDs. **This describes what the code does** (as of 19 Oct 2026, app service worker `pb-v109`). Anything the code doesn't settle is under "Open questions"; nothing there is decided. Any change to the channel, event or payload must update this file in the same commit. The repo is public: no secrets here.
+How a cast gets from the app to the LEDs. **This describes what the code does** (first written 19 Oct 2026; circuits added 30 Oct 2026, §8). Anything the code doesn't settle is under "Open questions"; nothing there is decided. Any change to the channel, event or payload must update this file in the same commit. The repo is public: no secrets here.
 
 ## 1. Overview
 
@@ -17,9 +17,9 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
 | Mechanism | Realtime **Broadcast** (not Postgres Changes, not Presence) |
 | Channel topic | `board:HangoutPortland` (`HangoutPortland` is also `board_config.wall`) |
 | Channel type | public: no `config.private`, no Realtime Authorization policies |
-| Event | `cast_problem` |
+| Events | `cast_problem` (a problem, §3), `cast_circuit` and `stop` (a circuit run, §8) |
 | Persistence | none. Only listeners connected at that moment receive it; nothing is stored or replayed |
-| Database writes per cast | none |
+| Database writes per cast | none (a signed-in climber's circuit run is logged by the app, §8.5, not by the cast) |
 
 ## 3. Payload
 
@@ -39,7 +39,7 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
 
 ## 4. Sender: the PWA
 
-- **Only path:** `castByName(name, btn, mirror, stillShowing)` in `app/problems.js`, called by the cast button on the problem detail view (wired in `app/app.js`) and by **Light it up** on the wall screen (`app/wall.js`, the kiosk's `/?wall` mode), with the same payload. Circuits have no cast yet.
+- **Only path:** `castByName(name, btn, mirror, stillShowing)` in `app/problems.js`, called by the cast button on the problem detail view (wired in `app/app.js`) and by **Light it up** on the wall screen (`app/wall.js`, the kiosk's `/?wall` mode), with the same payload. Circuits have their own path, `startCircuitCast()` (§8).
 - **Steps:**
   1. Geofence check (`ensureCastLocation`). It runs in the app only and is lenient: it blocks only a location fix that is confidently far from the gym. No location, a refused permission or a timeout all let the cast through, and admins skip it.
   2. If the problem or orientation on screen changed during the location wait, nothing is sent.
@@ -61,6 +61,7 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
   - loads the mirror map on every join and refreshes it every 10 min; a mirrored cast with no map loaded is skipped;
   - **night mode, 23:00–08:00 by the Pi's clock** (day if the clock hasn't synced): the strip is cleared and casts are ignored (logged, not shown), while the socket stays joined;
   - **idle (an idle pattern, Glisten by default):** `IDLE_AFTER_S` after the last cast (20 min by default), and on start or at the end of the night in the daytime, the problem crossfades (1.5 s) into an ambient animation (`IDLE_PATTERN`: one of ten patterns, or a cycle; `pb-idle` on the Pi tries them live; the teaser pattern reads the benchmark problems, unmirrored, every half hour); a cast cuts straight in. With `IDLE_ANIMATION=off` the strip is cleared instead. At night everything fades to black over 3 s. Details in `pi/README.md`;
+  - on `cast_circuit` and `stop`, runs and ends a circuit (§8);
   - clears the strip on stop. It sends no reply, so a cast at night or with the Pi down still shows "Cast: X" in the app (§7 item 2);
   - health checks, watchdogs and deploy are in `pi/README.md`.
 
@@ -170,11 +171,61 @@ Nothing below is decided.
     - ~~Does column B run down?~~ Yes: the whole board was mapped on 28 Oct 2026 (§6.4).
     - Still open: what did each of Gareth's relays switch, and what will the new relays switch?
 12. **Start-up and idle behaviour** of the Pi: before the first cast, and from 20 minutes after the last one, Glisten runs (§5; 27 Oct 2026). Still open: the relays.
-13. **Circuits:** a design spec (not code) plans `cast_circuit` (`circuit_name`, `interval`, `loop`, `mirror`, a run token) and a `stop` event on the same channel. Nothing implements it.
+13. ~~**Circuits:** a design spec plans `cast_circuit` and a `stop` event on the same channel.~~ Built 30 Oct 2026 (§8).
 14. ~~**The wall kiosk** will cast through the same PWA and channel. Does it need anything different?~~ No (27 Oct 2026): it casts as a guest through `castByName()`. Its Chromium runs with `--deny-permission-prompts`, so the location check fails at once and lets the cast through, instead of waiting on a permission bubble nobody answers. It turns casting off at night (23:00–08:00) and while it has no connection.
 15. **Who may cast:** anyone, by decision. Does the Pi apply any checks of its own?
 
+## 8. Circuits (built 30 Oct 2026)
+
+A circuit cast runs a timed animation on the Pi: the phone sends one message to start and one to stop, and the Pi works out every frame itself.
+
+### 8.1 `cast_circuit`
+
+```json
+{ "circuit_name": "Pat Burner", "interval": 3, "loop": true, "run": "9f2c41d07ab3e855",
+  "source": "phone", "signed_in": true }
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `circuit_name` | string | yes | `circuits.name` exactly as stored (UNIQUE, 1–60 characters). |
+| `interval` | number | yes | Seconds a move. The app sends 5, 3 or 2 (Slow, Med, Fast); the listener accepts 1–10 and ignores anything else. |
+| `loop` | boolean | no | Run once to the top, or loop until stopped. The app always sends it (defaulting to the circuit's `loops`, which the caster can change); absent means the circuit's `loops`. |
+| `mirror` | boolean, `true` when present | no | Mirror every hold through `board_config.mirror_map`, as §6.3. The app doesn't send it yet (circuits have no mirrored view). |
+| `run` | string, 1–64 characters | no | A token naming this run (the app sends 16 random hex characters). `stop` uses it. |
+| `source`, `signed_in` | | no | As §3: the Activity log only. |
+
+### 8.2 `stop`
+
+```json
+{ "run": "9f2c41d07ab3e855", "source": "phone", "signed_in": true }
+```
+
+Ends the running circuit if its token matches; with no `run`, ends any running circuit. A stop for another run, or with nothing running, does nothing (a problem cast that has since cut in stays lit). The board then crossfades into the idle pattern.
+
+### 8.3 What the Pi shows (`pi/listener/circuit.py`)
+
+The look is direction 4, "Pulse and fade", chosen by Ross on 30 Oct 2026 in `tools/circuit-led-simulator.html` (the Pi's code is a port of it: change both together).
+
+- The listener reads `name, hold_sequence, start_count, loops` from `circuits` by exact name (one retry); an unknown name leaves the board as it is. The sequence is in climbing order (not inverted). Ids off the grid and the feet signs (`hold2`/`hold21`) light nothing but keep their place in the timing.
+- **Countdown, 5 s from when the Pi has read the circuit:** the start holds (1 or 2) flash red once a second, and the first two moves flash blue with them.
+- **Then one move every `interval` s.** With c the last hold reached: the holds you're on (c and c-1) show their colour (start holds green on the first lap only, then blue); the hold to go to (c+1) is solid blue (red if it's the finish of a run done once); the hold after that is amber `(255,110,0)`, swelling up once a second and a little brighter each time through the move; the hold just let go of (c-2) pulses softly red once a second, fading out over the move. A **match** (the hold to go to is one you're on) stays solid.
+- **Once:** at the top, a beat on the finish, then the route runs up in green and fades; then idle. **Loop:** runs until `stop`, a problem cast, another circuit, night, or `CIRCUIT_MAX_S` (30 min by default), then idle.
+- Brightness and the current cap are a problem cast's (`BRIGHTNESS`, `POWER_BUDGET_MA`); frames at `IDLE_FPS`. Night ignores circuit casts and ends a run, as it does problems. Latest cast wins across problems and circuits.
+- Log lines: `circuit received: 'Name', 3 s a move, loop [phone, member]`, `circuit started 'Name': … run <token>`, `stop received: run <token> […]`, then `LEDs: idle … (circuit 'Name' stopped|finished)`.
+
+### 8.4 The app (`app/circuits.js`)
+
+- **Cast** beside the circuit's title opens a sheet: speed (Slow 5 s / Med 3 s / Fast 2 s, remembered on the device as `pb-circuit-speed`), Loop (the circuit's setting by default), and **Start on the board**. The same lenient geofence as a problem (`ensureCastLocation`, admins skip it), then `channel.httpSend('cast_circuit', …)`.
+- Once Realtime accepts it, the sheet is the run screen: the countdown with beeps, then the move count (and lap), and a big **Stop**, which sends `stop` with the run's token. The phone keeps its own clock from that moment (plus 0.25 s for the Pi's read), so it stays right after the screen sleeps; the screen is kept awake while it runs. The sheet can't be closed while a run is going. "Go again" starts a new run.
+- As with problems, a sent cast or stop means Realtime accepted it, not that the Pi received it (§7 items 2 and 3).
+
+### 8.5 The log
+
+When a run ends on the phone (Stop, or the top of a run done once), a signed-in climber's run with at least one move is inserted into `circuit_logs` (`user_id`, `circuit_id`, `moves`, `looped`, `speed` = seconds a move; own-rows RLS, db/14). A move is one LED advance, counted across laps. Guests aren't logged. Nothing reads the log yet (the circuits "Exclude Done" pill is still inert until "done" is defined; Phase 3 is PBs and leaderboards).
+
 ## Change history
+- **2026-10-30, Claude Code:** §2, §4, §5, §7 item 13 and a new §8: **circuits.** Two new events on the same channel, `cast_circuit` (`circuit_name`, `interval`, `loop`, `mirror`, `run`, plus `source`/`signed_in`) and `stop` (`run`). The listener runs the circuit itself (`pi/listener/circuit.py`, Ross's direction 4); the app's Cast sheet sends them and logs signed-in runs to `circuit_logs`. `cast_problem` is unchanged; a listener from before this ignores the new events.
 - **2026-10-30, Claude Code:** §5, §6.5, §7 item 7: the feet rule. `problems.feet_mode` (`any` / `orange` / `black`, db/33) drives the B2/B1 sign LEDs (25/26), never the hold list, and never mirrored; db/33 maps the migrated problems and removes `hold2`/`hold21` from their lists. The listener reads `feet_mode` from the next Pi deploy. **No change to the channel, event or payload.**
 - **2026-10-29, Claude Code:** §3, §4, §5: two optional, informational payload fields, `source` (`wall` / `phone` / `console`) and `signed_in` (a boolean, never who), sent by `castByName()` and PB Console's test cast and logged by the listener for PB Console's Activity log. The channel and event are unchanged, and the listener before this change ignores both fields, so either side can be deployed first.
 - **2026-10-28, Claude Code:** §6.1, §6.3, §6.4, §7 item 11: the LED map checked on the wall with `pb-ledmap`; three hold labels fixed in the board data (db/32), 188 real holds, the mirror differences now 5. No change to the channel, event or payload.

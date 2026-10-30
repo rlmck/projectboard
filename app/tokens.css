@@ -23,6 +23,7 @@
   --int: #3b82f6;
   --finish: #ef4444;
   --feet: #f59e0b;
+  --led-amber: #f59e0b;  /* a circuit run's "hold after next" (the key on the cast sheet) */
   --gold: #fbbf24;  /* the benchmark mark, the challenge clock in rests */
   --start-text: #4ade80;  /* hold colours as text on a dark surface */
   --int-text: #60a5fa;
@@ -167,6 +168,7 @@
   /* Sizes */
   --nav-h: 60px;  /* the bottom nav; body.ch-away raises it to 100px in styles.css */
   --nav-strip-h: 40px;  /* the 'back to the challenge' strip on top of the nav */
+  --cast-run-big: 88px;  /* the circuit run screen's countdown and move count */
   --title-cast-h: 34px;  /* the problem view's Cast, beside the title */
   --title-cast-pad-x: 12px;
   --title-cast-gap: 6px;  /* between its icon and 'Cast' */

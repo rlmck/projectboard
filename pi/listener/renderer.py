@@ -1,14 +1,18 @@
 """The LED thread: the only thing that writes to the strip while the listener runs.
 
-Three states (night always wins):
+Four states (night always wins):
 - cast:  a problem is lit (a cast cuts straight in, no fade);
+- circuit: a circuit run is animating (circuit.py: countdown, the moving holds,
+         the finish), from a cast_circuit; a stop with its run token (or none),
+         its finish, or CIRCUIT_MAX_S (a forgotten loop) crossfades into idle.
+         A problem cast or another circuit cuts straight in;
 - idle:  an idle pattern (patterns/: IDLE_PATTERN, one pattern or a cycle),
          from IDLE_AFTER_S after the last cast, and at start and at the end
          of the night; it fades in over 1.5 s. With IDLE_ANIMATION=off the
          strip is just cleared;
 - night: a 3 s fade to black, then the strip cleared.
 
-The event loop never waits on it: cast(), set_night(), idle_now(),
+The event loop never waits on it: cast(), circuit(), stop_circuit(), set_night(), idle_now(),
 set_pattern() (pb-idle: a pattern, off, brightness), set_benchmarks() and
 stop() only post a command and
 wake the thread. step() does one round of work and
@@ -33,7 +37,7 @@ import board
 import patterns
 from patterns.common import blend, dim, smooth
 
-CAST, IDLE, NIGHT = 'cast', 'idle', 'night'
+CAST, RUN, IDLE, NIGHT = 'cast', 'circuit', 'idle', 'night'
 FADE_TO_IDLE = 1.5        # s, the lit problem (or black) crossfading into the idle pattern
 FADE_TO_NIGHT = 3.0       # s, whatever is showing fading to black at the start of the night
 # Animation frames write pixels 0-247 only: 6 ms at 1 MHz instead of 29 ms for
@@ -56,6 +60,13 @@ class Renderer:
         self.idle_after = float(cfg.get('IDLE_AFTER_S') or 1200)
         self.animate = _on(cfg.get('IDLE_ANIMATION'))
         self.dt = 1.0 / max(1.0, min(60.0, float(cfg.get('IDLE_FPS') or 30)))
+        # A circuit run's frames: the cast brightness and current cap, as a problem's (board.scale).
+        self.cast_args = (float(cfg.get('BRIGHTNESS') or 0.5), float(cfg.get('POWER_BUDGET_MA') or 8000),
+                          float(cfg.get('MA_PER_CHANNEL') or 20))
+        self.run_max = float(cfg.get('CIRCUIT_MAX_S') or 1800)
+        self.circ = None            # the circuit.Run animating (state RUN)
+        self.run_t0 = None
+        self.run_full = False       # the run's first frame clears the whole strip
         self.idle_args = dict(brightness=float(cfg.get('IDLE_BRIGHTNESS') or 1.0),
                               max_ma=float(cfg.get('IDLE_MAX_AMPS') or 2.0) * 1000,
                               ma_per_channel=float(cfg.get('MA_PER_CHANNEL') or 20))
@@ -95,6 +106,14 @@ class Renderer:
 
     def cast(self, frame):
         self._post(('cast', frame))
+
+    def circuit(self, run):
+        """A circuit.Run: its countdown starts now."""
+        self._post(('circuit', run))
+
+    def stop_circuit(self, token=None):
+        """End the running circuit: the one with this run token, or any with None."""
+        self._post(('stop', token))
 
     def set_night(self, night):
         self._post(('night', bool(night)))
@@ -206,8 +225,19 @@ class Renderer:
                 if self.state == NIGHT:
                     self.log('LEDs: cast not shown, night')
                     continue
-                self.state, self.fade, self.cast_at = CAST, None, now
+                self.state, self.fade, self.cast_at, self.circ = CAST, None, now, None
                 self._write(arg, True)
+            elif kind == 'circuit':
+                if self.state == NIGHT:
+                    self.log('LEDs: circuit not shown, night')
+                    continue
+                self.state, self.fade, self.circ, self.run_t0, self.run_full = RUN, None, arg, now, True
+                self.next_frame = now
+            elif kind == 'stop':
+                if self.state == RUN and (arg is None or arg == self.circ.token):
+                    self._go_idle(now, 'circuit %r stopped' % self.circ.name)
+                elif self.state == RUN:
+                    self.log('LEDs: stop for another run ignored')
             elif kind == 'night':
                 if arg and self.state != NIGHT:
                     self.state = NIGHT
@@ -232,9 +262,32 @@ class Renderer:
 
         if self.state == NIGHT:
             return self._fade_out(now)
+        if self.state == RUN:
+            return self._run_frame(now)
         if self.state == CAST:
             return min(MAX_SLEEP, self.cast_at + self.idle_after - now)
         return self._idle_frame(now)
+
+    def _run_frame(self, now):
+        """One frame of the circuit run, paced like the idle animation."""
+        if now < self.next_frame:
+            return self.next_frame - now
+        t = now - self.run_t0
+        if t >= self.run_max:
+            self._go_idle(now, 'circuit %r ran %d s, the limit' % (self.circ.name, self.run_max))
+            return 0
+        leds, done = self.circ.frame(t)
+        if done:
+            self._go_idle(now, 'circuit %r finished' % self.circ.name)
+            return 0
+        out, _, _ = board.scale(leds, *self.cast_args)
+        self._write(out, self.run_full)
+        self.run_full = False
+        self.next_frame += self.dt
+        end = self.clock()
+        if self.next_frame <= end:
+            self.next_frame = end + self.dt
+        return self.next_frame - end
 
     def _fade_out(self, now):
         """Night, or idle with pb-idle off: finish fading to black, then clear."""

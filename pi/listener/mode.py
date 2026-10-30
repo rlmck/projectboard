@@ -30,6 +30,7 @@ DEFAULTS = {
     'IDLE_BRIGHTNESS': '1.0',
     'IDLE_MAX_AMPS': '2.0',
     'IDLE_FPS': '30',
+    'CIRCUIT_MAX_S': '1800',
     'NIGHT_MODE': 'on',
     'NIGHT_START': '23:00',
     'NIGHT_END': '08:00',

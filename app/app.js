@@ -455,6 +455,21 @@
     if (e.target.id === 'circuit-delete-modal') closeCircuitDelete();
   });
 
+  // Circuit cast sheet (circuits.js): speed, loop, Start; Stop; Close / Go again.
+  document.getElementById('cast-sheet-speed').addEventListener('click', e => {
+    const b = e.target.closest('.cc-seg-btn'); if (b) setCastSpeed(+b.dataset.s);
+  });
+  document.getElementById('cast-sheet-loop').addEventListener('click', toggleCastLoop);
+  document.getElementById('cast-sheet-start').addEventListener('click', startCircuitCast);
+  document.getElementById('cast-run-stop').addEventListener('click', stopCircuitRun);
+  document.getElementById('cast-done-stop').addEventListener('click', stopCircuitRun);
+  document.getElementById('cast-sheet-close').addEventListener('click', closeCircuitCast);
+  document.getElementById('cast-done-close').addEventListener('click', closeCircuitCast);
+  document.getElementById('cast-done-again').addEventListener('click', castCircuitAgain);
+  document.getElementById('circuit-cast-modal').addEventListener('click', e => {
+    if (e.target.id === 'circuit-cast-modal') closeCircuitCast();
+  });
+
   // Circuit create: back, undo, reset, board taps, options, grade, save.
   document.getElementById('cc-back').addEventListener('click', goBack);
   document.getElementById('cc-undo').addEventListener('click', () => { ccSeq.pop(); applyCircuitCreate(); });
@@ -596,7 +611,7 @@
   document.getElementById('info-modal').addEventListener('click', e => {
     if (e.target.id === 'info-modal') closeInfo();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closeNameModal(); closeAccountDelete(); closeUserRename(); closeUserReset(); closeCompare(); closeAttemptDelete(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closeCircuitCast(); closeNameModal(); closeAccountDelete(); closeUserRename(); closeUserReset(); closeCompare(); closeAttemptDelete(); } });
 
   // Auth view (#auth): sign in, and sign-up's two steps, in one form (account.js).
   document.getElementById('auth-form').addEventListener('submit', authSubmit);

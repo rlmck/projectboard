@@ -106,7 +106,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 | `admin.js` | The `#admin` hub: users, promote/demote, delete (RPCs) |
 | `account.js` | Ticks, favourites, filter pills, **auth**, display-name modal, profile |
 | `authoring.js` | Create/edit problem, the `#outlines` hold-outline editor, circuit helpers |
-| `circuits.js` | Circuits list, detail (swipe, info), Play preview, create, delete |
+| `circuits.js` | Circuits list, detail (swipe, info), Play preview, **circuit cast** (Cast sheet, run screen, `circuit_logs`), create, delete |
 | `challenge.js` | Challenges (db/31): the `#challenge` view (rules, the phone-timed attempt, summary, save + retry), your best and history, the challenge boards on Ranks |
 | `leaderboard.js` | `#leaderboard` (Points, or a challenge board via the tabs) |
 | `wall.js` | The **wall-screen mode** (`/?wall`, the kiosk): list + board + cast, read-only Ranks, Get the app QR, idle slides, night screen, offline note (overview §4.7a). Off unless `WALL` (`state.js`) |
@@ -181,7 +181,8 @@ await channel.httpSend('cast_problem',
 // channel: sb.channel('board:HangoutPortland'), never subscribed: the app holds no socket
 ```
 
-- `castByName()` in `problems.js` is the only cast path. It runs the geofence check first (lenient; admins bypass), then sends only if the caller's `stillShowing()` says the tapped problem and orientation are still on screen. **Reuse both for the circuit cast.**
+- `castByName()` in `problems.js` is the only problem cast path. It runs the geofence check first (lenient; admins bypass), then sends only if the caller's `stillShowing()` says the tapped problem and orientation are still on screen.
+- **Circuits** (30 Oct 2026): `startCircuitCast()` in `circuits.js` sends `cast_circuit` (`circuit_name`, `interval`, `loop`, `run`) and Stop sends `stop` (`run`); the Pi animates the run itself in `pi/listener/circuit.py`, a port of direction 4 in `tools/circuit-led-simulator.html` (change both together). Contract §8.
 - `httpSend` resolving means the **Realtime server** accepted the broadcast, not the Pi. There's no end-to-end confirmation, so never report board-level success.
 - **Test casting without the Pi:** `python tools/serve.py`, open `http://localhost:8000/tools/cast-test.html`. It lists every cast on the channel, and *Run checks* drives the local app through the cast cases using fake problem names.
 - **The Pi 4 listener** (`pi/listener/pb_listener.py`, `pi/README.md`) looks the name up in `problems`, applies the **live** mirror map, uses `problemHoldOrder()`'s order, and lights the LEDs (WS2801 on SPI0, 1 MHz, mode 0, RGB; hold → LED is a formula, contract §6.4). Between casts it shows an idle pattern; night mode is 23:00–08:00. It's deployed with `bash pi/deploy.sh` (gated: `/pi-deploy`; restarts clear the board, so deploy when the gym is closed). Never commit the Wi-Fi keyfile, `secrets.env` or `pi/config.env`.

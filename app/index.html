@@ -549,6 +549,48 @@
 </section>
 
 <!-- ══ CIRCUIT DELETE CONFIRM MODAL (owner / admin) ═══════════════════ -->
+<!-- Cast a circuit: speed + loop, then the run (countdown, moves, Stop), then the result (circuits.js) -->
+<div class="modal-overlay" id="circuit-cast-modal">
+  <div class="modal cast-sheet" role="dialog" aria-modal="true" aria-labelledby="cast-sheet-title">
+    <div class="modal-header">
+      <div class="modal-title" id="cast-sheet-title">Cast circuit</div>
+      <button class="modal-close" id="cast-sheet-close" aria-label="Close">✕</button>
+    </div>
+    <div id="cast-sheet-setup">
+      <div class="cc-option-row">
+        <div class="cc-option-label">Speed<br><small id="cast-sheet-speed-val">3 s a move</small></div>
+        <div class="cc-seg" id="cast-sheet-speed">
+          <button class="cc-seg-btn" type="button" data-s="5">Slow</button>
+          <button class="cc-seg-btn" type="button" data-s="3">Med</button>
+          <button class="cc-seg-btn" type="button" data-s="2">Fast</button>
+        </div>
+      </div>
+      <div class="cc-option-row">
+        <div class="cc-option-label">Loop<br><small>Keep going round until you stop</small></div>
+        <button class="cc-toggle" id="cast-sheet-loop" type="button" aria-pressed="false" aria-label="Loop"><span class="cc-toggle-knob"></span></button>
+      </div>
+      <p class="cast-sheet-key">A 5-second countdown on the start holds, then: <b class="key-int">blue</b> the hold to go to, <b class="key-amber">amber</b> the one after, <b class="key-finish">red</b> let go.</p>
+      <div class="auth-error" id="cast-sheet-error"></div>
+      <button class="btn-block btn-primary" id="cast-sheet-start" type="button">Start on the board</button>
+    </div>
+    <div id="cast-sheet-run" hidden>
+      <div class="cast-run-big" id="cast-run-big">5</div>
+      <div class="cast-run-sub" id="cast-run-sub">Get on the start holds</div>
+      <button class="btn-block btn-danger cast-run-stop" id="cast-run-stop" type="button">Stop</button>
+    </div>
+    <div id="cast-sheet-done" hidden>
+      <div class="cast-run-big" id="cast-done-big"></div>
+      <div class="cast-run-sub" id="cast-done-sub"></div>
+      <p class="cast-done-log" id="cast-done-log"></p>
+      <button class="btn-block btn-danger" id="cast-done-stop" type="button" hidden>Stop the lights</button>
+      <div class="modal-actions">
+        <button class="btn-block btn-ghost" id="cast-done-close" type="button">Close</button>
+        <button class="btn-block btn-primary" id="cast-done-again" type="button">Go again</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="circuit-delete-modal">
   <div class="modal" role="dialog" aria-modal="true" aria-label="Delete circuit">
     <div class="modal-header">

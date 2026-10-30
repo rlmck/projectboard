@@ -1269,8 +1269,8 @@
   // ══ CIRCUITS ═══════════════════════════════════════════════════════════════════
   // A circuit is a long sport-style route: one ordered hold sequence (duplicates
   // allowed), 1–2 starts (the first holds), one finish (the last hold), optional
-  // loop. Phase 1 = browse / create / detail with an in-app Play preview of the
-  // moving-window animation. No real casting yet (that's Phase 2).
+  // loop. Browse / create / detail with an in-app Play preview, and (Phase 2) a
+  // cast that runs the circuit on the wall (circuits.js, contract section 8).
 
   const circuitName = c => String((c && c.name) || '').trim() || '(unnamed)';
   const circuitSeq  = c => (Array.isArray(c && c.hold_sequence) ? c.hold_sequence : []);
