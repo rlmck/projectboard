@@ -12,6 +12,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **PB Console** (`console/`, `bash console/start.sh`): health dashboard, services, board controls, logs, config, Pi deploy with a drift check, release (Ship / Staging / Rollback since 29 Oct), LED map, test cast, activity, the R8 checklist, backups, runbook. The Pi-side helper is deployed. Phase 13 (Data) isn't built; phase 14 (Power) waits for the relays.
 
 ## Decisions
+- **End to end (30 Oct 2026):** Claude finishes the whole job, including applying migrations (`db/apply.py`, dry run first) and Pi deploys (busy check, passwordless). Still gated: deleting user data, force pushes, secrets.
 - **Deploy policy (29 Oct 2026):** ship by default to `main` once checks pass; "staging first" = `dev` only, with the staging URL; no rule about keeping `dev` and `main` level. Gated: DB migrations, Pi deploys (busy check), deleting data, force pushes, secrets. Rollback = `git revert` + push, never the Cloudflare dashboard. `CACHE` is stamped by the build from the shipped files' git blob ids (not the commit hash, so docs-only pushes don't make every phone re-download the app). Replaces the 19 Oct "two confirmations" rule.
 - Accounts are nickname + 4-word passphrase, no personal data, under-18s welcome, Ranks opt-in (`profiles.is_public`); a lost passphrase is reset by an admin (logged). Google sign-in removed. All 7 earlier accounts were migrated (18 Oct). The gym is the data controller.
 - Points only for benchmark climbs (db/27).
@@ -26,9 +27,8 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
-- **Ross: deploy the Pi listener for the feet rule** (`! bash pi/deploy.sh`: it needs the Pi's sudo password). Until then the Pi lights no feet sign at all, since db/33 took the signs out of the hold lists. Then on the wall: an Orange-only problem lights B2 only, Black-only B1 only, Any neither; the same mirrored (also the first mirrored-cast check).
-- Ross: decide whether Claude may deploy to the Pi and apply migrations without him: a `NOPASSWD` sudoers rule for `pi/deploy.sh`'s installer, and CLAUDE.md rule 2 / `.claude/commands/pi-deploy.md` changed to match. Claude was blocked from making either change itself (30 Oct).
-- Ross: behind the board on 30 Oct, find out why the wall screen is black even though the Pi is sending it a picture (monitor power/standby, cables, input, relays).
+- **Ross, once: `! bash pi/deploy.sh`** (the last deploy that asks for the Pi's password). It installs the feet-rule listener and `/etc/sudoers.d/pb-deploy`; from then on Claude and PB Console deploy without a password. Until it runs, the Pi lights no feet sign (db/33 took them out of the hold lists). Then on the wall: Orange-only lights B2 only, Black-only B1 only, Any neither; the same mirrored (the first mirrored-cast check).
+- Ross: add these to `.claude/settings.json` → `allow` (Claude was blocked from editing its own permissions): `Bash(python db/apply.py *)`, `Bash(bash pi/deploy.sh*)`, `Bash(ssh pi@projectboard python3 - busy < console/probe.py)`, `Bash(ssh pi@projectboard pb-status*)`.
 - Ross: the relay module (eBay) and 74AHCT125 level shifter (Amazon) to arrive.
 - Ross: an on-site check of the cast geofence centre (a non-admin phone by the board and at the far end of the gym).
 - Ross: delete the local passphrase hand-out file in the archive (then empty the Recycle Bin) once all 7 migrated accounts have signed in.
@@ -50,7 +50,8 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Changed:** star ratings removed (list, detail, info sheet, wall). Cast moved from the header to the right of the problem's title, deep pink, the board unmoved; long names wrap then ellipse beside it. Feet rule: three options on Create/Edit, a badge on the problem view, a Feet row on the info sheet; the listener lights the sign from `feet_mode`. db/33 applied by Claude through the new local `db/apply.py` (dry run first): 220 any, 26 black, 19 orange, no sign left in a hold list. Contract §6.5 and open question 7 closed; CLAUDE.md data trap added.
   - **Tested:** 360/375/390/412 px phones and `/?wall` locally; Pi tests 92 pass.
   - **Live:** `bf3c993`, `aadc1ba`, `d1c8116`; CACHE `pb-e0bd53c890` seen live.
-  - **Left:** the Pi deploy (needs Ross's sudo password; busy check at 09:00 was clear), then the wall test (Waiting on).
+  - **Later:** passwordless Pi deploys (`pi/conf/pb-deploy.sudoers`, `deploy.sh`, PB Console's Deploy with the password optional) and CLAUDE.md rule 2: Claude applies migrations (`db/apply.py`) and deploys the Pi itself; still gated: deleting user data, force pushes, secrets (`945bb6f`).
+  - **Left:** Ross's one last password deploy, then the wall test (Waiting on).
 
 - **2026-10-30, chat (one to-do list).**
   - **Changed:** new `TODO.md` at the root: one flat, ordered list (top = now), built from the old Next and Backlog sections, which are gone from this file. "What's on my to-do list?" shows the top 3; Ross adds, removes and reorders by asking. `CLAUDE.md`, `/start` and `/wrap` read and update it. No app change, so the CACHE stays.
