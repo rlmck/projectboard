@@ -1,5 +1,5 @@
 # /etc/sudoers.d/pb-console: PB Console (console/ in the repo) runs this one
 # root-owned helper without a password, and nothing else. The helper checks every
 # argument itself (pi/ops/pb-console-helper). Installed by install.sh after
-# `visudo -cf` passes; deploys still ask for the password.
+# `visudo -cf` passes. Deploys have their own rule: pb-deploy.sudoers.
 pi ALL=(root) NOPASSWD: /usr/local/sbin/pb-console-helper

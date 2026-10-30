@@ -10,6 +10,7 @@
 #   ops/board-cam.sh   /opt/projectboard/ops/
 #   ops/pb-*           /usr/local/bin/ (pb-console-helper: /usr/local/sbin/, root only)
 #   conf/pb-console.sudoers  /etc/sudoers.d/pb-console (checked with visudo -cf first)
+#   conf/pb-deploy.sudoers   /etc/sudoers.d/pb-deploy (the same check): deploys without a password
 #   ledmap/            /opt/projectboard/ledmap/ (the LED mapping tool: installed, never enabled)
 #   systemd/*          /etc/systemd/system/ (kiosk.service as installed 26 Oct)
 #   conf/              journald + system.conf.d drop-ins, NetworkManager conf, tmpfiles.d
@@ -72,6 +73,12 @@ if visudo -cf "$SRC/conf/pb-console.sudoers" >/dev/null; then
     put conf/pb-console.sudoers /etc/sudoers.d/pb-console 0440
 else
     echo "!! conf/pb-console.sudoers failed visudo -cf: not installed"
+fi
+# The rule that lets deploy.sh run this installer without the Pi's password (30 Oct 2026).
+if visudo -cf "$SRC/conf/pb-deploy.sudoers" >/dev/null; then
+    put conf/pb-deploy.sudoers /etc/sudoers.d/pb-deploy 0440
+else
+    echo "!! conf/pb-deploy.sudoers failed visudo -cf: not installed"
 fi
 for f in "$SRC"/systemd/*.service "$SRC"/systemd/*.timer; do
     put "systemd/$(basename "$f")" "/etc/systemd/system/$(basename "$f")" 0644

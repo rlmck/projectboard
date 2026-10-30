@@ -229,7 +229,12 @@ class NewActions(unittest.TestCase):
         self.assertNotIn('s3cret', a.name + a.shown + a.describe + json.dumps(a.preview))
         self.assertTrue(a.confirm and not a.busy)
         self.assertTrue(actions.build('deploy', {'password': 'p'}).busy)
-        for bad in ('', 'a\nb', None, 'x' * 300):
+        self.assertIn('--sudo-stdin', actions.build('deploy', {'password': 'p'}).shown)
+        for none in ({}, {'password': ''}, {'password': None}):     # passwordless deploys (30 Oct 2026)
+            a = actions.build('deploy', none)
+            self.assertNotIn('--sudo-stdin', a.shown)
+            self.assertTrue(a.busy)
+        for bad in ('a\nb', 'x' * 300, 5):
             with self.assertRaises(actions.Invalid):
                 actions.build('deploy', {'password': bad})
 

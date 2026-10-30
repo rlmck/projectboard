@@ -92,8 +92,7 @@
   }
 
   async function deploy(dry) {
-    const pw = $('deploy-pw').value;
-    if (!pw) { PB.toast("Type the Pi's password first"); $('deploy-pw').focus(); return; }
+    const pw = $('deploy-pw').value;   // optional since the Pi's pb-deploy sudoers rule (30 Oct 2026)
     try {
       await PB.runAction('deploy', { password: pw, dry_run: dry }, dry ? 'Deploy (dry run)' : 'Deploy to the Pi');
     } finally {

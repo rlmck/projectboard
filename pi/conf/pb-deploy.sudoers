@@ -1,0 +1,10 @@
+# /etc/sudoers.d/pb-deploy: lets the laptop deploy pi/ without the Pi's password
+# (Ross, 30 Oct 2026: Claude Code does the Pi deploys end to end). pi may run the
+# deploy's installer, and only that, as root without a password: deploy.sh copies
+# pi/ to ~/pb-deploy and runs `sudo -n bash /home/pi/pb-deploy/install.sh`.
+# The trade-off: ~/pb-deploy is pi's own folder, so anyone logged in as pi (over
+# Tailscale, with the laptop's SSH key) can get root without the password.
+# To go back to typing the password: `sudo rm /etc/sudoers.d/pb-deploy` on the Pi
+# and delete this file from the repo.
+# Installed by install.sh after `visudo -cf` passes.
+pi ALL=(root) NOPASSWD: /usr/bin/bash /home/pi/pb-deploy/install.sh, /usr/bin/bash /home/pi/pb-deploy/install.sh --dry-run

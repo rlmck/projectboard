@@ -14,7 +14,7 @@ It makes a new random session token, starts the backend on `127.0.0.1:8765` and 
 
 Needs: Python 3 (the standard library only; Pillow only for the desktop icon), Git Bash's `ssh`, and `ssh pi@projectboard` working without a password (it does: the laptop's key). Optional settings go in `console/.env.local` (gitignored): copy `console/.env.local.example`.
 
-**One-time on the Pi:** the Services tab, night mode and the screen buttons use `pb-console-helper`, which a deploy installs (`bash pi/deploy.sh`, the Pi's password once). Until then the page says so and those buttons fail; everything else works.
+**One-time on the Pi:** the Services tab, night mode and the screen buttons use `pb-console-helper`, which a deploy installs (`bash pi/deploy.sh`; no password since 30 Oct 2026, `pb-deploy` sudoers rule). Until then the page says so and those buttons fail; everything else works.
 
 ## What it does
 

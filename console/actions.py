@@ -273,18 +273,21 @@ def build(kind, args):
 
     # -- phase 6: Pi deploy ----------------------------------------------------------------------
     if kind == 'deploy':
-        pw = args.get('password')
+        # Since 30 Oct 2026 the Pi lets deploy.sh install without a password
+        # (pi/conf/pb-deploy.sudoers), so the password is optional: only a Pi without
+        # that rule yet needs one, which goes to sudo -S through stdin.
+        pw = args.get('password') or ''
         dry = args.get('dry_run') is True
-        if not isinstance(pw, str) or not pw or len(pw) > 200 or '\n' in pw or '\r' in pw:
+        if not isinstance(pw, str) or len(pw) > 200 or '\n' in pw or '\r' in pw:
             raise Invalid("deploy: the Pi's password")
-        argv = [procs.find_bash(), 'pi/deploy.sh', '--sudo-stdin'] + (['--dry-run'] if dry else [])
+        argv = [procs.find_bash(), 'pi/deploy.sh'] + (['--sudo-stdin'] if pw else []) + (['--dry-run'] if dry else [])
         what = ('Dry run: copy pi/ to the Pi and list what would change (nothing installed).' if dry else
                 'Deploy pi/ to the Pi: install what changed and restart what needs it. If listener files or '
                 "config.env changed, the listener restarts and the board goes dark for a moment. The laptop's "
                 'pi/config.env is installed as the Pi\'s.')
         return Action('deploy%s' % (' --dry-run' if dry else ''), what,
-                      lambda app: procs.local(argv, stdin=pw + '\n', env={'PB_HOST': app.remote.host}),
-                      shown='bash pi/deploy.sh --sudo-stdin%s' % (' --dry-run' if dry else ''),
+                      lambda app: procs.local(argv, stdin=(pw + '\n') if pw else '', env={'PB_HOST': app.remote.host}),
+                      shown='bash pi/deploy.sh%s%s' % (' --sudo-stdin' if pw else '', ' --dry-run' if dry else ''),
                       confirm=True, busy=not dry, timeout=600)
     if kind == 'pull-file':
         path = args.get('path')
