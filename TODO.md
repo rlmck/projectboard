@@ -23,22 +23,19 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 
 ## App design and features
 7. **Revamp the profile stuff:** when the app loads, signed-out users should be offered Create account first, not Sign in (they won't have an account yet). Consider switching the 4-word passphrase to a PIN (Claude Code to suggest). Be careful with existing users.
-8. **Remove stars from climbs** (carried over from the old system). Keep benchmarks.
-9. **Move the PWA's Cast button** to the same height as the title, on the right-hand side.
-10. **Revamp filtering:** sort by new, and lots more (scope to be worked out).
-11. **Change the way the feet indicators work** (see open question 1 in `docs/cast-contract.md`).
-12. **Creating a problem on the kiosk:** open question (whether and how).
-13. **Circuits Phase 2:** the cast screen, `cast_circuit`/`stop` broadcasts, `circuit_logs`, the Pi listener update (`docs/circuits-phase2.md`).
-14. **Problem name/setter editing** (changes the cast key: contract open questions).
-15. **Wall screen, faster updates** (parked 27 Oct): check every 5 min instead of hourly and apply a waiting update after ~2 min untouched, keeping the chosen problem and scroll position.
-16. **More challenges** (a row in `challenges`), monthly boards, a metronome, casting the circuit at Start once Circuits Phase 2 exists.
-17. **Benchmarks:** admins can already mark a problem as a benchmark (detail ⋮ → "Mark as benchmark"); clarify what more is wanted.
+8. **Revamp filtering:** sort by new, and lots more (scope to be worked out).
+9. **Creating a problem on the kiosk:** open question (whether and how).
+10. **Circuits Phase 2:** the cast screen, `cast_circuit`/`stop` broadcasts, `circuit_logs`, the Pi listener update (`docs/circuits-phase2.md`).
+11. **Problem name/setter editing** (changes the cast key: contract open questions).
+12. **Wall screen, faster updates** (parked 27 Oct): check every 5 min instead of hourly and apply a waiting update after ~2 min untouched, keeping the chosen problem and scroll position.
+13. **More challenges** (a row in `challenges`), monthly boards, a metronome, casting the circuit at Start once Circuits Phase 2 exists.
+14. **Benchmarks:** admins can already mark a problem as a benchmark (detail ⋮ → "Mark as benchmark"); clarify what more is wanted.
 
 ## PB Console
-18. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
+15. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
 
 ## Bugs
-19. **Known bugs to triage:** `docs/codebase-overview.md` §13.
+16. **Known bugs to triage:** `docs/codebase-overview.md` §13.
 
 ## Not now
 Don't build yet: Circuits Phase 3 (PBs, leaderboards), tags, session/logbook tracking beyond ticks, the Flutter migration.

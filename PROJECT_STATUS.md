@@ -2,8 +2,8 @@
 
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 15 KB: the 5 newest session entries live here, older ones in `docs/log/` (October 2026: `docs/log/2026-10.md`).
 
-## Current state (as of 2026-10-29)
-- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). Since 29 Oct its service-worker `CACHE` is stamped by `build.sh` (`pb-` + a hash of the shipped files): `pb-49c7ccc80d` live since 29 Oct (was `pb-v119`). Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
+## Current state (as of 2026-10-30)
+- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). Since 29 Oct its service-worker `CACHE` is stamped by `build.sh` (`pb-` + a hash of the shipped files): `pb-e0bd53c890` live since 30 Oct (no star ratings, Cast beside the title, the feet rule). Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
 - **Deploying (29 Oct):** ship by default (commit + push `main`); "staging first" pushes `dev` only; migrations, Pi deploys, deleting data, force pushes and secrets stay gated; rollback = `git revert` + push. `build.sh` is the Cloudflare build gate (three-places rule, syntax check). A pre-commit hook scans for secrets. Slash commands `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`. Work locally on `main`.
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs; about 0.25–0.45 s from cast to LEDs). People use it: 50 casts on the evening of 26 Oct, 114 in the 3 days to 28 Oct. **Every hold's LED is checked on the wall** (28 Oct, `pb-ledmap`); three app labels were shifted and fixed by db/32 (188 real holds). **Mirrored casts are still unchecked.**
 - **The Pi 4** (Raspberry Pi OS Lite 64-bit, trixie, 2 GB; on the gym Wi-Fi and Tailscale as `projectboard`) runs the listener with self-healing, watchdogs and night mode 23:00–08:00 (`pi/`, `pi/README.md`). The night switch was seen working both ways on 27 Oct. The R8 acceptance tests are still to do. The idle pattern after 20 minutes is **`wave`** (ten patterns in `pi/listener/patterns/`, switched live with `pb-idle`). Wi-Fi: a random hardware address per join, a `pb-netwatch` watchdog (v2) and a rescue hotspot (`projectboard-rescue`).
@@ -15,6 +15,8 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **Deploy policy (29 Oct 2026):** ship by default to `main` once checks pass; "staging first" = `dev` only, with the staging URL; no rule about keeping `dev` and `main` level. Gated: DB migrations, Pi deploys (busy check), deleting data, force pushes, secrets. Rollback = `git revert` + push, never the Cloudflare dashboard. `CACHE` is stamped by the build from the shipped files' git blob ids (not the commit hash, so docs-only pushes don't make every phone re-download the app). Replaces the 19 Oct "two confirmations" rule.
 - Accounts are nickname + 4-word passphrase, no personal data, under-18s welcome, Ranks opt-in (`profiles.is_public`); a lost passphrase is reset by an admin (logged). Google sign-in removed. All 7 earlier accounts were migrated (18 Oct). The gym is the data controller.
 - Points only for benchmark climbs (db/27).
+- **Feet rule (30 Oct 2026):** every problem is Any feet (default), Orange feet only or Black feet only (`problems.feet_mode`, db/33). Any lights no sign; Orange lights B2 (LED 25), Black lights B1 (LED 26), never mirrored; `hold2`/`hold21` are never in a hold list. Migrated: both signs or none → Any, one sign → that rule. Cast contract §6.5.
+- Star ratings from the old system are gone from the app (30 Oct 2026); `problems.stars` / `ticks.stars` stay in the table, unused.
 - **Pat Burner challenge** (19 Oct): 3 sets × 3 reps to failure, phone-timed, score = total seconds held, best attempt per user, earlier wins a tie, opt-in board, compare up to 3; self-reported, admins delete attempts; reps capped at 1200 s; offline saves retried for 14 days; a generic `challenges` table with the protocol as data.
 - The Pi side was rewritten from scratch for the Pi 4 and lives in `pi/` (committed).
 - PB Console's Data phase (13) writes through direct Postgres with `db/.env`, never the service key in the console (28 Oct).
@@ -24,6 +26,8 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
+- **Ross: deploy the Pi listener for the feet rule** (`! bash pi/deploy.sh`: it needs the Pi's sudo password). Until then the Pi lights no feet sign at all, since db/33 took the signs out of the hold lists. Then on the wall: an Orange-only problem lights B2 only, Black-only B1 only, Any neither; the same mirrored (also the first mirrored-cast check).
+- Ross: decide whether Claude may deploy to the Pi and apply migrations without him: a `NOPASSWD` sudoers rule for `pi/deploy.sh`'s installer, and CLAUDE.md rule 2 / `.claude/commands/pi-deploy.md` changed to match. Claude was blocked from making either change itself (30 Oct).
 - Ross: behind the board on 30 Oct, find out why the wall screen is black even though the Pi is sending it a picture (monitor power/standby, cables, input, relays).
 - Ross: the relay module (eBay) and 74AHCT125 level shifter (Amazon) to arrive.
 - Ross: an on-site check of the cast geofence centre (a non-admin phone by the board and at the far end of the gym).
@@ -32,16 +36,21 @@ The ordered to-do list (next steps, backlog, and what not to build yet) lives in
 
 ## Open questions
 Details in `docs/cast-contract.md` → "Open questions".
-1. Feet indicators (B1/B2, `hold2`/`hold21`, LEDs 26/25): light them as listed in the problem (as Gareth's code did, and as now), or drive them from `feet_mode`? What do both on mean?
-2. How does the board get cleared or switched off? There's no clear/stop event (idle and night cover it today).
-3. Should the phone know whether the Pi is online or got the cast? Today it always says "Cast: X" once Supabase accepts it, including at night.
-4. Stale, duplicate or rapid casts: the listener shows the latest; is a rate limit wanted? (Casts carry no id or timestamp.)
-5. Is the problem name still the cast key once names become editable?
-6. Hardware: what each relay will switch; final cast brightness (the stopgap used 0.5).
-7. Should the wall show circuits too (left out: they can't be cast yet)?
+1. How does the board get cleared or switched off? There's no clear/stop event (idle and night cover it today).
+2. Should the phone know whether the Pi is online or got the cast? Today it always says "Cast: X" once Supabase accepts it, including at night.
+3. Stale, duplicate or rapid casts: the listener shows the latest; is a rate limit wanted? (Casts carry no id or timestamp.)
+4. Is the problem name still the cast key once names become editable?
+5. Hardware: what each relay will switch; final cast brightness (the stopgap used 0.5).
+6. Should the wall show circuits too (left out: they can't be cast yet)?
 
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-10-30, Claude Code (stars, Cast button, feet rule: TODO 8, 9, 11).**
+  - **Changed:** star ratings removed (list, detail, info sheet, wall). Cast moved from the header to the right of the problem's title, deep pink, the board unmoved; long names wrap then ellipse beside it. Feet rule: three options on Create/Edit, a badge on the problem view, a Feet row on the info sheet; the listener lights the sign from `feet_mode`. db/33 applied by Claude through the new local `db/apply.py` (dry run first): 220 any, 26 black, 19 orange, no sign left in a hold list. Contract §6.5 and open question 7 closed; CLAUDE.md data trap added.
+  - **Tested:** 360/375/390/412 px phones and `/?wall` locally; Pi tests 92 pass.
+  - **Live:** `bf3c993`, `aadc1ba`, `d1c8116`; CACHE `pb-e0bd53c890` seen live.
+  - **Left:** the Pi deploy (needs Ross's sudo password; busy check at 09:00 was clear), then the wall test (Waiting on).
 
 - **2026-10-30, chat (one to-do list).**
   - **Changed:** new `TODO.md` at the root: one flat, ordered list (top = now), built from the old Next and Backlog sections, which are gone from this file. "What's on my to-do list?" shows the top 3; Ross adds, removes and reorders by asking. `CLAUDE.md`, `/start` and `/wrap` read and update it. No app change, so the CACHE stays.
@@ -63,4 +72,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
 
 - **2026-10-28 late evening, Claude Code (PB Console look and feel).** The overview became a tiled dashboard with a grouped sidebar and a Ctrl+K palette (`console/static/dash.js`, `tiles.metrics()`); the webcam stops when the overview is hidden. Noticed: about 3,460 journal errors in 24 h (nearly all kernel) and 19 self-healing actions around 15:20 (network down, no IPv4). Decided: phase 13 writes through direct Postgres. Full entry: `docs/log/2026-10.md`.
 
-- **2026-10-28 evening, Claude Code (PB Console, phases 5–12, 14, 15).** Built Config, Deploy (`deploy.sh --sudo-stdin`, the drift check, pulling Pi-only files with secrets stripped), Release, LED map, Test cast, Activity, Tests (R8), Backups, Power (disabled), Runbook; new helper verbs, each refusing anything off its list. Found the night of 27 Oct switched correctly both ways. Full entry: `docs/log/2026-10.md`.
