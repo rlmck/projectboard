@@ -498,12 +498,7 @@
       letter-spacing: 0.02em;
     }
 
-    /* ── Stars ───────────────────────────────────────────────────────── */
-    .stars { letter-spacing: 1px; font-size: 13px; line-height: 1; }
-    .star-on { color: var(--gold); }
-    .star-off { color: var(--star-off); }
-
-    /* Subtle "sent" tick on a list card, sits next to the stars */
+    /* Subtle "sent" tick on a list card, at the end of the meta line */
     .tick-flag { color: var(--start); font-size: 13px; font-weight: 800; line-height: 1; opacity: 0.85; }
 
     /* "New" badge (newBadgeHtml): problems set in the last 2 weeks */

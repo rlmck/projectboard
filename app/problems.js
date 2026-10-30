@@ -34,7 +34,6 @@
             ${p.is_benchmark ? benchMarkSvg() : ''}
             ${newBadgeHtml(p)}
             <span class="meta-setter">${escHtml(setterName(p))}</span>
-            ${starsHtml(p.stars)}
             ${isTicked(p.id) ? '<span class="tick-flag" title="Sent">✓</span>' : ''}
           </div>
         </div>
@@ -122,7 +121,6 @@
           <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
           ${newBadgeHtml(p)}
           <span class="meta-setter">by ${escHtml(setterName(p))}</span>
-          ${starsHtml(p.stars)}
           ${p.is_benchmark ? `<span class="bench-badge">${benchMarkSvg()}Benchmark</span>` : ''}
           ${(myTicksNormal.has(String(p.id)) && myTicksMirrored.has(String(p.id))) ? `<span class="both-badge">✓ both sides</span>` : ''}
         </div>
@@ -220,17 +218,12 @@
     const p = currentProblem;
     if (!p) return;
     // No comments section: comments are switched off (db/30, plan.md D4).
-    const stars = Math.max(0, Math.min(3, Number(p.stars) || 0));
     document.getElementById('info-title').textContent = 'Problem info';   // the circuit sheet shares this modal
 
     document.getElementById('info-body').innerHTML = `
       <div class="info-row">
         <div class="info-label">Consensus grade</div>
         <div class="info-value"><span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span></div>
-      </div>
-      <div class="info-row">
-        <div class="info-label">Rating</div>
-        <div class="info-value">${starsHtml(stars)} &nbsp;${stars}/3</div>
       </div>
     `;
     document.getElementById('info-modal').classList.add('show');

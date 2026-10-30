@@ -23,7 +23,7 @@
   --int: #3b82f6;
   --finish: #ef4444;
   --feet: #f59e0b;
-  --gold: #fbbf24;  /* stars, the challenge clock in rests */
+  --gold: #fbbf24;  /* the benchmark mark, the challenge clock in rests */
   --start-text: #4ade80;  /* hold colours as text on a dark surface */
   --int-text: #60a5fa;
   --finish-text: #f87171;
@@ -46,7 +46,6 @@
   --success-text: #4ade80;
   --mirror-text: #60a5fa;  /* the mirror toggle and mirrored-tick labels */
   --fave: #f43f5e;
-  --star-off: #44445a;
   --finish-zone-text: #fca5a5;
 
   /* Badges */

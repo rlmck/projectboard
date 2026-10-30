@@ -68,8 +68,7 @@
       <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
       ${p.is_benchmark ? benchMarkSvg() : ''}
       ${newBadgeHtml(p)}
-      <span class="meta-setter">${escHtml(setterName(p))}</span>
-      ${starsHtml(p.stars)}`;
+      <span class="meta-setter">${escHtml(setterName(p))}</span>`;
   }
 
   // The grade sections' keys and labels. Unknown grades sort last (gradeRank).

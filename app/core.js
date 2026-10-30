@@ -67,14 +67,8 @@
   }
 
   // ── Small render helpers ─────────────────────────────────────────────────────
-  function starsHtml(n) {
-    n = Math.max(0, Math.min(3, Number(n) || 0));
-    let out = '';
-    for (let i = 0; i < 3; i++) {
-      out += i < n ? '<span class="star-on">★</span>' : '<span class="star-off">☆</span>';
-    }
-    return `<span class="stars" title="${n} star${n !== 1 ? 's' : ''}">${out}</span>`;
-  }
+  // (Star ratings from the old system were removed on 30 Oct 2026; problems.stars
+  // is still in the database but the app no longer reads it.)
 
   // The benchmark mark: a solid gold disc with a star cut out of the centre (one
   // path; evenodd makes the star a hole, so the background shows through). Used on
