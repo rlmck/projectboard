@@ -410,6 +410,12 @@
 
   document.getElementById('create-save').addEventListener('click', saveProblem);
 
+  // Live LEDs while setting (authoring.js): Show on board after a takeover (the
+  // phone's note and the wall's), and the session ends when the app goes to the
+  // background (the next tap starts a new one).
+  document.addEventListener('click', e => { if (e.target.closest('.lights-show')) previewShowAgain(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') previewEnd(); });
+
   // ── Circuits wiring ─────────────────────────────────────────────────────────
   // List: search + open detail + create (the grade tabs are wired with the problems').
   const circuitSearchInput = document.getElementById('circuit-search');

@@ -52,6 +52,15 @@ changed() {   # changed PATTERN...: did anything matching change?
 }
 run() { if [ $DRY -eq 1 ]; then echo "   would run: $*"; else echo "   $*"; "$@"; fi; }
 
+# Every listener module must be on one of the two lists below (circuit.py was missed
+# once, 30 Oct 2026, and the listener didn't start): refuse a deploy that misses one.
+for f in "$SRC"/listener/*.py; do
+    case "$(basename "$f")" in
+        board.py|circuit.py|supa.py|power.py|renderer.py|pb_listener.py|leds.py|mode.py) ;;
+        *) echo "!! listener/$(basename "$f") isn't in install.sh's file lists: add it"; exit 1 ;;
+    esac
+done
+
 echo "== Files"
 for f in board.py circuit.py supa.py power.py renderer.py; do put "listener/$f" "/opt/projectboard/listener/$f" 0644; done
 for f in "$SRC"/listener/patterns/*.py; do
@@ -101,6 +110,28 @@ elif [ ! -f /etc/projectboard/config.env ]; then
     echo "!! Fill in SUPABASE_URL and SUPABASE_ANON_KEY (sudo nano /etc/projectboard/config.env),"
     echo "!! or put a filled-in pi/config.env on the laptop, and deploy again."
     exit 1
+fi
+# The wall key (db/35): the wall screen sends it with a problem made on the kiosk, so
+# only the wall can make one. 32 random bytes, made here once, readable by root and
+# the kiosk user only; never copied off the Pi, printed or committed. kiosk.service
+# hands it to the page in the URL's #fragment (which never leaves the browser). The
+# database keeps only its SHA-256, printed below (a hash, not the key). To replace it:
+# delete the file on the Pi, deploy, and put the new hash in wall_keys (db/README.md).
+WALL_KEY=/etc/projectboard/wall-key
+if [ ! -s "$WALL_KEY" ]; then
+    CHANGED+=("$WALL_KEY")
+    if [ $DRY -eq 1 ]; then
+        echo "   would create $WALL_KEY"
+    else
+        ( umask 077; head -c 32 /dev/urandom | base64 -w0 | tr '+/' '-_' | tr -d '=' > "$WALL_KEY.new" )
+        chown "root:$(id -gn kiosk)" "$WALL_KEY.new"
+        chmod 0640 "$WALL_KEY.new"
+        mv "$WALL_KEY.new" "$WALL_KEY"
+        echo "   created $WALL_KEY"
+    fi
+fi
+if [ -s "$WALL_KEY" ]; then
+    echo "   wall key sha256: $(tr -d '\n' < "$WALL_KEY" | sha256sum | cut -d' ' -f1)"
 fi
 [ ${#CHANGED[@]} -eq 0 ] && echo "   nothing changed"
 
@@ -156,7 +187,7 @@ fi
 if changed '/opt/projectboard/ops/board-cam.sh' '/etc/systemd/system/board-cam.service'; then
     run systemctl restart board-cam
 fi
-if changed '/etc/systemd/system/kiosk.service' '/etc/systemd/system/kiosk.service.d/*'; then
+if changed '/etc/systemd/system/kiosk.service' '/etc/systemd/system/kiosk.service.d/*' "$WALL_KEY"; then
     echo "   kiosk unit changed: it applies the next time pb-mode starts it (not restarting the screen now)"
 fi
 

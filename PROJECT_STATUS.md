@@ -4,11 +4,12 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 
 ## Current state (as of 2026-10-30)
 - **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). Since 29 Oct its service-worker `CACHE` is stamped by `build.sh` (`pb-` + a hash of the shipped files): `pb-e0bd53c890` live since 30 Oct (no star ratings, Cast beside the title, the feet rule). Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
-- **Deploying (29 Oct):** ship by default (commit + push `main`); "staging first" pushes `dev` only; migrations, Pi deploys, deleting data, force pushes and secrets stay gated; rollback = `git revert` + push. `build.sh` is the Cloudflare build gate (three-places rule, syntax check). A pre-commit hook scans for secrets. Slash commands `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`. Work locally on `main`.
+- **Deploying:** ship by default; migrations and Pi deploys done by Claude end to end (Decisions). `build.sh` is the Cloudflare build gate; a pre-commit hook scans for secrets. Slash commands `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`.
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs; about 0.25–0.45 s from cast to LEDs). People use it: 50 casts on the evening of 26 Oct, 114 in the 3 days to 28 Oct. **Every hold's LED is checked on the wall** (28 Oct, `pb-ledmap`); three app labels were shifted and fixed by db/32 (188 real holds). **Mirrored casts are still unchecked.**
 - **The Pi 4** (Raspberry Pi OS Lite 64-bit, trixie, 2 GB; on the gym Wi-Fi and Tailscale as `projectboard`) runs the listener with self-healing, watchdogs and night mode 23:00–08:00 (`pi/`, `pi/README.md`). The night switch was seen working both ways on 27 Oct. The R8 acceptance tests are still to do. The idle pattern after 20 minutes is **`wave`** (ten patterns in `pi/listener/patterns/`, switched live with `pb-idle`). Wi-Fi: a random hardware address per join, a `pb-netwatch` watchdog (v2) and a rescue hotspot (`projectboard-rescue`).
 - **Circuits can be cast (Phase 2, 30 Oct 2026)** from phones and the wall screen (its Circuits page): Cast → speed (Slow 5 s / Med 3 s / Fast 2 s) and Loop → a 5 s countdown with beeps, the move count and a big Stop, while the Pi runs Ross's "Pulse and fade" look itself (`pi/listener/circuit.py`). Signed-in runs go to `circuit_logs`. The Play preview is gone. Contract §8. Not yet seen on the real wall.
-- **The wall kiosk** (`kiosk.service`: cage + Chromium on `HDMI-A-2`, opening `/?wall`) runs on the 1280×720 touchscreen; it picks up a deploy within the hour, at its next idle. Not yet tried by hand on the touchscreen.
+- **The wall kiosk** (`kiosk.service`: cage + Chromium on `HDMI-A-2`, opening `/?wall` with the wall key in the URL fragment) runs on the 1280×720 touchscreen; it picks up a deploy within the hour, at its next idle. Not yet tried by hand on the touchscreen.
+- **Create on the wall, live LEDs while setting (30 Oct 2026):** the wall's Create saves as The Hangout (db/35, the wall key); taps on Create/Edit light the board (contract §9). Not yet tried on the wall.
 - **Hardware:** temporary wiring, loose on a ledge behind the board. Power enters the strip at six points (5.5 V under load, white at the far end). Two YU0510 5 V 10 A supplies (both needed to start the strip). No relays or level shifter yet (3.3 V data direct works); the 2-channel relay module and the 74AHCT125 are on order; a junction box and wiring parts are bought. Wiring: `pi/README.md` → "Wiring". A USB webcam streams the back of the board to Tailscale devices only.
 - **PB Console** (`console/`, `bash console/start.sh`): health dashboard, services, board controls, logs, config, Pi deploy with a drift check, release (Ship / Staging / Rollback since 29 Oct), LED map, test cast, activity, the R8 checklist, backups, runbook. The Pi-side helper is deployed. Phase 13 (Data) isn't built; phase 14 (Power) waits for the relays.
 
@@ -24,12 +25,14 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **Pat Burner challenge** (19 Oct): 3 sets × 3 reps to failure, phone-timed, score = total seconds held, best attempt per user, earlier wins a tie, opt-in board, compare up to 3; self-reported, admins delete attempts; reps capped at 1200 s; offline saves retried for 14 days; a generic `challenges` table with the protocol as data.
 - The Pi side was rewritten from scratch for the Pi 4 and lives in `pi/` (committed).
 - PB Console's Data phase (13) writes through direct Postgres with `db/.env`, never the service key in the console (28 Oct).
-- The Supabase MCP server (read-only, this project only) may be used to check live schema and data; results never go into repo files; migrations stay Ross's, in the SQL editor.
+- **The Hangout (30 Oct 2026):** the gym's setter, text only (no profile, no Ranks, no points); the wall creates as it with no sign-in, proven by the Pi's wall key. Live LEDs while setting: geofenced on phones, admins too; a cast overrides (Show on board). Comments stay off.
+- The Supabase MCP server (read-only, this project only) may be used to check live schema and data; results never go into repo files; migrations go through `db/apply.py`.
 
 ## To-do
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
+- **Ross: try creating a problem on the kiosk and a phone with live LEDs** (live 30 Oct): the wall's Create tab (keyboard, Save, Light it up), a phone's Create and an admin Edit at the gym, a cast while setting (Show on board).
 - **Ross: try a circuit cast on the wall before opening** (live 30 Oct), from a phone and from the wall screen's Circuits page: the countdown, the look at each speed, Stop, a loop, the top of a run done once, a match (Pat Burner moves 6/7); whether the amber `(255,110,0)` reads as amber on the strip.
 - **Ross: test the feet rule on the wall** (the listener is deployed, 30 Oct): Orange-only lights B2 only, Black-only B1 only, Any neither; the same mirrored (the first mirrored-cast check).
 - Ross: the relay module (eBay) and 74AHCT125 level shifter (Amazon) to arrive.
@@ -47,6 +50,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-10-30 evening, Claude Code (create on the kiosk, live LEDs while setting: TODO 9).**
+  - **Changed:** 169 gym problems' four setter spellings → **The Hangout** (text only, no profile). The wall's **Create** page (on-screen keyboard; saved as The Hangout by `wall_create_problem()` with the Pi's wall key, rate-limited; 5 min untouched asks then discards). **Live LEDs while setting** on phones and the wall (`preview_holds`, contract §9; a cast takes over until Show on board). Busy check counts a preview; `install.sh` refuses unlisted listener files.
+  - **Applied/deployed:** db/35 (dry run + 15-case rolled-back test, then live); the Pi at 14:21 (wall key made; the kiosk's new URL applies when it next starts).
+  - **Tested:** Pi 125, console 74, build; phone 360/390/412 and `/?wall` headless (broadcasts, RPCs, socket faked); listener dry-run against the live channel.
+  - **Left:** Ross tries it (Waiting on).
 
 - **2026-10-30 afternoon, Claude Code (circuits follow-ups, Activity names).**
   - **Changed:** the circuit Play preview removed (code, styles, tokens); the circuits list's inert Exclude Done pill removed (Ross: "done" = done both sides, problems only; circuits later). The wall screen has a Circuits page (list, numbered holds over the board, Light it up → the same Cast sheet; no idle during a run; night closes the sheet). No mirrored circuits (decision). PB Console Activity: circuit runs (how it ended, moves, speed, loop) from a new `circuit ended:` journal line, and members' nicknames from a private `cast_log` (db/34, applied: insert-only, no API reads; Ross chose it over putting names in the public broadcast); `privacy.html` updated; the busy check counts a running circuit.
@@ -72,9 +81,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
 - **2026-10-30, chat (one to-do list).**
   - **Changed:** new `TODO.md` at the root: one flat, ordered list (top = now), built from the old Next and Backlog sections, which are gone from this file. "What's on my to-do list?" shows the top 3; Ross adds, removes and reorders by asking. `CLAUDE.md`, `/start` and `/wrap` read and update it. No app change, so the CACHE stays.
   - **Left:** nothing.
-
-- **2026-10-29 evening, Claude Code (the wall screen is black).**
-  - **Found:** the Pi side is healthy. `kiosk` is up with no crashes, it's day mode with no screen-off flag, and HDMI-A-2 is connected (EDID: ASUS VT168), 1280×720, DPMS On. A `grim` screenshot taken as the `kiosk` user shows the wall page drawn correctly. So the fault is in the monitor or its power: its standby/power button, the HDMI/power cables, its input source, or the box's relays (BCM 23/24) if they feed the screen.
-  - **Odd:** `/sys/class/graphics/fb0/blank` read `4` (powerdown) on a fresh boot, with `consoleblank=0`; it was cleared to `0` with `pb-console-helper screen off` then `screen on`. That doesn't seem to be the cause (Chromium draws either way), but if it keeps coming back, `pb-mode` could clear it before starting the kiosk.
-  - **Changed:** nothing in the repo or on the Pi apart from that screen toggle.
-  - **Left:** Ross checks behind the board on 30 Oct.

@@ -1,18 +1,29 @@
 """The LED thread: the only thing that writes to the strip while the listener runs.
 
-Four states (night always wins):
+Five states (night always wins):
 - cast:  a problem is lit (a cast cuts straight in, no fade);
 - circuit: a circuit run is animating (circuit.py: countdown, the moving holds,
          the finish), from a cast_circuit; a stop with its run token (or none),
-         its finish, or CIRCUIT_MAX_S (a forgotten loop) crossfades into idle.
-         A problem cast or another circuit cuts straight in;
+         its finish, or CIRCUIT_MAX_S (a forgotten loop) crossfades into idle
+         (or back to a preview still going). A problem cast or another circuit
+         cuts straight in;
+- preview: the holds someone is setting on Create/Edit, from preview_holds
+         (contract 9), lit at once on every change. It ends with an `end`
+         message, after PREVIEW_TIMEOUT_S with no message (the app sends a
+         keep-alive), at night, or when SIGUSR1 asks for idle, and then goes
+         idle. A problem cast takes the board from it, and so does another
+         person's preview (the latest wins): that session is then "taken over"
+         and its messages are ignored until one says `show` (the app's Show on
+         board). A circuit cast wins too, but the preview waits and comes back
+         when the run ends, if it's still going;
 - idle:  an idle pattern (patterns/: IDLE_PATTERN, one pattern or a cycle),
          from IDLE_AFTER_S after the last cast, and at start and at the end
          of the night; it fades in over 1.5 s. With IDLE_ANIMATION=off the
          strip is just cleared;
 - night: a 3 s fade to black, then the strip cleared.
 
-The event loop never waits on it: cast(), circuit(), stop_circuit(), set_night(), idle_now(),
+The event loop never waits on it: cast(), circuit(), stop_circuit(), preview(), preview_end(),
+set_night(), idle_now(),
 set_pattern() (pb-idle: a pattern, off, brightness), set_benchmarks() and
 stop() only post a command and
 wake the thread. step() does one round of work and
@@ -37,7 +48,9 @@ import board
 import patterns
 from patterns.common import blend, dim, smooth
 
-CAST, RUN, IDLE, NIGHT = 'cast', 'circuit', 'idle', 'night'
+CAST, RUN, IDLE, NIGHT, PREVIEW = 'cast', 'circuit', 'idle', 'night', 'preview'
+TAKEN_KEEP = 3600         # s a taken-over preview session is remembered (it needs `show` to come back)
+TAKEN_MAX = 50
 FADE_TO_IDLE = 1.5        # s, the lit problem (or black) crossfading into the idle pattern
 FADE_TO_NIGHT = 3.0       # s, whatever is showing fading to black at the start of the night
 # Animation frames write pixels 0-247 only: 6 ms at 1 MHz instead of 29 ms for
@@ -67,6 +80,10 @@ class Renderer:
         self.circ = None            # the circuit.Run animating (state RUN)
         self.run_t0 = None
         self.run_full = False       # the run's first frame clears the whole strip
+        self.pv_timeout = float(cfg.get('PREVIEW_TIMEOUT_S') or 60)
+        self.pv = None              # the preview going: {'token', 'frame', 'last'} (shown, or waiting on a circuit)
+        self.pv_taken = {}          # token -> when: sessions a cast or another preview took the board from
+        self.pv_night = set()       # sessions already logged as not shown at night
         self.idle_args = dict(brightness=float(cfg.get('IDLE_BRIGHTNESS') or 1.0),
                               max_ma=float(cfg.get('IDLE_MAX_AMPS') or 2.0) * 1000,
                               ma_per_channel=float(cfg.get('MA_PER_CHANNEL') or 20))
@@ -114,6 +131,14 @@ class Renderer:
     def stop_circuit(self, token=None):
         """End the running circuit: the one with this run token, or any with None."""
         self._post(('stop', token))
+
+    def preview(self, token, frame, show=False):
+        """preview_holds: session `token` is setting these LEDs ({led: rgb}, already scaled).
+        show: the app's Show on board, which takes the board back after a takeover."""
+        self._post(('preview', (token, frame, bool(show))))
+
+    def preview_end(self, token):
+        self._post(('preview_end', token))
 
     def set_night(self, night):
         self._post(('night', bool(night)))
@@ -226,6 +251,7 @@ class Renderer:
                     self.log('LEDs: cast not shown, night')
                     continue
                 self._end_circuit(now, 'replaced')
+                self._take_preview(now, 'a problem cast')
                 self.state, self.fade, self.cast_at, self.circ = CAST, None, now, None
                 self._write(arg, True)
             elif kind == 'circuit':
@@ -233,17 +259,26 @@ class Renderer:
                     self.log('LEDs: circuit not shown, night')
                     continue
                 self._end_circuit(now, 'replaced')
+                if self.state == PREVIEW and self.pv:
+                    self.log('LEDs: preview %s waits for the circuit' % self.pv['token'])
                 self.state, self.fade, self.circ, self.run_t0, self.run_full = RUN, None, arg, now, True
                 self.next_frame = now
             elif kind == 'stop':
                 if self.state == RUN and (arg is None or arg == self.circ.token):
                     self._end_circuit(now, 'stopped')
-                    self._go_idle(now, 'circuit %r stopped' % self.circ.name)
+                    self._after_run(now, 'circuit %r stopped' % self.circ.name)
                 elif self.state == RUN:
                     self.log('LEDs: stop for another run ignored')
+            elif kind == 'preview':
+                self._preview(now, *arg)
+            elif kind == 'preview_end':
+                self._preview_end(now, arg)
             elif kind == 'night':
                 if arg and self.state != NIGHT:
                     self._end_circuit(now, 'night')
+                    if self.pv:
+                        self.log('LEDs: preview %s ended: night' % self.pv['token'])
+                        self.pv = None
                     self.state = NIGHT
                     self.log('LEDs: night, fading out')
                     if self.shown:
@@ -252,9 +287,13 @@ class Renderer:
                         self.fade = None
                         self._write({}, True)
                 elif not arg and self.state == NIGHT:
+                    self.pv_night.clear()
                     self._go_idle(now, 'night over')
             elif kind == 'idle' and self.state not in (NIGHT, IDLE):
                 self._end_circuit(now, 'sent to idle')
+                if self.pv:
+                    self.log('LEDs: preview %s ended: sent to idle' % self.pv['token'])
+                    self.pv = None
                 self._go_idle(now, 'asked for')
             elif kind == 'pattern':
                 self._set_pattern(arg, now)
@@ -264,6 +303,11 @@ class Renderer:
             self._go_idle(now, 'start')
         if self.state == CAST and now - self.cast_at >= self.idle_after:
             self._go_idle(now, '%d s since the last cast' % self.idle_after)
+        if self.pv and now - self.pv['last'] >= self.pv_timeout:
+            self.log('LEDs: preview %s ended: no message for %d s' % (self.pv['token'], self.pv_timeout))
+            self.pv = None
+            if self.state == PREVIEW:
+                self._go_idle(now, 'the preview timed out')
 
         if self.state == NIGHT:
             return self._fade_out(now)
@@ -271,7 +315,67 @@ class Renderer:
             return self._run_frame(now)
         if self.state == CAST:
             return min(MAX_SLEEP, self.cast_at + self.idle_after - now)
+        if self.state == PREVIEW:
+            return MAX_SLEEP
         return self._idle_frame(now)
+
+    # -- the preview (contract 9) ---------------------------------------------
+
+    def _preview(self, now, token, frame, show):
+        if self.state == NIGHT:
+            if token not in self.pv_night:
+                self.pv_night.add(token)
+                self.log('LEDs: preview %s not shown, night' % token)
+            return
+        for t in [t for t, at in self.pv_taken.items() if now - at > TAKEN_KEEP]:
+            del self.pv_taken[t]
+        if token in self.pv_taken:
+            if not show:
+                return                      # taken over: only Show on board brings it back
+            del self.pv_taken[token]
+        mine = bool(self.pv) and self.pv['token'] == token
+        if self.pv and not mine:
+            self._take(self.pv['token'], now, 'another preview')
+        self.pv = {'token': token, 'frame': frame, 'last': now}
+        if self.state == RUN:
+            if not mine:
+                self.log('LEDs: preview %s waits for the circuit' % token)
+            return
+        if not mine or self.state != PREVIEW:
+            self.log('LEDs: preview %s%s: %d LEDs' % (token, ', shown again' if show else '', len(frame)))
+        if self.state != PREVIEW or frame != self.shown:
+            self.state, self.fade, self.circ = PREVIEW, None, None
+            self._write(frame, True)
+
+    def _preview_end(self, now, token):
+        self.pv_taken.pop(token, None)
+        if not self.pv or self.pv['token'] != token:
+            return
+        self.pv = None
+        self.log('LEDs: preview %s ended' % token)
+        if self.state == PREVIEW:
+            self._go_idle(now, 'the preview ended')
+
+    def _take(self, token, now, why):
+        """A session loses the board: its messages are ignored until one says `show`."""
+        self.pv_taken[token] = now
+        while len(self.pv_taken) > TAKEN_MAX:
+            del self.pv_taken[min(self.pv_taken, key=self.pv_taken.get)]
+        self.log('LEDs: preview %s taken over by %s' % (token, why))
+
+    def _take_preview(self, now, why):
+        if self.pv:
+            self._take(self.pv['token'], now, why)
+            self.pv = None
+
+    def _after_run(self, now, why):
+        """A circuit run ended: back to the preview that waited for it, if it's still going, else idle."""
+        if self.pv and now - self.pv['last'] < self.pv_timeout:
+            self.state, self.fade = PREVIEW, None
+            self.log('LEDs: preview %s back (%s)' % (self.pv['token'], why))
+            self._write(self.pv['frame'], True)
+        else:
+            self._go_idle(now, why)
 
     def _end_circuit(self, now, how):
         """A run that's showing ends: one line for PB Console's Activity (how, moves, time)."""
@@ -285,12 +389,12 @@ class Renderer:
         t = now - self.run_t0
         if t >= self.run_max:
             self._end_circuit(now, 'time limit')
-            self._go_idle(now, 'circuit %r ran %d s, the limit' % (self.circ.name, self.run_max))
+            self._after_run(now, 'circuit %r ran %d s, the limit' % (self.circ.name, self.run_max))
             return 0
         leds, done = self.circ.frame(t)
         if done:
             self._end_circuit(now, 'finished')
-            self._go_idle(now, 'circuit %r finished' % self.circ.name)
+            self._after_run(now, 'circuit %r finished' % self.circ.name)
             return 0
         out, _, _ = board.scale(leds, *self.cast_args)
         self._write(out, self.run_full)
@@ -325,7 +429,7 @@ class Renderer:
             return
         self.scale = k
         self.log('LEDs: pb-idle brightness x%.2f (until a restart)' % k)
-        if self.state == CAST and self.shown:
+        if self.state in (CAST, PREVIEW) and self.shown:
             self._write(self.shown, True)      # the lit problem, at the new level
 
     def _set_pattern(self, spec, now):

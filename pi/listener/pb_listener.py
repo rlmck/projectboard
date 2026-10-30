@@ -2,7 +2,8 @@
 """Project Board cast listener (pb-listener.service).
 
 Supabase Realtime broadcasts on board:<wall> -> the WS2801 strip: `cast_problem`
-lights a problem, `cast_circuit` runs a circuit (circuit.py), `stop` ends it.
+lights a problem, `cast_circuit` runs a circuit (circuit.py), `stop` ends it,
+`preview_holds` lights the holds someone is setting on Create/Edit (contract 9).
 Built to docs/cast-contract.md; the resilience rules are in the local
 docs/pi4-listener-kiosk-plan.md, section R1:
 
@@ -114,7 +115,7 @@ class Listener:
             'state': 'starting', 'connected_since': None, 'disconnected_since': now,
             'last_message_at': None, 'last_cast_at': None, 'last_cast_name': None,
             'casts_shown': 0, 'circuits_shown': 0, 'casts_ignored_night': 0, 'error_count': 0, 'last_error': None,
-            'mirror_map_at': None, 'updated_at': now,
+            'mirror_map_at': None, 'last_preview_at': None, 'updated_at': now,
             'leds': None, 'idle_pattern': None, 'idle_plan': None, 'idle_override': None, 'benchmarks': None,
             'idle_fps': None, 'idle_frame_ms': None, 'idle_capped_frames': 0, 'led_write_errors': 0,
         }
@@ -386,7 +387,36 @@ class Listener:
         log('stop received: run %s%s' % (token or 'any', board.origin(body)))
         self.leds.stop_circuit(token)
 
-    EVENTS = {'cast_problem': on_cast, 'cast_circuit': on_circuit, 'stop': on_stop}
+    def on_preview(self, body):
+        """preview_holds (contract 9): the whole selection being set, lit at once; `end` ends it.
+
+        Not logged per message (one arrives on every tap): the LED thread logs a
+        session starting, being taken over and ending."""
+        if not isinstance(body, dict):
+            warn('preview_holds with a non-object payload ignored')
+            return
+        token = body.get('session')
+        if not isinstance(token, str) or not 1 <= len(token) <= 64:
+            warn('preview_holds with a bad session ignored')
+            return
+        if body.get('end') is True:
+            self.leds.preview_end(token)
+            return
+        try:
+            sel = board.check_preview(body)
+        except ValueError as e:
+            warn('preview_holds %s ignored: %s' % (token, e))
+            return
+        if self.mode == 'night':
+            self.leds.preview(token, {}, False)     # the LED thread logs it once per session
+            return
+        leds, _ = board.preview_frame(*sel)
+        out, _, _ = board.scale(leds, self.cfg['BRIGHTNESS'], float(self.cfg['POWER_BUDGET_MA']),
+                                float(self.cfg['MA_PER_CHANNEL']))
+        self.leds.preview(token, out, body.get('show') is True)
+        self.status['last_preview_at'] = time.time()
+
+    EVENTS = {'cast_problem': on_cast, 'cast_circuit': on_circuit, 'stop': on_stop, 'preview_holds': on_preview}
 
     # -- the socket ---------------------------------------------------------
 

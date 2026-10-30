@@ -103,6 +103,59 @@ def frame(row, mirror=False, mirror_map=None):
     return leds, dropped
 
 
+PREVIEW_MAX_HOLDS = 100            # a preview with more holds than this is refused (contract 9)
+FEET_MODES = ('any', 'orange', 'black')
+
+
+def check_preview(body):
+    """A preview_holds payload's selection (contract 9) -> (start, hold, finish, feet).
+
+    Raises ValueError for a malformed one: lists that aren't lists of strings, more
+    than 2 starts or 1 finish, more than PREVIEW_MAX_HOLDS holds, an unknown feet
+    rule. Ids that aren't on the grid are left in: preview_frame() drops them.
+    """
+    out = []
+    for key, most in (('start', 2), ('hold', PREVIEW_MAX_HOLDS), ('finish', 1)):
+        v = body.get(key, [])
+        if not isinstance(v, list) or not all(isinstance(h, str) and len(h) <= 10 for h in v):
+            raise ValueError('%s is not a list of hold ids' % key)
+        if len(v) > most:
+            raise ValueError('%d %s holds (at most %d)' % (len(v), key, most))
+        out.append(v)
+    if sum(len(v) for v in out) > PREVIEW_MAX_HOLDS:
+        raise ValueError('more than %d holds' % PREVIEW_MAX_HOLDS)
+    feet = body.get('feet', 'any')
+    if feet not in FEET_MODES:
+        raise ValueError('feet %r' % (feet,))
+    return out[0], out[1], out[2], feet
+
+
+def preview_frame(start, hold, finish, feet='any'):
+    """The holds being set -> ({led: (r, g, b)}, [dropped hold ids]), in a cast's colours.
+
+    The roles come as set (not stored inverted, contract 9) and are never mirrored.
+    A hold listed in two roles shows the stronger (finish, then start). The feet
+    signs are never holds; the one `feet` names is lit, as a cast lights it (6.5).
+    """
+    leds, ranks, dropped = {}, {}, []
+    for role, ids in ((INT, hold), (START, start), (FINISH, finish)):
+        for h in ids:
+            if h in FEET_HOLDS:
+                continue
+            n = hold_number(h)
+            if n is None:
+                dropped.append(h)
+                continue
+            i = led_index(n)
+            if i not in ranks or RANK[role] > ranks[i]:
+                ranks[i] = RANK[role]
+                leds[i] = COLOURS[role]
+    light = FEET_LIGHTS.get(feet)
+    if light:
+        leds[led_index(hold_number(light))] = FEET_COLOUR
+    return leds, dropped
+
+
 def scale(leds, brightness, budget_ma, ma_per_channel):
     """Apply the cast brightness, then cap the whole frame's estimated current.
 

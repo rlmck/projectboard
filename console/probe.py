@@ -80,7 +80,7 @@ def busy():
     casts = casts_since(BUSY_S)
     last = s.get('last_cast_at')
     recent = bool(casts) or bool(last and time.time() - last < BUSY_S)
-    recent = recent or s.get('leds') == 'circuit'      # a circuit run still going, however long ago it started
+    recent = recent or s.get('leds') in ('circuit', 'preview')   # a circuit run, or someone setting with live LEDs
     return {'busy': recent, 'casts': casts, 'last_cast_at': last, 'last_cast_name': s.get('last_cast_name'),
             'pb_ledmap': sh('systemctl', 'is-active', 'pb-ledmap'), 'now': time.time()}
 

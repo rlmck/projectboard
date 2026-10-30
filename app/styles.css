@@ -1113,6 +1113,23 @@
     .feet-opt.black i, .feet-badge.black i { background: var(--black); border: 1px solid var(--text-muted); }
 
     .create-next { font-size: 13px; color: var(--text-muted); text-align: center; }
+    /* Live LEDs while setting: lit as you tap / only at the gym / Show on board. */
+    .create-lights {
+      display: flex; align-items: center; gap: 8px;
+      color: var(--text-muted); font-size: 12px; text-align: center;
+      pointer-events: auto;
+    }
+    .create-lights[hidden] { display: none; }
+    .lights-dot { width: var(--lights-dot); height: var(--lights-dot); border-radius: 50%; background: var(--text-faint); flex-shrink: 0; }
+    .lights-dot.on { background: var(--start); box-shadow: var(--shadow-lights-on); }
+    .create-lights.paused { color: var(--text); }
+    .lights-show {
+      padding: 6px 12px;
+      background: var(--accent); border: 0; border-radius: var(--radius-pill);
+      color: var(--on-accent); font: inherit; font-weight: 800;
+      cursor: pointer; touch-action: manipulation;
+    }
+    .wall-c-lights .lights-show { padding: 10px 18px; font-size: 16px; }
     .create-next.ready { color: var(--accent-hover); font-weight: 700; }
     /* Short screens: the steps alone. */
     @media (max-height: 640px) { .create-next { display: none; } }
@@ -2244,6 +2261,9 @@
       cursor: pointer; touch-action: manipulation;
     }
     .wall-tab:active { transform: scale(0.97); }
+    .wall-tab-create { display: inline-flex; align-items: center; gap: 8px; color: var(--accent-hover); border-color: var(--accent-a40); }
+    .wall-tab-create svg { width: 18px; height: 18px; }
+    #wall-tab-create[hidden] { display: none; }
     .wall-tab.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
     .wall-status {
       margin-left: auto; padding: 6px 14px;
@@ -2332,6 +2352,9 @@
     .wall-cast:active { background: var(--cast-hover); }
     .wall-cast.casting { opacity: 0.7; }
     .wall-cast.sent { animation: flash 0.4s ease; }
+    /* After a save on Create: "light it up" is the next thing to do. */
+    .wall-cast.offer { animation: wall-offer 1.2s ease-in-out 5; }
+    @keyframes wall-offer { 50% { box-shadow: var(--shadow-offer); } }
     .wall-offline {
       padding: 10px 14px;
       background: var(--surface2); border: 1px solid var(--error-text-a40); border-radius: var(--radius-chip);
@@ -2350,6 +2373,90 @@
       background: var(--bg-a85); border: 1px solid var(--border); border-radius: var(--radius-pill);
       font-size: 19px; font-weight: 700; pointer-events: none;
     }
+
+    /* Create a problem: the board | the panel (name, grade, feet, steps, buttons) */
+    .wall-create.active { grid-template-columns: minmax(0, 1fr) var(--wall-c-panel-w); }
+    .wall-c-stage { min-width: 0; min-height: 0; display: flex; justify-content: center; padding: 14px 18px 16px; }
+    .wall-c-stage .wall-board { cursor: pointer; touch-action: manipulation; }
+    .wall-c-panel {
+      display: flex; flex-direction: column; gap: 14px; min-height: 0;
+      padding: 16px 20px 16px 4px;
+    }
+    .wall-c-head { display: flex; align-items: baseline; justify-content: space-between; }
+    .wall-c-by { color: var(--text-muted); font-size: 15px; font-weight: 600; }
+    .wall-c-name {
+      min-height: var(--wall-tap); padding: 0 16px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--btn-radius);
+      color: var(--text); font: inherit; font-size: 22px; font-weight: 800; text-align: left;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      cursor: pointer; touch-action: manipulation;
+    }
+    .wall-c-name.unset { border-style: dashed; border-color: var(--accent-a40); color: var(--accent-hover); font-weight: 700; }
+    .wall-c-grades { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+    .wall-c-grades .grade-tab {
+      min-height: var(--wall-grade-h); padding: 0;
+      font-size: 18px; font-weight: 800; text-align: center; touch-action: manipulation;
+    }
+    .wall-c-feet { max-width: none; }
+    .wall-c-feet .feet-opt { min-height: var(--wall-grade-h); font-size: 16px; }
+    .wall-c-feet .feet-opt i { width: 12px; height: 12px; }
+    .wall-c-steps { justify-content: center; }
+    .wall-c-steps .create-step { padding: 7px 14px; font-size: 16px; }
+    .wall-c-next { color: var(--text-muted); font-size: 17px; text-align: center; }
+    .wall-c-next.ready { color: var(--accent-hover); font-weight: 700; }
+    .wall-c-lights { justify-content: center; font-size: 15px; }
+    .wall-c-actions { margin-top: auto; display: grid; grid-template-columns: 1fr 1fr 1fr 1.3fr; gap: 8px; }
+    .wall-c-actions .wall-btn { padding: 0 10px; }
+
+    /* The on-screen keyboard, over the bottom of the screen */
+    .wall-kb {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 250;
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+      padding: 14px 16px 16px;
+      background: var(--surface); border-top: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+    .wall-kb[hidden] { display: none; }
+    .wall-kb-top { width: 100%; max-width: var(--wall-kb-max-w); display: flex; gap: 12px; }
+    .wall-kb-text {
+      flex: 1; min-width: 0; min-height: var(--wall-tap);
+      display: flex; align-items: center; padding: 0 18px;
+      background: var(--bg); border: 1px solid var(--accent); border-radius: var(--btn-radius);
+      font-size: 26px; font-weight: 800; white-space: pre; overflow: hidden;
+    }
+    .wall-kb-ph { color: var(--placeholder); font-weight: 700; }
+    .wall-kb-caret { width: 3px; height: 30px; margin-left: 2px; background: var(--accent); animation: fade 1s steps(2) infinite; }
+    .wall-kb-keys {
+      width: 100%; max-width: var(--wall-kb-max-w);
+      display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px;
+    }
+    .wall-key {
+      min-height: var(--wall-key-h);
+      background: var(--surface2); border: 1px solid var(--border); border-radius: var(--btn-radius);
+      color: var(--text); font: inherit; font-size: 24px; font-weight: 700;
+      cursor: pointer; touch-action: manipulation;
+    }
+    .wall-key:active { background: var(--accent-a19); border-color: var(--accent); }
+    .wall-key.fn { background: var(--surface); color: var(--text-muted); font-size: 26px; }
+    .wall-key.fn.on { color: var(--accent-hover); border-color: var(--accent); }
+    .wall-key.space { grid-column: span 5; font-size: 18px; color: var(--text-muted); }
+
+    /* Discard? (leaving with something set, or 5 minutes untouched) */
+    .wall-c-confirm {
+      position: fixed; inset: 0; z-index: 260;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--scrim);
+      animation: fade 0.18s ease;
+    }
+    .wall-c-confirm[hidden] { display: none; }
+    .wall-c-confirm-card {
+      width: 560px; padding: 28px 30px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl);
+      box-shadow: var(--shadow);
+    }
+    .wall-c-confirm-card h2 { font-size: 28px; font-weight: 800; }
+    .wall-c-confirm-card p { margin-top: 10px; color: var(--text-soft); font-size: 19px; line-height: 1.45; }
+    .wall-c-confirm-actions { margin-top: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
     /* Ranks (read-only) */
     .wall-ranks.active { display: flex; flex-direction: column; gap: 12px; padding: 20px 20px 14px; }

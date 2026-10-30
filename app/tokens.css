@@ -160,6 +160,8 @@
   --text-shadow-finish-zone: 0 1px 3px rgba(0,0,0,0.9);
   --drop-hold-lines: 0 0 1px rgba(0,0,0,0.85);  /* used as drop-shadow(var(...)) */
   --drop-ol-x: 0 0 1.5px #000;
+  --shadow-offer: 0 0 0 8px rgba(236,72,153,0.4);  /* the wall's Light it up, pulsing after a save on Create */
+  --shadow-lights-on: 0 0 0 3px rgba(34,197,94,0.28);  /* the 'lit on the board' dot */
 
   /* Sizes */
   --nav-h: 60px;  /* the bottom nav; body.ch-away raises it to 100px in styles.css */
@@ -181,6 +183,11 @@
   --wall-qr: 340px;  /* the QR on Get the app and the first idle slide */
   --wall-qr-night: 260px;  /* the QR on the night screen */
   --wall-night-dim: 0.32;  /* the night screen's opacity: readable up close, not a light in a dark gym */
+  --wall-c-panel-w: 470px;  /* the Create page's panel beside the board */
+  --wall-grade-h: 50px;  /* a grade on the Create page */
+  --wall-key-h: 66px;  /* a key on the on-screen keyboard */
+  --wall-kb-max-w: 1180px;  /* the keyboard's width (the screen is 1280) */
+  --lights-dot: 8px;  /* the "lit on the board" dot by the create board */
   --qr-dark: #000;  /* QR modules: black on white, or phone cameras struggle */
   --qr-light: #fff;
 }

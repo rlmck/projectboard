@@ -245,6 +245,7 @@
       </div>
       <div class="create-steps" id="create-steps"></div>
       <div class="create-next" id="create-next"></div>
+      <div class="create-lights" id="create-lights" hidden></div>
     </div>
   </main>
 </section>
@@ -944,6 +945,8 @@
       <button class="wall-tab" type="button" data-page="circuits">Circuits</button>
       <button class="wall-tab" type="button" data-page="ranks">Ranks</button>
       <button class="wall-tab" type="button" data-page="app">Get the app</button>
+      <button class="wall-tab wall-tab-create" id="wall-tab-create" type="button" data-page="create" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>Create</button>
     </nav>
     <div class="wall-status" id="wall-status" hidden>Offline</div>
   </header>
@@ -983,6 +986,41 @@
     </div>
   </section>
 
+  <!-- Create a problem (db/35): the board to tap holds on, and a panel with the
+       name (typed on the on-screen keyboard), grade, feet rule and the steps.
+       Saved as The Hangout through wall_create_problem() with the wall key. -->
+  <section class="wall-page wall-create" data-page="create">
+    <div class="wall-c-stage">
+      <div class="board-wrap wall-board" id="wall-c-board">
+        <img class="board-graphic" alt="The Hangout symmetry board" />
+        <div class="hold-layer" id="wall-c-layer"></div>
+      </div>
+    </div>
+    <div class="wall-c-panel">
+      <div class="wall-c-head">
+        <span class="wall-kicker">New problem</span>
+        <span class="wall-c-by">by The Hangout</span>
+      </div>
+      <button class="wall-c-name" id="wall-c-name" type="button" aria-label="Name the problem"></button>
+      <div class="wall-c-grades" id="wall-c-grades" role="group" aria-label="Grade"></div>
+      <div class="feet-rule wall-c-feet" id="wall-c-feet" role="radiogroup" aria-label="Feet">
+        <button class="feet-opt any" type="button" role="radio" data-feet="any" aria-checked="true">Any feet</button>
+        <button class="feet-opt orange" type="button" role="radio" data-feet="orange" aria-checked="false"><i></i>Orange only</button>
+        <button class="feet-opt black" type="button" role="radio" data-feet="black" aria-checked="false"><i></i>Black only</button>
+      </div>
+      <div class="create-steps wall-c-steps" id="wall-c-steps"></div>
+      <div class="wall-c-next" id="wall-c-next"></div>
+      <div class="create-lights wall-c-lights" id="wall-c-lights" hidden></div>
+      <div class="wall-c-actions">
+        <button class="wall-btn" id="wall-c-undo" type="button" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 14 4 9 9 4"></polyline><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>Undo</button>
+        <button class="wall-btn" id="wall-c-clear" type="button">Clear</button>
+        <button class="wall-btn" id="wall-c-cancel" type="button">Cancel</button>
+        <button class="wall-btn wall-cast" id="wall-c-save" type="button">Save</button>
+      </div>
+    </div>
+  </section>
+
   <!-- Ranks, read-only: Points and each challenge side by side -->
   <section class="wall-page wall-ranks" data-page="ranks">
     <div class="wall-boards" id="wall-boards"></div>
@@ -1002,6 +1040,27 @@
       <p class="wall-url">symmetryboard.co.uk</p>
     </div>
   </section>
+
+  <!-- The on-screen keyboard for the name (the kiosk has no keyboard) -->
+  <div class="wall-kb" id="wall-kb" hidden>
+    <div class="wall-kb-top">
+      <div class="wall-kb-text" id="wall-kb-text"></div>
+      <button class="wall-btn wall-cast" id="wall-kb-done" type="button">Done</button>
+    </div>
+    <div class="wall-kb-keys" id="wall-kb-keys"></div>
+  </div>
+
+  <!-- Leaving Create with holds set, and 5 minutes untouched: discard it? -->
+  <div class="wall-c-confirm" id="wall-c-confirm" hidden>
+    <div class="wall-c-confirm-card" role="dialog" aria-modal="true" aria-labelledby="wall-c-confirm-title">
+      <h2 id="wall-c-confirm-title"></h2>
+      <p id="wall-c-confirm-text"></p>
+      <div class="wall-c-confirm-actions">
+        <button class="wall-btn" id="wall-c-discard" type="button">Discard it</button>
+        <button class="wall-btn wall-cast" id="wall-c-keep" type="button">Keep setting</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Idle slides, and the night screen -->
   <div class="wall-idle" id="wall-idle" hidden>

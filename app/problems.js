@@ -290,8 +290,10 @@
   // Resolve { ok } for whether a cast is permitted from the current location.
   // Lenient (see GYM_GEOFENCE): admins always pass; any error/uncertainty passes;
   // only a confidently-far fix returns { ok:false }.
-  async function ensureCastLocation() {
-    if (profile && profile.is_admin) return { ok: true };
+  // adminBypass false: the live preview while setting (authoring.js) checks
+  // admins too, so editing holds at home doesn't light the gym's board.
+  async function ensureCastLocation({ adminBypass = true } = {}) {
+    if (adminBypass && profile && profile.is_admin) return { ok: true };
     let fix = (lastFix && Date.now() - lastFix.t < 60000) ? lastFix : null;
     if (!fix) {
       try {

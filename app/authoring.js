@@ -55,56 +55,70 @@
 
   // Draw the board (dimmed wall, bright holds, the assigned ones outlined in their
   // role colour, the finish zone marked) and refresh the progress strip.
-  function applyCreateRoles() {
-    const layer = document.getElementById('create-hold-layer');
-    if (layer) {
-      const svg = holdShapeLayerHtml(createRoles, { mirror: false, dim: true, lightAll: true });
-      const edge = finishZoneEdge();
-      const zone = edge == null ? ''
-        : `<div class="finish-zone" style="height:${edge}%"><span>Finish zone</span></div>`;
-      // Without traced outlines (an old board version), fall back to dots. The
-      // zone goes last so its edge and label sit above the dimming.
-      layer.innerHTML = ((svg != null) ? svg : Object.keys(createRoles).map(h => {
-        const pos = HOLD_MAP && HOLD_MAP[h];
-        if (!pos) return '';
-        return `<div class="hold-dot ${createRoles[h]}" style="left:${pos.x}%;top:${pos.y}%"></div>`;
-      }).join('')) + zone;
-    }
-    updateCreateStatus();
+  // The board's layer: the holds' outlines (or dots) and the finish zone. The
+  // phone's create view and the wall screen's Create page both draw it.
+  function createLayerHtml() {
+    const svg = holdShapeLayerHtml(createRoles, { mirror: false, dim: true, lightAll: true });
+    const edge = finishZoneEdge();
+    const zone = edge == null ? ''
+      : `<div class="finish-zone" style="height:${edge}%"><span>Finish zone</span></div>`;
+    // Without traced outlines (an old board version), fall back to dots. The
+    // zone goes last so its edge and label sit above the dimming.
+    return ((svg != null) ? svg : Object.keys(createRoles).map(h => {
+      const pos = HOLD_MAP && HOLD_MAP[h];
+      if (!pos) return '';
+      return `<div class="hold-dot ${createRoles[h]}" style="left:${pos.x}%;top:${pos.y}%"></div>`;
+    }).join('')) + zone;
   }
 
-  // The strip under the board: three steps (start, holds, finish), each ticked
-  // off when it's right, and one line saying what to do next.
-  function updateCreateStatus() {
+  function applyCreateRoles() {
+    const layer = document.getElementById('create-hold-layer');
+    if (layer) layer.innerHTML = createLayerHtml();
+    updateCreateStatus();
+    if (WALL) wallCreateRender();
+  }
+
+  // The steps (start, holds, finish), each ticked off when it's right, and one
+  // line saying what to do next. nameHint: where the name is typed.
+  function createStatus(name, nameHint) {
     const s = holdsWithRole('start').length, i = holdsWithRole('int').length, f = holdsWithRole('finish').length;
+    const step = (cls, n, label, done) =>
+      `<span class="create-step ${cls}${done ? ' done' : ''}"><i></i>${n} ${label}</span>`;
+    return {
+      steps: step('c-start', s, 'start', s >= 1 && s <= 2) +
+             step('c-int', i, i === 1 ? 'hold' : 'holds', i >= 1) +
+             step('c-finish', f, 'finish', f === 1),
+      next: !s ? 'Tap a start hold, low on the wall'
+        : !i ? 'Now tap the holds in between'
+        : !f ? 'Tap a finish-zone hold twice to finish'
+        : !name ? nameHint
+        : !createGrade ? 'Pick a grade'
+        : null,
+      ready: !!(s && i && f && name && createGrade)
+    };
+  }
+
+  // The strip under the board on the phone.
+  function updateCreateStatus() {
     const steps = document.getElementById('create-steps');
     const next = document.getElementById('create-next');
     if (!steps || !next) return;
-    const step = (cls, n, label, done) =>
-      `<span class="create-step ${cls}${done ? ' done' : ''}"><i></i>${n} ${label}</span>`;
-    steps.innerHTML =
-      step('c-start', s, 'start', s >= 1 && s <= 2) +
-      step('c-int', i, i === 1 ? 'hold' : 'holds', i >= 1) +
-      step('c-finish', f, 'finish', f === 1);
     const name = (document.getElementById('create-name').value || '').trim();
-    next.textContent =
-      !s ? 'Tap a start hold, low on the wall'
-      : !i ? 'Now tap the holds in between'
-      : !f ? 'Tap a finish-zone hold twice to finish'
-      : !name ? 'Name it at the top'
-      : !createGrade ? 'Tap Grade to pick one'
-      : 'Ready — tap ✓ to save';
-    next.classList.toggle('ready', !!(s && i && f && name && createGrade));
+    const st = createStatus(name, 'Name it at the top');
+    steps.innerHTML = st.steps;
+    next.textContent = st.next === 'Pick a grade' ? 'Tap Grade to pick one' : st.next || 'Ready — tap ✓ to save';
+    next.classList.toggle('ready', st.ready);
     const undo = document.getElementById('create-undo');
     if (undo) undo.disabled = !createUndo.length;
     if (fsOpen) fsUpdateBar();   // the fullscreen bar shows the same counts
   }
 
   // Nearest hold to a tap (in pixel space, since x/y are % of different axes).
-  // Returns null if the tap is too far from any hold to count.
-  function nearestHold(clientX, clientY) {
+  // Returns null if the tap is too far from any hold to count. boardEl: the
+  // board tapped (the phone's #create-board, or the wall's).
+  function nearestHold(clientX, clientY, boardEl = document.getElementById('create-board')) {
     if (!HOLD_MAP) return null;
-    const { x: px, y: py, w, h: bh } = boardPct(document.getElementById('create-board'), clientX, clientY);
+    const { x: px, y: py, w, h: bh } = boardPct(boardEl, clientX, clientY);
     let best = null, bestD = Infinity;
     for (const h in HOLD_MAP) {
       const dx = (HOLD_MAP[h].x - px) / 100 * w;
@@ -124,6 +138,7 @@
     if (!createUndo.length) return;
     createRoles = createUndo.pop();
     applyCreateRoles();
+    previewEdited();
   }
 
   // Tap to cycle a hold's role:
@@ -154,6 +169,7 @@
       createRoles[h] = holdsWithRole('start').length < 2 ? 'start' : 'int';
     }
     applyCreateRoles();
+    previewEdited();
   }
 
   // ── Name, grade and setter (the title block) ────────────────────────────────
@@ -190,15 +206,18 @@
     if (el) el.textContent = t;
   }
 
-  // The feet rule: three options side by side under the board.
+  // The feet rule: three options side by side (under the phone's board, in the
+  // wall's panel).
   function updateCreateFeet() {
-    document.querySelectorAll('#create-feet .feet-opt').forEach(b =>
+    document.querySelectorAll('#create-feet .feet-opt, #wall-c-feet .feet-opt').forEach(b =>
       b.setAttribute('aria-checked', b.dataset.feet === createFeet ? 'true' : 'false'));
   }
   function setCreateFeet(k) {
     if (!FEET_RULES.some(r => r.key === k)) return;
+    const changed = k !== createFeet;
     createFeet = k;
     updateCreateFeet();
+    if (changed) previewEdited();   // the feet sign lights with the holds
   }
 
   function resetCreate() {
@@ -288,12 +307,31 @@
     pushCreateUndo();
     createRoles = {};
     applyCreateRoles();
+    previewEdited();
   }
 
   // A save that's missing something says so in a toast and takes you to it.
   function createMissing(msg, then) {
     showToast(msg, 'error');
     if (then) then();
+  }
+
+  // What a save is missing, in the order it's asked for, or null when it's ready:
+  // { field: 'start' | 'int' | 'finish' | 'name' | 'grade', msg }. The phone and
+  // the wall screen check the same things (and db/35 checks the wall's again).
+  // Names must be unique: they're how a problem is cast (the DB also has a
+  // UNIQUE constraint). Checked ignoring case, leaving out the problem being edited.
+  function createProblemMissing(name, editing) {
+    if (holdsWithRole('start').length < 1) return { field: 'start', msg: 'Add a start hold.' };
+    if (holdsWithRole('int').length < 1) return { field: 'int', msg: 'Add at least one hold between start and finish.' };
+    if (holdsWithRole('finish').length !== 1) return { field: 'finish', msg: 'Add a finish hold (tap a finish-zone hold twice).' };
+    if (!name) return { field: 'name', msg: 'Give your problem a name.' };
+    if (!createGrade) return { field: 'grade', msg: 'Pick a grade.' };
+    const lower = name.toLowerCase();
+    if (allProblems.some(p => p !== editing && String(p.name || '').trim().toLowerCase() === lower)) {
+      return { field: 'name', msg: 'That name is taken — pick another.' };
+    }
+    return null;
   }
 
   async function saveProblem() {
@@ -314,18 +352,10 @@
     const ints = holdsWithRole('int');
     const fins = holdsWithRole('finish');
 
-    if (starts.length < 1) return createMissing('Add a start hold.');
-    if (ints.length < 1) return createMissing('Add at least one hold between start and finish.');
-    if (fins.length !== 1) return createMissing('Add a finish hold (tap a finish-zone hold twice).');
-    if (!name) return createMissing('Give your problem a name.', () => nameEl.focus());
-    if (!createGrade) return createMissing('Pick a grade.', openCreateGrade);
-
-    // Names must be unique — they're how a problem is cast (the DB also enforces a
-    // UNIQUE constraint on name). Pre-check case-insensitively, excluding the problem
-    // being edited (its own name is unchanged — the field is locked in edit mode).
-    const newName = name.toLowerCase();
-    if (allProblems.some(p => p !== editing && String(p.name || '').trim().toLowerCase() === newName)) {
-      return createMissing('That name is taken — pick another.', () => nameEl.focus());
+    const miss = createProblemMissing(name, editing);
+    if (miss) {
+      return createMissing(miss.msg, miss.field === 'name' ? () => nameEl.focus()
+                                   : miss.field === 'grade' ? openCreateGrade : null);
     }
 
     // Canonical display order D = [start, start, …intermediates, finish].
@@ -402,6 +432,158 @@
     // Replace the #create history entry with the new problem's detail, so Back
     // from there returns to the list (not into the create form).
     redirectRoute('#detail/' + encodeURIComponent(data.id));
+  }
+
+  // ── Live LEDs while setting (cast contract §9) ────────────────────────────────
+  // While someone sets a problem (the phone's Create or admin Edit, or the wall
+  // screen's Create page), every change lights the board in a cast's colours:
+  // preview_holds carries the whole selection and a session token, never a diff,
+  // so a lost message corrects itself with the next. One message is in flight at
+  // a time and the next carries whatever is on screen when it lands, so fast
+  // taps coalesce. A keep-alive every PREVIEW_PING_MS keeps the Pi showing it (it
+  // gives up after 60 s of silence); `end` is sent on Save, Cancel or leaving.
+  // Phones only send inside the geofence, with no admin bypass (an admin editing
+  // holds at home mustn't light the gym's board); outside it, setting works and a
+  // note says why the board isn't lit. A problem cast or someone else's preview
+  // takes the board (the latest wins), and the Pi then ignores this session until
+  // it says `show`: while setting, the app listens on the channel (the only time
+  // it opens a socket) so it can offer "Show on board" when that happens.
+  const PREVIEW_PING_MS = 20000;
+  const PREVIEW_RETRY_MS = 2000;
+  // { token, first, show, dirty, sending, locating, outside, paused, ping, listen }
+  let preview = null;
+
+  // Setting is on screen: the phone's create view (in front), or the wall's Create page.
+  const previewWanted = () => WALL
+    ? wallCreateOn && !wallNightOn && !wallOffline()
+    : currentView === 'create' && document.visibilityState === 'visible';
+
+  // Called after each change to the holds or the feet rule.
+  function previewEdited() {
+    if (!previewWanted()) return;
+    if (!preview) previewStart();
+    preview.dirty = true;
+    previewPump();
+  }
+
+  function previewStart() {
+    const p = preview = { token: castRunToken(), first: true, show: false, dirty: false, sending: false,
+                          locating: !WALL, outside: false, paused: false, listen: null,
+                          ping: setInterval(() => previewPump(true), PREVIEW_PING_MS) };
+    if (WALL) {
+      previewListen(p);
+    } else {
+      ensureCastLocation({ adminBypass: false }).then(fence => {
+        if (preview !== p) return;
+        p.locating = false;
+        p.outside = !fence.ok;
+        if (p.outside) { clearInterval(p.ping); previewRenderNote(); return; }
+        previewListen(p);
+        previewPump();
+        previewRenderNote();
+      });
+    }
+    previewRenderNote();
+  }
+
+  function previewBody(p, extra) {
+    return { session: p.token, ...extra, source: WALL ? 'wall' : 'phone', signed_in: !!session };
+  }
+
+  // Send what's on screen now, unless a send is in flight (it sends again when it lands).
+  function previewPump(ping = false) {
+    const p = preview;
+    if (!p || p.locating || p.outside || p.paused || p.sending) return;
+    if (!p.dirty && !ping) return;
+    const flags = {};
+    if (p.first) flags.first = true;
+    if (p.show) flags.show = true;
+    if (ping && !p.dirty) flags.ping = true;
+    p.dirty = false;
+    p.sending = true;
+    const body = previewBody(p, {
+      start: holdsWithRole('start'), hold: holdsWithRole('int'), finish: holdsWithRole('finish'),
+      feet: createFeet, ...flags });
+    channel.httpSend('preview_holds', body, { timeout: 8000 }).then(() => {
+      p.sending = false;
+      if (flags.first) p.first = false;
+      if (flags.show) p.show = false;
+      if (preview === p) previewPump();
+    }, err => {
+      p.sending = false;
+      p.dirty = true;
+      console.warn('preview not sent', err);
+      setTimeout(() => { if (preview === p) previewPump(); }, PREVIEW_RETRY_MS);
+    });
+  }
+
+  // Show on board: take the board back after a cast or someone else's preview.
+  function previewShowAgain() {
+    const p = preview;
+    if (!p || !p.paused) return;
+    p.paused = false;
+    p.show = true;
+    p.dirty = true;
+    previewRenderNote();
+    previewPump();
+  }
+
+  // Save, Cancel, leaving the screen, the app going to the background.
+  function previewEnd() {
+    const p = preview;
+    if (!p) return;
+    preview = null;
+    clearInterval(p.ping);
+    previewUnlisten(p);
+    if (!p.first || p.sending) {   // something may have reached the Pi
+      channel.httpSend('preview_holds', previewBody(p, { end: true }), { timeout: 8000 })
+        .catch(err => console.warn('preview end not sent', err));
+    }
+    previewRenderNote();
+  }
+
+  // Hear the casts and the other previews that take the board. supabase-js hands
+  // back one channel object per topic, so this is the same `channel` the app sends
+  // on (or, after a removeChannel, a fresh one): sending works either way, since
+  // httpSend is a REST POST that doesn't use the socket.
+  function previewListen(p) {
+    if (p.listen) return;
+    const ch = sb.channel('board:HangoutPortland');
+    const taken = () => {
+      if (preview !== p || p.paused) return;
+      p.paused = true;
+      previewRenderNote();
+    };
+    ch.on('broadcast', { event: 'cast_problem' }, taken)
+      .on('broadcast', { event: 'preview_holds' }, msg => {
+        const b = msg && msg.payload;
+        // Only a session starting, or one taking the board back, takes it from us (contract §9).
+        if (b && b.session !== p.token && !b.end && (b.first || b.show)) taken();
+      })
+      .subscribe();
+    p.listen = ch;
+  }
+  function previewUnlisten(p) {
+    if (!p.listen) return;
+    sb.removeChannel(p.listen).catch(() => {});
+    p.listen = null;
+  }
+
+  // The note by the board: lit as you tap / only at the gym / Show on board.
+  function previewRenderNote() {
+    const p = preview;
+    const html = !p ? (WALL ? '<i class="lights-dot"></i>Each tap lights the board' : '')
+      : p.outside ? 'The board lights up as you set only at the gym'
+      : p.paused ? `Someone else lit the board <button class="lights-show" type="button">Show on board</button>`
+      : p.locating ? ''
+      : '<i class="lights-dot on"></i>Lit on the board as you tap';
+    ['create-lights', 'wall-c-lights'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.innerHTML = html;
+      el.hidden = !html;
+      el.classList.toggle('paused', !!(p && p.paused));
+    });
   }
 
   // ── Hold outlines editor (#outlines, admin) ──────────────────────────────────

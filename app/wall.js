@@ -15,6 +15,13 @@
 //     board. Light it up opens the phone's Cast sheet (circuits.js): speed and
 //     loop, then the countdown, the move count and Stop. The wall doesn't go idle
 //     while a run is going; night closes the sheet (the Pi ends the run).
+//   - Create (db/35), when the wall key works: anyone at the wall sets a problem
+//     with no sign-in: the board to tap holds on (the phone's rules, cycleHold),
+//     the name on an on-screen keyboard, grade, feet rule, Undo, Clear, Cancel,
+//     Save. Every tap lights the board (authoring.js, contract §9). Saved through
+//     wall_create_problem() with the wall key, as The Hangout; then the new
+//     problem is chosen on Problems, ready to light up. No idle slides while it's
+//     open; 5 minutes untouched asks, then discards it; night closes it.
 //   - Ranks, read-only: Points and each challenge's board side by side.
 //   - Get the app: the /scan QR, in place of Profile. No sign-in anywhere.
 // After WALL_IDLE_MS without a touch it goes back to the list (the filter and the
@@ -50,6 +57,11 @@
   let wallNetDown = false;       // the last fetch of the problems failed
   let wallLastPoll = Date.now(); // boot has just loaded everything
   let wallCastHtml = '';         // the cast button's resting markup
+  let wallKeyOk = false;         // the wall key works (wall_key_ok, db/35): Create is offered
+  let wallCreateOn = false;      // the Create page is open (the create state in state.js is the wall's)
+  let wallCreateName = '';
+  let wallKbShift = true;        // the next letter is a capital (at the start, and after a space)
+  let wallAsk = null;            // the discard sheet: { kind: 'idle' | 'leave', then, until }
 
   const wallEl = id => document.getElementById(id);
   // sessionStorage, guarded like lsGet/lsSet (core.js); null removes the key.
@@ -309,6 +321,209 @@
     openCircuitCast(c);
   }
 
+  // ── Create a problem (db/35) ──────────────────────────────────────────────────
+  const WALL_CREATE_IDLE_MS = 5 * 60 * 1000;  // untouched this long: ask, then discard
+  const WALL_CREATE_ASK_S = 30;               // the countdown on that sheet
+  const WALL_NAME_MAX = 60;                   // as the phone's field and the problems CHECK
+  // The keyboard: the characters wall_create_problem() accepts. Letters show as
+  // capitals while shift is on (it is at the start and after a space).
+  const WALL_KB_ROWS = [
+    ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+    ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+    ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', "'"],
+    ['shift', 'z', 'x', 'c', 'v', 'b', 'n', 'm', '-', 'back'],
+    ['!', '?', '&', 'space', '.', ',']
+  ];
+  // wall_create_problem's refusals (SQLSTATE P0001, the code as the message).
+  const WALL_SAVE_ERRORS = {
+    key: 'This screen can’t save problems right now.',
+    rate: 'Lots of new problems just now: try again in a few minutes.',
+    name: 'Use letters or numbers in the name.',
+    name_taken: 'That name is taken — pick another.',
+    offensive: 'Please pick a different name.',
+    grade: 'Pick a grade.',
+    holds: 'Those holds don’t make a problem yet: check the start, holds and finish.',
+    feet: 'Pick a feet rule.'
+  };
+
+  const wallCreateDirty = () => !!(Object.keys(createRoles).length || createGrade
+    || wallCreateName.trim() || createFeet !== 'any');
+
+  // Create is offered only once the database says the wall key works.
+  function wallCheckKey() {
+    if (!WALL_KEY) return;
+    sb.rpc('wall_key_ok', { p_key: WALL_KEY }).then(({ data, error }) => {
+      if (error) return;               // offline, or db/35 not there yet: asked again at the next poll
+      wallKeyOk = data === true;
+      wallEl('wall-tab-create').hidden = !wallKeyOk;
+    });
+  }
+
+  function wallCreateOpen() {
+    resetCreate();                     // the shared create state (authoring.js), fresh
+    wallCreateName = '';
+    wallKbShift = true;
+    wallCreateOn = true;
+    const img = wallEl('wall-c-board').querySelector('.board-graphic');
+    if (img.getAttribute('src') !== BOARD_IMG) img.src = BOARD_IMG;
+    previewRenderNote();
+    wallCreateRender();
+  }
+
+  // Save, Cancel, a discard, idle or night: the live LEDs end, the state is cleared.
+  function wallCreateClose() {
+    if (!wallCreateOn) return;
+    wallCreateOn = false;
+    previewEnd();
+    wallKbClose();
+    wallAskClose();
+    resetCreate();
+    wallCreateName = '';
+    previewRenderNote();
+  }
+
+  // The board, the name, the grades, the steps (applyCreateRoles calls it too).
+  function wallCreateRender() {
+    if (!WALL || !wallCreateOn) return;
+    wallEl('wall-c-layer').innerHTML = createLayerHtml();
+    const nameBtn = wallEl('wall-c-name');
+    nameBtn.textContent = wallCreateName || 'Tap to name it';
+    nameBtn.classList.toggle('unset', !wallCreateName);
+    wallEl('wall-c-grades').innerHTML = gradeTabButtons(GRADE_ORDER, g => g === createGrade, fontGrade);
+    const st = createStatus(wallCreateName.trim(), 'Tap the name to type it');
+    wallEl('wall-c-steps').innerHTML = st.steps;
+    const next = wallEl('wall-c-next');
+    next.textContent = st.next || 'Ready: tap Save';
+    next.classList.toggle('ready', st.ready);
+    wallEl('wall-c-undo').disabled = !createUndo.length;
+    updateCreateFeet();
+    wallCreateNet();
+  }
+
+  function wallCreateNet() {
+    const save = wallEl('wall-c-save');
+    if (!save.classList.contains('casting')) save.disabled = wallOffline();
+  }
+
+  function wallCreateTap(e) {
+    const h = nearestHold(e.clientX, e.clientY, wallEl('wall-c-board'));
+    if (h) cycleHold(h);               // redraws (applyCreateRoles) and lights the board (previewEdited)
+  }
+
+  function wallPickGrade(g) {
+    createGrade = createGrade === g ? '' : g;
+    wallCreateRender();
+  }
+
+  // The name, on the on-screen keyboard.
+  function wallKbOpen() {
+    wallEl('wall-kb').hidden = false;
+    wallKbRender();
+  }
+  function wallKbClose() {
+    wallEl('wall-kb').hidden = true;
+    if (wallCreateOn) wallCreateRender();
+  }
+  function wallKbRender() {
+    wallEl('wall-kb-text').innerHTML = (wallCreateName ? escHtml(wallCreateName)
+      : '<span class="wall-kb-ph">Name your problem</span>') + '<i class="wall-kb-caret"></i>';
+    wallEl('wall-kb-keys').innerHTML = WALL_KB_ROWS.map(row => row.map(k => {
+      const label = k === 'shift' ? '⇧' : k === 'back' ? '⌫' : k === 'space' ? 'space'
+        : (wallKbShift && /[a-z]/.test(k) ? k.toUpperCase() : k);
+      const cls = k === 'shift' ? (wallKbShift ? ' fn on' : ' fn') : k === 'back' ? ' fn' : k === 'space' ? ' space' : '';
+      const aria = k === 'shift' ? ' aria-label="Capital letter"' : k === 'back' ? ' aria-label="Delete"' : '';
+      return `<button class="wall-key${cls}" type="button" data-k="${escAttr(k)}"${aria}>${escHtml(label)}</button>`;
+    }).join('')).join('');
+  }
+  function wallKbPress(k) {
+    if (k === 'shift') {
+      wallKbShift = !wallKbShift;
+    } else if (k === 'back') {
+      wallCreateName = wallCreateName.slice(0, -1);
+      wallKbShift = !wallCreateName || wallCreateName.endsWith(' ');
+    } else if (wallCreateName.length < WALL_NAME_MAX) {
+      let c = k === 'space' ? ' ' : k;
+      if (c === ' ' && (!wallCreateName || wallCreateName.endsWith(' '))) return;   // no leading or double space
+      if (wallKbShift && /[a-z]/.test(c)) c = c.toUpperCase();
+      wallCreateName += c;
+      wallKbShift = c === ' ';
+    }
+    wallKbRender();
+  }
+
+  // The discard sheet: leaving Create with something set, or 5 minutes untouched
+  // (with a countdown; it discards by itself at the end).
+  function wallAskDiscard(kind, then) {
+    wallKbClose();
+    wallAsk = { kind, then, until: kind === 'idle' ? Date.now() + WALL_CREATE_ASK_S * 1000 : 0 };
+    wallEl('wall-c-confirm-title').textContent = kind === 'idle' ? 'Still setting?' : 'Discard this problem?';
+    wallEl('wall-c-confirm').hidden = false;
+    wallAskTick(Date.now());
+  }
+  function wallAskTick(now) {
+    if (!wallAsk) return;
+    if (wallAsk.kind !== 'idle') {
+      wallEl('wall-c-confirm-text').textContent = 'The holds you’ve set aren’t saved yet.';
+      return;
+    }
+    const left = Math.max(0, Math.ceil((wallAsk.until - now) / 1000));
+    wallEl('wall-c-confirm-text').textContent =
+      `Nobody’s touched the screen for 5 minutes. This problem goes in ${left} s unless you keep setting.`;
+    if (left <= 0) wallAskAnswer(true);
+  }
+  function wallAskAnswer(discard) {
+    const ask = wallAsk;
+    wallAskClose();
+    wallLastTouch = Date.now();
+    if (discard && ask) ask.then();
+  }
+  function wallAskClose() {
+    wallAsk = null;
+    wallEl('wall-c-confirm').hidden = true;
+  }
+
+  function wallCreateCancel() {
+    wallSetPage('problems');           // asks first if something's set
+  }
+
+  async function wallCreateSave() {
+    const btn = wallEl('wall-c-save');
+    if (btn.disabled || !wallCreateOn) return;
+    const name = wallCreateName.trim();
+    const miss = createProblemMissing(name, null);
+    if (miss) {
+      showToast(miss.msg, 'error');
+      if (miss.field === 'name') wallKbOpen();
+      return;
+    }
+    btn.disabled = true; btn.classList.add('casting'); btn.textContent = 'Saving…';
+    const { data, error } = await sb.rpc('wall_create_problem', {
+      p_key: WALL_KEY, p_name: name, p_grade: createGrade,
+      p_starts: holdsWithRole('start'), p_ints: holdsWithRole('int'),
+      p_finish: holdsWithRole('finish')[0], p_feet: createFeet });
+    btn.classList.remove('casting'); btn.textContent = 'Save';
+    wallCreateNet();
+    if (error || !data || !data.id) {
+      const code = error && error.message;
+      showToast(WALL_SAVE_ERRORS[code] || 'Couldn’t save it — check the connection.', 'error');
+      if (['name', 'name_taken', 'offensive'].includes(code)) wallKbOpen();
+      if (code === 'key') wallCheckKey();
+      return;
+    }
+    allProblems.push(data);
+    buildGradeTabs();
+    renderList();                      // -> wallRenderList
+    if (!wallCreateOn) return;         // night or idle closed it while it saved: it's saved anyway
+    wallSetPage('problems', true);     // closes Create (and its LEDs)
+    wallSelect(data.id);
+    const card = document.querySelector(`#wall-list .wall-card[data-id="${CSS.escape(String(data.id))}"]`);
+    if (card) card.scrollIntoView({ block: 'center' });
+    const cast = wallEl('wall-cast');
+    cast.classList.add('offer');
+    setTimeout(() => cast.classList.remove('offer'), 6000);
+    showToast(`Saved “${data.name}”: light it up to see it on the wall`, 'success');
+  }
+
   // ── Offline ───────────────────────────────────────────────────────────────────
   const wallOffline = () => wallNetDown || !navigator.onLine;
 
@@ -316,6 +531,7 @@
     if (!WALL) return;
     wallNetDown = down;
     wallRenderSel();
+    wallCreateNet();
     if (!loaded) wallRenderList();
   }
 
@@ -345,6 +561,7 @@
     loadCircuits();                        // showCircuits -> wallRenderCircuits
     loadProfileNames();
     loadChallenges();                      // showChallenges -> wallOnChallenges reloads Ranks if it's up
+    if (!wallKeyOk) wallCheckKey();
   }
 
   // ── Ranks (read-only) ────────────────────────────────────────────────────────
@@ -396,12 +613,19 @@
   }
 
   // ── Pages ─────────────────────────────────────────────────────────────────────
-  function wallSetPage(page) {
+  // Leaving Create with something set asks first, unless `discard` (Save, a
+  // confirmed Cancel, idle, night).
+  function wallSetPage(page, discard = false) {
+    if (wallCreateOn && page !== 'create') {
+      if (!discard && wallCreateDirty()) { wallAskDiscard('leave', () => wallSetPage(page, true)); return; }
+      wallCreateClose();
+    }
     wallPage = page;
     document.querySelectorAll('.wall-tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
     document.querySelectorAll('.wall-page').forEach(s => s.classList.toggle('active', s.dataset.page === page));
     if (page === 'ranks') wallLoadRanks();
     if (page === 'circuits') wallRenderCircuits();
+    if (page === 'create' && !wallCreateOn) wallCreateOpen();
   }
 
   // ── Idle slides and night ─────────────────────────────────────────────────────
@@ -498,7 +722,7 @@
   // the top. Then the slides.
   function wallGoIdle() {
     abandonCircuitCast();
-    wallSetPage('problems');
+    wallSetPage('problems', true);     // Create closes (its LEDs end) without asking
     benchOnly = false;
     wallSelect(null);
     wallCircSelect(null);
@@ -545,7 +769,13 @@
     if (!wallNightOn) {
       // Not while a circuit runs: the climber is on the wall, not touching the screen.
       if (circuitRunGoing()) wallLastTouch = now;
-      if (!wallIdleOn && now - wallLastTouch > WALL_IDLE_MS) wallGoIdle();
+      if (wallCreateOn) {
+        // No slides while someone's setting: 5 minutes untouched asks, then discards.
+        if (!wallAsk && now - wallLastTouch > WALL_CREATE_IDLE_MS) {
+          wallAskDiscard('idle', () => wallSetPage('problems', true));
+        }
+        if (wallAsk) wallAskTick(Date.now());
+      } else if (!wallIdleOn && now - wallLastTouch > WALL_IDLE_MS) wallGoIdle();
       else if (wallIdleOn && now - wallSlideAt > WALL_SLIDE_MS) {
         wallSlide = (wallSlide + 1) % wallSlides().length;
         wallSlideAt = now;
@@ -558,6 +788,11 @@
   // Called by refreshBoardViews when the board image, map or outlines change.
   function wallRefreshBoard() {
     if (!WALL) return;
+    if (wallCreateOn) {
+      const img = wallEl('wall-c-board').querySelector('.board-graphic');
+      if (img.getAttribute('src') !== BOARD_IMG) img.src = BOARD_IMG;
+      wallCreateRender();
+    }
     wallRenderStage();
     wallRenderCircStage();
     if (wallIdleOn && wallSlides()[wallSlide] === 'bench') wallRenderIdle();
@@ -602,6 +837,28 @@
       if (card) wallCircSelect(card.dataset.id);
     });
     wallEl('wall-ccast').addEventListener('click', wallCircCast);
+    wallEl('wall-c-board').addEventListener('click', wallCreateTap);
+    wallEl('wall-c-name').addEventListener('click', wallKbOpen);
+    wallEl('wall-c-grades').addEventListener('click', e => {
+      const t = e.target.closest('.grade-tab');
+      if (t) wallPickGrade(t.dataset.grade);
+    });
+    wallEl('wall-c-feet').addEventListener('click', e => {
+      const b = e.target.closest('.feet-opt');
+      if (b) setCreateFeet(b.dataset.feet);
+    });
+    wallEl('wall-c-undo').addEventListener('click', undoCreate);
+    wallEl('wall-c-clear').addEventListener('click', onCreateReset);
+    wallEl('wall-c-cancel').addEventListener('click', wallCreateCancel);
+    wallEl('wall-c-save').addEventListener('click', wallCreateSave);
+    wallEl('wall-kb-keys').addEventListener('click', e => {
+      const k = e.target.closest('.wall-key');
+      if (k) wallKbPress(k.dataset.k);
+    });
+    wallEl('wall-kb-done').addEventListener('click', wallKbClose);
+    wallEl('wall-c-keep').addEventListener('click', () => wallAskAnswer(false));
+    wallEl('wall-c-discard').addEventListener('click', () => wallAskAnswer(true));
+    wallEl('wall-c-confirm').addEventListener('click', e => { if (e.target.id === 'wall-c-confirm') wallAskAnswer(false); });
     wallEl('wall-idle').addEventListener('click', wallWake);
     window.addEventListener('online', () => { wallRenderSel(); wallPoll(); });
     window.addEventListener('offline', wallRenderSel);
@@ -611,5 +868,6 @@
     wallRenderCircuits();
     wallNightOn = wallIsNight();
     if (wallNightOn || ssGet(WALL_IDLE_KEY)) wallGoIdle();
+    wallCheckKey();
     setInterval(wallTick, 1000);
   }

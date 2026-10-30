@@ -24,6 +24,22 @@
   // the wall layout (wall.js) instead of the phone views. The flag lives in the
   // URL, so a reload or an update keeps it; nothing else about the app changes.
   const WALL = new URLSearchParams(location.search).has('wall');
+  // The wall key (db/35): kiosk.service opens /?wall#k=<key> with the key the Pi
+  // made (/etc/projectboard/wall-key). It's kept on the device and sent only with
+  // a problem made on the wall (wall_create_problem). A #fragment never leaves the
+  // browser, and it's taken off the address straight away (before the router or
+  // the history stamps run, so there's no stamp to keep yet).
+  let WALL_KEY = '';
+  if (WALL) {
+    const m = /^#k=([A-Za-z0-9_-]*)$/.exec(location.hash);
+    try {
+      if (m && m[1]) localStorage.setItem('pb-wall-key', m[1]);
+      WALL_KEY = localStorage.getItem('pb-wall-key') || '';
+    } catch (e) {
+      WALL_KEY = m ? m[1] : '';
+    }
+    if (m) history.replaceState(history.state, '', location.pathname + location.search);
+  }
 
   // ── Grade ordering (boulder problems) ────────────────────────────────────────
   // Stored / matched lowercase (these strings are the DB values); displayed as

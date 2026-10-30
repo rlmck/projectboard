@@ -105,11 +105,11 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 | `problems.js` | Problem list/filters, detail, swipe and shuffle, info modal, **`castByName` + geofence**, board data loaders |
 | `admin.js` | The `#admin` hub: users, promote/demote, delete (RPCs) |
 | `account.js` | Ticks, favourites, filter pills, **auth**, display-name modal, profile |
-| `authoring.js` | Create/edit problem, the `#outlines` hold-outline editor, circuit helpers |
+| `authoring.js` | Create/edit problem, **the live LEDs while setting** (`preview_holds`), the `#outlines` hold-outline editor, circuit helpers |
 | `circuits.js` | Circuits list, detail (swipe, info), **circuit cast** (Cast sheet, run screen, `circuit_logs`), create, delete |
 | `challenge.js` | Challenges (db/31): the `#challenge` view (rules, the phone-timed attempt, summary, save + retry), your best and history, the challenge boards on Ranks |
 | `leaderboard.js` | `#leaderboard` (Points, or a challenge board via the tabs) |
-| `wall.js` | The **wall-screen mode** (`/?wall`, the kiosk): list + board + cast, circuits (cast through the same sheet), read-only Ranks, Get the app QR, idle slides, night screen, offline note (overview §4.7a). Off unless `WALL` (`state.js`) |
+| `wall.js` | The **wall-screen mode** (`/?wall`, the kiosk): list + board + cast, circuits (cast through the same sheet), **Create** (on-screen keyboard, `wall_create_problem`), read-only Ranks, Get the app QR, idle slides, night screen, offline note (overview §4.7a). Off unless `WALL` (`state.js`) |
 | `app.js` | **Loaded last:** event wiring, service worker, install flow, boot |
 
 What each view does in detail (fullscreen viewer, create, the outline editor, circuits, challenges, the wall mode): overview §4.
@@ -147,6 +147,7 @@ What each view does in detail (fullscreen viewer, create, the outline editor, ci
 - **Create rules:** the top 25% of the board (by the live map's hold y-span) is the finish zone: exactly one finish, no starts, other holds allowed. Everywhere else, holds cycle start (the first two) → hold → off. A problem needs 1–2 starts, at least one intermediate and one finish.
 - **Colours:** start green, intermediate blue, finish red, feet orange.
 - **The feet rule is `problems.feet_mode`** (`any` / `orange` / `black`, db/33): Any feet lights nothing; Orange only lights the B2 sign (LED 25), Black only the B1 sign (LED 26), never mirrored. `hold2`/`hold21` are those signs, **never holds**: never put them in a hold list (the listener skips them; contract §6.5).
+- **"The Hangout" is the gym's setter** (db/35): setter text only, `setter_id` null, no profile, so never on Ranks and no points. The 169 migrated gym problems and every problem made on the wall screen. **The wall screen creates through `wall_create_problem()` only**, with the **wall key**: made on the Pi by `install.sh` (`/etc/projectboard/wall-key`), handed to the page in the kiosk URL's `#k=` fragment, its SHA-256 alone in `wall_keys`. The key is a secret: never read, print, copy off the Pi or commit it.
 - **Challenges** (db/31): a timed competition on a circuit, protocol stored as data in `challenges.protocol`; the only one is the **Pat Burner**. Attempts are `challenge_attempts` (phone-timed, self-reported; `total_seconds` and `ended_early` are set by a trigger, never by the phone; reps capped at 1200 s; started within 14 days). Boards come only from `challenge_leaderboard()` / `challenge_compare()` (opted-in via `is_public`, best attempt, earlier wins a tie); admins delete with `admin_delete_attempt()`, logged as `delete_attempt`. A circuit used by a challenge is admin-only to edit and can't be deleted (RESTRICT). Details: overview §4.6a.
 - **Points come only from the `leaderboard()` RPC.** Never re-implement the formula in JS. **Only benchmarks score** (db/27). Only admins mark a benchmark (detail ⋮ menu), and once a problem is one, only admins can edit or delete it (RLS). Details: overview §4.6.
 - **`.icon-btn { display:flex }` beats `[hidden]`**, so every hideable icon button needs an explicit `#id[hidden]{display:none}`.
@@ -163,7 +164,7 @@ What each view does in detail (fullscreen viewer, create, the outline editor, ci
 | Anon key | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA` |
 
 - **Tables, policies and functions:** overview §5. RLS is on everywhere and is the real gate; the app's admin-only UI is just UX.
-- **DB scripts** live in local `db/`, numbered and idempotent. Since 30 Oct 2026 Claude applies them with `python db/apply.py` (dry run first; working rule 2). 01–34 are applied. The index and warnings are in `db/README.md`. A new script takes the next number.
+- **DB scripts** live in local `db/`, numbered and idempotent. Since 30 Oct 2026 Claude applies them with `python db/apply.py` (dry run first; working rule 2). 01–35 are applied. The index and warnings are in `db/README.md`. A new script takes the next number.
 - **Admin** = `profiles.is_admin`. It's set in the Supabase dashboard or in-app through `admin_set_admin()`, which only an existing admin can call and which refuses changing your own flag. **Nobody can promote themselves.**
 - **Who can do what:** browsing and casting need no login. Ticking, favourites and creating need sign-in. Admins edit (grade, holds) and delete any problem; an owner can delete their own problem only while nobody else has ticked it. Details: overview §5–6.
 - **Who cast is never in a broadcast** (the channel is public). A signed-in member's cast is recorded privately in `cast_log` (db/34: insert-only, no API reads) by `logCast()` in `problems.js`; only PB Console reads it, over direct Postgres. Keep `privacy.html` in step.
@@ -183,6 +184,7 @@ await channel.httpSend('cast_problem',
 ```
 
 - `castByName()` in `problems.js` is the only problem cast path. It runs the geofence check first (lenient; admins bypass), then sends only if the caller's `stillShowing()` says the tapped problem and orientation are still on screen.
+- **The live preview while setting** (30 Oct 2026): Create/Edit (phone, inside the geofence, no admin bypass) and the wall's Create send `preview_holds` (the whole selection + a `session` token; `end`, `show`, `ping`, `first`) from `authoring.js`; the listener's `preview` state lights it; a cast takes over until Show on board, a circuit makes it wait, 60 s of silence ends it. While a session is going the app subscribes to the channel (its only socket). Contract §9.
 - **Circuits** (30 Oct 2026): `startCircuitCast()` in `circuits.js` sends `cast_circuit` (`circuit_name`, `interval`, `loop`, `run`) and Stop sends `stop` (`run`); the Pi animates the run itself in `pi/listener/circuit.py`, a port of direction 4 in `tools/circuit-led-simulator.html` (change both together). Contract §8.
 - `httpSend` resolving means the **Realtime server** accepted the broadcast, not the Pi. There's no end-to-end confirmation, so never report board-level success.
 - **Test casting without the Pi:** `python tools/serve.py`, open `http://localhost:8000/tools/cast-test.html`. It lists every cast on the channel, and *Run checks* drives the local app through the cast cases using fake problem names.

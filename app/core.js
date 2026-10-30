@@ -880,7 +880,7 @@
 
     // The info modal belongs to the two detail views (problem and circuit).
     if (name !== 'detail' && name !== 'circuit-detail') closeInfo();
-    if (name !== 'create') closeCreateGrade();
+    if (name !== 'create') { closeCreateGrade(); previewEnd(); }   // the live LEDs end with the screen
     // A challenge attempt keeps running in other views, with a way back on the nav.
     if (name !== 'challenge') leaveChallenge();
 

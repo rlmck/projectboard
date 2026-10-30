@@ -1,6 +1,6 @@
 # Cast contract
 
-How a cast gets from the app to the LEDs. **This describes what the code does** (first written 19 Oct 2026; circuits added 30 Oct 2026, §8). Anything the code doesn't settle is under "Open questions"; nothing there is decided. Any change to the channel, event or payload must update this file in the same commit. The repo is public: no secrets here.
+How a cast gets from the app to the LEDs. **This describes what the code does** (first written 19 Oct 2026; circuits added 30 Oct 2026, §8; the live preview while setting 30 Oct 2026, §9). Anything the code doesn't settle is under "Open questions"; nothing there is decided. Any change to the channel, event or payload must update this file in the same commit. The repo is public: no secrets here.
 
 ## 1. Overview
 
@@ -17,7 +17,7 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
 | Mechanism | Realtime **Broadcast** (not Postgres Changes, not Presence) |
 | Channel topic | `board:HangoutPortland` (`HangoutPortland` is also `board_config.wall`) |
 | Channel type | public: no `config.private`, no Realtime Authorization policies |
-| Events | `cast_problem` (a problem, §3), `cast_circuit` and `stop` (a circuit run, §8) |
+| Events | `cast_problem` (a problem, §3), `cast_circuit` and `stop` (a circuit run, §8), `preview_holds` (the holds being set, lit live, §9) |
 | Persistence | none. Only listeners connected at that moment receive it; nothing is stored or replayed |
 | Database writes per cast | none (a signed-in climber's circuit run is logged by the app, §8.5, not by the cast) |
 
@@ -45,7 +45,7 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
   2. If the problem or orientation on screen changed during the location wait, nothing is sent.
   3. `channel.httpSend('cast_problem', payload, { timeout: 10000 })`: one HTTPS POST to Realtime's broadcast endpoint. `apikey` is the public anon key (`app/state.js`), and `Authorization` carries the user's access token when supabase-js has one. Guests can cast.
 - **What the user sees:** a 202 from Realtime → "Cast: <name>" (or "Mirror cast"). An error or timeout → "Cast failed — check connection". **Success means Supabase accepted the message, not that a Pi received it.**
-- The app never subscribes to the channel and holds no WebSocket.
+- The app never subscribes to the channel and holds no WebSocket, except while someone is setting a problem with the live preview on (§9.4).
 - **Other senders:** `tools/cast-test.html` ("Run checks", fake names `~cast-test-A` and `~cast-test-B`). Being a public channel, any client with the anon key can send.
 
 ## 5. Listener: the Pi
@@ -62,6 +62,7 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
   - **night mode, 23:00–08:00 by the Pi's clock** (day if the clock hasn't synced): the strip is cleared and casts are ignored (logged, not shown), while the socket stays joined;
   - **idle (an idle pattern, Glisten by default):** `IDLE_AFTER_S` after the last cast (20 min by default), and on start or at the end of the night in the daytime, the problem crossfades (1.5 s) into an ambient animation (`IDLE_PATTERN`: one of ten patterns, or a cycle; `pb-idle` on the Pi tries them live; the teaser pattern reads the benchmark problems, unmirrored, every half hour); a cast cuts straight in. With `IDLE_ANIMATION=off` the strip is cleared instead. At night everything fades to black over 3 s. Details in `pi/README.md`;
   - on `cast_circuit` and `stop`, runs and ends a circuit (§8);
+  - on `preview_holds`, lights the holds someone is setting, live (§9);
   - clears the strip on stop. It sends no reply, so a cast at night or with the Pi down still shows "Cast: X" in the app (§7 item 2);
   - health checks, watchdogs and deploy are in `pi/README.md`.
 
@@ -226,7 +227,63 @@ The look is direction 4, "Pulse and fade", chosen by Ross on 30 Oct 2026 in `too
 - **Runs:** when a run ends on the phone (Stop, or the top of a run done once), a signed-in climber's run with at least one move is inserted into `circuit_logs` (`user_id`, `circuit_id`, `moves`, `looped`, `speed` = seconds a move; own-rows RLS, db/14). A move is one LED advance, counted across laps. Guests aren't logged. Nothing in the app reads it yet (Phase 3 is PBs and leaderboards). **"Done" is a problems-only idea** ("done both sides", the problems' Exclude Done): the circuits list has no Done filter (Ross, 30 Oct 2026; circuits may get one in a future release).
 - **Who cast (db/34, 30 Oct 2026):** the broadcasts never say who (the channel is public: anyone with the anon key can listen). After a problem or circuit cast Realtime accepted, a signed-in member's app inserts one private row into `cast_log` (`kind`, `name`, `mirror`, `source`, `run`; insert-only, nobody can read it through the API) with `logCast()` in `problems.js`. PB Console's Activity reads it over direct Postgres and puts the member's nickname on the matching journal line: a circuit by its `run` token, a problem by name within 2 minutes.
 
+## 9. The live preview while setting (built 30 Oct 2026)
+
+While someone sets a problem (the phone's Create, an admin's Edit, or the wall screen's Create page), every change lights the board in a cast's colours, so the setter sees the holds on the wall as they tap them. Nothing is stored: the problem is saved by the app as usual.
+
+### 9.1 `preview_holds`
+
+```json
+{ "session": "4be1c0a9d2f37e65", "start": ["hold10", "hold3"], "hold": ["hold105"], "finish": ["hold212"],
+  "feet": "orange", "first": true, "source": "phone", "signed_in": true }
+{ "session": "4be1c0a9d2f37e65", "end": true, "source": "phone", "signed_in": true }
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `session` | string, 1–64 characters | yes | A token naming this setting session (the app sends 16 random hex characters). |
+| `start`, `hold`, `finish` | arrays of hold ids | no (empty when absent) | The **whole current selection**, as set: start (at most 2), intermediate, finish (at most 1); at most 100 holds in all. **Not stored inverted** (unlike a problem row, §6.2) and never mirrored. Never a diff, so a lost message is corrected by the next. Ids off the grid and the feet signs (`hold2`/`hold21`) light nothing. |
+| `feet` | `"any"`, `"orange"` or `"black"` | no (`any`) | The feet rule being set: lights the sign as §6.5. |
+| `end` | `true` | no | The session is over (Save, Cancel, leaving the screen, the app going to the background). Nothing else is read. |
+| `first` | `true` | no | The session's first message. For other apps listening (§9.4); the Pi doesn't need it. |
+| `show` | `true` | no | **Show on board**: take the board back after a takeover (§9.3). |
+| `ping` | `true` | no | A keep-alive (every 20 s, with the full selection): nothing changed. |
+| `source`, `signed_in` | | no | As §3; informational. |
+
+A malformed message (a bad session, a list that isn't a list of strings, too many starts, finishes or holds, an unknown feet rule) is logged and ignored.
+
+### 9.2 Sender: the app (`app/authoring.js`, "Live LEDs while setting")
+- A session starts at the **first change** (a hold tapped, Undo, Clear, the feet rule), not when the screen opens, so opening an admin Edit lights nothing. One message is in flight at a time, and the next carries whatever is on screen when it lands, so fast taps coalesce. A failed send is retried after 2 s. From the laptop, Realtime accepted each in about 0.25–0.4 s.
+- **Geofence (phones):** the session's first change runs `ensureCastLocation({ adminBypass: false })`: the same lenient check as casting, but **admins aren't exempt** (Ross, 30 Oct 2026: editing holds at home mustn't light the gym's board). Confidently outside: nothing is sent for the whole session and a note says the board lights up only at the gym; setting works as usual. The wall screen doesn't ask.
+- It ends with `end` on Save, Cancel, leaving the screen, and when the app goes to the background; the next change starts a new session. The wall screen also ends it when Create closes (idle, night, a discard).
+- The note by the board says "Lit on the board as you tap", "The board lights up as you set only at the gym", or "Someone else lit the board" with **Show on board**.
+
+### 9.3 What the Pi does (`renderer.py`, the `preview` state)
+
+| What happens | What the board does |
+|---|---|
+| A preview message, in the day, nothing else going | The preview cuts in at once (no fade) and follows every change. |
+| No message for `PREVIEW_TIMEOUT_S` (60 s) | It ends: crossfade to idle. The app's keep-alive (every 20 s) prevents this while the screen is open. |
+| `end` | It ends: idle. |
+| A problem cast (`cast_problem`) | **The cast wins** (Ross, 30 Oct 2026). The session is "taken over": its later messages are ignored until one says `show`. |
+| Another session's message | **The latest wins**: the earlier session is taken over, as by a cast. |
+| A message with `show` from a taken-over session | It takes the board back (from a cast or another preview). |
+| A circuit run (`cast_circuit`) | **The circuit wins and the preview waits**: its messages are kept, not shown. When the run ends (stop, finish, time limit) the preview comes back if it's still going (a message within 60 s), else idle. |
+| Night (23:00–08:00) | Nothing is shown; a preview going at 23:00 ends with the fade to black. |
+| SIGUSR1 (idle now) | It ends: idle. |
+| `pb-idle brightness` | Applies, as to a cast. |
+
+Taken-over sessions are remembered for an hour (at most 50). The preview uses a cast's brightness and current cap. The journal gets a line when a session starts, is taken over, comes back or ends (`LEDs: preview <token> …`), never one per tap. `listener.json` shows `leds: preview` while one is showing, and **the deploy busy check counts it** (`console/probe.py busy`), as it counts a circuit run.
+
+### 9.4 How the app knows it was taken over
+While a session is going (inside the geofence), the app subscribes to the channel: the only time it opens a socket. A `cast_problem`, or another session's `preview_holds` with `first` or `show` (the two kinds that take the board, §9.3), marks the session taken over and offers **Show on board**. Keep-alives, and taps from a session that was itself taken over, don't take the board, so they're ignored. The socket closes when the session ends. If the socket misses a takeover, the setter's taps don't show until they reopen Create (or the next takeover offers the button); nothing breaks.
+
+### 9.5 Open questions
+1. There's still no Pi → app message: the app infers a takeover from the channel, and a preview at night or with the Pi down still says "Lit on the board".
+2. Like casts, previews are unauthenticated (§7 item 15): anyone with the anon key can light the board this way. Night, the cast precedence and the 60 s timeout limit what that can do.
+
 ## Change history
+- **2026-10-30, Claude Code (evening):** §2, §4, §5 and a new §9: **the live preview while setting.** A new event on the same channel, `preview_holds` (`session`, `start`, `hold`, `finish`, `feet`, `end`, `first`, `show`, `ping`, plus `source`/`signed_in`), sent by the phone's Create/Edit and the wall screen's new Create page; a `preview` state in the listener with its precedence (a cast takes over until Show on board, a circuit makes it wait, night blocks it, 60 s with no message ends it). The app opens a socket only while a preview session is going. `cast_problem`, `cast_circuit` and `stop` are unchanged; a listener from before this ignores the new event.
 - **2026-10-30, Claude Code (later):** §8.1, §8.3, §8.4, §8.5: no mirrored circuits for now; the listener logs a `circuit ended: …` line for PB Console's Activity; the wall screen casts circuits (`source: "wall"`); members' casts are recorded privately in `cast_log` (db/34), never in the broadcast. **No change to the channel, events or payloads.**
 - **2026-10-30, Claude Code:** §2, §4, §5, §7 item 13 and a new §8: **circuits.** Two new events on the same channel, `cast_circuit` (`circuit_name`, `interval`, `loop`, `mirror`, `run`, plus `source`/`signed_in`) and `stop` (`run`). The listener runs the circuit itself (`pi/listener/circuit.py`, Ross's direction 4); the app's Cast sheet sends them and logs signed-in runs to `circuit_logs`. `cast_problem` is unchanged; a listener from before this ignores the new events.
 - **2026-10-30, Claude Code:** §5, §6.5, §7 item 7: the feet rule. `problems.feet_mode` (`any` / `orange` / `black`, db/33) drives the B2/B1 sign LEDs (25/26), never the hold list, and never mirrored; db/33 maps the migrated problems and removes `hold2`/`hold21` from their lists. The listener reads `feet_mode` from the next Pi deploy. **No change to the channel, event or payload.**
