@@ -28,7 +28,7 @@ Also installed:
 
 ## Circuits (30 Oct 2026)
 
-A `cast_circuit` (contract §8) runs a circuit: a 5 s countdown on the start holds, then one move every `interval` seconds in Ross's "Pulse and fade" look (solid blue to go to, amber swelling for the one after, soft red fading on the hold let go of; a match stays solid; at the top of a run done once, the route runs up in green). `listener/circuit.py` is a port of direction 4 in `tools/circuit-led-simulator.html`: change both together. A `stop` with the run's token (or none), the finish, a problem cast, night, or `CIRCUIT_MAX_S` (1800 s) ends it, and the board crossfades into idle. The journal shows `circuit received`, `circuit started`, `stop received` and the `LEDs: idle …` line. Tests: `pi/tests/test_circuit.py`.
+A `cast_circuit` (contract §8) runs a circuit: a 5 s countdown on the start holds, then one move every `interval` seconds in Ross's "Pulse and fade" look (solid blue to go to, amber swelling for the one after, soft red fading on the hold let go of; a match stays solid; at the top of a run done once, the route runs up in green). `listener/circuit.py` is a port of direction 4 in `tools/circuit-led-simulator.html`: change both together. A `stop` with the run's token (or none), the finish, a problem cast, night, or `CIRCUIT_MAX_S` (1800 s) ends it, and the board crossfades into idle. The journal shows `circuit received`, `circuit started`, `stop received`, and `circuit ended: 'Name' <how> after N moves (S s), …` when it ends (PB Console's Activity reads that one), then the `LEDs: idle …` line. Tests: `pi/tests/test_circuit.py`.
 
 ## Idle patterns
 

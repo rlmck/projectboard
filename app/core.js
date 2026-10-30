@@ -253,13 +253,11 @@
   // darken-the-rest mask (detail views). `lightAll` (with dim) cuts EVERY hold out
   // of that mask, not just the used ones: the wall dims to the detail view's
   // level while every hold stays bright (create/edit, where any hold can be
-  // tapped). `fresh` (a hold id) marks the hold the circuit Play preview has
-  // just lit, which pulses once. A used hold with no traced polygon falls back
-  // to a dot.
+  // tapped). A used hold with no traced polygon falls back to a dot.
   // The mask lives in its OWN svg so the outline svg can carry a plain CSS
   // drop-shadow: a CSS filter on an svg *child* resolves its lengths in the
   // stretched viewBox units, but on the outermost svg it resolves in CSS pixels.
-  function holdShapeLayerHtml(roles, { mirror = false, dim = false, lightAll = false, fresh = null } = {}) {
+  function holdShapeLayerHtml(roles, { mirror = false, dim = false, lightAll = false } = {}) {
     if (!shapesUsable()) return null;
     const maskId = 'hsmask-' + (++hsMaskSeq);
     // viewBox is 0..100 on both axes with preserveAspectRatio:none, so a <circle>
@@ -271,7 +269,7 @@
       const key = mirror ? mirrorHold(h) : h;
       const pts = HOLD_SHAPES[key];
       const pos = HOLD_MAP[key];
-      const role = roles[h] + (h === fresh ? ' hs-fresh' : '');
+      const role = roles[h];
       if (pts && pts.length >= 3) {
         const d = smoothShapePath(pts);
         holes.push(`<path d="${d}" fill="#000"/>`);
@@ -883,8 +881,6 @@
     // The info modal belongs to the two detail views (problem and circuit).
     if (name !== 'detail' && name !== 'circuit-detail') closeInfo();
     if (name !== 'create') closeCreateGrade();
-    // The circuit Play preview only runs on the circuit detail view.
-    if (name !== 'circuit-detail') stopCircuitPlay(false);
     // A challenge attempt keeps running in other views, with a way back on the nav.
     if (name !== 'challenge') leaveChallenge();
 

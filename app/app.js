@@ -329,8 +329,7 @@
   // Swipe left/right on a detail view to step through its filtered deck (problems
   // or circuits). Attached to the stable <main> (the content is replaced on every
   // render). Listeners are passive + never preventDefault, so taps on the header
-  // buttons and the cast/tick actions are unaffected. A drag that starts on the
-  // circuit Play panel belongs to its speed slider, not a swipe. Off while the
+  // buttons and the cast/tick actions are unaffected. Off while the
   // fullscreen viewer is open (it has its own swipe).
   function wireDetailSwipe(selector, step) {
     const area = document.querySelector(selector);
@@ -338,7 +337,7 @@
     let startX = 0, startY = 0, tracking = false;
     area.addEventListener('touchstart', e => {
       // The fullscreen viewer handles its own gestures (drag pans there).
-      if (fsOpen || e.touches.length !== 1 || e.target.closest('.circuit-play-panel')) { tracking = false; return; }
+      if (fsOpen || e.touches.length !== 1) { tracking = false; return; }
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
       tracking = true;
@@ -438,12 +437,11 @@
   });
   wirePill('cpill-faves', () => circuitFavesOnly,   v => circuitFavesOnly = v,   renderCircuits, { needsAuth: true, guestMsg: 'Sign in to filter favourites' });
   wirePill('cpill-loop',  () => circuitLoopOnly,    v => circuitLoopOnly = v,    renderCircuits);
-  wirePill('cpill-done',  () => circuitExcludeDone, v => circuitExcludeDone = v, renderCircuits, { needsAuth: true, guestMsg: 'Sign in to filter your sends' });
   document.getElementById('circuit-create-btn').addEventListener('click', () => {
     location.hash = session ? '#circuit-create' : '#auth';
   });
 
-  // Circuit detail: back, fave, ⋮ menu (Delete, Information); Play is wired per render.
+  // Circuit detail: back, fave, ⋮ menu (Delete, Information); Cast is wired per render.
   document.getElementById('circuit-back').addEventListener('click', goBack);
   document.getElementById('circuit-detail-fave').addEventListener('click', () => { if (currentCircuit) toggleCircuitFave(currentCircuit.id); });
   wireOverflowMenu('circuit-menu-btn', 'circuit-menu');

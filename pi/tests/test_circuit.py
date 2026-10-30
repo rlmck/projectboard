@@ -118,6 +118,14 @@ class Look(unittest.TestCase):
             self.assertTrue(all(1 <= i <= board.MAX_HOLD for i in leds))
             self.assertNotIn(board.led_index(21), leds)
 
+    def test_ended_line(self):
+        run = circuit.Run("Pat's", SEQ, 2, 3, True, 'abc', tag=' [phone, member]')
+        self.assertEqual(run.ended_line('stopped', COUNTDOWN + 3 * 7 + 1),
+                         "circuit ended: \"Pat's\" stopped after 7 moves (27 s), 3 s a move, loop, run abc [phone, member]")
+        once = circuit.Run('Test', SEQ, 2, 2.5, False)
+        self.assertEqual(once.ended_line('finished', 100), 'circuit ended: \'Test\' finished after 10 moves (100 s), '
+                                                            '2.5 s a move, once, run -')
+
     def test_bad_sequence(self):
         with self.assertRaises(ValueError):
             circuit.Run('Test', [], 2, 3, False)
@@ -169,7 +177,7 @@ class Renderer(unittest.TestCase):
         self.assertLessEqual(max(max(rgb) for rgb in self.strip.writes[-1][0].values()), 128)   # cast brightness 0.5
         self.go(run.moves * run.interval + run.finish_length())
         self.assertEqual(r.state, renderer.IDLE)
-        self.assertTrue(any('finished' in m for m in self.logs))
+        self.assertTrue(any(m.startswith("circuit ended: 'Test' finished after 10 moves") for m in self.logs))
 
     def test_stop_needs_the_right_token(self):
         r = self.make()
@@ -200,6 +208,7 @@ class Renderer(unittest.TestCase):
         r.cast({54: (0, 127, 0)})
         self.go(0.1)
         self.assertEqual(r.state, renderer.CAST)
+        self.assertTrue(any(m.startswith("circuit ended: 'Test' replaced after 1 moves") for m in self.logs))
         self.assertEqual(self.strip.writes[-1][0], {54: (0, 127, 0)})
         r.stop_circuit('r1')                       # a late stop leaves the problem alone
         self.go(0.1)

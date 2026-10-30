@@ -1317,13 +1317,6 @@
     #view-create .hs.int, #view-circuit-create .hs.int       { fill: var(--int-a24); }
     #view-create .hs.finish, #view-circuit-create .hs.finish { fill: var(--finish-a30); }
 
-    /* The hold the circuit Play preview has just lit flashes once. */
-    .hs.hs-fresh { animation: hsFresh 0.6s ease-out; }
-    @keyframes hsFresh {
-      from { stroke-width: 7px; fill: var(--white-a45); }
-      to   { stroke-width: 2.4px; fill: var(--white-a00); }
-    }
-
     /* ── Fullscreen board viewer ─────────────────────────────────────────
        A camera over the board (core.js "Fullscreen board viewer"): it opens
        framed on the route, pinch/drag/double-tap to look around, a blurred copy
@@ -1761,17 +1754,6 @@
       color: var(--on-board); text-shadow: var(--text-shadow-seq);
       pointer-events: none;
     }
-    /* A lit hold during the Play preview (dot fallback) — brighter, with a glow pulse */
-    .hold-dot.lit {
-      filter: brightness(1.5);
-      box-shadow: var(--shadow-hold-lit);
-      animation: litPulse 0.55s ease;
-    }
-    .hold-dot.lit.start  { color: var(--start); }
-    .hold-dot.lit.int    { color: var(--int); }
-    .hold-dot.lit.finish { color: var(--finish); }
-    @keyframes litPulse { from { transform: translate(-50%, -50%) scale(1.35); } to { transform: translate(-50%, -50%) scale(1); } }
-
     /* Move-order tags on the traced outlines (circuitLayerHtml): a small pill in
        the role's colour, hanging off the bottom edge of its hold. */
     .seq-tag-layer { position: absolute; inset: 0; pointer-events: none; }
@@ -1794,8 +1776,7 @@
     body.board-fs .seq-tag { font-size: 12px; padding: 1px 6px; }
 
     /* Circuit detail: the title block + board are centred in the pinned area (as
-       #detail-content), and the Play panel is held at the bottom, so the board
-       sits in the same place on every circuit. */
+       #detail-content), with the challenge link (if any) under them. */
     #circuit-detail-content {
       flex: 1;
       min-height: 0;
@@ -1809,56 +1790,6 @@
       flex-direction: column;
       justify-content: center;
     }
-
-    /* Play panel: a round play/stop button, what's playing, and the speed slider
-       (Slow on the left, Fast on the right). */
-    .circuit-play-panel {
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      margin: 10px 12px 12px;
-      padding: 12px 14px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-    }
-    .circuit-play-btn {
-      width: 52px; height: 52px; flex: none;
-      border-radius: 50%;
-      border: 1px solid var(--accent);
-      background: var(--accent); color: var(--on-accent);
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer;
-      touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
-      box-shadow: var(--shadow-play);
-      transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
-    }
-    .circuit-play-btn svg { width: 24px; height: 24px; }
-    .circuit-play-btn:not(.playing) svg { margin-left: 3px; }   /* optical centre of the triangle */
-    .circuit-play-btn:active { transform: scale(0.94); }
-    .circuit-play-btn.playing { background: var(--surface2); border-color: var(--border); color: var(--text); box-shadow: none; }
-    .circuit-play-body { flex: 1; min-width: 0; }
-    .circuit-play-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-    .circuit-play-status {
-      min-width: 0;
-      font-size: 14px; font-weight: 700;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      font-variant-numeric: tabular-nums;
-    }
-    .circuit-speed-val {
-      flex: none;
-      font-size: 13px; font-weight: 700; color: var(--accent-hover);
-      font-variant-numeric: tabular-nums;
-    }
-    .circuit-speed-row {
-      display: flex; align-items: center; gap: 10px;
-      margin-top: 6px;
-      font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
-      color: var(--text-muted);
-    }
-    .circuit-speed { flex: 1; min-width: 0; height: 28px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 
     /* Cast sheet: options, then the run (a big countdown / move count and Stop), then the result */
     .cast-sheet .cc-seg-btn { padding: 8px 14px; }
@@ -2134,7 +2065,7 @@
     .profile-footer a { font-size: 13px; color: var(--text-muted); text-decoration: underline; text-underline-offset: 3px; }
 
     /* ── Challenges (challenge.js, db/31) ────────────────────────────── */
-    /* The link on a circuit's detail view, between the board and the Play panel */
+    /* The link on a circuit's detail view, under the board */
     .challenge-link {
       flex-shrink: 0;
       display: flex; align-items: center; gap: 12px;
@@ -2323,6 +2254,14 @@
 
     .wall-page { display: none; min-height: 0; }
     .wall-page.active { display: grid; }
+
+    /* Circuits: the list | the chosen circuit's bar over the board */
+    .wall-circuits.active { grid-template-columns: var(--wall-side-w) minmax(0, 1fr); }
+    .wall-circuits .wall-list { padding-top: 12px; }
+    /* The Cast sheet over the wall, sized for a finger a step back from the screen */
+    body.wall .cast-sheet .cc-seg-btn { padding: 14px 24px; font-size: 18px; }
+    body.wall .cast-sheet .cc-option-label { font-size: 17px; }
+    body.wall .cast-sheet .btn-block { padding-top: 16px; padding-bottom: 16px; font-size: 18px; }
 
     /* Problems: the rail | the list | the chosen problem's bar over the board */
     .wall-problems.active { grid-template-columns: var(--wall-rail-w) calc(var(--wall-side-w) - var(--wall-rail-w)) minmax(0, 1fr); }

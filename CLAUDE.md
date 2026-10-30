@@ -106,10 +106,10 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 | `admin.js` | The `#admin` hub: users, promote/demote, delete (RPCs) |
 | `account.js` | Ticks, favourites, filter pills, **auth**, display-name modal, profile |
 | `authoring.js` | Create/edit problem, the `#outlines` hold-outline editor, circuit helpers |
-| `circuits.js` | Circuits list, detail (swipe, info), Play preview, **circuit cast** (Cast sheet, run screen, `circuit_logs`), create, delete |
+| `circuits.js` | Circuits list, detail (swipe, info), **circuit cast** (Cast sheet, run screen, `circuit_logs`), create, delete |
 | `challenge.js` | Challenges (db/31): the `#challenge` view (rules, the phone-timed attempt, summary, save + retry), your best and history, the challenge boards on Ranks |
 | `leaderboard.js` | `#leaderboard` (Points, or a challenge board via the tabs) |
-| `wall.js` | The **wall-screen mode** (`/?wall`, the kiosk): list + board + cast, read-only Ranks, Get the app QR, idle slides, night screen, offline note (overview §4.7a). Off unless `WALL` (`state.js`) |
+| `wall.js` | The **wall-screen mode** (`/?wall`, the kiosk): list + board + cast, circuits (cast through the same sheet), read-only Ranks, Get the app QR, idle slides, night screen, offline note (overview §4.7a). Off unless `WALL` (`state.js`) |
 | `app.js` | **Loaded last:** event wiring, service worker, install flow, boot |
 
 What each view does in detail (fullscreen viewer, create, the outline editor, circuits, challenges, the wall mode): overview §4.
@@ -163,9 +163,10 @@ What each view does in detail (fullscreen viewer, create, the outline editor, ci
 | Anon key | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA` |
 
 - **Tables, policies and functions:** overview §5. RLS is on everywhere and is the real gate; the app's admin-only UI is just UX.
-- **DB scripts** live in local `db/`, numbered and idempotent. Since 30 Oct 2026 Claude applies them with `python db/apply.py` (dry run first; working rule 2). 01–33 are applied. The index and warnings are in `db/README.md`. A new script takes the next number.
+- **DB scripts** live in local `db/`, numbered and idempotent. Since 30 Oct 2026 Claude applies them with `python db/apply.py` (dry run first; working rule 2). 01–34 are applied. The index and warnings are in `db/README.md`. A new script takes the next number.
 - **Admin** = `profiles.is_admin`. It's set in the Supabase dashboard or in-app through `admin_set_admin()`, which only an existing admin can call and which refuses changing your own flag. **Nobody can promote themselves.**
 - **Who can do what:** browsing and casting need no login. Ticking, favourites and creating need sign-in. Admins edit (grade, holds) and delete any problem; an owner can delete their own problem only while nobody else has ticked it. Details: overview §5–6.
+- **Who cast is never in a broadcast** (the channel is public). A signed-in member's cast is recorded privately in `cast_log` (db/34: insert-only, no API reads) by `logCast()` in `problems.js`; only PB Console reads it, over direct Postgres. Keep `privacy.html` in step.
 - **Accounts are nickname + passphrase, with no personal data** (under-18s use the app; db/30). No email, no Google, no real names. Supabase Auth gets a placeholder email `u-<16 base32>@users.invalid`: **keep that pattern in step between `account.js` (`PLACEHOLDER_DOMAIN`) and db/30**, and never turn on anything that sends email (Confirm email, reset, security notifications). `profiles` is readable only by its owner: use `setter_names()`, `leaderboard()` and `admin_list_users()`. Nickname rules live in one place, db/30 `nickname_check()`. A lost passphrase is reset by an admin through the Edge Function `supabase/functions/admin-reset-passphrase`, the **only** place the service-role key is used. Turnstile guards sign-in and sign-up (site key public in `account.js`; **the secret key never goes in the repo or chat**). Comments are off (db/30).
 - **Direct Postgres** for reviews and PB Console's Data phase: `db/.env` → `SUPABASE_DB_URL` (session pooler), via `pg8000`, run by scripts that read it themselves. Default to read-only. How to connect: overview §5.
 

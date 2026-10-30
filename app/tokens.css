@@ -99,14 +99,12 @@
   --bg-a80: rgba(10,10,10,0.8);
   --bg-a82: rgba(10,10,10,0.82);
   --bg-a85: rgba(10,10,10,0.85);
-  --white-a00: rgba(255,255,255,0);
   --white-a075: rgba(255, 255, 255, 0.075);
   --white-a12: rgba(255,255,255,0.12);
   --white-a15: rgba(255,255,255,0.15);
   --white-a22: rgba(255,255,255,0.22);
   --white-a25: rgba(255,255,255,0.25);
   --white-a35: rgba(255,255,255,0.35);
-  --white-a45: rgba(255,255,255,0.45);
   --white-a60: rgba(255,255,255,0.6);
   --white-a70: rgba(255,255,255,0.7);
   --white-a90: rgba(255,255,255,0.9);
@@ -149,10 +147,8 @@
   /* Shadows */
   --shadow: 0 4px 24px rgba(0,0,0,0.4);  /* sheets, the toast, the install banner */
   --shadow-menu: 0 14px 34px rgba(0,0,0,0.55);
-  --shadow-play: 0 4px 14px rgba(236,72,153,0.35);
   --shadow-fell: 0 8px 30px rgba(220,38,38,0.35);
   --shadow-hold: 0 0 0 1px rgba(0,0,0,0.45), 0 0 9px rgba(0,0,0,0.4);
-  --shadow-hold-lit: 0 0 0 1px rgba(0,0,0,0.45), 0 0 14px 3px currentColor;  /* currentColor resolves on the element that uses it */
   --shadow-fs-board: 0 10px 40px rgba(0,0,0,0.6);
   --shadow-fs-map: 0 4px 16px rgba(0,0,0,0.5);
   --shadow-fs-map-dim: 0 0 0 999px rgba(0,0,0,0.35);

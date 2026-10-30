@@ -236,31 +236,42 @@
   }
 
   // From the wall or a phone, member or guest: '—' for casts made before the app sent it (29 Oct 2026).
+  // A member's nickname comes from the private cast log (db/34), never from the broadcast.
   const from = (c) => c.source ? FROM[c.source] || c.source : '—';
-  const who = (c) => c.who ? WHO[c.who] || c.who : '—';
+  const who = (c) => c.nickname ? c.nickname : c.who ? WHO[c.who] || c.who : '—';
+
+  // A circuit run: how it ended, the moves made, the speed and loop.
+  function runNote(c) {
+    if (!c.shown) return '<span class="tag bad">ignored: night</span>';
+    return '<span class="tag dim">circuit</span> ' + esc(c.how) + ' after ' + c.moves + ' move' + (c.moves === 1 ? '' : 's') +
+      ' · ' + esc(String(c.interval)) + ' s a move · ' + (c.loop ? 'loop' : 'once');
+  }
 
   function castRows(rows) {
     if (!rows.length) return '<p class="muted">No casts in this period.</p>';
     return '<table class="audit"><tr><th>Date and time</th><th>Climb</th><th>From</th><th>Who</th><th></th></tr>' +
       rows.map((c) => '<tr><td>' + esc(when(c.at)) + '</td><td><strong>' + esc(c.name) + '</strong></td><td>' + esc(from(c)) +
-        '</td><td>' + esc(who(c)) + '</td><td>' + (c.mirror ? '<span class="tag dim">mirrored</span> ' : '') +
-        (c.shown ? '' : '<span class="tag bad">ignored: night</span>') + '</td></tr>').join('') + '</table>';
+        '</td><td>' + (c.nickname ? '<strong>' + esc(who(c)) + '</strong>' : esc(who(c))) + '</td><td>' +
+        (c.kind === 'circuit' ? runNote(c)
+          : (c.mirror ? '<span class="tag dim">mirrored</span> ' : '') + (c.shown ? '' : '<span class="tag bad">ignored: night</span>')) +
+        '</td></tr>').join('') + '</table>';
   }
 
   async function loadActivity() {
     const box = $('activity-out');
     box.innerHTML = '<p class="muted">Reading the listener\'s journal…</p>';
     let a;
-    try { a = await get('/api/activity?days=' + $('activity-days').value); } catch (e) { return fail(box, e); }
+    try { a = await get('/api/activity?names=1&days=' + $('activity-days').value); } catch (e) { return fail(box, e); }
     const last = a.last;
     const split = (counts, names) => Object.keys(counts || {}).sort((x, y) => counts[y] - counts[x])
       .map((k) => (names[k] || 'not recorded') + ' ' + counts[k]).join(' · ');
     box.innerHTML =
       '<h3>Last used</h3>' + (last
         ? '<div class="big mid">' + esc(when(last.at)) + ' <span class="muted">(' + esc(ago(last.at)) + ')</span></div>' +
-          '<p><strong>' + esc(last.name) + '</strong>' + (last.mirror ? ' (mirrored)' : '') + ' · ' + esc(from(last)) + ' · ' + esc(who(last)) +
+          '<p><strong>' + esc(last.name) + '</strong>' + (last.kind === 'circuit' ? ' (circuit)' : '') + (last.mirror ? ' (mirrored)' : '') + ' · ' + esc(from(last)) + ' · ' + esc(who(last)) +
           (last.shown ? '' : ' · ignored: night mode') + '</p>'
         : '<p class="muted">No casts in this period.</p>') +
+      (a.names !== 'ok' ? '<p class="note">Members\' names aren\'t shown: ' + esc(a.names) + '.</p>' : '') +
       '<h3>Latest casts</h3>' + castRows(a.recent || []) +
       (a.recent && a.recent.length >= 100 ? '<p class="note">The latest 100 shown.</p>' : '') +
       '<h3>Summary</h3>' +
@@ -270,9 +281,11 @@
       '<h3>Casts per day</h3>' + bars(a.per_day, (d, short) => short ? d.slice(8) : d) +
       '<h3>Casts by hour of the day</h3>' + bars(a.per_hour, (h) => String(h).padStart(2, '0')) +
       '<h3>Most cast</h3><ol>' + a.top.map(([n, c]) => '<li>' + esc(n) + ' <span class="muted">' + c + '</span></li>').join('') + '</ol>' +
-      '<p class="note">From the Pi\'s journal. Each cast says where it was sent from and whether someone was signed in, never who ' +
-      '(<code>docs/cast-contract.md</code> §3); casts before 29 Oct 2026, or before the Pi\'s listener was updated, show —. ' +
-      'Ticks and active users need the admin data path (phase 13).</p>';
+      '<h3>Circuits</h3><p><strong>' + (a.circuit_runs || 0) + '</strong> runs, ' + (a.circuit_moves || 0) + ' moves in all.</p>' +
+      ((a.top_circuits || []).length ? '<ol>' + a.top_circuits.map(([n, c]) => '<li>' + esc(n) + ' <span class="muted">' + c + '</span></li>').join('') + '</ol>' : '') +
+      '<p class="note">From the Pi\'s journal: each cast says where it was sent from and whether someone was signed in, never who ' +
+      '(<code>docs/cast-contract.md</code> §3); a circuit run is listed when it ends. Members\' nicknames come from the private cast log ' +
+      '(db/34, read over the database connection), matched to the journal; casts before 30 Oct 2026 have none, and casts before 29 Oct show —.</p>';
   }
 
   // -- Acceptance tests (phase 11) ---------------------------------------------------------------------

@@ -2,12 +2,14 @@
 
 Agreed 15 June 2026. Moved here on 29 Oct 2026 from the local-only `docs/project-notes.md` so the claude.ai chat can read it; nothing else from that file came with it. When it's built, the new `cast_circuit` and `stop` events go into `docs/cast-contract.md` in the same commit (CLAUDE.md → Session rules).
 
-Phase 1 (browse, create, in-app Play preview) is built. **Phase 2 was built on 30 Oct 2026**: what was built is in `docs/cast-contract.md` §8, and it differs from the spec below where Ross chose differently:
+Phase 1 (browse, create, and an in-app Play preview, removed on 30 Oct 2026) is built. **Phase 2 was built on 30 Oct 2026**: what was built is in `docs/cast-contract.md` §8, and it differs from the spec below where Ross chose differently:
 - **The look** is "Pulse and fade" (direction 4 of `tools/circuit-led-simulator.html`, chosen 30 Oct 2026), not the 4-hold window: the start holds flash **red** in the countdown; then the hold to go to is solid blue, the one after swells amber, the one let go of fades out in red; a match stays solid; at the top the route runs up in green.
 - **Speed** is three steps, Slow 5 s / Med 3 s / Fast 2 s a move, not 0.1 s steps.
 - **The phone** shows the countdown (with beeps), the move count and a big Stop; it doesn't mirror the lights.
 - **Stop and the finish** crossfade the board into the idle pattern; a forgotten loop ends after 30 minutes (`CIRCUIT_MAX_S`).
-- **Not built:** mirroring from the app (the Pi takes `mirror`, the app has no mirrored circuit view), and the "Exclude Done" pill (runs are logged, but "done" isn't defined).
+- **The wall screen** casts circuits too (its Circuits page, 30 Oct 2026).
+- **The Play preview is gone** (Ross, 30 Oct 2026): casting replaced it.
+- **Future releases, not now:** mirrored circuits (the Pi takes `mirror`, the app never sends it), and a Done filter for circuits ("done" means "done both sides" and applies to problems only; the circuits list's inert Exclude Done pill was removed).
 
 The original spec follows.
 

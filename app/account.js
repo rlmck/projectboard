@@ -113,7 +113,7 @@
   // exclude-done) render muted for a guest and reset their state; they stay clickable
   // so a tap can show the "sign in" toast. Benchmarks/Looping are never disabled.
   function updateFaveControls() {
-    if (!session) { favesOnly = false; excludeDone = false; circuitFavesOnly = false; circuitExcludeDone = false; }
+    if (!session) { favesOnly = false; excludeDone = false; circuitFavesOnly = false; }
     // [pill id, active state, needs-auth] for both lists.
     const pills = [
       ['pill-faves',  favesOnly,           true],
@@ -121,7 +121,6 @@
       ['pill-done',   excludeDone,         true],
       ['cpill-faves', circuitFavesOnly,    true],
       ['cpill-loop',  circuitLoopOnly,     false],
-      ['cpill-done',  circuitExcludeDone,  true],
     ];
     pills.forEach(([id, active, needsAuth]) => {
       const el = document.getElementById(id);

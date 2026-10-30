@@ -292,7 +292,7 @@ class Listener:
             name, ' mirrored' if mirror else '', len(out), ma,
             ' (capped x%.2f)' % cap if cap < 1 else '', (time.monotonic() - t0) * 1000))
 
-    async def show_circuit(self, name, interval, loop, mirror, token, t0):
+    async def show_circuit(self, name, interval, loop, mirror, token, tag, t0):
         row = await asyncio.to_thread(supa.fetch_circuit, self.cfg, name)
         if self.pending:
             log('circuit %r superseded by %r before it started' % (name, self.pending[1]))
@@ -306,7 +306,7 @@ class Listener:
         if loop is None:
             loop = bool(row.get('loops'))
         run = circuit.Run(name, row.get('hold_sequence'), row.get('start_count'), interval, loop, token,
-                          self.mirror_map if mirror else None)
+                          self.mirror_map if mirror else None, tag)
         if run.dropped:
             warn('circuit %r: hold ids off the grid ignored: %s' % (name, sorted(run.dropped)))
         if self.mode == 'night':
@@ -371,7 +371,7 @@ class Listener:
             return
         how = 'loop' if loop else 'once' if loop is False else "the circuit's loop setting"
         log('circuit received: %r%s, %g s a move, %s%s' % (name, ' mirrored' if mirror else '', interval, how, tag))
-        self.pending = ('circuit', name, float(interval), loop, mirror, token, time.monotonic())
+        self.pending = ('circuit', name, float(interval), loop, mirror, token, tag, time.monotonic())
         self.cast_ready.set()
 
     def on_stop(self, body):

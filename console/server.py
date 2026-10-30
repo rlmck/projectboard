@@ -38,6 +38,7 @@ REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 import actions  # noqa: E402
+import castlog  # noqa: E402
 import checks  # noqa: E402
 import drift  # noqa: E402
 import gitops  # noqa: E402
@@ -238,7 +239,10 @@ def r_activity(app, q):
     raw = app.remote.probe('activity %d' % days)
     if not raw.get('ok'):
         raise RuntimeError(raw.get('error') or 'the Pi did not answer')
-    return reports.activity(raw)
+    # Members' nicknames from the private cast log (db/34, direct Postgres): the overview's
+    # tile asks for days=7 every refresh, so only the Activity tab (names=1) reads it.
+    members = castlog.members(days) if q.get('names') == '1' else None
+    return reports.activity(raw, members)
 
 
 def r_acceptance(app, q):

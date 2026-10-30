@@ -11,6 +11,10 @@
 //     over the board (its outlines over the dimmed wall). Light it up casts
 //     through castByName() exactly as the phone does (guests can cast; with no
 //     location fix the geofence lets it through).
+//   - Circuits: the list, and the chosen circuit (its numbered holds) over the
+//     board. Light it up opens the phone's Cast sheet (circuits.js): speed and
+//     loop, then the countdown, the move count and Stop. The wall doesn't go idle
+//     while a run is going; night closes the sheet (the Pi ends the run).
 //   - Ranks, read-only: Points and each challenge's board side by side.
 //   - Get the app: the /scan QR, in place of Profile. No sign-in anywhere.
 // After WALL_IDLE_MS without a touch it goes back to the list (the filter and the
@@ -34,7 +38,8 @@
   const WALL_BOARD_ROWS = 10;            // rows on each Ranks board
   const WALL_IDLE_KEY = 'pb-wall-idle';  // sessionStorage: the slides were up when the page unloaded
 
-  let wallPage = 'problems';     // 'problems' | 'ranks' | 'app'
+  let wallPage = 'problems';     // 'problems' | 'circuits' | 'ranks' | 'app'
+  let wallCircId = null;         // the chosen circuit's id
   let wallSelId = null;          // the chosen problem's id (looked up afresh, the list reloads)
   let wallMirror = false;        // the chosen problem is shown (and cast) mirrored
   let wallLastTouch = Date.now();
@@ -163,6 +168,7 @@
     const cast = wallEl('wall-cast');
     if (!castTarget) cast.disabled = !p || wallOffline();   // a cast in progress owns the button
     wallRenderOffline();
+    wallRenderCircSel();                 // its Light it up follows the connection and the night too
   }
 
   function wallBoardHtml(p, mirror) {
@@ -224,6 +230,85 @@
     });
   }
 
+  // ── Circuits page ─────────────────────────────────────────────────────────────
+  const wallCircSelected = () => (wallCircId === null ? null
+    : allCircuits.find(c => String(c.id) === String(wallCircId)) || null);
+
+  function wallCircMetaHtml(c) {
+    const n = circuitSeq(c).length;
+    return `
+      <span class="grade-badge">${escHtml(c.grade || '—')}</span>
+      ${newBadgeHtml(c)}
+      <span class="meta-setter">${escHtml(setterName(c))}</span>
+      <span class="circuit-len">${n} move${n === 1 ? '' : 's'}</span>
+      ${c.loops ? '<span class="loop-badge">↻ Loop</span>' : ''}`;
+  }
+
+  // Easiest first, as the phone's list; circuits are few, so no grade rail.
+  function wallRenderCircuits() {
+    if (!WALL) return;
+    const box = wallEl('wall-clist');
+    const top = box.scrollTop;
+    if (!circuitsLoaded) {
+      box.innerHTML = circuitsError || wallNetDown
+        ? `<div class="state-msg"><div class="icon">⚠️</div>Can’t reach the server right now.<br>Trying again by itself.</div>`
+        : `<div class="spinner"></div>`;
+    } else {
+      const list = allCircuits.slice().sort((a, b) =>
+        sportRank(a.grade) - sportRank(b.grade) || circuitName(a).localeCompare(circuitName(b)));
+      box.innerHTML = list.length ? list.map(c => {
+        const sel = String(c.id) === String(wallCircId);
+        return `
+          <button class="problem-card wall-card${sel ? ' selected' : ''}" type="button" data-id="${escAttr(c.id)}" aria-pressed="${sel}">
+            <span class="problem-info">
+              <span class="problem-name">${escHtml(circuitName(c))}</span>
+              <span class="problem-meta">${wallCircMetaHtml(c)}</span>
+            </span>
+          </button>`;
+      }).join('') : `<div class="state-msg"><div class="icon">🧗</div>No circuits yet.</div>`;
+      box.scrollTop = top;
+    }
+    if (wallCircId !== null && circuitsLoaded && !wallCircSelected()) wallCircSelect(null);   // deleted since
+    else { wallRenderCircSel(); wallRenderCircStage(); }
+  }
+
+  function wallRenderCircSel() {
+    if (!WALL) return;
+    const c = wallCircSelected();
+    wallEl('wall-csel').innerHTML = c
+      ? `<h1 class="wall-name">${escHtml(circuitName(c))}</h1>
+         <div class="problem-meta wall-meta">${wallCircMetaHtml(c)}</div>`
+      : `<h1 class="wall-name wall-name-empty">Pick a circuit</h1>
+         <p class="wall-hint">A long route, lit one move at a time at your speed.</p>`;
+    wallEl('wall-ccast').disabled = !c || wallOffline() || wallNightOn;
+  }
+
+  function wallRenderCircStage() {
+    if (!WALL) return;
+    const c = wallCircSelected();
+    wallEl('wall-cstage').innerHTML =
+      `<div class="board-wrap wall-board"><img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" />`
+      + (c ? `<div class="hold-layer">${circuitStaticOverlay(c)}</div>` : '') + '</div>'
+      + (c ? '' : `<div class="wall-stage-hint">Tap a circuit on the left</div>`);
+  }
+
+  function wallCircSelect(id) {
+    wallCircId = id === null || id === undefined ? null : id;
+    document.querySelectorAll('#wall-clist .wall-card').forEach(c => {
+      const on = String(c.dataset.id) === String(wallCircId);
+      c.classList.toggle('selected', on);
+      c.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    wallRenderCircSel();
+    wallRenderCircStage();
+  }
+
+  function wallCircCast() {
+    const c = wallCircSelected();
+    if (!c || wallOffline() || wallNightOn) return;
+    openCircuitCast(c);
+  }
+
   // ── Offline ───────────────────────────────────────────────────────────────────
   const wallOffline = () => wallNetDown || !navigator.onLine;
 
@@ -257,6 +342,7 @@
     setOfflineNote('list-offline', 0);
     wallNetDown = false;
     showProblems(data || []);              // renderList -> wallRenderList
+    loadCircuits();                        // showCircuits -> wallRenderCircuits
     loadProfileNames();
     loadChallenges();                      // showChallenges -> wallOnChallenges reloads Ranks if it's up
   }
@@ -315,6 +401,7 @@
     document.querySelectorAll('.wall-tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
     document.querySelectorAll('.wall-page').forEach(s => s.classList.toggle('active', s.dataset.page === page));
     if (page === 'ranks') wallLoadRanks();
+    if (page === 'circuits') wallRenderCircuits();
   }
 
   // ── Idle slides and night ─────────────────────────────────────────────────────
@@ -410,9 +497,12 @@
   // Back to the start: the Problems page, no filter, nothing chosen, the list at
   // the top. Then the slides.
   function wallGoIdle() {
+    abandonCircuitCast();
     wallSetPage('problems');
     benchOnly = false;
     wallSelect(null);
+    wallCircSelect(null);
+    wallEl('wall-clist').scrollTop = 0;
     wallRenderList();
     wallEl('wall-list').scrollTop = 0;
     wallMarkGrade();
@@ -453,6 +543,8 @@
       wallRenderSel();
     }
     if (!wallNightOn) {
+      // Not while a circuit runs: the climber is on the wall, not touching the screen.
+      if (circuitRunGoing()) wallLastTouch = now;
       if (!wallIdleOn && now - wallLastTouch > WALL_IDLE_MS) wallGoIdle();
       else if (wallIdleOn && now - wallSlideAt > WALL_SLIDE_MS) {
         wallSlide = (wallSlide + 1) % wallSlides().length;
@@ -467,6 +559,7 @@
   function wallRefreshBoard() {
     if (!WALL) return;
     wallRenderStage();
+    wallRenderCircStage();
     if (wallIdleOn && wallSlides()[wallSlide] === 'bench') wallRenderIdle();
   }
 
@@ -504,12 +597,18 @@
     });
     wallEl('wall-mirror').addEventListener('click', wallToggleMirror);
     wallEl('wall-cast').addEventListener('click', wallCast);
+    wallEl('wall-clist').addEventListener('click', e => {
+      const card = e.target.closest('.wall-card');
+      if (card) wallCircSelect(card.dataset.id);
+    });
+    wallEl('wall-ccast').addEventListener('click', wallCircCast);
     wallEl('wall-idle').addEventListener('click', wallWake);
     window.addEventListener('online', () => { wallRenderSel(); wallPoll(); });
     window.addEventListener('offline', wallRenderSel);
 
     wallRenderList();
     wallRenderStage();
+    wallRenderCircuits();
     wallNightOn = wallIsNight();
     if (wallNightOn || ssGet(WALL_IDLE_KEY)) wallGoIdle();
     setInterval(wallTick, 1000);

@@ -31,10 +31,11 @@ FIN_HOLD, FIN_STEP, FIN_FADE = 1.0, 0.07, 1.2
 class Run:
     """One cast circuit. `seq` is the hold sequence in climbing order (contract 8: not inverted)."""
 
-    def __init__(self, name, seq, start_count, interval, loop, token=None, mirror_map=None):
+    def __init__(self, name, seq, start_count, interval, loop, token=None, mirror_map=None, tag=''):
         if not seq or not all(isinstance(h, str) for h in seq):
             raise ValueError('hold_sequence is empty or not hold ids')
         self.name, self.token = name, token
+        self.tag = tag              # ' [phone, member]' (board.origin), for the line logged when it ends
         self.seq = [mirror_map.get(h, h) for h in seq] if mirror_map is not None else list(seq)
         self.L = len(self.seq)
         self.s = max(1, min(int(start_count or 1), 2, self.L))
@@ -136,6 +137,12 @@ class Run:
             if i is not None and a > 0:
                 leds[i] = tuple(v * a for v in rgb)
         return leds, done
+
+    def ended_line(self, how, t):
+        """The journal line PB Console's Activity reads (console/probe.py CIRCUIT_LINE)."""
+        return 'circuit ended: %r %s after %d moves (%d s), %g s a move, %s, run %s%s' % (
+            self.name, how, self.moves_at(t), max(0, t), self.interval, 'loop' if self.loop else 'once',
+            self.token or '-', self.tag)
 
     def moves_at(self, t):
         """Moves made by t (one per LED advance, counting across laps): what the app logs."""

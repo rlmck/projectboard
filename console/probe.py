@@ -52,6 +52,13 @@ CAST_LINE = re.compile(r"^(\S+) \S+ \S+: cast (?:received: )?(['\"])(.*)\2( mirr
                        r"( ignored: night mode)?(?: \[(\w+), (\w+)\])?$")
 
 
+# "circuit ended: 'Name' stopped after 23 moves (74 s), 3 s a move, loop, run 9f2c… [phone, member]"
+# (pi/listener/circuit.py ended_line), and "circuit 'Name' ignored: night mode [wall, guest]".
+CIRCUIT_LINE = re.compile(r"^(\S+) \S+ \S+: circuit ended: (['\"])(.*)\2 ([a-z][a-z ]*?) after (\d+) moves "
+                          r"\((\d+) s\), ([\d.]+) s a move, (loop|once), run (\S+)(?: \[(\w+), (\w+)\])?$")
+CIRCUIT_NIGHT = re.compile(r"^(\S+) \S+ \S+: circuit (['\"])(.*)\2 ignored: night mode(?: \[(\w+), (\w+)\])?$")
+
+
 def casts_since(seconds):
     """[{at, name, mirror}] from the listener's 'cast received' lines."""
     out = sh('journalctl', '-u', 'pb-listener', '--since', '-%ds' % seconds, '-o', 'short-iso',
@@ -73,6 +80,7 @@ def busy():
     casts = casts_since(BUSY_S)
     last = s.get('last_cast_at')
     recent = bool(casts) or bool(last and time.time() - last < BUSY_S)
+    recent = recent or s.get('leds') == 'circuit'      # a circuit run still going, however long ago it started
     return {'busy': recent, 'casts': casts, 'last_cast_at': last, 'last_cast_name': s.get('last_cast_name'),
             'pb_ledmap': sh('systemctl', 'is-active', 'pb-ledmap'), 'now': time.time()}
 
@@ -204,18 +212,29 @@ def everything():
 
 def activity(days):
     """Casts from the listener's journal over the last `days` days (phase 10):
-    [at, name, mirror, shown, source, who] (source/who None before the app sent them)."""
+    casts [at, name, mirror, shown, source, who] (source/who None before the app sent them), and
+    circuit runs [at (when it ended), name, how, moves, seconds, s a move, loop, run, source, who]
+    (how 'night mode' and moves None: ignored at night)."""
     out = sh('journalctl', '-u', 'pb-listener', '--since', '-%dd' % days, '-o', 'short-iso', '--no-pager', '-q',
-             '--grep', r'cast received|ignored: night mode', timeout=60)
-    casts = []
+             '--grep', r'cast received|ignored: night mode|circuit ended', timeout=60)
+    casts, circuits = [], []
     for line in out.splitlines():
         m = CAST_LINE.match(line)
         if m:
             casts.append([m.group(1), m.group(3), bool(m.group(4)), not m.group(5), m.group(6), m.group(7)])
+            continue
+        m = CIRCUIT_LINE.match(line)
+        if m:
+            circuits.append([m.group(1), m.group(3), m.group(4), int(m.group(5)), int(m.group(6)), float(m.group(7)),
+                             m.group(8) == 'loop', None if m.group(9) == '-' else m.group(9), m.group(10), m.group(11)])
+            continue
+        m = CIRCUIT_NIGHT.match(line)
+        if m:
+            circuits.append([m.group(1), m.group(3), 'night mode', None, None, None, None, None, m.group(4), m.group(5)])
     boots = [l for l in sh('journalctl', '--list-boots', '--no-pager', '-q').splitlines() if l.strip()]
     first = boots[0].split() if boots else []
     # the oldest boot line: IDX BOOT-ID Day YYYY-MM-DD HH:MM:SS ZONE ...: the journal starts there
-    return {'casts': casts, 'days': days, 'journal_from': ' '.join(first[3:5]) if len(first) > 4 else None}
+    return {'casts': casts, 'circuits': circuits, 'days': days, 'journal_from': ' '.join(first[3:5]) if len(first) > 4 else None}
 
 
 def last_night(date):

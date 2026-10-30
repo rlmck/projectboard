@@ -304,6 +304,34 @@ class Reports(unittest.TestCase):
         self.assertEqual(a['sources'], {'wall': 1, 'phone': 1, 'unknown': 1})
         self.assertEqual(a['who'], {'guest': 1, 'member': 1, 'unknown': 1})
 
+    def test_activity_circuits_and_member_names(self):
+        raw = {'days': 2, 'casts': [
+            ['2026-10-30T19:30:00+00:00', 'Crimp', False, True, 'phone', 'member'],
+            ['2026-10-30T19:31:00+00:00', 'Crimp', False, True, 'phone', 'member'],
+            ['2026-10-30T19:32:00+00:00', 'Crimp', False, True, 'wall', 'guest']],
+            'circuits': [
+            ['2026-10-30T19:40:00+00:00', 'Pat Burner', 'stopped', 23, 74, 3.0, True, 'abc', 'phone', 'member'],
+            ['2026-10-30T19:50:00+00:00', 'Long one', 'finished', 40, 128, 3.0, False, 'def', 'wall', 'guest'],
+            ['2026-10-30T23:05:00+00:00', 'Pat Burner', 'night mode', None, None, None, None, None, 'phone', 'guest']]}
+        members = {'error': None, 'rows': [
+            {'at': '2026-10-30T19:30:02+00:00', 'kind': 'problem', 'name': 'Crimp', 'mirror': False, 'source': 'phone', 'run': None, 'nickname': 'ann'},
+            {'at': '2026-10-30T19:31:01+00:00', 'kind': 'problem', 'name': 'Crimp', 'mirror': False, 'source': 'phone', 'run': None, 'nickname': 'bob'},
+            {'at': '2026-10-30T19:35:00+00:00', 'kind': 'circuit', 'name': 'Pat Burner', 'mirror': False, 'source': 'phone', 'run': 'abc', 'nickname': 'cat'}]}
+        a = reports.activity(raw, members)
+        by = {(r['name'], r['at'][11:16]): r for r in a['recent']}
+        self.assertEqual(a['names'], 'ok')
+        self.assertEqual(a['total'], 3)                                     # problem casts
+        self.assertEqual((a['circuit_runs'], a['circuit_moves']), (2, 63))
+        self.assertEqual(a['ignored_night'], 1)
+        self.assertEqual(a['top_circuits'], [('Pat Burner', 1), ('Long one', 1)])
+        names = [r.get('nickname') for r in a['recent']]
+        self.assertEqual(sorted(n for n in names if n), ['ann', 'bob', 'cat'])
+        self.assertIsNone(a['recent'][0].get('nickname'))                  # the night-ignored run, a guest
+        self.assertEqual(a['last']['kind'], 'circuit')
+        self.assertEqual(reports.activity(raw, {'error': 'no db/.env on this laptop', 'rows': []})['names'],
+                         'no db/.env on this laptop')
+        self.assertEqual(reports.activity(raw)['names'], 'not read')
+
     def test_probe_reads_every_cast_line(self):
         m = probe.CAST_LINE.match
         r = m("2026-10-29T19:42:05+00:00 projectboard python3[812]: cast received: 'Good Bug' mirrored [wall, guest]")

@@ -322,6 +322,17 @@
     btn.disabled = false;
   }
 
+  // A signed-in member's cast, recorded privately for PB Console's Activity
+  // (db/34: insert-only, nobody can read it through the API). The broadcast
+  // itself never says who: the channel is public. Fire and forget: a cast that
+  // reached the board isn't failed by its log.
+  function logCast(kind, name, mirror = false, run = null) {
+    if (!session) return;
+    sb.from('cast_log').insert({ user_id: session.user.id, kind, name, mirror: !!mirror,
+                                 source: WALL ? 'wall' : 'phone', run })
+      .then(({ error }) => { if (error) console.warn('cast log not saved', error); });
+  }
+
   // stillShowing (optional): checked after the location wait, which can take
   // seconds; if it says the thing tapped is no longer on screen (a swipe, the
   // mirror flipped, the view left) nothing is sent. Otherwise the wall would
@@ -372,6 +383,7 @@
       // One REST POST (no socket, see state.js). Resolves once the Realtime server
       // has accepted the broadcast; rejects on an error status or a timeout.
       await channel.httpSend('cast_problem', payload, { timeout: 10000 });
+      logCast('problem', name, mirror);
       showToast(`${mirror ? 'Mirror cast' : 'Cast'}: ${name}`, 'success');
       if (!mine()) return;          // swiped on while sending: that button isn't ours
       btn.classList.remove('casting');

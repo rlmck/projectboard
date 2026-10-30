@@ -39,13 +39,54 @@ def save_json(path, obj):
 # -- activity ------------------------------------------------------------------------
 
 RECENT_CASTS = 100          # the latest casts listed on the Activity tab
+MATCH_S = 120               # a member's cast-log row and the Pi's line for the same problem cast: this close
 
 
-def activity(raw):
-    """The latest casts (when, which climb, from the wall, a phone or the console, member or
-    guest), casts per day and per hour, mirrored share, ignored at night, top problems.
-    raw: the probe's {'casts': [[iso, name, mirror, shown, source, who]], ...}. No user data:
-    a cast says only whether someone was signed in, never who."""
+def _when(iso):
+    try:
+        return datetime.datetime.fromisoformat(iso).astimezone()
+    except (TypeError, ValueError):
+        return None
+
+
+def _nicknames(recent, members):
+    """Put each member's nickname on their casts and runs: a circuit run by its run token, a
+    problem cast by name, the nearest log row within MATCH_S seconds (each row used once)."""
+    by_run = {m['run']: m for m in members if m['kind'] == 'circuit' and m.get('run')}
+    problems = [m for m in members if m['kind'] == 'problem']
+    for m in problems:
+        m['_t'] = _when(m['at'])
+    used = set()
+    for r in recent:
+        if r['kind'] == 'circuit':
+            m = by_run.get(r.get('run'))
+            if m:
+                r['nickname'] = m['nickname']
+            continue
+        if r.get('who') not in ('member', None):
+            continue
+        t = _when(r['at'])
+        best = None
+        for i, m in enumerate(problems):
+            if i in used or m['name'] != r['name'] or m['_t'] is None or t is None:
+                continue
+            d = abs((m['_t'] - t).total_seconds())
+            if d <= MATCH_S and (best is None or d < best[0]):
+                best = (d, i)
+        if best:
+            used.add(best[1])
+            r['nickname'] = problems[best[1]]['nickname']
+
+
+def activity(raw, members=None):
+    """The latest casts and circuit runs (when, which climb, from the wall, a phone or the
+    console, member or guest, and the member's nickname when the private cast log has it),
+    casts per day and per hour, mirrored share, ignored at night, top problems, and the
+    circuit runs with how they ended and the moves made.
+    raw: the probe's {'casts': [[iso, name, mirror, shown, source, who]],
+    'circuits': [[iso, name, how, moves, seconds, interval, loop, run, source, who]], ...}.
+    members: castlog.members() (db/34), or None. Names come only from there: the public
+    broadcast says only whether someone was signed in, never who."""
     per_day, per_hour, names = collections.Counter(), collections.Counter(), collections.Counter()
     sources, whos = collections.Counter(), collections.Counter()
     mirrored = ignored = 0
@@ -59,7 +100,7 @@ def activity(raw):
             t = datetime.datetime.fromisoformat(at).astimezone()
         except ValueError:
             continue
-        recent.append({'at': t.isoformat(timespec='seconds'), 'name': name, 'mirror': bool(mirror),
+        recent.append({'kind': 'problem', 'at': t.isoformat(timespec='seconds'), 'name': name, 'mirror': bool(mirror),
                        'shown': bool(shown), 'source': source, 'who': who})
         if not shown:
             ignored += 1
@@ -71,7 +112,27 @@ def activity(raw):
         sources[source or 'unknown'] += 1
         whos[who or 'unknown'] += 1
     total = sum(per_day.values())
+    runs = []
+    circuit_names = collections.Counter()
+    for row in raw.get('circuits') or []:
+        at, name, how, moves, secs, interval, loop, run, source, who = (list(row) + [None] * 10)[:10]
+        t = _when(at)
+        if t is None:
+            continue
+        shown = how != 'night mode'
+        r = {'kind': 'circuit', 'at': t.isoformat(timespec='seconds'), 'name': name, 'mirror': False, 'shown': shown,
+             'source': source, 'who': who, 'how': how, 'moves': moves, 'seconds': secs, 'interval': interval,
+             'loop': loop, 'run': run}
+        runs.append(r)
+        recent.append(r)
+        if shown:
+            circuit_names[name] += 1
+        else:
+            ignored += 1
+    member_rows = (members or {}).get('rows') or []
+    _nicknames(recent, member_rows)
     recent.sort(key=lambda r: r['at'], reverse=True)
+    runs.sort(key=lambda r: r['at'], reverse=True)
     days = []
     if per_day or raw.get('days'):
         end = datetime.date.today()
@@ -81,7 +142,10 @@ def activity(raw):
     return {'total': total, 'per_day': days, 'per_hour': [[h, per_hour.get(h, 0)] for h in range(24)],
             'mirrored': mirrored, 'ignored_night': ignored, 'top': names.most_common(10),
             'recent': recent[:RECENT_CASTS], 'last': recent[0] if recent else None,
-            'sources': dict(sources), 'who': dict(whos), 'journal_from': raw.get('journal_from')}
+            'sources': dict(sources), 'who': dict(whos), 'journal_from': raw.get('journal_from'),
+            'circuit_runs': len([r for r in runs if r['shown']]), 'circuit_moves': sum(r['moves'] or 0 for r in runs),
+            'top_circuits': circuit_names.most_common(10),
+            'names': (members or {}).get('error') or ('ok' if members is not None else 'not read')}
 
 
 # -- acceptance tests (plan R8) ---------------------------------------------------------

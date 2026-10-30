@@ -449,7 +449,6 @@
     <div class="filter-pills" id="circuit-filter-pills">
       <button class="filter-pill" id="cpill-faves" type="button" aria-pressed="false">Favourites</button>
       <button class="filter-pill" id="cpill-loop" type="button" aria-pressed="false">Looping</button>
-      <button class="filter-pill" id="cpill-done" type="button" aria-pressed="false">Exclude Done</button>
     </div>
   </header>
   <div class="list-pull" id="circuit-pull" aria-hidden="true"><div class="list-pull-icon"></div></div>
@@ -462,7 +461,7 @@
   </main>
 </section>
 
-<!-- ══ CIRCUIT DETAIL VIEW (pinned like the problem detail; Play preview panel) ═ -->
+<!-- ══ CIRCUIT DETAIL VIEW (pinned like the problem detail; Cast beside the title) ═ -->
 <section id="view-circuit-detail" class="view">
   <header class="topbar detail-bar">
     <button class="icon-btn" id="circuit-back" aria-label="Back">
@@ -942,6 +941,7 @@
     </div>
     <nav class="wall-tabs" aria-label="Wall screen">
       <button class="wall-tab active" type="button" data-page="problems">Problems</button>
+      <button class="wall-tab" type="button" data-page="circuits">Circuits</button>
       <button class="wall-tab" type="button" data-page="ranks">Ranks</button>
       <button class="wall-tab" type="button" data-page="app">Get the app</button>
     </nav>
@@ -967,6 +967,19 @@
       </div>
       <p class="wall-offline" id="wall-offline" hidden></p>
       <div class="wall-stage" id="wall-stage"></div>
+    </div>
+  </section>
+
+  <!-- Circuits: the list, and the chosen circuit over the board; Light it up opens
+       the same Cast sheet as the phone (speed, loop, then the countdown and Stop) -->
+  <section class="wall-page wall-circuits" data-page="circuits">
+    <div class="wall-list" id="wall-clist"></div>
+    <div class="wall-main">
+      <div class="wall-bar">
+        <div class="wall-sel" id="wall-csel"></div>
+        <button class="wall-btn wall-cast" id="wall-ccast" type="button" disabled><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zM21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>Light it up</button>
+      </div>
+      <div class="wall-stage" id="wall-cstage"></div>
     </div>
   </section>
 

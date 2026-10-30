@@ -1,12 +1,12 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: circuits - load, list, detail, swipe, info, Play preview, cast + run screen, create, delete.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: circuits - load, list, detail, swipe, info, cast + run screen, create, delete.
 //
 // Circuits are built to look and behave like problems: the same cards and grade
 // tabs (tap = one grade, hold = several), pull-to-refresh, a pinned detail view
 // you swipe through, the traced hold outlines over a dimmed board, and the ⋮
-// menu's Information sheet. What's circuit-only: move numbers on the holds, the
-// Play preview in a panel under the board, and the Cast sheet (a timed run on the wall).
+// menu's Information sheet. What's circuit-only: move numbers on the holds, and
+// the Cast sheet (a timed run on the wall).
 
   // A sequence position's role: finish (last) wins over start (first N), else move.
   function circuitRole(seq, startCount, pos) {
@@ -47,16 +47,15 @@
 
   // The board overlay for a set of holds: traced outlines (dimming the rest of
   // the board when `dim`) with move-number tags, or numbered dots when the
-  // outlines can't be used (see shapesUsable). `lit` = drawn by the Play preview;
-  // `fresh` = the hold it has just lit.
-  function circuitLayerHtml(roles, labels, { dim = false, lit = false, fresh = null } = {}) {
+  // outlines can't be used (see shapesUsable).
+  function circuitLayerHtml(roles, labels, { dim = false } = {}) {
     if (!HOLD_MAP) return '';
-    const shapes = holdShapeLayerHtml(roles, { dim, fresh });
+    const shapes = holdShapeLayerHtml(roles, { dim });
     if (shapes != null) return shapes + seqTagsHtml(labels, roles);
     return Object.keys(roles).map(h => {
       const pos = HOLD_MAP[h];
       if (!pos) return '';
-      return `<div class="hold-dot ${roles[h]}${lit ? ' lit' : ''}" style="left:${pos.x}%;top:${pos.y}%"><span class="seq-num">${escHtml(labels[h])}</span></div>`;
+      return `<div class="hold-dot ${roles[h]}" style="left:${pos.x}%;top:${pos.y}%"><span class="seq-num">${escHtml(labels[h])}</span></div>`;
     }).join('');
   }
 
@@ -74,6 +73,7 @@
     circuitsError = null;
     if (currentView === 'circuits') renderCircuits();
     else if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
+    wallRenderCircuits();                 // the wall screen's Circuits page (wall.js; only with WALL)
   }
 
   // As loadProblems: the saved list shows at once, the fresh one replaces it, and a
@@ -86,6 +86,7 @@
       console.warn('circuits load failed', error);
       if (saved) { setOfflineNote('circuit-offline', saved.t); return; }
       circuitsError = error;
+      wallRenderCircuits();
       if (currentView === 'circuits') renderCircuits();
       else if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
       return;
@@ -116,7 +117,6 @@
     let arr = allCircuits;
     if (circuitFavesOnly) arr = arr.filter(c => isCircuitFaved(c.id));
     if (circuitLoopOnly) arr = arr.filter(c => c.loops);
-    // circuitExcludeDone: still a no-op. Runs are logged to circuit_logs now, but what counts as "done" isn't decided
     if (activeCircuitGrades.size) arr = arr.filter(c => activeCircuitGrades.has(c.grade));
     const q = searchNorm(circuitSearch);
     if (q) {
@@ -180,7 +180,7 @@
     if (!list.length) {
       // Show the favourites onboarding hint only when faves is the *only* active
       // filter; otherwise keep it generic (the other filters may be the cause).
-      const otherFilters = circuitSearch || activeCircuitGrades.size || circuitLoopOnly || circuitExcludeDone;
+      const otherFilters = circuitSearch || activeCircuitGrades.size || circuitLoopOnly;
       container.innerHTML = (circuitFavesOnly && !otherFilters)
         ? `<div class="state-msg"><div class="icon">♡</div>No favourite circuits yet. Tap the heart on a circuit to save it here.</div>`
         : allCircuits.length
@@ -192,15 +192,11 @@
   }
 
   // ── Circuit detail ──────────────────────────────────────────────────────────────
-  // Laid out like the problem detail: pinned to the screen, title block + board
-  // centred, with the Play panel held at the bottom so the board sits in the same
-  // place on every circuit you swipe to.
-  const PLAY_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z"/></svg>';
+  // Laid out like the problem detail: pinned to the screen, title block (with
+  // Cast) + board centred, the challenge link under it.
   const CAST_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zM21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>';   // as the problem view's
-  const STOP_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
 
   function renderCircuitDetail(id) {
-    stopCircuitPlay(false);
     const wrap = document.getElementById('circuit-detail-content');
     const faveBtn = document.getElementById('circuit-detail-fave');
     const delItem = document.getElementById('circuit-menu-delete');
@@ -248,33 +244,14 @@
 
         <div class="board-wrap">
           <img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" />
-          <div class="hold-layer" id="circuit-play-layer">${circuitStaticOverlay(c)}</div>
+          <div class="hold-layer">${circuitStaticOverlay(c)}</div>
           ${boardExpandBtn()}
         </div>
       </div>
 
-      <div id="circuit-challenge-slot"></div>
-      <div class="circuit-play-panel">
-        <button class="circuit-play-btn" id="circuit-play-btn" type="button" aria-label="Play preview">${PLAY_ICON}</button>
-        <div class="circuit-play-body">
-          <div class="circuit-play-top">
-            <span class="circuit-play-status" id="circuit-play-status">Play preview</span>
-            <span class="circuit-speed-val" id="circuit-speed-val"></span>
-          </div>
-          <div class="circuit-speed-row">
-            <span>Slow</span>
-            <input class="circuit-speed" id="circuit-speed" type="range" min="${PLAY_MIN_MS}" max="${PLAY_MAX_MS}" step="100" aria-label="Preview speed" />
-            <span>Fast</span>
-          </div>
-        </div>
-      </div>`;
+      <div id="circuit-challenge-slot"></div>`;
 
-    document.getElementById('circuit-play-btn').addEventListener('click', toggleCircuitPlay);
-    document.getElementById('circuit-cast-open').addEventListener('click', openCircuitCast);
-    const speed = document.getElementById('circuit-speed');
-    speed.value = speedToSlider(playIntervalMs);
-    speed.addEventListener('input', () => setPlaySpeed(sliderToSpeed(+speed.value)));
-    updateSpeedLabel();
+    document.getElementById('circuit-cast-open').addEventListener('click', () => openCircuitCast());
     fillCircuitChallenge(c);   // the challenge link, if a challenge uses this circuit (challenge.js)
   }
 
@@ -319,113 +296,8 @@
         <div class="info-value">Lights the circuit on the wall at your speed: a 5-second countdown on the start holds, then one move at a time. Solid blue is the hold to go to, amber the one after, and the hold you've just let go of fades out in red. ${
           c.loops ? 'It loops until you press Stop.' : 'At the top the route runs up in green.'} Signed in, each run is saved to your log.</div>
       </div>
-      <div class="info-row">
-        <div class="info-label">Play preview</div>
-        <div class="info-value">Lights four holds at a time and moves up the route one hold per step${c.loops ? ', looping until you stop it' : ''}. Set how long each step lasts with the speed slider.</div>
-      </div>
     `;
     document.getElementById('info-modal').classList.add('show');
-  }
-
-  // ── Play engine (moving 4-hold window) ──────────────────────────────────────────
-  // The phone's preview only: a cast's look is the Pi's (pi/listener/circuit.py). The lit window is the
-  // up-to-4 most-recent holds ending at the current tick; wrapping for loops. Speed
-  // is a live preview control (0.1s steps), not stored per circuit — the agreed
-  // design sets speed at cast time, so this is the same kind of knob. The slider
-  // runs Slow → Fast, so its value is the step time flipped end to end.
-  const PLAY_WINDOW = 4;
-  const PLAY_MIN_MS = 200, PLAY_MAX_MS = 3000;
-  let playIntervalMs = 1000;   // default 1.0s between holds
-  let playTimer = null;
-  let playDraw = null;         // the running draw fn (so a speed change can restart the timer)
-  const speedToSlider = ms => PLAY_MIN_MS + PLAY_MAX_MS - ms;
-  const sliderToSpeed = v => PLAY_MIN_MS + PLAY_MAX_MS - v;
-
-  function updateSpeedLabel() {
-    const el = document.getElementById('circuit-speed-val');
-    if (el) el.textContent = (playIntervalMs / 1000).toFixed(1) + ' s per move';
-  }
-
-  function setPlayStatus(text) {
-    const el = document.getElementById('circuit-play-status');
-    if (el) el.textContent = text;
-  }
-
-  // Adjust preview speed; if a play is in progress, restart the timer at the new
-  // interval (keeps the current position via the live draw closure).
-  function setPlaySpeed(ms) {
-    playIntervalMs = Math.max(PLAY_MIN_MS, Math.min(PLAY_MAX_MS, Math.round(ms / 100) * 100));
-    updateSpeedLabel();
-    if (playTimer && playDraw) { clearInterval(playTimer); playTimer = setInterval(playDraw, playIntervalMs); }
-  }
-
-  function setPlayButton(playing) {
-    const btn = document.getElementById('circuit-play-btn');
-    if (!btn) return;
-    btn.innerHTML = playing ? STOP_ICON : PLAY_ICON;
-    btn.classList.toggle('playing', playing);
-    btn.setAttribute('aria-label', playing ? 'Stop preview' : 'Play preview');
-  }
-
-  function stopCircuitPlay(restore) {
-    if (playTimer) { clearInterval(playTimer); playTimer = null; }
-    playDraw = null;
-    setPlayButton(false);
-    setPlayStatus('Play preview');
-    if (restore && currentCircuit) {
-      const layer = document.getElementById('circuit-play-layer');
-      if (layer) layer.innerHTML = circuitStaticOverlay(currentCircuit);
-    }
-  }
-
-  function toggleCircuitPlay() {
-    if (playTimer) { stopCircuitPlay(true); return; }
-    const c = currentCircuit;
-    const seq = circuitSeq(c);
-    if (!c || !HOLD_MAP || seq.length < 1) { showToast('Nothing to play', 'error'); return; }
-    setPlayButton(true);
-    let tick = 0;
-    const L = seq.length;
-    const loop = !!c.loops;
-    const draw = () => {
-      // Window = the up-to-4 most-recent holds ending at `tick`. Each slot carries
-      // its wrapped position `p` and the colour to light it.
-      const roles = {}, labels = {};
-      let fresh = null;
-      for (let d = PLAY_WINDOW - 1; d >= 0; d--) {
-        const i = tick - d;
-        if (i < 0) continue;
-        let p, role;
-        if (loop) {
-          p = ((i % L) + L) % L;
-          // A looping route has no real finish, so the finish hold reads blue; the
-          // start holds only glow green on the first lap (i < L), blue thereafter.
-          role = (p < c.start_count && i < L) ? 'start' : 'int';
-        } else {
-          if (i >= L) continue;
-          p = i;
-          role = circuitRole(seq, c.start_count, i);
-        }
-        const h = seq[p];
-        roles[h] = strongerRole(roles[h], role);
-        labels[h] = labels[h] ? labels[h] + '/' + (p + 1) : String(p + 1);
-        if (d === 0) fresh = h;
-      }
-      const layer = document.getElementById('circuit-play-layer');
-      if (layer) layer.innerHTML = circuitLayerHtml(roles, labels, { dim: true, lit: true, fresh });
-      const move = loop ? tick % L + 1 : Math.min(tick + 1, L);
-      const lap = loop ? Math.floor(tick / L) + 1 : 1;
-      setPlayStatus(`Move ${move} of ${L}${lap > 1 ? ` · lap ${lap}` : ''}`);
-      tick++;
-      // Non-loop: stop once the window has slid off the end (route finished).
-      if (!loop && tick > L - 1 + (PLAY_WINDOW - 1)) {
-        clearInterval(playTimer); playTimer = null; playDraw = null;
-        setTimeout(() => { if (!playTimer) stopCircuitPlay(true); }, 400);
-      }
-    };
-    playDraw = draw;
-    draw();
-    playTimer = setInterval(draw, playIntervalMs);
   }
 
   // ── Cast a circuit (Circuits Phase 2; cast contract §8) ───────────────────────────
@@ -447,11 +319,10 @@
   let circuitRunTicker = null;
   let circuitWake = null;
 
-  function openCircuitCast() {
-    const c = currentCircuit;
+  // c: the circuit on screen (the phone's detail view, or the wall's Circuits page).
+  function openCircuitCast(c = currentCircuit) {
     if (!c) return;
-    if (circuitRun && !circuitRun.ended) { document.getElementById('circuit-cast-modal').classList.add('show'); return; }
-    stopCircuitPlay(true);
+    if (circuitRunGoing()) { document.getElementById('circuit-cast-modal').classList.add('show'); return; }
     castSheetCircuit = c;
     castLoop = !!c.loops;
     document.getElementById('cast-sheet-title').textContent = circuitName(c);
@@ -461,12 +332,26 @@
     document.getElementById('circuit-cast-modal').classList.add('show');
   }
 
+  const circuitRunGoing = () => !!(circuitRun && !circuitRun.ended);
+
   // Closes only from its buttons while nothing is running (a stray tap mustn't
   // hide the Stop button of a run that's lighting the board).
   function closeCircuitCast() {
-    if (circuitRun && !circuitRun.ended) return;
+    if (circuitRunGoing()) return;
     document.getElementById('circuit-cast-modal').classList.remove('show');
     circuitRun = null;
+  }
+
+  // The wall screen going to night (or idle, which can't start while a run goes):
+  // the sheet closes. A run still going is left to the Pi, which ends it at night.
+  function abandonCircuitCast() {
+    if (circuitRunGoing()) {
+      circuitRun.ended = true;
+      clearInterval(circuitRunTicker); circuitRunTicker = null;
+      releaseCircuitWake();
+    }
+    circuitRun = null;
+    document.getElementById('circuit-cast-modal').classList.remove('show');
   }
 
   function showCastPane(which) {
@@ -510,7 +395,7 @@
     // The same lenient geofence as a problem cast (admins skip it).
     const fence = await ensureCastLocation();
     const modal = document.getElementById('circuit-cast-modal');
-    if (castSheetCircuit !== c || !modal.classList.contains('show')) { done(); return; }
+    if (castSheetCircuit !== c || !modal.classList.contains('show') || (WALL && wallIsIdle())) { done(); return; }
     if (!fence.ok) { done(); errEl.textContent = 'Casting only works at the gym.'; return; }
 
     btn.textContent = 'Sending…';
@@ -527,6 +412,7 @@
       return;
     }
     done();
+    logCast('circuit', circuitName(c), false, token);
     const seq = circuitSeq(c), L = seq.length, s = Math.max(1, Math.min(c.start_count || 1, 2, L));
     circuitRun = { c, interval, loop, token, t0: Date.now() + CAST_LAG_MS, L, s, moves: L - s,
                    beeped: -1, ended: false, stopSent: false, movesDone: 0 };
@@ -620,7 +506,7 @@
   }
 
   function castCircuitAgain() {
-    if (circuitRun && !circuitRun.ended) return;
+    if (circuitRunGoing()) return;
     circuitRun = null;
     document.getElementById('cast-sheet-error').textContent = '';
     showCastPane('setup');

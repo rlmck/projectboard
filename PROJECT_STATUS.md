@@ -7,7 +7,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **Deploying (29 Oct):** ship by default (commit + push `main`); "staging first" pushes `dev` only; migrations, Pi deploys, deleting data, force pushes and secrets stay gated; rollback = `git revert` + push. `build.sh` is the Cloudflare build gate (three-places rule, syntax check). A pre-commit hook scans for secrets. Slash commands `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`. Work locally on `main`.
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs; about 0.25–0.45 s from cast to LEDs). People use it: 50 casts on the evening of 26 Oct, 114 in the 3 days to 28 Oct. **Every hold's LED is checked on the wall** (28 Oct, `pb-ledmap`); three app labels were shifted and fixed by db/32 (188 real holds). **Mirrored casts are still unchecked.**
 - **The Pi 4** (Raspberry Pi OS Lite 64-bit, trixie, 2 GB; on the gym Wi-Fi and Tailscale as `projectboard`) runs the listener with self-healing, watchdogs and night mode 23:00–08:00 (`pi/`, `pi/README.md`). The night switch was seen working both ways on 27 Oct. The R8 acceptance tests are still to do. The idle pattern after 20 minutes is **`wave`** (ten patterns in `pi/listener/patterns/`, switched live with `pb-idle`). Wi-Fi: a random hardware address per join, a `pb-netwatch` watchdog (v2) and a rescue hotspot (`projectboard-rescue`).
-- **Circuits can be cast (Phase 2, 30 Oct 2026):** Cast beside a circuit's title → speed (Slow 5 s / Med 3 s / Fast 2 s) and Loop → a 5 s countdown with beeps, the move count and a big Stop on the phone, while the Pi runs Ross's "Pulse and fade" look itself (`pi/listener/circuit.py`). Signed-in runs go to `circuit_logs`. Contract §8. Not yet seen on the real wall.
+- **Circuits can be cast (Phase 2, 30 Oct 2026)** from phones and the wall screen (its Circuits page): Cast → speed (Slow 5 s / Med 3 s / Fast 2 s) and Loop → a 5 s countdown with beeps, the move count and a big Stop, while the Pi runs Ross's "Pulse and fade" look itself (`pi/listener/circuit.py`). Signed-in runs go to `circuit_logs`. The Play preview is gone. Contract §8. Not yet seen on the real wall.
 - **The wall kiosk** (`kiosk.service`: cage + Chromium on `HDMI-A-2`, opening `/?wall`) runs on the 1280×720 touchscreen; it picks up a deploy within the hour, at its next idle. Not yet tried by hand on the touchscreen.
 - **Hardware:** temporary wiring, loose on a ledge behind the board. Power enters the strip at six points (5.5 V under load, white at the far end). Two YU0510 5 V 10 A supplies (both needed to start the strip). No relays or level shifter yet (3.3 V data direct works); the 2-channel relay module and the 74AHCT125 are on order; a junction box and wiring parts are bought. Wiring: `pi/README.md` → "Wiring". A USB webcam streams the back of the board to Tailscale devices only.
 - **PB Console** (`console/`, `bash console/start.sh`): health dashboard, services, board controls, logs, config, Pi deploy with a drift check, release (Ship / Staging / Rollback since 29 Oct), LED map, test cast, activity, the R8 checklist, backups, runbook. The Pi-side helper is deployed. Phase 13 (Data) isn't built; phase 14 (Power) waits for the relays.
@@ -18,6 +18,8 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - Accounts are nickname + 4-word passphrase, no personal data, under-18s welcome, Ranks opt-in (`profiles.is_public`); a lost passphrase is reset by an admin (logged). Google sign-in removed. All 7 earlier accounts were migrated (18 Oct). The gym is the data controller.
 - Points only for benchmark climbs (db/27).
 - **Feet rule (30 Oct 2026):** every problem is Any feet (default), Orange feet only or Black feet only (`problems.feet_mode`, db/33). Any lights no sign; Orange lights B2 (LED 25), Black lights B1 (LED 26), never mirrored; `hold2`/`hold21` are never in a hold list. Migrated: both signs or none → Any, one sign → that rule. Cast contract §6.5.
+- **Circuits (30 Oct 2026):** no mirrored circuits and no circuits Done filter for now (future releases); "done" means done both sides and is for problems only. No Play preview.
+- **Who cast (30 Oct 2026):** never in the public broadcast. Members' casts go to a private, insert-only `cast_log` (db/34) that only PB Console reads (direct Postgres), for nicknames on Activity. `privacy.html` says so.
 - Star ratings from the old system are gone from the app (30 Oct 2026); `problems.stars` / `ticks.stars` stay in the table, unused.
 - **Pat Burner challenge** (19 Oct): 3 sets × 3 reps to failure, phone-timed, score = total seconds held, best attempt per user, earlier wins a tie, opt-in board, compare up to 3; self-reported, admins delete attempts; reps capped at 1200 s; offline saves retried for 14 days; a generic `challenges` table with the protocol as data.
 - The Pi side was rewritten from scratch for the Pi 4 and lives in `pi/` (committed).
@@ -28,7 +30,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
-- **Ross: try a circuit cast on the wall before opening** (live 30 Oct): the countdown, the look at each speed, Stop, a loop, the top of a run done once, a match (Pat Burner moves 6/7); whether the amber `(255,110,0)` reads as amber on the strip.
+- **Ross: try a circuit cast on the wall before opening** (live 30 Oct), from a phone and from the wall screen's Circuits page: the countdown, the look at each speed, Stop, a loop, the top of a run done once, a match (Pat Burner moves 6/7); whether the amber `(255,110,0)` reads as amber on the strip.
 - **Ross: test the feet rule on the wall** (the listener is deployed, 30 Oct): Orange-only lights B2 only, Black-only B1 only, Any neither; the same mirrored (the first mirrored-cast check).
 - Ross: the relay module (eBay) and 74AHCT125 level shifter (Amazon) to arrive.
 - Ross: an on-site check of the cast geofence centre (a non-admin phone by the board and at the far end of the gym).
@@ -42,11 +44,15 @@ Details in `docs/cast-contract.md` → "Open questions".
 3. Stale, duplicate or rapid casts: the listener shows the latest; is a rate limit wanted? (Casts carry no id or timestamp.)
 4. Is the problem name still the cast key once names become editable?
 5. Hardware: what each relay will switch; final cast brightness (the stopgap used 0.5).
-6. Should the wall show circuits too? They can be cast from phones now (30 Oct); the wall still lists problems only.
-7. Circuits "Exclude Done": runs are logged now, but what counts as done (reaching the top once? a full lap?) isn't decided, so the pill is still inert.
 
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-10-30 afternoon, Claude Code (circuits follow-ups, Activity names).**
+  - **Changed:** the circuit Play preview removed (code, styles, tokens); the circuits list's inert Exclude Done pill removed (Ross: "done" = done both sides, problems only; circuits later). The wall screen has a Circuits page (list, numbered holds over the board, Light it up → the same Cast sheet; no idle during a run; night closes the sheet). No mirrored circuits (decision). PB Console Activity: circuit runs (how it ended, moves, speed, loop) from a new `circuit ended:` journal line, and members' nicknames from a private `cast_log` (db/34, applied: insert-only, no API reads; Ross chose it over putting names in the public broadcast); `privacy.html` updated; the busy check counts a running circuit.
+  - **Found:** Activity's "failed to fetch" was the console server having stopped: Claude's earlier clean-up of a local preview server on port 8765 also ended PB Console, which shares that port. Restart it with `bash console/start.sh`; previews now use another port.
+  - **Tested:** Pi 110 tests, console 74, build check; the phone and the wall in a headless browser (broadcasts intercepted); db/34 behaviour checked in a rolled-back run.
+  - **Left:** Ross tries circuits on the wall and the kiosk (Waiting on).
 
 - **2026-10-30, Claude Code (circuit LED directions: TODO 7).**
   - **Changed:** `tools/circuit-led-simulator.html` (not deployed) now holds **8 LED "directions"** for Circuits Phase 2, switched live (click or keys 1–8): Window (today's look), Comet tail, Next move only, Fill-up timer, Get ready / go, Metronome, Progress line, Pulse to the beat. Shared by all: the 5 s red countdown, Slow 5 s / Med 3 s / Fast 2 s, green starts on the first lap only, a double-blink on a match, the green run-up finish. Each direction is a pure function of time, ready to port to the listener. The old "Try other looks" panel is gone.

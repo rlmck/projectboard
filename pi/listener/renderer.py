@@ -225,21 +225,25 @@ class Renderer:
                 if self.state == NIGHT:
                     self.log('LEDs: cast not shown, night')
                     continue
+                self._end_circuit(now, 'replaced')
                 self.state, self.fade, self.cast_at, self.circ = CAST, None, now, None
                 self._write(arg, True)
             elif kind == 'circuit':
                 if self.state == NIGHT:
                     self.log('LEDs: circuit not shown, night')
                     continue
+                self._end_circuit(now, 'replaced')
                 self.state, self.fade, self.circ, self.run_t0, self.run_full = RUN, None, arg, now, True
                 self.next_frame = now
             elif kind == 'stop':
                 if self.state == RUN and (arg is None or arg == self.circ.token):
+                    self._end_circuit(now, 'stopped')
                     self._go_idle(now, 'circuit %r stopped' % self.circ.name)
                 elif self.state == RUN:
                     self.log('LEDs: stop for another run ignored')
             elif kind == 'night':
                 if arg and self.state != NIGHT:
+                    self._end_circuit(now, 'night')
                     self.state = NIGHT
                     self.log('LEDs: night, fading out')
                     if self.shown:
@@ -250,6 +254,7 @@ class Renderer:
                 elif not arg and self.state == NIGHT:
                     self._go_idle(now, 'night over')
             elif kind == 'idle' and self.state not in (NIGHT, IDLE):
+                self._end_circuit(now, 'sent to idle')
                 self._go_idle(now, 'asked for')
             elif kind == 'pattern':
                 self._set_pattern(arg, now)
@@ -268,16 +273,23 @@ class Renderer:
             return min(MAX_SLEEP, self.cast_at + self.idle_after - now)
         return self._idle_frame(now)
 
+    def _end_circuit(self, now, how):
+        """A run that's showing ends: one line for PB Console's Activity (how, moves, time)."""
+        if self.state == RUN and self.circ is not None:
+            self.log(self.circ.ended_line(how, now - self.run_t0))
+
     def _run_frame(self, now):
         """One frame of the circuit run, paced like the idle animation."""
         if now < self.next_frame:
             return self.next_frame - now
         t = now - self.run_t0
         if t >= self.run_max:
+            self._end_circuit(now, 'time limit')
             self._go_idle(now, 'circuit %r ran %d s, the limit' % (self.circ.name, self.run_max))
             return 0
         leds, done = self.circ.frame(t)
         if done:
+            self._end_circuit(now, 'finished')
             self._go_idle(now, 'circuit %r finished' % self.circ.name)
             return 0
         out, _, _ = board.scale(leds, *self.cast_args)
