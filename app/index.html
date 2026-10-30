@@ -238,6 +238,11 @@
 
     <!-- Progress, pinned below the board: what's set, and what to tap next. -->
     <div class="create-status">
+      <div class="feet-rule" id="create-feet" role="radiogroup" aria-label="Feet">
+        <button class="feet-opt any" type="button" role="radio" data-feet="any" aria-checked="true" aria-label="Any feet">Any feet</button>
+        <button class="feet-opt orange" type="button" role="radio" data-feet="orange" aria-checked="false" aria-label="Orange feet only"><i></i>Orange only</button>
+        <button class="feet-opt black" type="button" role="radio" data-feet="black" aria-checked="false" aria-label="Black feet only"><i></i>Black only</button>
+      </div>
       <div class="create-steps" id="create-steps"></div>
       <div class="create-next" id="create-next"></div>
     </div>

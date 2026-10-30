@@ -80,6 +80,23 @@
       'M12 6.3 13.5 10.44 17.9 10.58 14.43 13.29 15.64 17.52 12 15.05 8.36 17.52 9.57 13.29 6.1 10.58 10.5 10.44Z"></path></svg>';
   }
 
+  // The feet rule (problems.feet_mode, db/33): Any feet (the default, not shown),
+  // Orange feet only or Black feet only. The Pi lights the matching sign's LED by
+  // B1/B2 from feet_mode; hold2/hold21 (those signs) are never holds in a list.
+  const FEET_RULES = [
+    { key: 'any', label: 'Any feet', short: 'Any feet' },
+    { key: 'orange', label: 'Orange feet only', short: 'Orange only' },
+    { key: 'black', label: 'Black feet only', short: 'Black only' }
+  ];
+  const FEET_LIGHT_HOLDS = new Set(['hold2', 'hold21']);
+  const feetRule = p => (p && (p.feet_mode === 'orange' || p.feet_mode === 'black')) ? p.feet_mode : 'any';
+  const feetLabel = k => (FEET_RULES.find(r => r.key === k) || FEET_RULES[0]).label;
+  function feetBadgeHtml(p) {
+    const k = feetRule(p);
+    if (k === 'any') return '';
+    return `<span class="feet-badge ${k}" title="${feetLabel(k)}"><i></i>${k === 'orange' ? 'Orange feet' : 'Black feet'}</span>`;
+  }
+
   // "New" badge: shown for NEW_DAYS after a row's created_at. The migrated
   // problems all share one import date (20 May 2026), so they're never new.
   const NEW_DAYS = 14;

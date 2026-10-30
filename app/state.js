@@ -86,6 +86,7 @@
   // ── Create-a-problem state ───────────────────────────────────────────────────
   let createRoles = {};        // hold id -> 'start' | 'int' | 'finish'
   let createGrade = '';        // selected grade
+  let createFeet = 'any';      // the feet rule: 'any' | 'orange' | 'black' (FEET_RULES in core.js)
   let editingProblemId = null; // when set, the create view is editing this problem (admin) instead of creating
   let createUndo = [];         // earlier createRoles snapshots, newest last (the create view's Undo)
 

@@ -137,6 +137,7 @@
         </div>
         <div class="detail-meta">
           <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
+          ${feetBadgeHtml(p)}
           ${newBadgeHtml(p)}
           <span class="meta-setter">by ${escHtml(setterName(p))}</span>
           ${p.is_benchmark ? `<span class="bench-badge">${benchMarkSvg()}Benchmark</span>` : ''}
@@ -244,6 +245,10 @@
       <div class="info-row">
         <div class="info-label">Consensus grade</div>
         <div class="info-value"><span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span></div>
+      </div>
+      <div class="info-row">
+        <div class="info-label">Feet</div>
+        <div class="info-value">${feetLabel(feetRule(p))}</div>
       </div>
     `;
     document.getElementById('info-modal').classList.add('show');

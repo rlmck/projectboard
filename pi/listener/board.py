@@ -13,6 +13,15 @@ COLOURS = {START: (0, 255, 0), INT: (0, 0, 255), FINISH: (255, 0, 0)}   # contra
 # stronger role wins.
 RANK = {INT: 0, START: 1, FINISH: 2}
 
+# The feet-rule lights (contract 6.5): fixed signs at B1 and B2, not holds. One is
+# lit from problems.feet_mode ('orange' or 'black'; 'any' lights neither), never
+# from the hold list, and never mirrored: the signs don't move. Blue, as Gareth's
+# code lit them. Problems migrated before db/33 still list them as holds; frame()
+# skips them there.
+FEET_LIGHTS = {'orange': 'hold21', 'black': 'hold2'}     # B2 = LED 25, B1 = LED 26
+FEET_HOLDS = frozenset(FEET_LIGHTS.values())
+FEET_COLOUR = COLOURS[INT]
+
 _HOLD = re.compile(r'^hold([0-9]{1,3})$')
 
 
@@ -71,10 +80,14 @@ def frame(row, mirror=False, mirror_map=None):
     dropped (the stopgap dropped first, which could shift roles), then each
     hold is moved to its mirror partner when mirrored (contract 6.3: a hold
     absent from the map, or mapped to itself, stays put; roles don't change).
+    The feet lights listed as holds are skipped, and the one feet_mode names is
+    lit unmirrored (contract 6.5).
     """
     roles = classify(problem_order(row))
     leds, ranks, dropped = {}, {}, []
     for h, role in roles.items():
+        if h in FEET_HOLDS:
+            continue
         target = mirror_map.get(h, h) if mirror else h
         n = hold_number(target)
         if n is None:
@@ -84,6 +97,9 @@ def frame(row, mirror=False, mirror_map=None):
         if i not in ranks or RANK[role] > ranks[i]:
             ranks[i] = RANK[role]
             leds[i] = COLOURS[role]
+    light = FEET_LIGHTS.get(row.get('feet_mode'))
+    if light:
+        leds[led_index(hold_number(light))] = FEET_COLOUR
     return leds, dropped
 
 

@@ -27,7 +27,7 @@ def _retry_once(fn):
 def fetch_problem(cfg, name):
     """The problem row by exact name (contract 3), or None if there's no such problem."""
     rows = _retry_once(lambda: _get(cfg, 'problems', {
-        'select': 'name,start_holds,intermediate_holds,finish_hold',
+        'select': 'name,start_holds,intermediate_holds,finish_hold,feet_mode',
         'name': 'eq.' + name}))
     if not isinstance(rows, list):
         raise ValueError('problems lookup returned %s' % type(rows).__name__)
@@ -49,7 +49,7 @@ def fetch_mirror_map(cfg):
 def fetch_benchmarks(cfg):
     """Every benchmark problem's name and holds (for the teaser idle pattern): one small read."""
     rows = _retry_once(lambda: _get(cfg, 'problems', {
-        'select': 'name,start_holds,intermediate_holds,finish_hold',
+        'select': 'name,start_holds,intermediate_holds,finish_hold,feet_mode',
         'is_benchmark': 'eq.true', 'order': 'name', 'limit': '500'}))
     if not isinstance(rows, list):
         raise ValueError('benchmarks lookup returned %s' % type(rows).__name__)

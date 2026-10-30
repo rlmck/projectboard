@@ -190,8 +190,20 @@
     if (el) el.textContent = t;
   }
 
+  // The feet rule: three options side by side under the board.
+  function updateCreateFeet() {
+    document.querySelectorAll('#create-feet .feet-opt').forEach(b =>
+      b.setAttribute('aria-checked', b.dataset.feet === createFeet ? 'true' : 'false'));
+  }
+  function setCreateFeet(k) {
+    if (!FEET_RULES.some(r => r.key === k)) return;
+    createFeet = k;
+    updateCreateFeet();
+  }
+
   function resetCreate() {
     createRoles = {}; createGrade = ''; editingProblemId = null; createUndo = [];
+    createFeet = 'any'; updateCreateFeet();
     const nameEl = document.getElementById('create-name');
     if (nameEl) { nameEl.value = ''; nameEl.disabled = false; }
     setCreateTitle('New problem');
@@ -210,8 +222,11 @@
     const cls = classifyHolds(order);
     createRoles = {};
     createUndo = [];
-    order.forEach(h => { createRoles[h] = cls[h]; });
+    // The feet signs (B1/B2) were listed as holds in problems migrated before
+    // db/33; they're the feet rule now, never holds.
+    order.forEach(h => { if (!FEET_LIGHT_HOLDS.has(h)) createRoles[h] = cls[h]; });
     createGrade = p.grade || '';
+    createFeet = feetRule(p); updateCreateFeet();
     const nameEl = document.getElementById('create-name');
     if (nameEl) { nameEl.value = p.name || ''; nameEl.disabled = true; }
     setCreateTitle('Edit problem');
@@ -235,6 +250,25 @@
     }
     buildCreateGrades();
     applyCreateRoles();
+    requestAnimationFrame(fitCreateStatus);   // once the view is showing
+  }
+
+  // The strip under the board (feet rule, steps, what next) normally floats in the
+  // space the problem view leaves empty there, so the board sits exactly where it
+  // does on a problem. On a short or wide screen that space is too small and the
+  // strip would cover the lowest holds (the starts); then it joins the layout
+  // instead, and the board moves up to make room. Re-checked on resize and when the
+  // board image loads.
+  function fitCreateStatus() {
+    if (currentView !== 'create') return;
+    const main = document.querySelector('#view-create main');
+    const board = document.getElementById('create-board');
+    const status = document.querySelector('#view-create .create-status');
+    if (!main || !board || !status) return;
+    main.classList.remove('status-stacked');
+    if (status.getBoundingClientRect().top < board.getBoundingClientRect().bottom) {
+      main.classList.add('status-stacked');
+    }
   }
 
   // The header bin. In edit mode it reverts to the problem's saved holds + grade
@@ -314,7 +348,7 @@
     if (editing) {
       // Holds + grade only — never touch name or setter (admin edit; DB enforces
       // admin-only UPDATE via RLS). Same invert-on-save scheme as create.
-      const update = { grade: createGrade, ...holdCols };
+      const update = { grade: createGrade, feet_mode: createFeet, ...holdCols };
       // .select() so a write RLS silently refused (no error, 0 rows) isn't
       // mistaken for success.
       const { data, error } = await sb.from('problems').update(update).eq('id', editing.id).select('id');
@@ -347,7 +381,7 @@
       setter: (profile && profile.username) || '',     // snapshot (NOT NULL); display uses setter_id
       setter_id: session.user.id,                      // owner — drives the live setter name
       ...holdCols,
-      feet_mode: 'any',
+      feet_mode: createFeet,
       is_benchmark: false
     };
 

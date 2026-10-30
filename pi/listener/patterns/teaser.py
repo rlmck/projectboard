@@ -38,7 +38,7 @@ def from_rows(rows):
         cells = {}
         for h, role in roles.items():
             n = board.hold_number(h)
-            if n is not None:
+            if n is not None and h not in board.FEET_HOLDS:     # feet lights aren't holds
                 cells[n - 1] = role
         if cells:
             out.append((row.get('name') or '?', cells))

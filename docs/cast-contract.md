@@ -56,7 +56,7 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
   - on `cast_problem`, checks the payload (§3: `problem_name` a string of 1–60 characters, `mirror` true or absent) and logs and skips anything else;
   - logs each cast with its origin, e.g. `cast received: 'Good Bug' mirrored [wall, guest]` (or `cast 'Good Bug' ignored: night mode [phone, member]`); the `[source, who]` part is left off when the app sent neither (before 29 Oct 2026). PB Console's Activity tab reads these lines;
   - looks the problem up by exact name over REST (one retry); an unknown name leaves the board as it is;
-  - builds the frame by §6.2–6.4: roles are classified on the stored ids first, ids off the grid are then dropped and logged, and with `mirror` each hold moves to its partner, keeping its role. Brightness is 0.5, with a whole-frame current cap;
+  - builds the frame by §6.2–6.5: roles are classified on the stored ids first, ids off the grid are then dropped and logged, and with `mirror` each hold moves to its partner, keeping its role; the feet-rule light comes from `feet_mode` (§6.5), never mirrored. Brightness is 0.5, with a whole-frame current cap;
   - latest cast wins: a cast still being fetched when a newer one arrives is dropped;
   - loads the mirror map on every join and refreshes it every 10 min; a mirrored cast with no map loaded is skipped;
   - **night mode, 23:00–08:00 by the Pi's clock** (day if the clock hasn't synced): the strip is cleared and casts are ignored (logged, not shown), while the socket stays joined;
@@ -126,11 +126,21 @@ led = x*13 + (13 - y)     if x is odd    (B, D, F … run down)
   - **Not yet checked:** mirrored casts.
 - **Mapped on the wall on 28 Oct 2026** with `pb-ledmap` (`pi/README.md` → "LED mapping"): every real hold lights the LED the formula gives, so every column runs the way it says (B, D … down). The three mismatches found were app labels, not LEDs, fixed in the board data by db/32 and rechecked on the wall after the deploy, along with the B1/B2 feet-indicator lights (LEDs 26 and 25).
 
-### 6.5 Feet indicators
-- The original settings file names `hold21` (B2, LED 25) "Orange" and `hold2` (B1, LED 26) "Black". Neither cell has a real hold.
-- They appear in many migrated problems' hold lists (90 contain `hold2`, 83 contain `hold21`). Gareth's code lit them like any other hold (blue).
-- The app doesn't draw them.
-- `problems.feet_mode` is `any` on every row, and nothing reads it.
+### 6.5 Feet rule (decided 30 Oct 2026)
+- Two signs at B1 and B2, which aren't holds: the original settings file names `hold21` (B2, **LED 25**) "Orange" and `hold2` (B1, **LED 26**) "Black". "Red" and "orange" feet mean the same thing.
+- Every problem has a **feet rule** in `problems.feet_mode` (CHECK: `any`, `orange`, `black`; default `any`):
+
+  | `feet_mode` | Meaning | Lights |
+  |---|---|---|
+  | `any` | Any feet | neither sign |
+  | `orange` | Orange feet only | LED 25 (B2) |
+  | `black` | Black feet only | LED 26 (B1) |
+
+- The lit sign is **blue** `(0,0,255)`, the colour Gareth's code gave it (it lit the signs as intermediates).
+- **The listener reads `feet_mode`** with the problem (`pi/listener/board.py`, `FEET_LIGHTS`). `hold2`/`hold21` in a hold list are skipped, never lit. The payload doesn't change: the rule travels with the problem row, like its holds.
+- **Never mirrored:** the signs are fixed to the wall, so a mirrored cast lights the same sign. Neither id is in `board_config.mirror_map`, and no hold mirrors onto them (`pi/tests/test_board.py`, `Feet`).
+- **Data:** before db/33 the rule lived only in migrated problems' hold lists (Gareth's lists carried the signs just before the finish; the old notes say both on = any feet). db/33 set `feet_mode` from them (only `hold2` → `black`, only `hold21` → `orange`, both or neither → `any`: 26, 19 and 220 problems on 30 Oct 2026) and took `hold2`/`hold21` out of every hold list. Neither was ever a start or the finish, so no problem's roles changed.
+- **The app:** Create and admin Edit offer the rule as three options (Any feet by default); the problem view shows a badge when it isn't Any, and the info sheet always shows it. The app never draws the signs on the board.
 
 ## 7. Open questions
 
@@ -145,9 +155,7 @@ Nothing below is decided.
    - What happens for an unknown name?
    - Exact match, or trimmed?
 6. **Mirroring:** does the Pi fetch `board_config.mirror_map` (and when it refreshes), or does the app send resolved holds?
-7. **Feet indicators:** light `hold2`/`hold21` when listed (as Gareth's code did), or from `feet_mode`?
-   - Which colours?
-   - What do both lights on mean?
+7. ~~**Feet indicators:** light `hold2`/`hold21` when listed (as Gareth's code did), or from `feet_mode`? Which colours? What do both lights on mean?~~ Decided 30 Oct 2026 (§6.5): from `feet_mode` (Any feet / Orange feet only / Black feet only); Any lights neither sign; the lit sign is blue, as before; both-on in the old data meant Any.
 8. **Colours:**
    - Keep the original green, blue and red?
    - Any colour for foot holds?
@@ -167,6 +175,7 @@ Nothing below is decided.
 15. **Who may cast:** anyone, by decision. Does the Pi apply any checks of its own?
 
 ## Change history
+- **2026-10-30, Claude Code:** §5, §6.5, §7 item 7: the feet rule. `problems.feet_mode` (`any` / `orange` / `black`, db/33) drives the B2/B1 sign LEDs (25/26), never the hold list, and never mirrored; db/33 maps the migrated problems and removes `hold2`/`hold21` from their lists. The listener reads `feet_mode` from the next Pi deploy. **No change to the channel, event or payload.**
 - **2026-10-29, Claude Code:** §3, §4, §5: two optional, informational payload fields, `source` (`wall` / `phone` / `console`) and `signed_in` (a boolean, never who), sent by `castByName()` and PB Console's test cast and logged by the listener for PB Console's Activity log. The channel and event are unchanged, and the listener before this change ignores both fields, so either side can be deployed first.
 - **2026-10-28, Claude Code:** §6.1, §6.3, §6.4, §7 item 11: the LED map checked on the wall with `pb-ledmap`; three hold labels fixed in the board data (db/32), 188 real holds, the mirror differences now 5. No change to the channel, event or payload.
 - **2026-10-28, Claude Code:** §5: idle patterns (ten, chosen by `IDLE_PATTERN` or `pb-idle`); the listener also reads the benchmark problems for the teaser pattern. No change to the channel, event or payload.

@@ -772,6 +772,20 @@
       font-weight: 700;
     }
 
+    /* The feet rule on the problem view, when it isn't Any feet (feetBadgeHtml) */
+    .feet-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border-radius: var(--radius-badge);
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .feet-badge i { width: 8px; height: 8px; }
+    .feet-badge.orange { background: var(--feet-a16); border: 1px solid var(--feet-a50); color: var(--feet); }
+    .feet-badge.black { background: var(--surface2); border: 1px solid var(--text-muted); color: var(--text); }
+
     /* ── Leaderboard ─────────────────────────────────────────────────── */
     .leaderboard-row {
       display: flex;
@@ -1052,6 +1066,8 @@
       display: flex; flex-direction: column; align-items: center; gap: 8px;
       pointer-events: none;
     }
+    /* Not enough room under the board (fitCreateStatus): the strip joins the layout. */
+    #view-create main.status-stacked .create-status { position: static; flex-shrink: 0; }
     .create-steps { display: flex; gap: 6px; }
     .create-step {
       display: inline-flex; align-items: center; gap: 6px;
@@ -1069,10 +1085,38 @@
     .create-step.c-start.done  { border-color: var(--start-a55);  background: var(--start-a10); }
     .create-step.c-int.done    { border-color: var(--int-a55); background: var(--int-a10); }
     .create-step.c-finish.done { border-color: var(--finish-a55);  background: var(--finish-a10); }
+    /* The feet rule: three options side by side, one chosen (Any feet by default). */
+    .feet-rule {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+      width: 100%; max-width: var(--feet-rule-w);
+      pointer-events: auto;     /* .create-status lets taps through to the board */
+    }
+    .feet-opt {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      min-height: var(--feet-opt-h); padding: 0 8px;
+      border-radius: var(--btn-radius); border: 1px solid var(--border);
+      background: var(--surface); color: var(--text-muted);
+      font-size: 12px; font-weight: 700; white-space: nowrap;
+      cursor: pointer; touch-action: manipulation;
+      transition: color 0.2s, border-color 0.2s, background 0.2s;
+    }
+    .feet-opt[aria-checked="true"] { color: var(--text); }
+    .feet-opt.any[aria-checked="true"] { border-color: var(--text-muted); background: var(--surface2); }
+    .feet-opt.orange[aria-checked="true"] { color: var(--feet); border-color: var(--feet-a50); background: var(--feet-a16); }
+    .feet-opt.black[aria-checked="true"] { border-color: var(--text); background: var(--surface2); }
+    /* The sign's colour: an orange dot, or a black one ringed so it shows on dark. */
+    .feet-opt i { width: 10px; height: 10px; }
+    .feet-opt i, .feet-badge i { border-radius: 50%; flex-shrink: 0; }
+    .feet-opt.orange i, .feet-badge.orange i { background: var(--feet); }
+    .feet-opt.black i, .feet-badge.black i { background: var(--black); border: 1px solid var(--text-muted); }
+
     .create-next { font-size: 13px; color: var(--text-muted); text-align: center; }
     .create-next.ready { color: var(--accent-hover); font-weight: 700; }
     /* Short screens: the steps alone. */
     @media (max-height: 640px) { .create-next { display: none; } }
+    /* Very short screens (a small phone in the browser): the feet rule alone; the
+       counts are in the fullscreen board's bar. */
+    @media (max-height: 600px) { .create-steps { display: none; } .create-status { padding-top: 6px; } }
 
     /* The grade sheet: every grade as a tappable chip. */
     .grade-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 8px; }

@@ -171,6 +171,8 @@
   --title-cast-pad-x: 12px;
   --title-cast-gap: 6px;  /* between its icon and 'Cast' */
   --title-cast-icon: 16px;
+  --feet-opt-h: 34px;  /* the create view's feet-rule options */
+  --feet-rule-w: 380px;
 
   /* Wall-screen mode (?wall, wall.js): the 1280×720 touchscreen by the board */
   --wall-head-h: 64px;  /* the header with the page tabs */

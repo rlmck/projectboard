@@ -399,6 +399,16 @@
     if (e.target.id === 'create-grade-modal') closeCreateGrade();
   });
 
+  // The strip under the board makes room for itself when the board would be covered.
+  window.addEventListener('resize', fitCreateStatus);
+  document.querySelector('#create-board .board-graphic').addEventListener('load', fitCreateStatus);
+
+  // Feet rule: Any feet / Orange only / Black only.
+  document.getElementById('create-feet').addEventListener('click', e => {
+    const b = e.target.closest('.feet-opt');
+    if (b) setCreateFeet(b.dataset.feet);
+  });
+
   document.getElementById('create-save').addEventListener('click', saveProblem);
 
   // ── Circuits wiring ─────────────────────────────────────────────────────────

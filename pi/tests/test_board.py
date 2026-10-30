@@ -106,6 +106,51 @@ class Mirror(unittest.TestCase):
             board.check_mirror_map(['hold1'])
 
 
+class Feet(unittest.TestCase):
+    """Contract 6.5: the feet lights come from feet_mode, never from the hold list."""
+    ROW = {'finish_hold': 'hold10', 'intermediate_holds': ['hold100'], 'start_holds': ['hold200', 'hold230']}
+
+    def test_leds(self):
+        self.assertEqual(board.led_index(board.hold_number(board.FEET_LIGHTS['orange'])), 25)
+        self.assertEqual(board.led_index(board.hold_number(board.FEET_LIGHTS['black'])), 26)
+
+    def test_rule_lights_one(self):
+        for mode, led, other in (('orange', 25, 26), ('black', 26, 25)):
+            leds, _ = board.frame(dict(self.ROW, feet_mode=mode))
+            self.assertEqual(leds[led], board.FEET_COLOUR, mode)
+            self.assertNotIn(other, leds, mode)
+            self.assertEqual(len(leds), 5, mode)
+
+    def test_any_lights_none(self):
+        for mode in ('any', None, 'none', 'red'):
+            leds, _ = board.frame(dict(self.ROW, feet_mode=mode))
+            self.assertNotIn(25, leds)
+            self.assertNotIn(26, leds)
+            self.assertEqual(len(leds), 4)
+
+    def test_listed_feet_lights_are_ignored(self):
+        # A migrated row (before db/33): both lights listed just before the finish.
+        row = {'finish_hold': 'hold10', 'intermediate_holds': ['hold100', 'hold21'],
+               'start_holds': ['hold2', 'hold230']}
+        leds, _ = board.frame(row)
+        self.assertNotIn(25, leds)
+        self.assertNotIn(26, leds)
+        leds, _ = board.frame(dict(row, feet_mode='black'))
+        self.assertEqual(leds[26], board.FEET_COLOUR)
+        self.assertNotIn(25, leds)
+        # roles are still worked out on the stored list: hold230 stays the finish
+        self.assertEqual(leds[board.led_index(230)], board.COLOURS[board.FINISH])
+
+    def test_never_mirrored(self):
+        mm = load('app', 'mirror_map.json')
+        for mode, led in (('orange', 25), ('black', 26)):
+            leds, _ = board.frame(dict(self.ROW, feet_mode=mode), True, mm)
+            self.assertEqual(leds[led], board.FEET_COLOUR, mode)
+        # and nothing in the shipped mirror map moves a hold onto a feet light
+        self.assertFalse(board.FEET_HOLDS & set(mm.values()))
+        self.assertFalse(board.FEET_HOLDS & set(mm))
+
+
 class Cap(unittest.TestCase):
     def test_brightness_and_cap(self):
         leds = {i: (255, 255, 255) for i in range(1, 101)}          # 100 white pixels
