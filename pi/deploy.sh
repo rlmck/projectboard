@@ -59,7 +59,9 @@ fi
 
 # Since 30 Oct 2026 /etc/sudoers.d/pb-deploy (conf/pb-deploy.sudoers) lets pi run the
 # installer without a password, so no one needs to be at the keyboard.
-if ssh -n "$HOST" "sudo -n -l /usr/bin/bash /home/pi/$STAGE/install.sh ${ARGS[*]+${ARGS[*]}}" >/dev/null 2>&1; then
+# The probe is `sudo -n true` (allowed by that rule only): `sudo -n -l <cmd>` says yes
+# for pi's password-protected ALL too, so it can't tell (found 30 Oct 2026).
+if ssh -n "$HOST" "sudo -n /usr/bin/true" >/dev/null 2>&1; then
     echo "== Installing (no password needed)"
     ssh -n "$HOST" "sudo -n bash /home/pi/$STAGE/install.sh ${ARGS[*]+${ARGS[*]}}"
 elif [ $SUDO_STDIN -eq 1 ]; then

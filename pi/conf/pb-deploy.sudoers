@@ -6,5 +6,7 @@
 # Tailscale, with the laptop's SSH key) can get root without the password.
 # To go back to typing the password: `sudo rm /etc/sudoers.d/pb-deploy` on the Pi
 # and delete this file from the repo.
+# /usr/bin/true is deploy.sh's probe: `sudo -n true` succeeds only once this rule
+# is in. (`sudo -n -l <cmd>` can't tell: it says yes for pi's password-protected ALL.)
 # Installed by install.sh after `visudo -cf` passes.
-pi ALL=(root) NOPASSWD: /usr/bin/bash /home/pi/pb-deploy/install.sh, /usr/bin/bash /home/pi/pb-deploy/install.sh --dry-run
+pi ALL=(root) NOPASSWD: /usr/bin/bash /home/pi/pb-deploy/install.sh, /usr/bin/bash /home/pi/pb-deploy/install.sh --dry-run, /usr/bin/true
