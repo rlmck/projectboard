@@ -22,10 +22,10 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 6. **A mock listener on the laptop** that turns a cast into LED indices (lower priority now the webcam shows the real board).
 
 ## App design and features
-7. **Revamp the profile stuff:** when the app loads, signed-out users should be offered Create account first, not Sign in (they won't have an account yet). Consider switching the 4-word passphrase to a PIN (Claude Code to suggest). Be careful with existing users.
-8. **Revamp filtering:** sort by new, and lots more (scope to be worked out).
-9. **Creating a problem on the kiosk:** open question (whether and how).
-10. **Circuits Phase 2:** the cast screen, `cast_circuit`/`stop` broadcasts, `circuit_logs`, the Pi listener update (`docs/circuits-phase2.md`).
+7. **Circuits Phase 2 (now):** the cast screen, `cast_circuit`/`stop` broadcasts, `circuit_logs`, the Pi listener update (`docs/circuits-phase2.md`).
+8. **Revamp the profile stuff:** when the app loads, signed-out users should be offered Create account first, not Sign in (they won't have an account yet). Consider switching the 4-word passphrase to a PIN (Claude Code to suggest). Be careful with existing users.
+9. **Revamp filtering:** sort by new, and lots more (scope to be worked out).
+10. **Creating a problem on the kiosk:** open question (whether and how).
 11. **Problem name/setter editing** (changes the cast key: contract open questions).
 12. **Wall screen, faster updates** (parked 27 Oct): check every 5 min instead of hourly and apply a waiting update after ~2 min untouched, keeping the chosen problem and scroll position.
 13. **More challenges** (a row in `challenges`), monthly boards, a metronome, casting the circuit at Start once Circuits Phase 2 exists.
