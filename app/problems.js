@@ -80,6 +80,19 @@
   }
 
   // ── Detail ───────────────────────────────────────────────────────────────────
+  // The Cast button is one element for the life of the page (its click listener
+  // and its casting/sent state survive re-renders). Each render moves it into the
+  // new title row; with no problem to show it's parked, hidden, after the content.
+  let detailCastEl = null;
+  function detailCastBtn() {
+    return detailCastEl || (detailCastEl = document.getElementById('detail-cast'));
+  }
+  function parkDetailCast(wrap) {
+    const btn = detailCastBtn();
+    btn.hidden = true;
+    wrap.after(btn);
+  }
+
   function renderDetail(id) {
     const wrap = document.getElementById('detail-content');
 
@@ -87,6 +100,7 @@
       currentProblem = null;
       updateTickButton();
       updateFaveButton();
+      parkDetailCast(wrap);
       wrap.innerHTML = `<div class="spinner"></div>`;
       return;
     }
@@ -96,6 +110,7 @@
       currentProblem = null;
       updateTickButton();
       updateFaveButton();
+      parkDetailCast(wrap);
       wrap.innerHTML = `<div class="state-msg"><div class="icon">🤷</div>That problem couldn't be found.<br><a class="link" href="#list">Back to problems</a></div>`;
       return;
     }
@@ -104,19 +119,22 @@
     if (!currentProblem || String(currentProblem.id) !== String(p.id)) detailMirror = false;
     currentProblem = p;
     // A cast in progress for something else (the problem before a swipe, or the
-    // other orientation) lets go of the shared header button; castByName then
+    // other orientation) lets go of the shared Cast button; castByName then
     // drops it when its location check returns.
     if (castTarget && (castTarget.name !== p.name || castTarget.mirror !== detailMirror)) {
       castTarget = null;
-      resetCastButton(document.getElementById('detail-cast'));
+      resetCastButton(detailCastBtn());
     }
     updateTickButton();
     updateFaveButton();
     updateMirrorButton();
 
+    const castBtn = detailCastBtn();
     wrap.innerHTML = `
       <div class="detail-head-info">
-        <h1 class="detail-name">${escHtml(displayName(p))}</h1>
+        <div class="detail-title-row">
+          <h1 class="detail-name">${escHtml(displayName(p))}</h1>
+        </div>
         <div class="detail-meta">
           <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
           ${newBadgeHtml(p)}
@@ -132,6 +150,8 @@
         ${boardExpandBtn()}
       </div>
     `;
+    wrap.querySelector('.detail-title-row').append(castBtn);
+    castBtn.hidden = false;
   }
 
   // Reflect the mirror toggle's lit state on the detail header button.

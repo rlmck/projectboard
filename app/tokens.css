@@ -167,6 +167,10 @@
   /* Sizes */
   --nav-h: 60px;  /* the bottom nav; body.ch-away raises it to 100px in styles.css */
   --nav-strip-h: 40px;  /* the 'back to the challenge' strip on top of the nav */
+  --title-cast-h: 34px;  /* the problem view's Cast, beside the title */
+  --title-cast-pad-x: 12px;
+  --title-cast-gap: 6px;  /* between its icon and 'Cast' */
+  --title-cast-icon: 16px;
 
   /* Wall-screen mode (?wall, wall.js): the 1280×720 touchscreen by the board */
   --wall-head-h: 64px;  /* the header with the page tabs */

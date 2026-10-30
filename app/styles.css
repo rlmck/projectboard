@@ -555,6 +555,21 @@
     .cast-btn.casting { opacity: 0.6; pointer-events: none; }
     .cast-btn.sent { background: var(--accent); animation: flash 0.4s ease; }
 
+    /* The problem view's Cast, at the right of the title (renderDetail moves it into
+       .detail-title-row). Taller than the title's line box, but the negative margins
+       give it exactly that line's height in the layout, so the locked title block
+       (below) and the board don't move. A long name wraps, then ellipses, beside it. */
+    .title-cast {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--title-cast-gap);
+      height: var(--title-cast-h);
+      padding: 0 var(--title-cast-pad-x);
+      margin-block: calc((1.35rem * 1.2 - var(--title-cast-h)) / 2);
+    }
+    .title-cast svg { width: var(--title-cast-icon); height: var(--title-cast-icon); flex-shrink: 0; }
+    #detail-cast[hidden] { display: none; }
+
     @keyframes flash {
       0%   { transform: scale(1.08); }
       100% { transform: scale(1); }
@@ -644,7 +659,18 @@
          viewport stops that contribution at the source. */
       max-width: 100vw;
     }
+    /* The name and Cast side by side; the row takes the name's bottom margin. */
+    .detail-title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 7px;
+    }
+    .detail-title-row .detail-name { margin-bottom: 0; }
+    /* Across the row, the name takes what's left after Cast (and may shrink to it). */
+    #view-detail .detail-title-row .detail-name { flex: 1 1 0; min-width: 0; }
     /* Neither child may be squeezed to fit the locked height — they overflow it. */
+    #view-detail .detail-title-row,
     #view-detail .detail-name,
     #view-detail .detail-meta,
     #view-circuit-detail .detail-name,
@@ -689,7 +715,7 @@
       text-overflow: ellipsis;
     }
 
-    /* Tick · Mirror · Cast — boxed icon buttons (same style as the "i" button) */
+    /* Shuffle · Tick · Favourite · Mirror · ⋮ — boxed icon buttons */
     .detail-actions {
       flex-shrink: 0;
       display: flex;
@@ -711,7 +737,7 @@
     #detail-mirror.active { color: var(--mirror-text); border-color: var(--int); background: var(--badge-blue-fill); }
     /* Shuffle on — swiping forward picks a random problem */
     #detail-shuffle.active, #ol-preview-btn.on { color: var(--accent-hover); border-color: var(--accent); background: var(--accent-a14); }
-    /* Seven buttons in the detail bar: tighten the gaps on the narrowest phones */
+    /* Six buttons in the detail bar: tighten the gaps on the narrowest phones */
     @media (max-width: 359px) { #view-detail .detail-actions { gap: 5px; } }
 
     .bench-badge {
