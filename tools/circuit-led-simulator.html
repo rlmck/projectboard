@@ -272,12 +272,12 @@ function timeline(t, circuit, speed, loop) {
 }
 
 // A frame under construction: hold → {rgb, brightness}; a higher priority wins a shared hold.
+// Brightness 0 still claims the hold (off, so a lower-priority look can't show through).
 function newFrame() {
   const pri = new Map(), out = new Map();
   return {
     out,
     put(h, rgb, brightness, p = 0) {
-      if (brightness <= 0.005) return;
       const o = pri.get(h);
       if (o === undefined || p > o) { pri.set(h, p); out.set(h, { rgb, brightness: Math.min(1, brightness) }); }
     },
@@ -309,42 +309,40 @@ function sharedPhase(T) {
   return F.out;
 }
 
-// A match (the hold to go to is one you're already on): it blinks twice at the
-// start of the beat, then shows as the direction drew it. Applied last, so it
-// wins over anything else on that hold.
-function matchBlink(F, T) {
-  if (T.isMatch && T.inBeat < 1.0) {
-    const h = T.hold(T.target);
-    if (T.inBeat % 0.5 < 0.25) F.out.set(h, { rgb: T.colourOf(T.target), brightness: 1 });
-    else F.out.delete(h);
-  }
+// A match (the hold to go to is one you're already on): it stays solid at full
+// brightness, never flashing, whatever the direction drew; the hold after it
+// flashes in its own beat. Applied last, so it wins over anything else on that hold.
+function matchSolid(F, T) {
+  if (T.isMatch) F.out.set(T.hold(T.target), { rgb: T.colourOf(T.target), brightness: 1 });
   return F.out;
 }
 
 // ── The directions ───────────────────────────────────────────────────────────
 // Each run(t, circuit, speed, loop) returns a Map of hold → {rgb, brightness 0–1}.
-// They share only timeline(), newFrame(), sharedPhase() and matchBlink() above,
-// which a port to the Pi takes along with the chosen one.
+// They share only timeline(), newFrame(), sharedPhase(), matchSolid() and the
+// small helpers below, which a port to the Pi takes along with the chosen one.
 const lerp = (a, b, k) => a + (b - a) * k;
 const mix = (p, q, k) => p.map((v, j) => Math.round(lerp(v, q[j], k)));
 const wave = x => 0.5 + 0.5 * Math.cos(2 * Math.PI * x);   // 1 at x = 0, 1, 2 …
+// On/off flashing locked to the beat: perSec flashes a second, "on" first. The
+// speeds are whole seconds, so a once-a-second flash starts fresh on every beat.
+const flashOn = (inBeat, perSec = 1, duty = 0.5) => (inBeat * perSec) % 1 < duty;
 
 const DIRECTIONS = [
   { n: 1, name: "Window (today's look)",
-    desc: "Next two solid blue, one breathing; let-go flashes red.",
+    desc: 'Next two solid blue, one breathing; red flashes behind.',
     legend: [['#fff', "Holds you're on: full brightness"], ['var(--int)', 'Solid blue: the hold to go to, and the one after'],
-             ['#3b5a96', 'Breathing slowly: coming up'], ['var(--finish)', 'The hold you just let go of flashes red, then off']],
+             ['#3b5a96', 'Breathing slowly: coming up'], ['var(--finish)', 'Flashing red all beat: the hold you should have let go of (catch up!)']],
     run(t, circuit, speed, loop) {
       const T = timeline(t, circuit, speed, loop);
       if (T.phase !== 'run') return sharedPhase(T);
       const F = newFrame(), { c, hold, exists, colourOf, inBeat } = T;
-      const LETGO = 0.6;
-      if (c - 2 >= 0 && inBeat < LETGO) F.put(hold(c - 2), LED.red, inBeat < 0.35 ? 1 : (LETGO - inBeat) / (LETGO - 0.35), 1);
+      if (c - 2 >= 0 && flashOn(inBeat, 2)) F.put(hold(c - 2), LED.red, 1, 1);
       T.held.forEach(i => F.put(hold(i), colourOf(i), 1, 6));
       F.put(hold(c + 1), colourOf(c + 1), 1, 7);
       if (exists(c + 2)) F.put(hold(c + 2), colourOf(c + 2), 1, 5);
       if (exists(c + 3)) F.put(hold(c + 3), colourOf(c + 3), 0.12 + 0.55 * (1 - wave(t / 1.6)), 3);
-      return matchBlink(F, T);
+      return matchSolid(F, T);
     } },
 
   { n: 2, name: 'Comet tail',
@@ -367,7 +365,7 @@ const DIRECTIONS = [
       F.put(hold(c + 1), colourOf(c + 1), 1, 7);
       if (exists(c + 2)) F.put(hold(c + 2), colourOf(c + 2), 0.4, 5);
       if (exists(c + 3)) F.put(hold(c + 3), colourOf(c + 3), 0.15, 4);
-      return matchBlink(F, T);
+      return matchSolid(F, T);
     } },
 
   { n: 3, name: 'Next move only',
@@ -379,21 +377,22 @@ const DIRECTIONS = [
       const F = newFrame(), { c, hold, colourOf } = T;
       T.held.forEach(i => F.put(hold(i), colourOf(i), 0.4, 6));
       F.put(hold(c + 1), colourOf(c + 1), 1, 7);
-      return matchBlink(F, T);
+      return matchSolid(F, T);
     } },
 
-  { n: 4, name: 'Fill-up timer',
-    desc: "The hold to go to fills up. When it's full, grab it.",
-    legend: [['var(--int)', "The hold to go to: dim at the start of the beat, full at the end. Full = grab it"],
-             ['#fff', "Holds you're on: steady"], ['#3b5a96', 'Faint: the hold after']],
+  { n: 4, name: 'Flash to grab',
+    desc: "Blue flashes till you're on it; amber next; red behind.",
+    legend: [['var(--int)', "Flashing blue, once a second: the hold to go to. Solid once you're on it"],
+             ['var(--amber)', 'Amber: the hold after'], ['var(--finish)', 'Flashing red all beat: the hold you should have let go of (catch up!)']],
     run(t, circuit, speed, loop) {
       const T = timeline(t, circuit, speed, loop);
       if (T.phase !== 'run') return sharedPhase(T);
-      const F = newFrame(), { c, hold, exists, colourOf, f } = T;
-      T.held.forEach(i => F.put(hold(i), colourOf(i), 0.6, 6));
-      F.put(hold(c + 1), colourOf(c + 1), 0.1 + 0.9 * f, 7);
-      if (exists(c + 2)) F.put(hold(c + 2), colourOf(c + 2), 0.15, 5);
-      return matchBlink(F, T);
+      const F = newFrame(), { c, hold, exists, colourOf, inBeat } = T;
+      if (c - 2 >= 0 && flashOn(inBeat, 2)) F.put(hold(c - 2), LED.red, 1, 1);
+      T.held.forEach(i => F.put(hold(i), colourOf(i), 1, 6));
+      F.put(hold(c + 1), colourOf(c + 1), flashOn(inBeat) ? 1 : 0.12, 7);
+      if (exists(c + 2)) F.put(hold(c + 2), LED.amber, 0.6, 5);
+      return matchSolid(F, T);
     } },
 
   { n: 5, name: 'Get ready / go',
@@ -407,54 +406,59 @@ const DIRECTIONS = [
       T.held.forEach(i => F.put(hold(i), colourOf(i), 0.7, 6));
       F.put(hold(c + 1), inBeat < 0.3 ? LED.white : colourOf(c + 1), 1, 7);
       if (exists(c + 2)) F.put(hold(c + 2), LED.amber, 0.7, 5);
-      return matchBlink(F, T);
+      return matchSolid(F, T);
     } },
 
-  { n: 6, name: 'Metronome',
-    desc: 'A calm board; a white tick on the target every beat.',
-    legend: [['#fff', 'White tick on the hold to go to: the beat (at Slow, two quick ticks in the last second: hurry up)'],
-             ['var(--int)', 'Blue: the hold to go to'], ['#3b5a96', 'Faint: the hold after'], ['#ccc', "Holds you're on: steady"]],
+  { n: 6, name: 'Hurry up',
+    desc: 'The blue flash speeds up as the time runs out.',
+    legend: [['var(--int)', 'Flashing blue: the hold to go to. Once a second at first, four a second by the end'],
+             ['var(--amber)', 'Amber: the hold after'], ['var(--finish)', 'A quick red flicker for a second and a half: let go of this one']],
+    run(t, circuit, speed, loop) {
+      const T = timeline(t, circuit, speed, loop);
+      if (T.phase !== 'run') return sharedPhase(T);
+      const F = newFrame(), { c, hold, exists, colourOf, inBeat, f } = T;
+      // The flash rate climbs from 1 to 4 a second through the beat; its phase is
+      // the integral of that rate, a whole number at the beat so each move starts "on".
+      const phase = inBeat + speed * f * f * f;
+      if (c - 2 >= 0 && inBeat < 1.5 && flashOn(inBeat, 3)) F.put(hold(c - 2), LED.red, 1, 1);
+      T.held.forEach(i => F.put(hold(i), colourOf(i), 1, 6));
+      F.put(hold(c + 1), colourOf(c + 1), phase % 1 < 0.5 ? 1 : 0.12, 7);
+      if (exists(c + 2)) F.put(hold(c + 2), LED.amber, 0.5, 5);
+      return matchSolid(F, T);
+    } },
+
+  { n: 7, name: 'Traffic lights',
+    desc: 'White: on it. Blue flashing: go. Amber: next. Red: off.',
+    legend: [['#fff', "White: the holds you're on (the starts stay green)"], ['var(--int)', 'Flashing blue: the hold to go to, the only blue on the wall'],
+             ['var(--amber)', 'Amber: the hold after; faint amber, the one after that'], ['var(--finish)', 'Two red flashes: the hold you just let go of']],
     run(t, circuit, speed, loop) {
       const T = timeline(t, circuit, speed, loop);
       if (T.phase !== 'run') return sharedPhase(T);
       const F = newFrame(), { c, hold, exists, colourOf, inBeat } = T;
-      const TICK = 0.15, QUICK = 0.1;
-      const tick = inBeat < TICK || (speed >= 4 && [speed - 1, speed - 0.5].some(at => inBeat >= at && inBeat < at + QUICK));
-      T.held.forEach(i => F.put(hold(i), colourOf(i), 0.6, 6));
-      F.put(hold(c + 1), tick ? LED.white : colourOf(c + 1), 1, 7);
-      if (exists(c + 2)) F.put(hold(c + 2), colourOf(c + 2), 0.15, 5);
-      return matchBlink(F, T);
+      const onColour = i => colourOf(i) === LED.green ? LED.green : LED.white;
+      if (c - 2 >= 0 && inBeat < 0.8 && flashOn(inBeat, 2.5)) F.put(hold(c - 2), LED.red, 1, 1);
+      T.held.forEach(i => F.put(hold(i), onColour(i), 0.45, 6));
+      F.put(hold(c + 1), colourOf(c + 1), flashOn(inBeat) ? 1 : 0, 7);   // fully off between flashes
+      if (exists(c + 2)) F.put(hold(c + 2), LED.amber, 0.7, 5);
+      if (exists(c + 3)) F.put(hold(c + 3), LED.amber, 0.2, 4);
+      return matchSolid(F, T);
     } },
 
-  { n: 7, name: 'Progress line',
-    desc: 'The route glows faintly; it goes out behind you.',
-    legend: [['#3b5a96', 'Faint: the rest of the route still to climb (refills each lap)'], ['#fff', "Bright: the holds you're on"],
-             ['var(--int)', 'Full blue: the hold to go to'], ['#333', 'Done holds go off']],
+  { n: 8, name: 'Red chaser',
+    desc: "Your lower hold flashes red when it's time to move.",
+    legend: [['var(--int)', "Flashing blue, once a second: the hold to go to. Solid once you're on it"],
+             ['var(--finish)', "Late in each beat, the hold you'll let go of next flashes red: move!"],
+             ['var(--amber)', 'Amber: the hold after']],
     run(t, circuit, speed, loop) {
       const T = timeline(t, circuit, speed, loop);
       if (T.phase !== 'run') return sharedPhase(T);
-      const F = newFrame(), { c, L, hold, colourOf } = T;
-      const lapEnd = loop ? (Math.floor(c / L) + 1) * L - 1 : L - 1;
-      for (let i = c + 2; i <= lapEnd; i++) F.put(hold(i), colourOf(i), 0.15, 2);
-      T.held.forEach(i => F.put(hold(i), colourOf(i), 0.8, 6));
-      F.put(hold(c + 1), colourOf(c + 1), 1, 7);
-      return matchBlink(F, T);
-    } },
-
-  { n: 8, name: 'Pulse to the beat',
-    desc: 'Every lit hold breathes together, peaking on the beat.',
-    legend: [['var(--int)', 'All lit holds breathe together, peaking on each beat'], ['var(--int)', 'Brightest: the hold to go to'],
-             ['#fff', "Also breathing: the holds you're on and the 2 ahead"]],
-    run(t, circuit, speed, loop) {
-      const T = timeline(t, circuit, speed, loop);
-      if (T.phase !== 'run') return sharedPhase(T);
-      const F = newFrame(), { c, hold, exists, colourOf, f } = T;
-      const w = wave(f);
-      T.held.forEach(i => F.put(hold(i), colourOf(i), 0.2 + 0.4 * w, 6));
-      F.put(hold(c + 1), colourOf(c + 1), 0.45 + 0.55 * w, 7);
-      if (exists(c + 2)) F.put(hold(c + 2), colourOf(c + 2), 0.15 + 0.35 * w, 5);
-      if (exists(c + 3)) F.put(hold(c + 3), colourOf(c + 3), 0.1 + 0.25 * w, 4);
-      return matchBlink(F, T);
+      const F = newFrame(), { c, hold, exists, colourOf, inBeat, f } = T;
+      const low = c - 1;   // the hold you'll let go of on the next beat
+      const warn = low >= 0 && f > 0.6 && hold(low) !== hold(c) && hold(low) !== hold(c + 1);
+      T.held.forEach(i => F.put(hold(i), i === low && warn && flashOn(inBeat, 3) ? LED.red : colourOf(i), 1, 6));
+      F.put(hold(c + 1), colourOf(c + 1), flashOn(inBeat) ? 1 : 0.12, 7);
+      if (exists(c + 2)) F.put(hold(c + 2), LED.amber, 0.6, 5);
+      return matchSolid(F, T);
     } },
 ];
 const direction = () => DIRECTIONS.find(d => d.n === opts.dir) || DIRECTIONS[0];
@@ -543,7 +547,7 @@ function drawLegend() {
     ['var(--finish)', 'Countdown: the start holds flash red 5 times; the first two moves flash blue with them'],
     ['var(--start)', opts.loop ? 'Go: the start holds turn green (first lap only)' : 'Go: the start holds turn green'],
     ...direction().legend,
-    ['var(--int)', 'A match (the same hold twice): it blinks twice'],
+    ['var(--int)', 'A match (the same hold twice): it stays solid; the next hold flashes on the next move'],
   ];
   if (!opts.loop) rows.push(['var(--finish)', 'The last hold is red; at the top the route runs up in green']);
   document.getElementById('legend').innerHTML = rows.map(([c, t]) => `<div><span class="dot" style="background:${c}"></span><span>${t}</span></div>`).join('');
