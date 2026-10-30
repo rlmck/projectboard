@@ -45,6 +45,10 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-10-30, Claude Code (circuit LED directions: TODO 7).**
+  - **Changed:** `tools/circuit-led-simulator.html` (not deployed) now holds **8 LED "directions"** for Circuits Phase 2, switched live (click or keys 1–8): Window (today's look), Comet tail, Next move only, Fill-up timer, Get ready / go, Metronome, Progress line, Pulse to the beat. Shared by all: the 5 s red countdown, Slow 5 s / Med 3 s / Fast 2 s, green starts on the first lap only, a double-blink on a match, the green run-up finish. Each direction is a pure function of time, ready to port to the listener. The old "Try other looks" panel is gone.
+  - **Left:** **Ross to choose a direction** (no decision yet), ideally after trying the shortlist on the real strip; then the Phase 2 build.
+
 - **2026-10-30, Claude Code (stars, Cast button, feet rule: TODO 8, 9, 11).**
   - **Changed:** star ratings removed (list, detail, info sheet, wall). Cast moved from the header to the right of the problem's title, deep pink, the board unmoved; long names wrap then ellipse beside it. Feet rule: three options on Create/Edit, a badge on the problem view, a Feet row on the info sheet; the listener lights the sign from `feet_mode`. db/33 applied by Claude through the new local `db/apply.py` (dry run first): 220 any, 26 black, 19 orange, no sign left in a hold list. Contract §6.5 and open question 7 closed; CLAUDE.md data trap added.
   - **Tested:** 360/375/390/412 px phones and `/?wall` locally; Pi tests 92 pass.
@@ -71,5 +75,4 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Later the same day (Ross's asks):** PB Console starts every time: a second launch (the new desktop icon, `console/desktop_shortcut.py`) opens the running console instead of failing on the port, replaces an idle one on older code, and falls through to the next port if 8765 is held by something else (`console/session.py`). Activity now leads with when the board was last used and lists the latest 100 casts (date and time, climb, wall kiosk / phone / console, member / guest). For that, casts carry `source` and `signed_in` (never who; contract §3), shipped in the app (`pb-49c7ccc80d`, live); the listener logs them after its next deploy.
   - **New questions:** the privacy page says nothing about casts being logged; with a member/guest flag (no identity) it stays true, but Ross may want a line about it.
 
-- **2026-10-28 late evening, Claude Code (PB Console look and feel).** The overview became a tiled dashboard with a grouped sidebar and a Ctrl+K palette (`console/static/dash.js`, `tiles.metrics()`); the webcam stops when the overview is hidden. Noticed: about 3,460 journal errors in 24 h (nearly all kernel) and 19 self-healing actions around 15:20 (network down, no IPv4). Decided: phase 13 writes through direct Postgres. Full entry: `docs/log/2026-10.md`.
 

@@ -9,7 +9,7 @@
     color-scheme: dark;
     --bg: #0a0a0a; --surface: #161616; --surface2: #202020; --border: #2c2c2c;
     --accent: #be185d; --accent-hover: #db2777;
-    --start: #22c55e; --int: #3b82f6; --finish: #ef4444; --amber: #f59e0b;
+    --start: #22c55e; --int: #3b82f6; --finish: #ef4444; --amber: #f59e0b; --yellow: #facc15; --orange: #f97316;
     --text: #f5f5f5; --muted: #9a9a9a; --faint: #55556a;
     --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -17,8 +17,8 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--font); }
-  main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; padding: 20px; max-width: 1500px; margin: 0 auto; }
-  @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 20px; padding: 16px 20px; max-width: 1560px; margin: 0 auto; }
+  @media (max-width: 960px) { main { grid-template-columns: 1fr; padding: 16px; } }
 
   .stage { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   .board-wrap { position: relative; background: #000; border-radius: var(--r); overflow: hidden; border: 1px solid var(--border); }
@@ -42,33 +42,45 @@
   .chip.held { color: #fff; border-color: #fff; }
   .chip.target { color: #fff; background: var(--int); border-color: var(--int); }
   .chip.next { color: #bcd4ff; border-color: var(--int); }
-  .chip.breath { color: #8aa8e0; border-style: dashed; border-color: #3b5a96; }
   .chip.start { box-shadow: inset 0 -3px 0 var(--start); }
   .chip.finish { box-shadow: inset 0 -3px 0 var(--finish); }
 
-  aside { display: flex; flex-direction: column; gap: 14px; }
-  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 14px; display: grid; gap: 12px; }
+  aside { display: flex; flex-direction: column; gap: 12px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 12px 14px; display: grid; gap: 10px; }
   .panel h2 { margin: 0; font-size: 15px; font-weight: 650; }
   .panel p { margin: 0; color: var(--muted); font-size: 13px; }
   label.field { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
-  select { width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px; font: inherit; }
+  select { width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; }
   .seg { display: flex; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 3px; }
-  .seg button { flex: 1; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px; padding: 7px 4px; border-radius: 6px; cursor: pointer; }
+  .seg button { flex: 1; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px; padding: 6px 4px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
   .seg button[aria-pressed="true"] { background: #333; color: var(--text); }
   .row { display: flex; gap: 8px; align-items: center; }
-  .btn { border: 1px solid var(--border); background: var(--surface2); color: var(--text); font: inherit; font-weight: 600; padding: 11px 14px; border-radius: 8px; cursor: pointer; }
+  .opts { display: grid; grid-template-columns: 3fr 2fr; gap: 8px; }
+  .btn { border: 1px solid var(--border); background: var(--surface2); color: var(--text); font: inherit; font-weight: 600; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
   .btn:hover { background: #2a2a2a; }
   .btn.primary { background: var(--accent); border-color: var(--accent); flex: 1; font-size: 16px; }
   .btn.primary:hover { background: var(--accent-hover); }
-  .btn.icon { padding: 11px 12px; min-width: 44px; }
+  .btn.icon { padding: 10px 12px; min-width: 44px; }
   .btn:disabled { opacity: .35; cursor: default; }
   button:focus-visible, select:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-  .opt { display: grid; gap: 6px; }
+  .opt { display: grid; gap: 5px; }
   .opt > span { font-size: 13px; color: var(--muted); }
   .note { font-size: 12px; color: var(--faint); }
+
+  .dirs { display: grid; gap: 2px; }
+  .dir { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; text-align: left; width: 100%;
+    border: 1px solid transparent; background: transparent; color: var(--text); font: inherit; padding: 5px 8px; border-radius: 8px; cursor: pointer; }
+  .dir:hover { background: var(--surface2); }
+  .dir[aria-pressed="true"] { background: var(--surface2); border-color: var(--accent); }
+  .dir .n { font: 600 12px/20px var(--mono); color: var(--muted); text-align: center; border: 1px solid var(--border); border-radius: 5px; }
+  .dir[aria-pressed="true"] .n { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .dir b { display: block; font-size: 14px; font-weight: 600; line-height: 20px; }
+  .dir small { display: block; font-size: 12px; line-height: 1.35; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dir > span:last-child { min-width: 0; }
+
   .legend { display: grid; gap: 6px; font-size: 13px; }
-  .legend div { display: flex; gap: 8px; align-items: center; }
-  .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+  .legend div { display: flex; gap: 8px; align-items: baseline; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; transform: translateY(1px); }
   kbd { font: 11px var(--mono); background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px; }
 </style>
 </head>
@@ -99,49 +111,29 @@
         <select id="circuit"></select>
       </label>
       <p id="srcNote"></p>
-      <div class="opt"><span>Speed</span>
-        <div class="seg" data-opt="speed">
-          <button data-v="5">Slow 5 s</button><button data-v="3">Med 3 s</button><button data-v="2">Fast 2 s</button>
+      <div class="opts">
+        <div class="opt"><span>Speed (per move)</span>
+          <div class="seg" data-opt="speed">
+            <button data-v="5">Slow 5 s</button><button data-v="3">Med 3 s</button><button data-v="2">Fast 2 s</button>
+          </div>
         </div>
-      </div>
-      <div class="opt"><span>Loop</span>
-        <div class="seg" data-opt="loop"><button data-v="0">Once</button><button data-v="1">Loop</button></div>
+        <div class="opt"><span>Loop</span>
+          <div class="seg" data-opt="loop"><button data-v="0">Once</button><button data-v="1">Loop</button></div>
+        </div>
       </div>
       <div class="row">
         <button class="btn primary" id="startBtn">Start</button>
+        <button class="btn icon" id="backBtn" disabled title="Back one move (←)">◀</button>
         <button class="btn icon" id="pauseBtn" disabled title="Pause (space)">❚❚</button>
-      </div>
-      <div class="row">
-        <button class="btn icon" style="flex:1" id="backBtn" disabled title="Back one move (←)">◀ Move</button>
-        <button class="btn icon" style="flex:1" id="fwdBtn" disabled title="Forward one move (→)">Move ▶</button>
+        <button class="btn icon" id="fwdBtn" disabled title="Forward one move (→)">▶</button>
       </div>
       <button class="btn" id="matchBtn" hidden>Jump to the match</button>
-      <p class="note"><kbd>Space</kbd> start or pause, <kbd>←</kbd> <kbd>→</kbd> step a move while paused, <kbd>Esc</kbd> stop.</p>
+      <p class="note"><kbd>Space</kbd> start or pause, <kbd>←</kbd> <kbd>→</kbd> step a move while paused, <kbd>Esc</kbd> stop, <kbd>1</kbd>–<kbd>8</kbd> direction.</p>
     </div>
 
     <div class="panel">
-      <h2>Try other looks</h2>
-      <div class="opt"><span>Solid blue holds ahead</span>
-        <div class="seg" data-opt="ahead"><button data-v="1">1</button><button data-v="2">2</button></div>
-      </div>
-      <div class="opt"><span>Breathing holds after those</span>
-        <div class="seg" data-opt="breathN"><button data-v="0">None</button><button data-v="1">1</button><button data-v="2">2</button></div>
-      </div>
-      <div class="opt"><span>Breathing style</span>
-        <div class="seg" data-opt="breathStyle"><button data-v="pulse">Pulse</button><button data-v="rise">Brightens to the beat</button></div>
-      </div>
-      <div class="opt"><span>Hold you've just let go of</span>
-        <div class="seg" data-opt="letgo"><button data-v="fade">Fades</button><button data-v="red">Red flash</button><button data-v="amber">Amber flash</button><button data-v="off">Off at once</button></div>
-      </div>
-      <div class="opt"><span>Holds you're on</span>
-        <div class="seg" data-opt="held"><button data-v="full">Full</button><button data-v="dim">Dimmed</button></div>
-      </div>
-      <div class="opt"><span>Start holds on later laps</span>
-        <div class="seg" data-opt="lapStarts"><button data-v="green">Green</button><button data-v="blue">Blue</button></div>
-      </div>
-      <div class="opt"><span>View</span>
-        <div class="seg" data-opt="view"><button data-v="photo">Board photo</button><button data-v="leds">LEDs only</button></div>
-      </div>
+      <h2>Direction</h2>
+      <div class="dirs" id="dirs"></div>
     </div>
 
     <div class="panel">
@@ -159,9 +151,20 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 const COUNTDOWN = 5;          // seconds
-const LETGO_S = 0.6;          // how long the let-go cue lasts
-const opts = { speed: 3, loop: 0, ahead: 2, breathN: 1, breathStyle: 'pulse', letgo: 'red', held: 'full', lapStarts: 'blue', view: 'photo' };
-const LED = { green: [40, 235, 95], blue: [50, 120, 255], red: [255, 45, 45], amber: [255, 165, 20], white: [235, 240, 255] };
+const opts = { speed: 3, loop: 0, dir: 1 };
+const LED = { green: [40, 235, 95], blue: [50, 120, 255], red: [255, 45, 45], amber: [255, 165, 20],
+              yellow: [255, 215, 40], orange: [255, 110, 20], white: [235, 240, 255] };
+const STORE = 'pb-ledsim';    // remembers the direction and speed in this browser
+function loadPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem(STORE) || '{}');
+    if ([2, 3, 5].includes(p.speed)) opts.speed = p.speed;
+    if (DIRECTIONS.some(d => d.n === p.dir)) opts.dir = p.dir;
+  } catch (e) { /* private window or blocked storage: keep the defaults */ }
+}
+function savePrefs() {
+  try { localStorage.setItem(STORE, JSON.stringify({ speed: opts.speed, dir: opts.dir })); } catch (e) { /* ignore */ }
+}
 
 // ── Holds ────────────────────────────────────────────────────────────────────
 const COLS = 'ABCDEFGHIJKLMNOPQRS';
@@ -237,107 +240,256 @@ function jumpToMatch() {
   paused = false; t = COUNTDOWN + b * opts.speed + 0.01; last = performance.now(); syncButtons();
 }
 
-// ── The model: everything is a pure function of t (seconds since Start) ─────
-// Positions are indexes into an unrolled sequence: i = 0, 1, 2 … and the hold at
-// i is seq[i % L] when looping. "c" is the last position the climber has reached.
-function model(t) {
-  const seq = circ.hold_sequence, L = seq.length;
-  const s = Math.max(1, Math.min(circ.start_count || 1, 2, L));
-  const loop = !!opts.loop, beat = opts.speed;
-  const lit = new Map();   // hold -> {rgb, a, pri}
-  const roles = {};        // position -> role, for the strip
-  const put = (h, rgb, a, pri) => { const o = lit.get(h); if (!o || pri > o.pri) lit.set(h, { rgb, a, pri }); };
-  const exists = i => i >= 0 && (loop || i < L);
+// ── The shared timeline: where the climber is at time t ─────────────────────
+// Everything is a pure function of t (seconds since Start), so it ports to the
+// Pi listener as is. Positions are indexes into an unrolled sequence: i = 0, 1,
+// 2 … and the hold at i is seq[i % L] when looping. c is the last position the
+// climber has reached; the hold to go to (the target) is c + 1.
+function timeline(t, circuit, speed, loop) {
+  const seq = circuit.hold_sequence, L = seq.length;
+  const s = Math.max(1, Math.min(circuit.start_count || 1, 2, L));
   const hold = i => seq[((i % L) + L) % L];
+  const exists = i => i >= 0 && (loop || i < L);
+  // Start holds are green on the first lap only; the last hold is red when it's a finish.
   const colourOf = i => {
     const p = ((i % L) + L) % L;
-    if (p < s && (i < L || opts.lapStarts === 'green')) return LED.green;
+    if (p < s && i < L) return LED.green;
     if (!loop && p === L - 1) return LED.red;
     return LED.blue;
   };
+  const T = { t, L, s, loop, speed, hold, exists, colourOf, moves: L - s };
+  if (t < COUNTDOWN) { T.phase = 'count'; T.sec = Math.floor(t); T.ph = t - T.sec; return T; }
+  const tb = t - COUNTDOWN, b = Math.floor(tb / speed);
+  T.tb = tb; T.b = b; T.inBeat = tb - b * speed; T.f = T.inBeat / speed;
+  T.c = s - 1 + b;
+  if (!loop && T.c >= L - 1) { T.phase = 'finish'; T.after = tb - T.moves * speed; return T; }
+  T.phase = 'run';
+  T.held = T.c >= 1 ? [T.c, T.c - 1] : [T.c];     // just one hold at the very start with a single start
+  T.target = T.c + 1;
+  T.isMatch = T.held.some(i => hold(i) === hold(T.target));
+  T.lap = Math.floor(T.c / L) + 1;
+  return T;
+}
+
+// A frame under construction: hold → {rgb, brightness}; a higher priority wins a shared hold.
+function newFrame() {
+  const pri = new Map(), out = new Map();
+  return {
+    out,
+    put(h, rgb, brightness, p = 0) {
+      if (brightness <= 0.005) return;
+      const o = pri.get(h);
+      if (o === undefined || p > o) { pri.set(h, p); out.set(h, { rgb, brightness: Math.min(1, brightness) }); }
+    },
+  };
+}
+
+// The countdown and the finish, the same in every direction.
+const FIN_HOLD = 1.0, FIN_STEP = 0.07, FIN_FADE = 1.2;
+function sharedPhase(T) {
+  const F = newFrame(), { hold, exists, s, L } = T;
+  if (T.phase === 'count') {
+    // Once a second: the start holds flash red, the first two moves blue with them.
+    if (T.ph < 0.5) {
+      for (let i = 0; i < s; i++) F.put(hold(i), LED.red, 1, 5);
+      for (let i = s; i < s + 2; i++) if (exists(i)) F.put(hold(i), LED.blue, 1, 4);
+    }
+    return F.out;
+  }
+  // Finish (Once): a beat on the top, then the route runs up in green and fades out.
+  const a = T.after;
+  if (a < FIN_HOLD) {
+    F.put(hold(L - 1), LED.red, 1, 5);
+    if (L > 1) F.put(hold(L - 2), T.colourOf(L - 2), 1, 4);
+  } else if (a < FIN_HOLD + FIN_STEP * L + FIN_FADE) {
+    const k = (a - FIN_HOLD) / FIN_STEP;
+    const fade = a > FIN_HOLD + FIN_STEP * L ? 1 - (a - FIN_HOLD - FIN_STEP * L) / FIN_FADE : 1;
+    for (let i = 0; i < L && i <= k; i++) F.put(hold(i), i === L - 1 ? LED.red : LED.green, fade, 1);
+  }
+  return F.out;
+}
+
+// A match (the hold to go to is one you're already on): it blinks twice at the
+// start of the beat, then shows as the direction drew it. Applied last, so it
+// wins over anything else on that hold.
+function matchBlink(F, T) {
+  if (T.isMatch && T.inBeat < 1.0) {
+    const h = T.hold(T.target);
+    if (T.inBeat % 0.5 < 0.25) F.out.set(h, { rgb: T.colourOf(T.target), brightness: 1 });
+    else F.out.delete(h);
+  }
+  return F.out;
+}
+
+// ── The directions ───────────────────────────────────────────────────────────
+// Each run(t, circuit, speed, loop) returns a Map of hold → {rgb, brightness 0–1}.
+// They share only timeline(), newFrame(), sharedPhase() and matchBlink() above,
+// which a port to the Pi takes along with the chosen one.
+const lerp = (a, b, k) => a + (b - a) * k;
+const mix = (p, q, k) => p.map((v, j) => Math.round(lerp(v, q[j], k)));
+const wave = x => 0.5 + 0.5 * Math.cos(2 * Math.PI * x);   // 1 at x = 0, 1, 2 …
+
+const DIRECTIONS = [
+  { n: 1, name: "Window (today's look)",
+    desc: "Next two solid blue, one breathing; let-go flashes red.",
+    legend: [['#fff', "Holds you're on: full brightness"], ['var(--int)', 'Solid blue: the hold to go to, and the one after'],
+             ['#3b5a96', 'Breathing slowly: coming up'], ['var(--finish)', 'The hold you just let go of flashes red, then off']],
+    run(t, circuit, speed, loop) {
+      const T = timeline(t, circuit, speed, loop);
+      if (T.phase !== 'run') return sharedPhase(T);
+      const F = newFrame(), { c, hold, exists, colourOf, inBeat } = T;
+      const LETGO = 0.6;
+      if (c - 2 >= 0 && inBeat < LETGO) F.put(hold(c - 2), LED.red, inBeat < 0.35 ? 1 : (LETGO - inBeat) / (LETGO - 0.35), 1);
+      T.held.forEach(i => F.put(hold(i), colourOf(i), 1, 6));
+      F.put(hold(c + 1), colourOf(c + 1), 1, 7);
+      if (exists(c + 2)) F.put(hold(c + 2), colourOf(c + 2), 1, 5);
+      if (exists(c + 3)) F.put(hold(c + 3), colourOf(c + 3), 0.12 + 0.55 * (1 - wave(t / 1.6)), 3);
+      return matchBlink(F, T);
+    } },
+
+  { n: 2, name: 'Comet tail',
+    desc: 'Ahead warms up to blue; behind cools down to red, then off.',
+    legend: [['var(--int)', 'Ahead: faint, then half, then full blue for the hold to go to'], ['#fff', "Holds you're on: bright"],
+             ['var(--yellow)', 'Behind you: the tail cools blue → yellow → orange → red → off over about 3 moves']],
+    run(t, circuit, speed, loop) {
+      const T = timeline(t, circuit, speed, loop);
+      if (T.phase !== 'run') return sharedPhase(T);
+      const F = newFrame(), { c, s, hold, exists, colourOf, tb } = T;
+      const TAIL = [[0, LED.blue, 0.75], [0.75, LED.yellow, 0.6], [1.5, LED.orange, 0.45], [2.25, LED.red, 0.3], [3, LED.red, 0]];
+      for (let i = c - 2; i >= 0 && i >= c - 5; i--) {
+        const age = (tb - (i + 3 - s) * speed) / speed;          // moves since it was let go
+        for (let k = 0; k < TAIL.length - 1; k++) {
+          const [a0, c0, b0] = TAIL[k], [a1, c1, b1] = TAIL[k + 1];
+          if (age >= a0 && age < a1) { const q = (age - a0) / (a1 - a0); F.put(hold(i), mix(c0, c1, q), lerp(b0, b1, q), 1); break; }
+        }
+      }
+      T.held.forEach(i => F.put(hold(i), colourOf(i), 0.85, 6));
+      F.put(hold(c + 1), colourOf(c + 1), 1, 7);
+      if (exists(c + 2)) F.put(hold(c + 2), colourOf(c + 2), 0.4, 5);
+      if (exists(c + 3)) F.put(hold(c + 3), colourOf(c + 3), 0.15, 4);
+      return matchBlink(F, T);
+    } },
+
+  { n: 3, name: 'Next move only',
+    desc: "Only your holds (dimmed) and the one to go to.",
+    legend: [['#888', "Holds you're on: dimmed"], ['var(--int)', 'Full blue: the hold to go to. Nothing else is lit']],
+    run(t, circuit, speed, loop) {
+      const T = timeline(t, circuit, speed, loop);
+      if (T.phase !== 'run') return sharedPhase(T);
+      const F = newFrame(), { c, hold, colourOf } = T;
+      T.held.forEach(i => F.put(hold(i), colourOf(i), 0.4, 6));
+      F.put(hold(c + 1), colourOf(c + 1), 1, 7);
+      return matchBlink(F, T);
+    } },
+
+  { n: 4, name: 'Fill-up timer',
+    desc: "The hold to go to fills up. When it's full, grab it.",
+    legend: [['var(--int)', "The hold to go to: dim at the start of the beat, full at the end. Full = grab it"],
+             ['#fff', "Holds you're on: steady"], ['#3b5a96', 'Faint: the hold after']],
+    run(t, circuit, speed, loop) {
+      const T = timeline(t, circuit, speed, loop);
+      if (T.phase !== 'run') return sharedPhase(T);
+      const F = newFrame(), { c, hold, exists, colourOf, f } = T;
+      T.held.forEach(i => F.put(hold(i), colourOf(i), 0.6, 6));
+      F.put(hold(c + 1), colourOf(c + 1), 0.1 + 0.9 * f, 7);
+      if (exists(c + 2)) F.put(hold(c + 2), colourOf(c + 2), 0.15, 5);
+      return matchBlink(F, T);
+    } },
+
+  { n: 5, name: 'Get ready / go',
+    desc: 'Amber: get ready. A white flash on the beat: go.',
+    legend: [['var(--amber)', 'Amber: get ready, it\'s the hold after next'], ['#fff', 'White flash on the beat: go'],
+             ['var(--int)', 'Blue: the hold to go to'], ['#ccc', "Holds you're on: steady"]],
+    run(t, circuit, speed, loop) {
+      const T = timeline(t, circuit, speed, loop);
+      if (T.phase !== 'run') return sharedPhase(T);
+      const F = newFrame(), { c, hold, exists, colourOf, inBeat } = T;
+      T.held.forEach(i => F.put(hold(i), colourOf(i), 0.7, 6));
+      F.put(hold(c + 1), inBeat < 0.3 ? LED.white : colourOf(c + 1), 1, 7);
+      if (exists(c + 2)) F.put(hold(c + 2), LED.amber, 0.7, 5);
+      return matchBlink(F, T);
+    } },
+
+  { n: 6, name: 'Metronome',
+    desc: 'A calm board; a white tick on the target every beat.',
+    legend: [['#fff', 'White tick on the hold to go to: the beat (at Slow, two quick ticks in the last second: hurry up)'],
+             ['var(--int)', 'Blue: the hold to go to'], ['#3b5a96', 'Faint: the hold after'], ['#ccc', "Holds you're on: steady"]],
+    run(t, circuit, speed, loop) {
+      const T = timeline(t, circuit, speed, loop);
+      if (T.phase !== 'run') return sharedPhase(T);
+      const F = newFrame(), { c, hold, exists, colourOf, inBeat } = T;
+      const TICK = 0.15, QUICK = 0.1;
+      const tick = inBeat < TICK || (speed >= 4 && [speed - 1, speed - 0.5].some(at => inBeat >= at && inBeat < at + QUICK));
+      T.held.forEach(i => F.put(hold(i), colourOf(i), 0.6, 6));
+      F.put(hold(c + 1), tick ? LED.white : colourOf(c + 1), 1, 7);
+      if (exists(c + 2)) F.put(hold(c + 2), colourOf(c + 2), 0.15, 5);
+      return matchBlink(F, T);
+    } },
+
+  { n: 7, name: 'Progress line',
+    desc: 'The route glows faintly; it goes out behind you.',
+    legend: [['#3b5a96', 'Faint: the rest of the route still to climb (refills each lap)'], ['#fff', "Bright: the holds you're on"],
+             ['var(--int)', 'Full blue: the hold to go to'], ['#333', 'Done holds go off']],
+    run(t, circuit, speed, loop) {
+      const T = timeline(t, circuit, speed, loop);
+      if (T.phase !== 'run') return sharedPhase(T);
+      const F = newFrame(), { c, L, hold, colourOf } = T;
+      const lapEnd = loop ? (Math.floor(c / L) + 1) * L - 1 : L - 1;
+      for (let i = c + 2; i <= lapEnd; i++) F.put(hold(i), colourOf(i), 0.15, 2);
+      T.held.forEach(i => F.put(hold(i), colourOf(i), 0.8, 6));
+      F.put(hold(c + 1), colourOf(c + 1), 1, 7);
+      return matchBlink(F, T);
+    } },
+
+  { n: 8, name: 'Pulse to the beat',
+    desc: 'Every lit hold breathes together, peaking on the beat.',
+    legend: [['var(--int)', 'All lit holds breathe together, peaking on each beat'], ['var(--int)', 'Brightest: the hold to go to'],
+             ['#fff', "Also breathing: the holds you're on and the 2 ahead"]],
+    run(t, circuit, speed, loop) {
+      const T = timeline(t, circuit, speed, loop);
+      if (T.phase !== 'run') return sharedPhase(T);
+      const F = newFrame(), { c, hold, exists, colourOf, f } = T;
+      const w = wave(f);
+      T.held.forEach(i => F.put(hold(i), colourOf(i), 0.2 + 0.4 * w, 6));
+      F.put(hold(c + 1), colourOf(c + 1), 0.45 + 0.55 * w, 7);
+      if (exists(c + 2)) F.put(hold(c + 2), colourOf(c + 2), 0.15 + 0.35 * w, 5);
+      if (exists(c + 3)) F.put(hold(c + 3), colourOf(c + 3), 0.1 + 0.25 * w, 4);
+      return matchBlink(F, T);
+    } },
+];
+const direction = () => DIRECTIONS.find(d => d.n === opts.dir) || DIRECTIONS[0];
+
+// ── The readout (the same for every direction) ──────────────────────────────
+function readout(T) {
+  const { L, s, hold, exists } = T;
+  const roles = {};       // position -> role, for the strip
   const info = { phase: '', sub: '', beatFrac: 0, big: '', done: false, now: [] };
-
-  if (t < COUNTDOWN) {
-    const sec = Math.floor(t), ph = t - sec;
-    const on = ph < 0.5 ? 1 : 0;
-    for (let i = 0; i < s; i++) { put(hold(i), LED.red, on, 5); roles[i] = 'start'; }
-    for (let i = s; i < s + 2; i++) if (exists(i)) { put(hold(i), LED.blue, on, 4); roles[i] = 'next'; }
-    info.phase = String(COUNTDOWN - sec);
-    info.big = info.phase;
+  if (T.phase === 'count') {
+    for (let i = 0; i < s; i++) roles[i] = 'held';
+    for (let i = s; i < s + 2; i++) if (exists(i)) roles[i] = 'next';
+    info.phase = info.big = String(COUNTDOWN - T.sec);
     info.sub = 'Get on the start holds';
-    info.beatFrac = ph;
+    info.beatFrac = T.ph;
     info.now = [['Start', range(0, s).map(hold)], ['First moves', range(s, s + 2).filter(exists).map(hold)]];
-    return { lit, roles, info };
-  }
-
-  const tb = t - COUNTDOWN;
-  const b = Math.floor(tb / beat), f = (tb - b * beat) / beat, inBeat = tb - b * beat;
-  const c = s - 1 + b;
-  const moves = L - s;
-
-  // Finished (once only): a beat on the top, then a quick run up the route.
-  if (!loop && c >= L - 1) {
-    const after = tb - moves * beat;
-    const HOLD_ON = 1.0, RUN = 0.07 * L, FADE = 1.2;
-    if (after < HOLD_ON) {
-      put(hold(L - 1), LED.red, 1, 5); if (L > 1) put(hold(L - 2), colourOf(L - 2), opts.held === 'dim' ? 0.45 : 1, 4);
-    } else if (after < HOLD_ON + RUN + FADE) {
-      const k = (after - HOLD_ON) / 0.07;
-      const fade = after > HOLD_ON + RUN ? 1 - (after - HOLD_ON - RUN) / FADE : 1;
-      for (let i = 0; i < L && i <= k; i++) put(hold(i), i === L - 1 ? LED.red : LED.green, fade, 1);
-    } else info.done = true;
+  } else if (T.phase === 'finish') {
     for (let i = 0; i < L; i++) roles[i] = 'done';
-    info.phase = 'Top!'; info.sub = `${moves} moves done`; info.beatFrac = 1;
-    return { lit, roles, info };
+    info.phase = 'Top!'; info.sub = `${T.moves} moves done`; info.beatFrac = 1;
+    info.done = T.after >= FIN_HOLD + FIN_STEP * L + FIN_FADE;
+  } else {
+    const { c, target } = T;
+    for (let i = Math.floor(c / L) * L; i < c - 1; i++) roles[i] = 'done';
+    T.held.forEach(i => { roles[i] = 'held'; });
+    if (exists(c + 2)) roles[c + 2] = 'next';
+    roles[target] = 'target';
+    const moveNo = T.b + 1;
+    info.phase = T.loop ? `Move ${((moveNo - 1) % L) + 1}` : `Move ${moveNo}`;
+    info.sub = T.loop ? `of ${L} · lap ${T.lap}` : `of ${T.moves}`;
+    if (T.isMatch) info.sub += ' · match';
+    info.beatFrac = T.f;
+    info.now = [['On', [...new Set(T.held.map(hold))]], ['Go to', [hold(target)]],
+                ['Then', exists(c + 2) ? [hold(c + 2) === hold(target) ? hold(c + 2) + ' (match)' : hold(c + 2)] : []]];
   }
-
-  const heldA = opts.held === 'dim' ? 0.45 : 1;
-  // Holds you're on: c and c-1 (just c at the very start with one start hold)
-  const held = [c]; if (c - 1 >= 0) held.push(c - 1);
-  // Matched: the hold you're moving to is one you're already on → double blink
-  const target = c + 1;
-  const isMatch = exists(target) && held.some(i => hold(i) === hold(target));
-  // Let go of at the start of this beat
-  const gone = c - 2;
-  if (gone >= 0 && inBeat < LETGO_S && opts.letgo !== 'off') {
-    const k = 1 - inBeat / LETGO_S;
-    const rgb = opts.letgo === 'red' ? LED.red : opts.letgo === 'amber' ? LED.amber : colourOf(gone);
-    const a = opts.letgo === 'fade' ? heldA * k * k : (inBeat < 0.35 ? 1 : (LETGO_S - inBeat) / (LETGO_S - 0.35));
-    put(hold(gone), rgb, a, 1);
-    roles[gone] = 'gone';
-  }
-  for (let i = 0; i < c - 1; i++) if (!roles[i]) roles[i] = 'done';
-  held.forEach(i => { put(hold(i), colourOf(i), heldA, 6); roles[i] = 'held'; });
-
-  // Ahead: solid ones, then breathing ones
-  const aheadIdx = [];
-  for (let k = 1; k <= opts.ahead; k++) if (exists(c + k)) aheadIdx.push(c + k);
-  aheadIdx.forEach((i, k) => {
-    let a = 1;
-    if (i === target && isMatch) { const ph = f * beat; a = (ph % 0.5 < 0.25) ? 1 : 0.1; if (ph > 1.0) a = 1; }
-    put(hold(i), colourOf(i), a, i === target ? 7 : 5);
-    roles[i] = i === target ? 'target' : 'next';
-  });
-  const breathIdx = [];
-  for (let k = 1; k <= opts.breathN; k++) { const i = c + opts.ahead + k; if (exists(i)) breathIdx.push(i); }
-  breathIdx.forEach((i, k) => {
-    let a;
-    if (opts.breathStyle === 'pulse') a = 0.12 + 0.55 * (0.5 - 0.5 * Math.cos(2 * Math.PI * t / 1.6));
-    else a = 0.06 + 0.75 * f;
-    if (k > 0) a *= 0.5;
-    put(hold(i), colourOf(i), a, 3);
-    roles[i] = 'breath';
-  });
-
-  const lap = Math.floor(c / L) + 1;
-  const moveNo = b + 1;
-  info.phase = loop ? `Move ${((moveNo - 1) % L) + 1}` : `Move ${moveNo}`;
-  info.sub = loop ? `of ${L} · lap ${lap}` : `of ${moves}`;
-  if (isMatch) info.sub += ' · match';
-  info.beatFrac = f;
-  info.now = [['On', [...new Set(held.map(hold))]], ['Go to', exists(target) ? [hold(target)] : []],
-              ['Then', aheadIdx.slice(1).map(i => hold(i) === hold(target) ? hold(i) + ' (match)' : hold(i))], ['Coming', breathIdx.map(hold)]];
-  return { lit, roles, info };
+  return { roles, info };
 }
 const range = (a, b) => Array.from({ length: Math.max(0, b - a) }, (_, i) => a + i);
 
@@ -349,17 +501,14 @@ const W = cv.width, H = cv.height, R = W * 0.034;
 function draw(lit) {
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-  if (opts.view === 'photo' && img.complete) {
+  if (img.complete && img.naturalWidth) {
     ctx.drawImage(img, 0, 0, W, H);
     ctx.fillStyle = 'rgba(0,0,0,0.82)'; ctx.fillRect(0, 0, W, H);
-  } else {
-    ctx.fillStyle = 'rgba(255,255,255,0.07)';
-    for (const h in HOLDS) { ctx.beginPath(); ctx.arc(HOLDS[h].x / 100 * W, HOLDS[h].y / 100 * H, W * 0.006, 0, 7); ctx.fill(); }
   }
   ctx.globalCompositeOperation = 'lighter';
   for (const [h, o] of lit) {
-    const p = HOLDS[h]; if (!p || o.a <= 0.01) continue;
-    const x = p.x / 100 * W, y = p.y / 100 * H, [r, g, b] = o.rgb, a = Math.min(1, o.a);
+    const p = HOLDS[h]; if (!p || o.brightness <= 0.01) continue;
+    const x = p.x / 100 * W, y = p.y / 100 * H, [r, g, b] = o.rgb, a = Math.min(1, o.brightness);
     const gr = ctx.createRadialGradient(x, y, 0, x, y, R);
     gr.addColorStop(0, `rgba(${r},${g},${b},${0.95 * a})`);
     gr.addColorStop(0.25, `rgba(${r},${g},${b},${0.55 * a})`);
@@ -373,9 +522,9 @@ function draw(lit) {
 function drawSeq(roles) {
   const seq = circ.hold_sequence, L = seq.length, s = Math.min(circ.start_count || 1, 2, L);
   // In a loop, show this lap's roles (positions folded onto the sequence).
+  const rank = { target: 6, held: 5, next: 4, done: 1 };
   const folded = {};
   for (const k in roles) { const p = ((+k % L) + L) % L; const r = roles[k];
-    const rank = { target: 6, held: 5, next: 4, breath: 3, gone: 2, start: 2, done: 1 };
     if (!folded[p] || rank[r] > rank[folded[p]]) folded[p] = r; }
   document.getElementById('seq').innerHTML = seq.map((h, p) => {
     const cls = ['chip', folded[p] || '', p < s ? 'start' : '', !opts.loop && p === L - 1 ? 'finish' : ''].join(' ');
@@ -383,20 +532,21 @@ function drawSeq(roles) {
   }).join('');
 }
 
+function drawDirections() {
+  document.getElementById('dirs').innerHTML = DIRECTIONS.map(d =>
+    `<button class="dir" data-n="${d.n}" aria-pressed="${d.n === opts.dir}" title="${esc(d.desc)} (key ${d.n})"><span class="n">${d.n}</span>` +
+    `<span><b>${esc(d.name)}</b><small>${esc(d.desc)}</small></span></button>`).join('');
+}
+
 function drawLegend() {
-  const breath = opts.breathStyle === 'pulse' ? 'pulses slowly' : 'brightens through the beat';
-  const letgo = { fade: 'fades out', red: 'flashes red, then off', amber: 'flashes amber, then off', off: 'goes off at once' }[opts.letgo];
   const rows = [
-    ['var(--finish)', 'Countdown: start holds flash red 5 times; the first moves flash blue with them'],
-    ['var(--start)', 'Go: start holds turn green'],
-    ['#fff', `Holds you're on: ${opts.held === 'dim' ? 'dimmed' : 'full brightness'}`],
-    ['var(--int)', opts.ahead === 2 ? 'Solid blue: the hold to go to, and the one after' : 'Solid blue: the hold to go to'],
+    ['var(--finish)', 'Countdown: the start holds flash red 5 times; the first two moves flash blue with them'],
+    ['var(--start)', opts.loop ? 'Go: the start holds turn green (first lap only)' : 'Go: the start holds turn green'],
+    ...direction().legend,
+    ['var(--int)', 'A match (the same hold twice): it blinks twice'],
   ];
-  if (opts.breathN) rows.push(['#3b5a96', `Breathing: coming up (${breath})`]);
-  rows.push(['var(--amber)', `The hold you just let go of ${letgo}`]);
-  rows.push(['var(--int)', 'A match (same hold twice) blinks twice']);
-  if (!opts.loop) rows.push(['var(--finish)', 'Last hold is red; at the top the route runs up in green']);
-  document.getElementById('legend').innerHTML = rows.map(([c, t]) => `<div><span class="dot" style="background:${c}"></span>${t}</div>`).join('');
+  if (!opts.loop) rows.push(['var(--finish)', 'The last hold is red; at the top the route runs up in green']);
+  document.getElementById('legend').innerHTML = rows.map(([c, t]) => `<div><span class="dot" style="background:${c}"></span><span>${t}</span></div>`).join('');
 }
 
 // ── Running ──────────────────────────────────────────────────────────────────
@@ -411,8 +561,13 @@ function frame(now) {
 }
 function render() {
   if (!circ) return null;
-  const m = running ? model(t) : idleModel();
-  draw(m.lit); drawSeq(m.roles); drawLegend();
+  let m;
+  if (running) {
+    const loop = !!opts.loop;
+    m = readout(timeline(t, circ, opts.speed, loop));
+    m.lit = direction().run(t, circ, opts.speed, loop);
+  } else m = idleModel();
+  draw(m.lit); drawSeq(m.roles);
   document.getElementById('phase').textContent = m.info.phase;
   document.getElementById('sub').textContent = m.info.sub;
   document.getElementById('beat').style.width = (m.info.beatFrac * 100).toFixed(1) + '%';
@@ -426,7 +581,7 @@ function render() {
 function idleModel() {
   const seq = circ.hold_sequence, L = seq.length, s = Math.min(circ.start_count || 1, 2, L);
   const lit = new Map();
-  seq.forEach((h, i) => lit.set(h, { rgb: i < s ? LED.green : (!circ.loops && i === L - 1 ? LED.red : LED.blue), a: 0.35, pri: 0 }));
+  seq.forEach((h, i) => lit.set(h, { rgb: i < s ? LED.green : (!opts.loop && i === L - 1 ? LED.red : LED.blue), brightness: 0.35 }));
   return { lit, roles: {}, info: { phase: 'Ready', sub: `${L} holds, ${circ.start_count || 1} to start${circ.loops ? ', loops' : ''}. Press Start.`, beatFrac: 0, now: [] } };
 }
 
@@ -446,6 +601,7 @@ function step(dir) {
 function syncButtons() {
   document.getElementById('startBtn').textContent = running ? 'Stop' : 'Start';
   const pb = document.getElementById('pauseBtn'); pb.disabled = !running; pb.textContent = paused ? '▶' : '❚❚';
+  pb.title = paused ? 'Play (space)' : 'Pause (space)';
   document.getElementById('backBtn').disabled = !running;
   document.getElementById('fwdBtn').disabled = !running;
 }
@@ -457,16 +613,30 @@ function setOpt(name, v) {
   }
   opts[name] = v;
   document.querySelectorAll(`.seg[data-opt="${name}"] button`).forEach(b => b.setAttribute('aria-pressed', String(String(v) === b.dataset.v)));
+  if (name === 'speed') savePrefs();
+  drawLegend();
   if (!running) render();
 }
+// Switch the direction live: t is untouched, so the run carries on where it is.
+function setDirection(n) {
+  if (!DIRECTIONS.some(d => d.n === n)) return;
+  opts.dir = n;
+  document.querySelectorAll('.dir').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.n === n)));
+  savePrefs(); drawLegend(); render();
+}
+
+loadPrefs();
+drawDirections();
 document.querySelectorAll('.seg').forEach(seg => {
   const name = seg.dataset.opt;
   seg.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    const v = b.dataset.v, num = Number(v);
-    setOpt(name, Number.isNaN(num) ? v : num);
+    setOpt(name, Number(b.dataset.v));
   });
   setOpt(name, opts[name]);
+});
+document.getElementById('dirs').addEventListener('click', e => {
+  const b = e.target.closest('.dir'); if (b) setDirection(+b.dataset.n);
 });
 document.getElementById('circuit').addEventListener('change', e => pickCircuit(+e.target.value));
 document.getElementById('startBtn').addEventListener('click', () => running ? stop() : start());
@@ -475,11 +645,12 @@ document.getElementById('backBtn').addEventListener('click', () => step(-1));
 document.getElementById('fwdBtn').addEventListener('click', () => step(1));
 document.getElementById('matchBtn').addEventListener('click', jumpToMatch);
 document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'SELECT') return;
+  if (e.target.tagName === 'SELECT' || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === 'Space') { e.preventDefault(); togglePause(); }
   else if (e.key === 'ArrowRight') step(1);
   else if (e.key === 'ArrowLeft') step(-1);
   else if (e.key === 'Escape') stop();
+  else if (/^[1-8]$/.test(e.key)) setDirection(+e.key);
 });
 
 loadCircuits();
