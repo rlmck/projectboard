@@ -380,18 +380,26 @@ const DIRECTIONS = [
       return matchSolid(F, T);
     } },
 
-  { n: 4, name: 'Flash to grab',
-    desc: "Blue flashes till you're on it; amber next; red behind.",
-    legend: [['var(--int)', "Flashing blue, once a second: the hold to go to. Solid once you're on it"],
-             ['var(--amber)', 'Amber: the hold after'], ['var(--finish)', 'Flashing red all beat: the hold you should have let go of (catch up!)']],
+  { n: 4, name: 'Pulse and fade',
+    desc: 'Solid blue to go to; amber swells next; red fades behind.',
+    legend: [['var(--int)', "Solid blue: the hold to go to (it stays blue once you're on it)"],
+             ['var(--amber)', 'Amber, swelling up once a second and a little brighter each time: the hold after'],
+             ['var(--finish)', 'Soft red pulses, fading out over the move: the hold you should have let go of (catch up!)']],
     run(t, circuit, speed, loop) {
       const T = timeline(t, circuit, speed, loop);
       if (T.phase !== 'run') return sharedPhase(T);
-      const F = newFrame(), { c, hold, exists, colourOf, inBeat } = T;
-      if (c - 2 >= 0 && flashOn(inBeat, 2)) F.put(hold(c - 2), LED.red, 1, 1);
+      const F = newFrame(), { c, hold, exists, colourOf, inBeat, f } = T;
+      const smooth = x => x * x * (3 - 2 * x);
+      // Red: a soft pulse once a second (from dark, so no hard edge), fading to nothing by the end of the move.
+      if (c - 2 >= 0) F.put(hold(c - 2), LED.red, (1 - wave(inBeat)) * Math.pow(1 - f, 1.5), 1);
       T.held.forEach(i => F.put(hold(i), colourOf(i), 1, 6));
-      F.put(hold(c + 1), colourOf(c + 1), flashOn(inBeat) ? 1 : 0.12, 7);
-      if (exists(c + 2)) F.put(hold(c + 2), LED.amber, 0.6, 5);
+      F.put(hold(c + 1), colourOf(c + 1), 1, 7);
+      // Amber: once a second it swells up slowly (0.75 s), then drops back (0.25 s);
+      // each swell peaks a little brighter as the move goes on.
+      if (exists(c + 2)) {
+        const x = inBeat % 1, swell = x < 0.75 ? smooth(x / 0.75) : 1 - smooth((x - 0.75) / 0.25);
+        F.put(hold(c + 2), LED.amber, 0.1 + (0.45 + 0.4 * f - 0.1) * swell, 5);
+      }
       return matchSolid(F, T);
     } },
 
