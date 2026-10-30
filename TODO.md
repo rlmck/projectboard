@@ -3,7 +3,7 @@
 Ross's one to-do list for Project Board, shared by the claude.ai project chat and Claude Code. Pull before you edit. The repo is public: nothing personal, nothing secret.
 
 **How it's used**
-- "What's on my to-do list?" → show the first item of each group, one line each, grouped. The full list only if asked.
+- "What's on my to-do list?" → give a short summary of each group (what's in it, how many items, anything that stands out), not a list of items. The full list only if asked.
 - "Add X" / "remove Y" / "move X up" → edit this file and ship it to `main`. Done items are removed; the session log in `PROJECT_STATUS.md` records what was done.
 - New items are sorted into the right group by whoever adds them (Ross doesn't have to say which). A new group is only made when nothing fits.
 - Within a group, the top item is the next one. Numbers run straight through the whole list so "remove 12" is unambiguous; they are renumbered on every edit.
