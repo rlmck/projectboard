@@ -197,9 +197,8 @@
     <header class="page-head"><h1>Deploy</h1><p>Ship pi/ to the Pi, and what differs from the repo.</p></header>
     <div class="card">
       <h2>Deploy pi/ to the Pi</h2>
-      <p class="note">Runs <code>bash pi/deploy.sh</code>: copies pi/ over and installs what changed. No password needed: the Pi lets the deploy install without one (<code>/etc/sudoers.d/pb-deploy</code>, since 30 Oct 2026). Only a Pi without that rule needs the password, which goes to sudo on the Pi and is never saved or logged; the field clears after each run. A real deploy restarts the listener if its files or config.env changed (do it when the gym is closed).</p>
+      <p class="note">Runs <code>bash pi/deploy.sh</code>: copies pi/ over and installs what changed, with no password (the Pi's <code>/etc/sudoers.d/pb-deploy</code> rule). A real deploy restarts the listener if its files or config.env changed (do it when the gym is closed). On a freshly flashed card without that rule, run <code>bash pi/deploy.sh</code> in Git Bash once instead: it asks for the password and puts the rule back.</p>
       <div class="slider-row">
-        <label>The Pi's password (optional) <input id="deploy-pw" type="password" autocomplete="off" size="20"></label>
         <button class="btn" id="deploy-dry">Dry run</button>
         <button class="btn primary" id="deploy-go">Deploy</button>
       </div>

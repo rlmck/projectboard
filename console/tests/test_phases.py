@@ -224,19 +224,16 @@ class Stamp(unittest.TestCase):
 
 
 class NewActions(unittest.TestCase):
-    def test_deploy_password_never_shown(self):
-        a = actions.build('deploy', {'password': 's3cret-pw', 'dry_run': True})
-        self.assertNotIn('s3cret', a.name + a.shown + a.describe + json.dumps(a.preview))
+    def test_deploy_needs_no_password(self):
+        # Passwordless since 30 Oct 2026 (pi/conf/pb-deploy.sudoers): no password
+        # is taken, and one sent anyway goes nowhere.
+        a = actions.build('deploy', {'dry_run': True})
+        self.assertEqual(a.shown, 'bash pi/deploy.sh --dry-run')
         self.assertTrue(a.confirm and not a.busy)
-        self.assertTrue(actions.build('deploy', {'password': 'p'}).busy)
-        self.assertIn('--sudo-stdin', actions.build('deploy', {'password': 'p'}).shown)
-        for none in ({}, {'password': ''}, {'password': None}):     # passwordless deploys (30 Oct 2026)
-            a = actions.build('deploy', none)
-            self.assertNotIn('--sudo-stdin', a.shown)
-            self.assertTrue(a.busy)
-        for bad in ('a\nb', 'x' * 300, 5):
-            with self.assertRaises(actions.Invalid):
-                actions.build('deploy', {'password': bad})
+        b = actions.build('deploy', {'password': 's3cret-pw'})
+        self.assertEqual(b.shown, 'bash pi/deploy.sh')
+        self.assertTrue(b.busy)
+        self.assertNotIn('s3cret', b.name + b.shown + b.describe + json.dumps(b.preview))
 
     def test_test_steps_whitelisted(self):
         a = actions.build('test-step', {'args': ['clock', '22:59:30']})

@@ -92,12 +92,8 @@
   }
 
   async function deploy(dry) {
-    const pw = $('deploy-pw').value;   // optional since the Pi's pb-deploy sudoers rule (30 Oct 2026)
-    try {
-      await PB.runAction('deploy', { password: pw, dry_run: dry }, dry ? 'Deploy (dry run)' : 'Deploy to the Pi');
-    } finally {
-      $('deploy-pw').value = '';
-    }
+    // No password: the Pi lets the deploy install without one (pb-deploy sudoers, 30 Oct 2026).
+    await PB.runAction('deploy', { dry_run: dry }, dry ? 'Deploy (dry run)' : 'Deploy to the Pi');
   }
 
   // -- Release (phase 7) ----------------------------------------------------------------------------
@@ -110,10 +106,14 @@
     const c = git.checks;
     box.innerHTML =
       '<div class="kv"><span class="k">Branch</span><span>' + esc(git.branch) + ' at ' + esc(git.head) + '</span>' +
-      '<span class="k">Not shipped</span><span>' + esc(git.ahead_main) + ' commit(s) ahead of main</span>' +
-      '<span class="k">Behind main</span><span>' + esc(git.behind_main) + (git.behind_main ? ' (Pull first)' : '') + '</span>' +
-      '<span class="k">Staging</span><span>' + esc(git.dev_behind) + ' commit(s) not on dev' + (git.staging_ff ? '' : ' (dev has diverged)') + '</span>' +
-      '<span class="k">CACHE</span><span>' + esc(c.stamp_main || '?') + ' for main' +
+      '<span class="k">To ship</span><span>' + (git.ahead_main ? esc(git.ahead_main) + ' commit(s) here not live yet: Ship sends them'
+        : 'nothing: live has everything committed here') + '</span>' +
+      '<span class="k">To pull</span><span>' + (git.behind_main ? esc(git.behind_main) + ' commit(s) on live not here: Pull first'
+        : 'nothing: up to date with live') + '</span>' +
+      '<span class="k">Staging</span><span>' + (!git.staging_ff ? 'has commits live doesn\'t (diverged): ask Claude Code'
+        : git.dev_behind ? 'older than here by ' + esc(git.dev_behind) + ' commit(s). Fine: it only updates on Staging'
+        : 'same as here') + '</span>' +
+      '<span class="k">App version</span><span>' + esc(c.stamp_main || '?') + ' live' +
         (c.stamp_head && c.stamp_head !== c.stamp_main ? ', ' + esc(c.stamp_head) + ' after Ship' : '') + '</span></div>' +
       (git.branch !== 'main' ? '<p class="banner warn">On ' + esc(git.branch) + ': Ship and Rollback work on main.</p>' : '');
     $('git-rollback-pick').innerHTML = git.recent_main.map((r) =>

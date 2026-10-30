@@ -115,7 +115,7 @@ bash pi/deploy.sh --dry-run    # lists what would change
 bash pi/deploy.sh              # installs; no password since pb-deploy (30 Oct 2026), else sudo asks once
 ```
 
-PB Console's Deploy tab runs the same script with `--sudo-stdin`: the password it was given goes to `sudo -S` on the Pi through stdin (never on a command line or in a file).
+PB Console's Deploy tab runs the same script, with no password (the `pb-deploy` rule). The old `--sudo-stdin` mode was removed on 30 Oct 2026.
 
 `deploy.sh` copies `pi/` to `~/pb-deploy` on the Pi with scp and runs `install.sh` there. `install.sh` only installs files that differ, and restarts only what those files affect. On its first run it disables the stopgap `cast-listener`.
 

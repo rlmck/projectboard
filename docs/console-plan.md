@@ -27,7 +27,7 @@ Edit the Pi's `config.env` in a form.
 
 ## Phase 6: Pi deploy
 
-**Built 28 Oct 2026.** `deploy.sh --sudo-stdin` reads one line (the password) into a shell variable and pipes it to `sudo -S` on the Pi; its other ssh calls use `-n` so they can't eat it. Pulled files land in `pi/ops/`, `pi/systemd/` or `pi/conf/`; their `install.sh` lines are still added by hand, in a session, and reviewed.
+**Since 30 Oct 2026 no password:** the Pi's `pb-deploy` sudoers rule lets `deploy.sh` install unattended; the password field and `--sudo-stdin` were removed. **Built 28 Oct 2026.** `deploy.sh --sudo-stdin` reads one line (the password) into a shell variable and pipes it to `sudo -S` on the Pi; its other ssh calls use `-n` so they can't eat it. Pulled files land in `pi/ops/`, `pi/systemd/` or `pi/conf/`; their `install.sh` lines are still added by hand, in a session, and reviewed.
 
 - **Run `pi/deploy.sh` with streamed output.** It ends in `ssh -t … sudo bash ~/pb-deploy/install.sh`; for the console, add a `--sudo-stdin` mode to `deploy.sh` (or have the console run the same scp steps itself) that runs `sudo -S -p '' bash …` and writes the password the user typed into the page to its stdin. The password is never stored, logged or put on a command line; the field clears after use. Add `--dry-run` as its own button (it needs the password too, since install.sh runs as root).
 - Confirm, busy check, the lock, the audit (without the password). A deploy restarts the listener when listener files changed: say so in the confirm (from a dry run).

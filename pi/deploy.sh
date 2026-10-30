@@ -4,31 +4,23 @@
 #
 #   bash pi/deploy.sh            copy, install what changed, restart what needs it
 #   bash pi/deploy.sh --dry-run  copy, then only list what would change
-#   ... --sudo-stdin             PB Console: the Pi's password comes on stdin (one line),
-#                                for sudo -S, instead of a terminal prompt
 #
 # Plain ssh/scp over Tailscale (no rsync on Windows). Copies pi/ into ~/pb-deploy
-# on the Pi, then runs install.sh there under sudo: one password prompt.
+# on the Pi, then runs install.sh there under sudo: no password with the Pi's
+# pb-deploy sudoers rule (30 Oct 2026), else one prompt (a freshly flashed card).
 # pi/config.env (gitignored, the laptop's copy of the Pi's settings) goes too if
 # it exists. Idempotent. Set PB_HOST to deploy somewhere else.
 
 set -euo pipefail
 HOST="${PB_HOST:-pi@projectboard}"
 STAGE=pb-deploy
-SUDO_STDIN=0
 ARGS=()
 for a in "$@"; do
     case "$a" in
-        --sudo-stdin) SUDO_STDIN=1 ;;
         --dry-run) ARGS+=(--dry-run) ;;
-        *) echo "deploy.sh [--dry-run] [--sudo-stdin]"; exit 2 ;;
+        *) echo "deploy.sh [--dry-run]"; exit 2 ;;
     esac
 done
-PW=""
-if [ $SUDO_STDIN -eq 1 ]; then
-    IFS= read -r PW || true     # kept in this shell only: never on a command line or in a file
-    [ -n "$PW" ] || { echo "!! --sudo-stdin: no password on stdin"; exit 1; }
-fi
 cd "$(dirname "$0")/.."
 [ -f pi/install.sh ] || { echo "Run it from the repo: bash pi/deploy.sh"; exit 1; }
 
@@ -64,10 +56,7 @@ fi
 if ssh -n "$HOST" "sudo -n /usr/bin/true" >/dev/null 2>&1; then
     echo "== Installing (no password needed)"
     ssh -n "$HOST" "sudo -n bash /home/pi/$STAGE/install.sh ${ARGS[*]+${ARGS[*]}}"
-elif [ $SUDO_STDIN -eq 1 ]; then
-    echo "== Installing"
-    printf '%s\n' "$PW" | ssh "$HOST" "sudo -S -p '' bash ~/$STAGE/install.sh ${ARGS[*]+${ARGS[*]}}"
 else
-    echo "== Installing (sudo will ask for the Pi's password)"
+    echo "== Installing (no pb-deploy rule on the Pi yet: sudo will ask for its password once)"
     ssh -t "$HOST" "sudo bash ~/$STAGE/install.sh ${ARGS[*]+${ARGS[*]}}"
 fi
