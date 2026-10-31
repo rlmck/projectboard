@@ -25,7 +25,9 @@ Written on 31 Oct 2026, when the Pi 4's card died. A card made this way goes in 
 1. **Tailscale**, at https://login.tailscale.com/admin/machines: the old `projectboard` → `…` → **Remove**. Then **Settings → Keys → Generate auth key**: not reusable, not ephemeral, expiry 7 days, pre-approved on (if device approval is on), no tags. Paste the `tskey-auth-…` after `TS_AUTHKEY=` in `pi\secrets.env` (Notepad), save.
 2. **Raspberry Pi Imager 2** (v2.0.6 or newer): device Raspberry Pi 4; OS Raspberry Pi OS (other) → **Raspberry Pi OS Lite (64-bit)** (trixie); storage the card. Customisation: hostname `projectboard`; capital city London, time zone Europe/London, keyboard `gb`; username `pi` and its password; **Wi-Fi: leave empty / skip**; SSH on, public-key authentication with the laptop's `id_ed25519.pub`; Raspberry Pi Connect off. Write. Imager ejects the card at the end: take it out and put it back.
 3. From the repo root (after `pi/` is committed and pushed): `python pi/firstboot/make-card.py D:\` (the card's boot partition). It refuses anything that isn't an Imager-written Pi boot partition, copies the files, edits `config.txt`, `cmdline.txt` and `user-data`, reads everything back and prints `READY` or what's wrong. `--check` only checks.
-4. Delete `WALL_KEY` from the laptop's `pi\secrets.env` (the key lives only on the card and the Pi).
+4. Delete `WALL_KEY` from the laptop's `pi\secrets.env` (the key lives only on the card and the Pi). To make another card later, put a new key there first and register its hash like db/36 (`make-card.py` prints it), or restore the backup image instead.
+
+Imager 2 may fill in the Wi-Fi from the laptop's saved network and add a `packages:` step even when told not to; `make-card.py` removes both (31 Oct 2026).
 
 ## What happens at the first boot
 
