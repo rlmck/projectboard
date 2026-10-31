@@ -131,7 +131,8 @@ if [ -n "$KIOSK_PKGS" ]; then
 fi
 if ! id kiosk >/dev/null 2>&1; then
     CHANGED+=(/home/kiosk)
-    run useradd --create-home --shell /usr/sbin/nologin --groups video,render,input,audio kiosk
+    KIOSK_GROUPS=$(for g in video render input audio; do getent group "$g" >/dev/null && printf '%s,' "$g"; done)
+    run useradd --create-home --shell /usr/sbin/nologin --groups "${KIOSK_GROUPS%,}" kiosk
 fi
 CURSORS=/usr/share/kiosk-cursors
 if [ ! -f "$CURSORS/kiosk-blank/cursors/left_ptr" ]; then
