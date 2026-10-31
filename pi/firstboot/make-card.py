@@ -161,7 +161,7 @@ def main():
         put(config_src, os.path.join(pb, 'config.env'))
         shutil.rmtree(os.path.join(pb, 'repo'), ignore_errors=True)
         for rel in files:
-            put(os.path.join(REPO, rel), os.path.join(pb, 'repo', rel))
+            put(os.path.join(REPO, rel), os.path.join(pb, 'repo', *rel.split('/')))
         with open(os.path.join(pb, 'repo', 'COMMIT'), 'w', newline='\n') as f:
             f.write(commit + '\n')
 
@@ -266,7 +266,7 @@ def main():
     check(os.path.isfile(os.path.join(pb, 'laptop_key.pub')), 'projectboard/laptop_key.pub')
     bad = []
     for rel in files:
-        p = os.path.join(pb, 'repo', rel)
+        p = os.path.join(pb, 'repo', *rel.split('/'))
         if not os.path.isfile(p) or open(p, 'rb').read() != lf_bytes(os.path.join(REPO, rel)):
             bad.append(rel)
     check(not bad, 'projectboard/repo: %d files match the repo%s' % (len(files), (' (differ: %s)' % bad) if bad else ''))
