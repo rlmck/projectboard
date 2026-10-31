@@ -76,6 +76,28 @@ def put(src, dest):
         f.write(lf_bytes(src))
 
 
+def drop_block(text, key):
+    """Remove the YAML key `key:` (at any indent) and everything nested under it (more indented
+    lines, or a list at the same indent)."""
+    lines = text.split('\n')
+    out, i = [], 0
+    while i < len(lines):
+        m = re.match(r'^( *)' + re.escape(key) + r':\s*$', lines[i])
+        if not m:
+            out.append(lines[i])
+            i += 1
+            continue
+        ind = len(m.group(1))
+        i += 1
+        while i < len(lines):
+            l = lines[i]
+            lead = len(l) - len(l.lstrip(' '))
+            if l.strip() and not (lead > ind or (lead == ind and l.lstrip().startswith('-'))):
+                break
+            i += 1
+    return '\n'.join(out)
+
+
 def repo_files():
     import glob
     files = []
@@ -180,6 +202,25 @@ def main():
                 lines += ['', 'runcmd:'] + ['  ' + r for r in RUNCMD]
             with open(ud_path, 'w', encoding='utf-8', newline='\n') as f:
                 f.write('\n'.join(lines) + '\n')
+
+        # Imager's Wi-Fi goes: setup.sh writes hangout-fixed instead (a netplan Wi-Fi profile
+        # caused the 26 Oct 2026 fault), and the password shouldn't sit on the card. Its
+        # `packages:` goes too: cloud-init would run apt before there's any network
+        # (setup.sh installs avahi-daemon instead).
+        with open(ud_path, encoding='utf-8') as f:
+            ud = f.read()
+        ud2 = drop_block(ud, 'packages')
+        if ud2 != ud:
+            with open(ud_path, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(ud2)
+        nc_path = os.path.join(boot, 'network-config')
+        if os.path.isfile(nc_path):
+            with open(nc_path, encoding='utf-8') as f:
+                nct = f.read()
+            nct2 = drop_block(nct, 'wifis')
+            if nct2 != nct:
+                with open(nc_path, 'w', encoding='utf-8', newline='\n') as f:
+                    f.write(nct2)
 
     # ---- read everything back
     print('Checking %s' % boot)

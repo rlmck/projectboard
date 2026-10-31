@@ -51,7 +51,7 @@ NM_KEYFILE=$NM_DIR/$NM_CONN.nmconnection
 RESCUE_KEYFILE=$NM_DIR/pb-rescue.nmconnection
 NO_RAND_MAC_CONF=/etc/NetworkManager/conf.d/98-projectboard-no-rand-mac.conf
 WALL_KEY_FILE=/etc/projectboard/wall-key
-PACKAGES="git curl python3-spidev python3-gpiozero python3-lgpio python3-websockets ustreamer cage chromium"
+PACKAGES="git curl avahi-daemon python3-spidev python3-gpiozero python3-lgpio python3-websockets ustreamer cage chromium"
 APT_OPTS="-o DPkg::Lock::Timeout=300 -o Acquire::Retries=3"
 STEP="start"
 
