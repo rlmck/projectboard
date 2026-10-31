@@ -1,0 +1,18 @@
+# pb-firstboot: a fresh SD card's unattended setup (pi/firstboot/firstboot.sh).
+# Installed and started by cloud-init's runcmd at the first boot (make-card.py adds
+# that to user-data). Runs at every boot, and 60 s after a failure, until it has
+# written /var/lib/projectboard/firstboot.done; then it disables itself.
+[Unit]
+Description=Project Board first-boot setup (fresh SD card)
+After=cloud-final.service NetworkManager.service
+ConditionPathExists=!/var/lib/projectboard/firstboot.done
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /boot/firmware/projectboard/firstboot.sh
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target

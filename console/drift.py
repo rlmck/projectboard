@@ -33,6 +33,7 @@ def installed():
     for n in ('pb-health', 'pb-mode', 'pb-status', 'pb-idle', 'pb-ledmap', 'pb-bootcheck', 'pb-weekly-reboot'):
         add('pi/ops/' + n, '/usr/local/bin/' + n)
     add('pi/ops/pb-console-helper', '/usr/local/sbin/pb-console-helper')
+    add('pi/ops/pb-netwatch.sh', '/usr/local/sbin/pb-netwatch.sh')
     add('pi/conf/pb-console.sudoers', '/etc/sudoers.d/pb-console')
     for f in sorted(glob.glob(os.path.join(PI, 'systemd', '*.service')) + glob.glob(os.path.join(PI, 'systemd', '*.timer'))):
         add(os.path.relpath(f, REPO), '/etc/systemd/system/' + os.path.basename(f))
@@ -45,6 +46,7 @@ def installed():
     add('pi/conf/pb-watchdog.conf', '/etc/systemd/system.conf.d/pb-watchdog.conf')
     add('pi/conf/projectboard.tmpfiles', '/etc/tmpfiles.d/projectboard.conf')
     add('pi/conf/98-projectboard-no-rand-mac.conf', '/etc/NetworkManager/conf.d/98-projectboard-no-rand-mac.conf')
+    add('pi/conf/kiosk.pam', '/etc/pam.d/kiosk')
     add('pi/config.env.example', '/etc/projectboard/config.env.example')
     if os.path.exists(os.path.join(PI, 'config.env')):
         add('pi/config.env', '/etc/projectboard/config.env')

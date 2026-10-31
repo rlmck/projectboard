@@ -8,12 +8,17 @@
 # Where things go:
 #   listener/*.py      /opt/projectboard/listener/ (and listener/patterns/*.py)
 #   ops/board-cam.sh   /opt/projectboard/ops/
-#   ops/pb-*           /usr/local/bin/ (pb-console-helper: /usr/local/sbin/, root only)
+#   ops/pb-*           /usr/local/bin/ (pb-console-helper, pb-netwatch.sh: /usr/local/sbin/, root only)
 #   conf/pb-console.sudoers  /etc/sudoers.d/pb-console (checked with visudo -cf first)
 #   conf/pb-deploy.sudoers   /etc/sudoers.d/pb-deploy (the same check): deploys without a password
 #   ledmap/            /opt/projectboard/ledmap/ (the LED mapping tool: installed, never enabled)
 #   systemd/*          /etc/systemd/system/ (kiosk.service as installed 26 Oct)
 #   conf/              journald + system.conf.d drop-ins, NetworkManager conf, tmpfiles.d
+#   conf/kiosk.pam     /etc/pam.d/kiosk (the kiosk's login session)
+#
+# Also, when missing (a fresh card, 31 Oct 2026): the kiosk's packages (cage, chromium),
+# the kiosk user and its blank cursor theme; and the SD-card wear settings (the apt
+# timers and any swap file off; the journal and Chromium's cache are in the files above).
 #   config.env         /etc/projectboard/config.env, if deploy.sh sent the laptop's copy
 #
 # First run: disables the stopgap cast-listener (its files stay in /home/pi).
@@ -74,6 +79,9 @@ if [ -f /opt/projectboard/listener/glisten.py ]; then
 fi
 for f in pb_listener.py leds.py mode.py; do put "listener/$f" "/opt/projectboard/listener/$f" 0755; done
 put ops/board-cam.sh /opt/projectboard/ops/board-cam.sh 0755
+# The Wi-Fi watchdog (v2, 28 Oct 2026): kicks Hangout, the rescue hotspot, guarded reboots.
+# The hotspot's profile (pb-rescue) holds a password, so setup.sh writes it from secrets.env.
+put ops/pb-netwatch.sh /usr/local/sbin/pb-netwatch.sh 0755
 for f in pb-health pb-mode pb-status pb-idle pb-ledmap pb-bootcheck pb-weekly-reboot; do put "ops/$f" "/usr/local/bin/$f" 0755; done
 # PB Console's root helper, and the sudoers rule that lets pi run it (only it) without
 # a password. The rule goes in only if visudo accepts it: a broken file would lock sudo.
@@ -99,6 +107,7 @@ put conf/pb-journal.conf /etc/systemd/journald.conf.d/pb-journal.conf 0644
 put conf/pb-watchdog.conf /etc/systemd/system.conf.d/pb-watchdog.conf 0644
 put conf/projectboard.tmpfiles /etc/tmpfiles.d/projectboard.conf 0644
 put conf/98-projectboard-no-rand-mac.conf /etc/NetworkManager/conf.d/98-projectboard-no-rand-mac.conf 0644
+put conf/kiosk.pam /etc/pam.d/kiosk 0644
 put config.env.example /etc/projectboard/config.env.example 0644
 if [ -f "$SRC/config.env" ]; then
     put config.env /etc/projectboard/config.env 0644
@@ -111,6 +120,57 @@ elif [ ! -f /etc/projectboard/config.env ]; then
     echo "!! or put a filled-in pi/config.env on the laptop, and deploy again."
     exit 1
 fi
+# The kiosk (kiosk.service): cage + Chromium as the user kiosk, with no visible pointer.
+# Set up by hand on 26 Oct 2026; here since 31 Oct 2026 so a fresh card gets it.
+echo "== Kiosk"
+KIOSK_PKGS=""
+for p in cage chromium; do command -v "$p" >/dev/null || KIOSK_PKGS="$KIOSK_PKGS $p"; done
+if [ -n "$KIOSK_PKGS" ]; then
+    CHANGED+=(/usr/bin/cage)
+    run env DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=300 $KIOSK_PKGS
+fi
+if ! id kiosk >/dev/null 2>&1; then
+    CHANGED+=(/home/kiosk)
+    run useradd --create-home --shell /usr/sbin/nologin --groups video,render,input,audio kiosk
+fi
+CURSORS=/usr/share/kiosk-cursors
+if [ ! -f "$CURSORS/kiosk-blank/cursors/left_ptr" ]; then
+    CHANGED+=("$CURSORS")
+    if [ $DRY -eq 1 ]; then
+        echo "   would create the blank cursor theme in $CURSORS"
+    else
+        # One fully transparent 1x1 Xcursor image under every common cursor name.
+        python3 - "$CURSORS" <<'PY'
+import os, struct, sys
+root = sys.argv[1]
+d = os.path.join(root, 'kiosk-blank', 'cursors')
+os.makedirs(d, exist_ok=True)
+img = struct.pack('<9I', 36, 0xfffd0002, 24, 1, 1, 1, 0, 0, 0) + struct.pack('<I', 0)
+data = b'Xcur' + struct.pack('<3I', 16, 0x10000, 1) + struct.pack('<3I', 0xfffd0002, 24, 28) + img
+with open(os.path.join(d, 'left_ptr'), 'wb') as f:
+    f.write(data)
+names = ('default arrow top_left_arrow pointer hand1 hand2 text xterm crosshair wait watch progress '
+         'left_ptr_watch grab grabbing fleur move all-scroll not-allowed col-resize row-resize '
+         'sb_h_double_arrow sb_v_double_arrow ew-resize ns-resize nwse-resize nesw-resize help '
+         'question_arrow context-menu cell copy alias vertical-text zoom-in zoom-out').split()
+for n in names:
+    p = os.path.join(d, n)
+    if not os.path.lexists(p):
+        os.symlink('left_ptr', p)
+with open(os.path.join(root, 'kiosk-blank', 'index.theme'), 'w') as f:
+    f.write('[Icon Theme]
+Name=kiosk-blank
+')
+os.makedirs(os.path.join(root, 'default'), exist_ok=True)
+with open(os.path.join(root, 'default', 'index.theme'), 'w') as f:
+    f.write('[Icon Theme]
+Inherits=kiosk-blank
+')
+PY
+        echo "   created the blank cursor theme in $CURSORS"
+    fi
+fi
+
 # The wall key (db/35): the wall screen sends it with a problem made on the kiosk, so
 # only the wall can make one. 32 random bytes, made here once, readable by root and
 # the kiosk user only; never copied off the Pi, printed or committed. kiosk.service
@@ -129,6 +189,12 @@ if [ ! -s "$WALL_KEY" ]; then
         mv "$WALL_KEY.new" "$WALL_KEY"
         echo "   created $WALL_KEY"
     fi
+fi
+# A key put there by a fresh card's setup.sh (from secrets.env) gets the same owner and mode.
+if [ -s "$WALL_KEY" ] && [ $DRY -eq 0 ] && id kiosk >/dev/null 2>&1    && [ "$(stat -c '%U:%G %a' "$WALL_KEY")" != "root:$(id -gn kiosk) 640" ]; then
+    chown "root:$(id -gn kiosk)" "$WALL_KEY"
+    chmod 0640 "$WALL_KEY"
+    echo "   set $WALL_KEY to root:$(id -gn kiosk) 0640"
 fi
 if [ -s "$WALL_KEY" ]; then
     echo "   wall key sha256: $(tr -d '\n' < "$WALL_KEY" | sha256sum | cut -d' ' -f1)"
@@ -158,6 +224,21 @@ if changed '/etc/NetworkManager/*'; then
     echo "   NetworkManager conf changed: it applies at the next reboot (not restarting the network now)"
 fi
 
+echo "== SD card"
+# Cut writes (the first card died on 31 Oct 2026). The journal's limits are in
+# conf/pb-journal.conf, Chromium's cache in kiosk.service. apt's daily timers only
+# refresh package lists (nothing installs itself here), so they go; a swap file
+# (dphys-swapfile, if the image has one) goes too: 2 GB is plenty for the board.
+for t in apt-daily.timer apt-daily-upgrade.timer man-db.timer; do
+    if [ "$(systemctl is-enabled "$t" 2>/dev/null)" = enabled ] || [ "$(systemctl is-active "$t" 2>/dev/null)" = active ]; then
+        run systemctl disable --now "$t"
+    fi
+done
+if [ "$(systemctl is-enabled dphys-swapfile 2>/dev/null)" = enabled ]; then
+    run dphys-swapfile swapoff
+    run systemctl disable --now dphys-swapfile
+fi
+
 echo "== Services"
 if [ "$(systemctl is-enabled cast-listener 2>/dev/null)" = enabled ] || [ "$(systemctl is-active cast-listener 2>/dev/null)" = active ]; then
     run systemctl disable --now cast-listener
@@ -165,7 +246,7 @@ if [ "$(systemctl is-enabled cast-listener 2>/dev/null)" = enabled ] || [ "$(sys
 fi
 # leds-off-at-boot runs at the next boot; running it now would only clear the strip.
 # pb-ledmap is deliberately not in this list: it only runs when started by hand.
-for u in leds-off-at-boot.service pb-listener.service board-cam.service pb-netlog.service; do
+for u in leds-off-at-boot.service pb-listener.service board-cam.service pb-netlog.service kiosk.service; do
     [ "$(systemctl is-enabled "$u" 2>/dev/null)" = enabled ] || run systemctl enable "$u"
 done
 for t in pb-health.timer pb-mode.timer pb-weekly-reboot.timer; do
@@ -173,6 +254,11 @@ for t in pb-health.timer pb-mode.timer pb-weekly-reboot.timer; do
         run systemctl enable --now "$t"
     fi
 done
+if [ "$(systemctl is-enabled pb-netwatch 2>/dev/null)" != enabled ] || [ "$(systemctl is-active pb-netwatch 2>/dev/null)" != active ]; then
+    run systemctl enable --now pb-netwatch.service
+elif changed /usr/local/sbin/pb-netwatch.sh /etc/systemd/system/pb-netwatch.service; then
+    run systemctl restart pb-netwatch
+fi
 # Enabled only: it fires 3 min after the next boot (starting it now would log a misleading boot line).
 [ "$(systemctl is-enabled pb-bootcheck.timer 2>/dev/null)" = enabled ] || run systemctl enable pb-bootcheck.timer
 

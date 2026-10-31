@@ -17,12 +17,16 @@ Everything that runs on the Pi 4 behind the board: the cast listener that lights
 | `board-cam` | The webcam on the back of the board, for Tailscale devices only: `http://projectboard:8080/stream`. |
 | `pb-netlog` | 60 s after each boot, a network report to `/boot/firmware/netlog.txt`, readable from the SD card when SSH is down. |
 | `pb-ledmap` | **Not enabled; started by hand.** The LED mapping tool (below): a web page on `http://projectboard:8081/` (Tailscale only) for finding LEDs that don't sit under their holds. It pauses `pb-listener` while it runs. |
+| `pb-netwatch` | The Wi-Fi watchdog (`ops/pb-netwatch.sh`, v2; see "Wi-Fi"). In the repo and installed by `install.sh` since 31 Oct 2026. |
 | `kiosk` | cage + Chromium showing the app's wall-screen mode (`https://symmetryboard.co.uk/?wall`) on the touchscreen. Installed 26 Oct 2026; `?wall` and `--deny-permission-prompts` added 27 Oct (deploy, then `sudo systemctl restart kiosk`: install.sh doesn't restart the screen itself). |
 
 Also installed:
 - the hardware watchdog (`RuntimeWatchdogSec=15`);
-- a 200 MB cap on the persistent journal;
+- the persistent journal, capped (below);
+- the kiosk's pieces: `cage`, `chromium`, the `kiosk` user, `/etc/pam.d/kiosk` (`conf/kiosk.pam`) and a blank cursor theme in `/usr/share/kiosk-cursors` (set up by hand on 26 Oct; in `install.sh` since 31 Oct 2026);
 - no random Wi-Fi MAC while scanning (the connection itself uses a random one since 28 Oct: see "Wi-Fi").
+
+**SD-card wear** (31 Oct 2026, after the first card died; `install.sh`): the journal stays on the card (the Wi-Fi faults were found from earlier boots' logs) but is capped at 100 MB and a month, stores nothing below info and is written every 15 minutes (`conf/pb-journal.conf`); Chromium's HTTP cache is in RAM (`/run/kiosk-cache`, 64 MB, `kiosk.service`), while its profile (the service worker's offline copy) stays on the card; apt's daily timers and `man-db.timer` are off (nothing installs itself here); a `dphys-swapfile` swap file, if the image has one, is turned off.
 
 **Relays:** not built. `listener/power.py` is the hook for switching the LED supplies at night once the relay module is fitted.
 
@@ -127,13 +131,7 @@ bash pi/deploy.sh              # installs; no password since pb-deploy (30 Oct 2
 
 PB Console's Deploy tab runs the same script, with no password (the `pb-deploy` rule). The old `--sudo-stdin` mode was removed on 30 Oct 2026.
 
-`deploy.sh` copies `pi/` to `~/pb-deploy` on the Pi with scp and runs `install.sh` there. `install.sh` only installs files that differ, and restarts only what those files affect. On its first run it disables the stopgap `cast-listener`.
-
-**Rollback** to the stopgap (its files stay in `/home/pi`):
-
-```
-ssh -t pi@projectboard 'sudo systemctl disable --now pb-listener && sudo systemctl enable --now cast-listener'
-```
+`deploy.sh` copies `pi/` to `~/pb-deploy` on the Pi with scp and runs `install.sh` there. `install.sh` only installs files that differ, and restarts only what those files affect. (The 26 Oct stopgap `cast-listener` went with the first card; there's no stopgap to roll back to now: roll back with `git revert` and a deploy.)
 
 **Settings:** edit `pi/config.env` on the laptop (start from `config.env.example`), then deploy. The night times are re-read every 30 s. `NIGHT_FORCE=day` or `NIGHT_FORCE=night` overrides the clock for tests and late events.
 
@@ -153,18 +151,18 @@ The acceptance tests (kill, freeze, Wi-Fi drop, Supabase blocked, reboot mid-cas
 
 ## A fresh SD card
 
-`setup.sh` goes on the boot partition with `secrets.env` (`TS_AUTHKEY`, `WIFI_SSID`, `WIFI_PSK`) and `laptop_key.pub`. Run `sudo bash /boot/firmware/projectboard/setup.sh`, **reboot once to test the Wi-Fi**, then run `bash pi/deploy.sh` from the laptop.
+**`pi/firstboot/README.md`** (31 Oct 2026): Imager writes Raspberry Pi OS Lite with its customisation but no Wi-Fi, `python pi/firstboot/make-card.py D:\` adds the rest, and the card sets itself up at its first boot (`setup.sh`, then a clone of the repo and `install.sh`), logging to `firstboot.log` on the card, then reboots once. It lists everything the old card held outside the repo and where each comes from now. `setup.sh` still works by hand: `sudo bash /boot/firmware/projectboard/setup.sh`, then `bash pi/deploy.sh` from the laptop.
 
 ## Wi-Fi (28 Oct 2026)
 
 **Random hardware address per connection.** After a disconnect and quick rejoin with the same address, the gym's access point stopped answering the join (`CTRL-EVENT-ASSOC-REJECT bssid=00:00:00:00:00:00 status_code=16` in the wpa_supplicant log, before any password is used). This cut the Wi-Fi after reboots on 26 Oct (11:42, 16:48) and 28 Oct (12:11). `hangout-fixed` now has `802-11-wireless.cloned-mac-address=random` (it was `permanent`), and `setup.sh` writes the same for a fresh card. Verified 28 Oct with an immediate reconnect and two back-to-back reboots. The LAN IP now changes per connection; Tailscale, `projectboard` and `board-cam` (bound to the Tailscale IP) don't care.
 
-**Watchdog and rescue hotspot** (installed on the Pi outside `install.sh`, not yet copied into `pi/`):
+**Watchdog and rescue hotspot** (in the repo since 31 Oct 2026: `ops/pb-netwatch.sh` and `systemd/pb-netwatch.service`, installed by `install.sh`; the hotspot profile holds a password, so `setup.sh` writes it from `secrets.env`):
 - `pb-netwatch` (`/usr/local/sbin/pb-netwatch.sh`, v2) checks every 30 s: it kicks the Hangout connection at 2 and 6 failed checks, restarts NetworkManager at 4, opens the rescue hotspot for 15 minutes at 8, and reboots at 12 (at most 3 times).
-- `pb-rescue` (`/etc/NetworkManager/system-connections/pb-rescue.nmconnection`): an access point with SSID `projectboard-rescue`, `ipv4.method=shared` (the Pi is 10.42.0.1), autoconnect off. **Working over the hotspot:** `sudo systemctl stop pb-netwatch` first, or it will tear the hotspot down.
+- `pb-rescue` (`/etc/NetworkManager/system-connections/pb-rescue.nmconnection`): an access point with SSID `projectboard-rescue`, `ipv4.method=shared` (the Pi is 10.42.0.1), autoconnect off. Its password is `RESCUE_PSK` in the laptop's gitignored `pi/secrets.env` (new on 31 Oct 2026). **Working over the hotspot:** `sudo systemctl stop pb-netwatch` first, or it will tear the hotspot down.
 - `pb-netlog` now includes `-u wpa_supplicant`, and the wpa_supplicant logs are kept across boots.
 
-Still to do: copy `pb-netwatch.sh`, its unit, the `pb-rescue` profile (with the psk removed) and the new `pb-netlog` into `pi/`; remove the unused Imager profile `netplan-wlan0-Hangout` once the fix has held for a week; decide on Wi-Fi power saving (on, per the kernel log).
+Still to do: decide on Wi-Fi power saving (on, per the kernel log). (The Imager profile `netplan-wlan0-Hangout` is gone with the old card; a new card gets no Wi-Fi from Imager.)
 
 ## Wiring (temporary but working, 28 Oct 2026)
 

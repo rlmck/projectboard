@@ -1,0 +1,13 @@
+[Unit]
+Description=Project Board Wi-Fi watchdog
+Documentation=https://github.com/rlmck/projectboard/tree/main/pi
+After=NetworkManager.service
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/local/sbin/pb-netwatch.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

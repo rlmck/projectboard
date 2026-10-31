@@ -14,6 +14,10 @@ StartLimitIntervalSec=0
 # The wall key (/etc/projectboard/wall-key, made by install.sh, db/35) goes in the
 # URL's #fragment, which the browser never sends anywhere: the page keeps it and
 # sends it only with a problem made on the wall. $$ is systemd's literal $.
+# SD-card wear (31 Oct 2026): Chromium's HTTP cache lives in RAM, in
+# /run/kiosk-cache (RuntimeDirectory, emptied when the kiosk stops), capped at
+# 64 MB. The profile itself stays on the card, so the service worker's offline
+# copy of the app and its saved lists survive a restart.
 [Service]
 Type=simple
 User=kiosk
@@ -28,8 +32,10 @@ StandardInput=tty-fail
 StandardOutput=journal
 StandardError=journal
 TimeoutStartSec=150
+RuntimeDirectory=kiosk-cache
+RuntimeDirectoryMode=0700
 ExecStartPre=-/usr/bin/timeout 120 /bin/sh -c 'until getent hosts symmetryboard.co.uk >/dev/null; do sleep 2; done'
-ExecStart=/bin/sh -c 'exec /usr/bin/cage -d -- /usr/bin/chromium --ozone-platform=wayland --kiosk --noerrdialogs --no-first-run --disable-infobars --disable-session-crashed-bubble --disable-features=Translate --password-store=basic --overscroll-history-navigation=0 --check-for-update-interval=31536000 --deny-permission-prompts "https://symmetryboard.co.uk/?wall#k=$$(cat /etc/projectboard/wall-key 2>/dev/null)"'
+ExecStart=/bin/sh -c 'exec /usr/bin/cage -d -- /usr/bin/chromium --ozone-platform=wayland --kiosk --noerrdialogs --no-first-run --disable-infobars --disable-session-crashed-bubble --disable-features=Translate --password-store=basic --overscroll-history-navigation=0 --check-for-update-interval=31536000 --deny-permission-prompts --disk-cache-dir=/run/kiosk-cache --disk-cache-size=67108864 --disable-breakpad "https://symmetryboard.co.uk/?wall#k=$$(cat /etc/projectboard/wall-key 2>/dev/null)"'
 Restart=always
 RestartSec=3
 

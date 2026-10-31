@@ -20,7 +20,7 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 - **Architecture, data model, auth, caching, deploy mechanics, known issues:** `docs/codebase-overview.md`. Read it at the start of a session. It was checked against the live database.
 - **Hosting, rollout and the install flow:** `docs/rollout-plan.md`.
 - **The cast contract:** `docs/cast-contract.md`. **Circuits Phase 2 spec:** `docs/circuits-phase2.md`.
-- **The Pi:** `pi/README.md` (what runs, deploy, rollback, wiring, LED mapping); the listener and kiosk plan with the R8 acceptance tests: `docs/pi4-listener-kiosk-plan.md`.
+- **The Pi:** `pi/README.md` (what runs, deploy, rollback, wiring, LED mapping); a new SD card: `pi/firstboot/README.md`; the listener and kiosk plan with the R8 acceptance tests: `docs/pi4-listener-kiosk-plan.md`.
 - **PB Console** (the laptop's admin console, `console/`): `console/README.md`; its plan: `docs/console-plan.md`.
 - **Security findings:** `docs/security-findings.md`, **local only, never committed**. Read it before touching RLS, grants, casting or sign-up.
 - **Local only, on Ross's laptop:** `docs/changelog.md` (feature history to Sep 2026), `docs/project-notes.md` (the original DTB system, the hardware), `docs/pi4-led-audit.md` (the verified LED spec, 16 Oct 2026: read it before LED driver work), `db/README.md` (every DB script).
@@ -164,7 +164,7 @@ What each view does in detail (fullscreen viewer, create, the outline editor, ci
 | Anon key | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA` |
 
 - **Tables, policies and functions:** overview §5. RLS is on everywhere and is the real gate; the app's admin-only UI is just UX.
-- **DB scripts** live in local `db/`, numbered and idempotent. Since 30 Oct 2026 Claude applies them with `python db/apply.py` (dry run first; working rule 2). 01–35 are applied. The index and warnings are in `db/README.md`. A new script takes the next number.
+- **DB scripts** live in local `db/`, numbered and idempotent. Since 30 Oct 2026 Claude applies them with `python db/apply.py` (dry run first; working rule 2). 01–36 are applied. The index and warnings are in `db/README.md`. A new script takes the next number.
 - **Admin** = `profiles.is_admin`. It's set in the Supabase dashboard or in-app through `admin_set_admin()`, which only an existing admin can call and which refuses changing your own flag. **Nobody can promote themselves.**
 - **Who can do what:** browsing and casting need no login. Ticking, favourites and creating need sign-in. Admins edit (grade, holds) and delete any problem; an owner can delete their own problem only while nobody else has ticked it. Details: overview §5–6.
 - **Who cast is never in a broadcast** (the channel is public). A signed-in member's cast is recorded privately in `cast_log` (db/34: insert-only, no API reads) by `logCast()` in `problems.js`; only PB Console reads it, over direct Postgres. Keep `privacy.html` in step.

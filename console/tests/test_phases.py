@@ -104,14 +104,14 @@ class Drift(unittest.TestCase):
 
     def test_compare(self):
         rel, dest = drift.installed()[0]
-        text = '%s  %s\nsha256sum: /etc/sudoers.d/pb-console: Permission denied\n@@extra\n/usr/local/sbin/pb-netwatch.sh\n' \
-               '/etc/systemd/system/pb-netwatch.service\n@@nm\npb-rescue:/etc/NetworkManager/system-connections/pb-rescue.nmconnection\n' \
+        text = '%s  %s\nsha256sum: /etc/sudoers.d/pb-console: Permission denied\n@@extra\n/usr/local/sbin/pb-old.sh\n' \
+               '/etc/systemd/system/pb-old.service\n@@nm\npb-rescue:/etc/NetworkManager/system-connections/pb-rescue.nmconnection\n' \
                'lo:/run/NetworkManager/system-connections/lo.nmconnection\n' % (drift.sha(rel), dest)
         c = drift.compare(text)
         states = {r['pi']: r['state'] for r in c['files']}
         self.assertEqual(states[dest], 'same')
         self.assertEqual(states['/etc/sudoers.d/pb-console'], 'unreadable')
-        self.assertEqual({x['pull_to'] for x in c['extra']}, {'pi/ops/pb-netwatch.sh', 'pi/systemd/pb-netwatch.service'})
+        self.assertEqual({x['pull_to'] for x in c['extra']}, {'pi/ops/pb-old.sh', 'pi/systemd/pb-old.service'})
         self.assertEqual([n['name'] for n in c['nm']], ['pb-rescue'])
 
     def test_pull_targets(self):
