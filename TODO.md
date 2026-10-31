@@ -17,23 +17,24 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 3. **Tidy and box the wiring;** when they arrive, fit the relay module and the 74AHCT125; then relay control in `pb-mode` (`pi/listener/power.py` is the hook) and the console's Power phase. `pb-mode` mustn't cut the LED supplies while `pb-ledmap` runs.
 
 ## Pi and infrastructure
-4. **Pull the Pi-only files into `pi/`** (PB Console → Deploy): `pb-netwatch.sh` v2 and its unit, the `pb-rescue` profile (secrets stripped), the newer `pb-netlog` unit; then add their `install.sh` lines. Look at the kernel errors seen on 28 Oct (about 3,460 in 24 h, nearly all kernel) in Logs once the gym is closed.
-5. **A heartbeat from the Pi to Supabase** so the app can show "board online".
-6. **A mock listener on the laptop** that turns a cast into LED indices (lower priority now the webcam shows the real board).
+4. **Circuit LED match rule:** when the hold to go to is a match, light the next different hold at once, full blue, at the start of the match beat (today it's only a dim amber pulse and the beat feels stale). The match beat stays a full interval, so the climber has the match beat plus the next move's time to see it. Change `pi/listener/circuit.py` and `tools/circuit-led-simulator.html` together; update contract §8.3 and `pi/tests/test_circuit.py`.
+5. **Pull the Pi-only files into `pi/`** (PB Console → Deploy): `pb-netwatch.sh` v2 and its unit, the `pb-rescue` profile (secrets stripped), the newer `pb-netlog` unit; then add their `install.sh` lines. Look at the kernel errors seen on 28 Oct (about 3,460 in 24 h, nearly all kernel) in Logs once the gym is closed.
+6. **A heartbeat from the Pi to Supabase** so the app can show "board online".
+7. **A mock listener on the laptop** that turns a cast into LED indices (lower priority now the webcam shows the real board).
 
 ## App design and features
-7. **Revamp the profile stuff:** when the app loads, signed-out users should be offered Create account first, not Sign in (they won't have an account yet). Consider switching the 4-word passphrase to a PIN (Claude Code to suggest). Be careful with existing users.
-8. **Revamp filtering:** sort by new, and lots more (scope to be worked out).
-9. **Problem name/setter editing** (changes the cast key: contract open questions).
-10. **Wall screen, faster updates** (parked 27 Oct): check every 5 min instead of hourly and apply a waiting update after ~2 min untouched, keeping the chosen problem and scroll position.
-11. **More challenges** (a row in `challenges`), monthly boards, a metronome, casting the circuit at Start once Circuits Phase 2 exists.
-12. **Benchmarks:** admins can already mark a problem as a benchmark (detail ⋮ → "Mark as benchmark"); clarify what more is wanted.
+8. **Revamp the profile stuff:** when the app loads, signed-out users should be offered Create account first, not Sign in (they won't have an account yet). Consider switching the 4-word passphrase to a PIN (Claude Code to suggest). Be careful with existing users.
+9. **Revamp filtering:** sort by new, and lots more (scope to be worked out).
+10. **Problem name/setter editing** (changes the cast key: contract open questions).
+11. **Wall screen, faster updates** (parked 27 Oct): check every 5 min instead of hourly and apply a waiting update after ~2 min untouched, keeping the chosen problem and scroll position.
+12. **More challenges** (a row in `challenges`), monthly boards, a metronome, casting the circuit at Start once Circuits Phase 2 exists.
+13. **Benchmarks:** admins can already mark a problem as a benchmark (detail ⋮ → "Mark as benchmark"); clarify what more is wanted.
 
 ## PB Console
-13. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
+14. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
 
 ## Bugs
-14. **Known bugs to triage:** `docs/codebase-overview.md` §13.
+15. **Known bugs to triage:** `docs/codebase-overview.md` §13.
 
 ## Not now
 Don't build yet: Circuits Phase 3 (PBs, leaderboards), mirrored circuits, a Done filter for circuits ("done" = done both sides, problems only), tags, session/logbook tracking beyond ticks, the Flutter migration.
