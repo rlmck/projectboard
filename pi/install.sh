@@ -158,14 +158,10 @@ for n in names:
     if not os.path.lexists(p):
         os.symlink('left_ptr', p)
 with open(os.path.join(root, 'kiosk-blank', 'index.theme'), 'w') as f:
-    f.write('[Icon Theme]
-Name=kiosk-blank
-')
+    f.write('[Icon Theme]' + chr(10) + 'Name=kiosk-blank' + chr(10))
 os.makedirs(os.path.join(root, 'default'), exist_ok=True)
 with open(os.path.join(root, 'default', 'index.theme'), 'w') as f:
-    f.write('[Icon Theme]
-Inherits=kiosk-blank
-')
+    f.write('[Icon Theme]' + chr(10) + 'Inherits=kiosk-blank' + chr(10))
 PY
         echo "   created the blank cursor theme in $CURSORS"
     fi
