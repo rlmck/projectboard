@@ -30,12 +30,13 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 12. **Wall screen, faster updates** (parked 27 Oct): check every 5 min instead of hourly and apply a waiting update after ~2 min untouched, keeping the chosen problem and scroll position.
 13. **More challenges** (a row in `challenges`), monthly boards, a metronome, casting the circuit at Start once Circuits Phase 2 exists.
 14. **Benchmarks:** admins can already mark a problem as a benchmark (detail ⋮ → "Mark as benchmark"); clarify what more is wanted.
+15. **Move a problem into Circuits (admins only):** when a problem was created but is really a circuit, an admin can move it into Circuits. A move, not a copy: afterwards it exists only as a circuit and is gone from the problems list. Design questions for the session: how the problem's holds become circuit moves, and what happens to its ticks, likes and any cast history.
 
 ## PB Console
-15. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
+16. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
 
 ## Bugs
-16. **Known bugs to triage:** `docs/codebase-overview.md` §13.
+17. **Known bugs to triage:** `docs/codebase-overview.md` §13.
 
 ## Not now
 Don't build yet: Circuits Phase 3 (PBs, leaderboards), mirrored circuits, a Done filter for circuits ("done" = done both sides, problems only), tags, session/logbook tracking beyond ticks, the Flutter migration.
