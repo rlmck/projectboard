@@ -293,7 +293,7 @@
       </div>
       <div class="info-row">
         <div class="info-label">Cast</div>
-        <div class="info-value">Lights the circuit on the wall at your speed: a 5-second countdown on the start holds, then one move at a time. Solid blue is the hold to go to, amber the one after, and the hold you've just let go of fades out in red. ${
+        <div class="info-value">Lights the circuit on the wall at your speed: first a white light runs round the route, then a 5-second countdown on the start holds, then one move at a time. Solid blue is the hold to go to, amber the one after, and the hold you've just let go of fades out in red. ${
           c.loops ? 'It loops until you press Stop.' : 'At the top the route runs up in green.'} Signed in, each run is saved to your log.</div>
       </div>
     `;
@@ -312,6 +312,7 @@
   const CAST_SPEED_KEY = 'pb-circuit-speed';
   const CAST_COUNTDOWN = 5;               // as the Pi's circuit.COUNTDOWN
   const CAST_LAG_MS = 250;                // the Pi starts after reading the circuit: roughly this later
+  const CAST_TRACE_S = 3;                 // the route trace before the countdown (contract 8.6: trace_s)
   let castSheetCircuit = null;            // the circuit the open sheet is for
   let castSpeed = CAST_SPEEDS.includes(+lsGet(CAST_SPEED_KEY)) ? +lsGet(CAST_SPEED_KEY) : 3;
   let castLoop = false;
@@ -401,7 +402,7 @@
     btn.textContent = 'Sending…';
     const token = castRunToken();
     const interval = castSpeed, loop = castLoop;
-    const payload = { circuit_name: circuitName(c), interval, loop, run: token,
+    const payload = { circuit_name: circuitName(c), interval, loop, run: token, trace_s: CAST_TRACE_S,
                       source: WALL ? 'wall' : 'phone', signed_in: !!session };
     try {
       await channel.httpSend('cast_circuit', payload, { timeout: 10000 });
@@ -414,7 +415,8 @@
     done();
     logCast('circuit', circuitName(c), false, token);
     const seq = circuitSeq(c), L = seq.length, s = Math.max(1, Math.min(c.start_count || 1, 2, L));
-    circuitRun = { c, interval, loop, token, t0: Date.now() + CAST_LAG_MS, L, s, moves: L - s,
+    // The phone's clock starts at the Pi's countdown: after its read (CAST_LAG_MS) and the trace.
+    circuitRun = { c, interval, loop, token, t0: Date.now() + CAST_LAG_MS + CAST_TRACE_S * 1000, L, s, moves: L - s,
                    beeped: -1, ended: false, stopSent: false, movesDone: 0 };
     showCastPane('run');
     document.getElementById('cast-run-stop').textContent = 'Stop';
@@ -426,6 +428,7 @@
   // Seconds since the Pi started, and what it's showing: as circuit.Run.moves_at().
   function circuitRunNow(r) {
     const t = (Date.now() - r.t0) / 1000;
+    if (t < 0) return { t, phase: 'trace', moves: 0 };       // the route trace runs on the board
     if (t < CAST_COUNTDOWN) return { t, phase: 'count', moves: 0 };
     const b = Math.floor((t - CAST_COUNTDOWN) / r.interval);
     if (!r.loop && b >= r.moves) return { t, phase: 'top', moves: r.moves };
@@ -437,6 +440,12 @@
     if (!r || r.ended) { clearInterval(circuitRunTicker); circuitRunTicker = null; return; }
     const now = circuitRunNow(r);
     const big = document.getElementById('cast-run-big'), sub = document.getElementById('cast-run-sub');
+    big.classList.toggle('words', now.phase === 'trace');
+    if (now.phase === 'trace') {
+      big.textContent = 'Watch the route';
+      sub.textContent = `Countdown in ${Math.max(1, Math.ceil(-now.t))} s`;
+      return;
+    }
     if (now.phase === 'count') {
       const left = Math.min(CAST_COUNTDOWN, Math.max(1, Math.ceil(CAST_COUNTDOWN - now.t)));
       const sec = Math.floor(Math.max(0, now.t));

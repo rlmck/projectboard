@@ -109,6 +109,7 @@ class Listener:
         self.mirror_map = None
         self.mode, self.mode_reason = modelib.mode_now(self.cfg)
         self.leds = renderer.Renderer(self.strip, self.cfg, self.mode == 'night', log, warn, err)
+        self.circuit_opts = circuit.options(self.cfg, warn)     # the ghost and the track (contract 8.6)
         now = time.time()
         self.status = {
             'pid': os.getpid(), 'started_at': now, 'mode': self.mode, 'mode_reason': self.mode_reason,
@@ -293,7 +294,7 @@ class Listener:
             name, ' mirrored' if mirror else '', len(out), ma,
             ' (capped x%.2f)' % cap if cap < 1 else '', (time.monotonic() - t0) * 1000))
 
-    async def show_circuit(self, name, interval, loop, mirror, token, tag, t0):
+    async def show_circuit(self, name, interval, loop, mirror, token, tag, trace, t0):
         row = await asyncio.to_thread(supa.fetch_circuit, self.cfg, name)
         if self.pending:
             log('circuit %r superseded by %r before it started' % (name, self.pending[1]))
@@ -306,19 +307,22 @@ class Listener:
             return
         if loop is None:
             loop = bool(row.get('loops'))
+        opts = getattr(self, 'circuit_opts', None) or circuit.options(self.cfg, warn)
         run = circuit.Run(name, row.get('hold_sequence'), row.get('start_count'), interval, loop, token,
-                          self.mirror_map if mirror else None, tag)
+                          self.mirror_map if mirror else None, tag, trace_s=trace, track=row.get('led_track'), **opts)
         if run.dropped:
             warn('circuit %r: hold ids off the grid ignored: %s' % (name, sorted(run.dropped)))
+        if run.track_problems:              # once per cast: the moves skipped, and why
+            warn('circuit %r: track moves skipped: %s' % (name, '; '.join(run.track_problems)))
         if self.mode == 'night':
             log('circuit %r ignored: night began while it was fetched' % name)
             return
         self.leds.circuit(run)      # the countdown starts now
         self.status['circuits_shown'] += 1
         self.set(last_cast_at=time.time(), last_cast_name='circuit: ' + name)
-        log('circuit started %r%s: %d holds, %d moves, %g s a move, %s, run %s, in %d ms' % (
+        log('circuit started %r%s: %d holds, %d moves, %g s a move, %s, trace %g s, track %d moves, run %s, in %d ms' % (
             name, ' mirrored' if mirror else '', run.L, run.moves, interval, 'loop' if loop else 'once',
-            token or '-', (time.monotonic() - t0) * 1000))
+            run.trace, len(run.move_leds), token or '-', (time.monotonic() - t0) * 1000))
 
     # -- casts --------------------------------------------------------------
 
@@ -345,7 +349,8 @@ class Listener:
         self.cast_ready.set()
 
     def on_circuit(self, body):
-        """cast_circuit (contract 8): circuit_name, interval (s a move), loop, mirror, run token."""
+        """cast_circuit (contract 8): circuit_name, interval (s a move), loop, mirror, run token,
+        trace_s (8.6: seconds of route trace before the countdown, 0-5, absent = 0)."""
         if not isinstance(body, dict):
             warn('cast_circuit with a non-object payload ignored: %r' % (body,))
             return
@@ -364,6 +369,10 @@ class Listener:
         if token is not None and (not isinstance(token, str) or not 1 <= len(token) <= 64):
             warn('cast_circuit with a bad run token ignored: %r' % (body,))
             return
+        trace = body.get('trace_s', 0)
+        if isinstance(trace, bool) or not isinstance(trace, (int, float)) or not 0 <= trace <= circuit.TRACE_MAX:
+            warn('cast_circuit with a bad trace_s ignored: %r' % (body,))
+            return
         tag = board.origin(body)
         if self.mode == 'night':
             self.status['casts_ignored_night'] += 1
@@ -371,8 +380,9 @@ class Listener:
             self.write_status()
             return
         how = 'loop' if loop else 'once' if loop is False else "the circuit's loop setting"
-        log('circuit received: %r%s, %g s a move, %s%s' % (name, ' mirrored' if mirror else '', interval, how, tag))
-        self.pending = ('circuit', name, float(interval), loop, mirror, token, tag, time.monotonic())
+        log('circuit received: %r%s, %g s a move, %s%s%s' % (name, ' mirrored' if mirror else '', interval, how,
+                                                            ', trace %g s' % trace if trace else '', tag))
+        self.pending = ('circuit', name, float(interval), loop, mirror, token, tag, float(trace), time.monotonic())
         self.cast_ready.set()
 
     def on_stop(self, body):

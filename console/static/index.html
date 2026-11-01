@@ -10,6 +10,7 @@
 <script src="/static/console.js" defer></script>
 <script src="/static/more.js" defer></script>
 <script src="/static/dash.js" defer></script>
+<script src="/static/tracks.js" defer></script>
 </head>
 <body>
 <div class="shell">
@@ -20,6 +21,7 @@
     <div class="nav-group">Board</div>
     <button role="tab" data-tab="board"><span class="nav-dot" id="nav-dot-board"></span>Board</button>
     <button role="tab" data-tab="cast"><span class="nav-dot" id="nav-dot-cast"></span>Test cast</button>
+    <button role="tab" data-tab="tracks"><span class="nav-dot" id="nav-dot-tracks"></span>Circuit tracks</button>
     <button role="tab" data-tab="ledmap"><span class="nav-dot" id="nav-dot-ledmap"></span>LED map</button>
     <button role="tab" data-tab="power"><span class="nav-dot" id="nav-dot-power"></span>Power</button>
     <div class="nav-group">Pi</div>
@@ -274,6 +276,55 @@
         <div class="card"><h2>Holds, and where mirroring puts them</h2><div id="cast-holds" class="muted">Choose a problem.</div></div>
       </div>
       <div class="cam card"><h2>Webcam</h2><img id="cast-cam" alt="The board from the webcam"></div>
+    </div>
+  </section>
+
+  <section id="tab-tracks" class="tab" hidden>
+    <header class="page-head"><h1>Circuit tracks</h1><p>The LEDs between a circuit's holds, move by move: lit in the route trace before a run, and dim pink under the run (contract 8.6).</p></header>
+    <div class="trk-grid">
+      <div class="trk-stage card">
+        <canvas id="trk-board" class="trk-board" width="1386" height="1135" aria-label="The board: tap LEDs to add or remove them from the move"></canvas>
+        <p id="trk-now" class="trk-now"></p>
+        <p id="trk-counts" class="note"></p>
+      </div>
+      <div class="controls">
+        <div class="card">
+          <h2>Circuit</h2>
+          <div class="slider-row"><select id="trk-circuit" aria-label="Circuit"></select><button class="btn small" id="trk-reload">Reload</button></div>
+          <p id="trk-msg" class="note"></p>
+          <div id="trk-stale" class="banner warn" hidden></div>
+        </div>
+        <div class="card">
+          <h2>Moves</h2>
+          <p class="note">Pick a move, then tap LEDs on the board to add or remove them. Tapping one of the circuit's holds jumps to the move that starts there. Dots are LEDs under holds; rings are empty cells (positions estimated). A dashed ring marks a track LED under a hold that isn't in the circuit.</p>
+          <div id="trk-legs" class="trk-legs"></div>
+          <div class="btn-row">
+            <button class="btn small" id="trk-suggest">Suggested for this move</button>
+            <button class="btn small" id="trk-clear">Clear this move</button>
+            <button class="btn small" id="trk-all-suggested">Every move suggested</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Save</h2>
+          <p id="trk-dirty" class="note"></p>
+          <div class="btn-row">
+            <button class="btn primary" id="trk-save">Save the track</button>
+            <button class="btn small" id="trk-preview">Preview the trace</button>
+            <label class="btn small">Import JSON<input type="file" id="trk-import" accept="application/json,.json" hidden></label>
+            <button class="btn small danger" id="trk-remove">Remove track</button>
+          </div>
+          <p class="note">Save shows the moves that change first, checks the track exactly as the Pi does, and writes <code>circuits.led_track</code> over direct Postgres (<code>db/.env</code>); the old value goes to <code>console/data/undo/</code>. Import takes the circuit trace demo's export (<code>pb-circuit-tracks</code> v1).</p>
+        </div>
+        <div class="card">
+          <h2>Test cast</h2>
+          <p class="note">Casts the saved track to the real board: a 3 s route trace, then the countdown, 3 s a move.</p>
+          <div class="slider-row">
+            <label class="check"><input type="checkbox" id="trk-loop"> Loop</label>
+            <button class="btn" id="trk-cast">Test cast</button>
+            <button class="btn small" id="trk-stop">Stop</button>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 

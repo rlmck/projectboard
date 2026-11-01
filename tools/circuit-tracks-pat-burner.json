@@ -1,0 +1,146 @@
+{
+  "format": "pb-circuit-tracks",
+  "version": 1,
+  "exported": "2026-11-01T10:25:22.041Z",
+  "note": "Cell ids are holdN; LED index = N. \"edited\": false means the suggested straight line.",
+  "circuits": {
+    "Pat Burner": {
+      "loop": true,
+      "moves": [
+        {
+          "move": 1,
+          "from": "hold47",
+          "to": "hold24",
+          "edited": true,
+          "cells": [],
+          "others": []
+        },
+        {
+          "move": 2,
+          "from": "hold24",
+          "to": "hold98",
+          "edited": true,
+          "cells": [
+            "hold43",
+            "hold61"
+          ],
+          "others": [
+            "hold43",
+            "hold61"
+          ]
+        },
+        {
+          "move": 3,
+          "from": "hold98",
+          "to": "hold119",
+          "edited": true,
+          "cells": [
+            "hold117"
+          ],
+          "others": [
+            "hold117"
+          ]
+        },
+        {
+          "move": 4,
+          "from": "hold119",
+          "to": "hold213",
+          "edited": true,
+          "cells": [
+            "hold176",
+            "hold195"
+          ],
+          "others": [
+            "hold176",
+            "hold195"
+          ]
+        },
+        {
+          "move": 5,
+          "from": "hold213",
+          "to": "hold235",
+          "edited": true,
+          "cells": [
+            "hold214",
+            "hold177",
+            "hold178"
+          ],
+          "others": [
+            "hold177",
+            "hold178"
+          ]
+        },
+        {
+          "move": 7,
+          "from": "hold235",
+          "to": "hold206",
+          "edited": true,
+          "cells": [
+            "hold203",
+            "hold185"
+          ],
+          "others": [
+            "hold203",
+            "hold185"
+          ]
+        },
+        {
+          "move": 8,
+          "from": "hold206",
+          "to": "hold148",
+          "edited": true,
+          "cells": [
+            "hold205",
+            "hold186"
+          ],
+          "others": [
+            "hold205",
+            "hold186"
+          ]
+        },
+        {
+          "move": 9,
+          "from": "hold148",
+          "to": "hold112",
+          "edited": true,
+          "cells": [
+            "hold131"
+          ],
+          "others": [
+            "hold131"
+          ]
+        },
+        {
+          "move": 10,
+          "from": "hold112",
+          "to": "hold53",
+          "edited": true,
+          "cells": [
+            "hold93",
+            "hold72"
+          ],
+          "others": [
+            "hold93",
+            "hold72"
+          ]
+        },
+        {
+          "move": 11,
+          "from": "hold53",
+          "to": "hold49",
+          "edited": true,
+          "cells": [],
+          "others": []
+        },
+        {
+          "move": 12,
+          "from": "hold49",
+          "to": "hold47",
+          "edited": true,
+          "cells": [],
+          "others": []
+        }
+      ]
+    }
+  }
+}

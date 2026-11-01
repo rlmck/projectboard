@@ -102,6 +102,35 @@ def cast(name, mirror=False, env=None):
     return status, int((time.time() - t0) * 1000), t0, body[:200].decode('utf-8', 'replace')
 
 
+def _run_token():
+    import secrets
+    return secrets.token_hex(8)
+
+
+def cast_circuit(name, interval=3, loop=False, trace_s=3, env=None):
+    """A circuit cast as the app sends it (contract 8.1, 8.6): {circuit_name, interval, loop, run,
+    trace_s, source 'console'}. Returns (http status, ms, sent at, body, run token)."""
+    if not isinstance(name, str) or not 1 <= len(name) <= 60:
+        raise ValueError('circuit_name: 1-60 characters')
+    url, key = supabase_settings(env)
+    token = _run_token()
+    payload = {'circuit_name': name, 'interval': interval, 'loop': bool(loop), 'run': token,
+               'trace_s': trace_s, 'source': 'console'}
+    endpoint = '%s/realtime/v1/api/broadcast/%s/events/cast_circuit' % (url, urllib.parse.quote(TOPIC, safe=''))
+    t0 = time.time()
+    status, body = _req(endpoint, key, 'POST', payload, timeout=10)
+    return status, int((time.time() - t0) * 1000), t0, body[:200].decode('utf-8', 'replace'), token
+
+
+def stop_circuit(token, env=None):
+    """stop (contract 8.2) for one run token. Returns (http status, ms)."""
+    url, key = supabase_settings(env)
+    endpoint = '%s/realtime/v1/api/broadcast/%s/events/stop' % (url, urllib.parse.quote(TOPIC, safe=''))
+    t0 = time.time()
+    status, _ = _req(endpoint, key, 'POST', {'run': token, 'source': 'console'}, timeout=10)
+    return status, int((time.time() - t0) * 1000)
+
+
 def export(env=None):
     """{table: rows} for the public tables."""
     return {t: rest(t, 'select=%s' % cols, env) for t, cols in EXPORT.items()}

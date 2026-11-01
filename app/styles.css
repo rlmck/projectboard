@@ -1819,6 +1819,7 @@
       text-align: center; font-variant-numeric: tabular-nums;
       margin: 8px 0 6px;
     }
+    .cast-run-big.words { font-size: var(--cast-run-words); line-height: 1.15; }
     .cast-run-sub { text-align: center; font-size: 15px; font-weight: 600; color: var(--text-muted); margin-bottom: 20px; }
     .cast-run-stop { font-size: 20px; padding-top: 18px; padding-bottom: 18px; }
     /* .modal-close and .btn-block set display, which beats the bare [hidden] UA rule. */

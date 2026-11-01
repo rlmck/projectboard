@@ -511,7 +511,135 @@ def build(kind, args):
             return 0
         return func_action('backup supabase', backup, 'Export the public tables (problems, circuits, board_config, '
                            'challenges) into backups/ (gitignored).')
+    # -- circuit tracks (contract 8.6, db/37) --------------------------------------------------------
+    if kind in ('circuit-track-save', 'circuit-track-remove', 'circuit-test-cast'):
+        name = args.get('circuit')
+        if not isinstance(name, str) or not 1 <= len(name) <= 60:
+            raise Invalid('%s: a circuit name' % kind)
+    if kind == 'circuit-track-save':
+        import tracks
+        track = args.get('track')
+        if not isinstance(track, dict):
+            raise Invalid('circuit-track-save: track, an object {"version": 1, "moves": [...]}')
+        if len(json.dumps(track)) > 4 * tracks.circuit_mod().TRACK_MAX_BYTES:
+            raise Invalid('circuit-track-save: the track is far too big')
+        try:
+            row = tracks.get_circuit(name)
+            if not row:
+                raise Invalid('circuit-track-save: no circuit called %r' % name)
+            track = tracks.check_for_save(track, row)
+        except tracks.Refused as e:
+            raise Invalid('circuit-track-save: %s' % e)
+        except RuntimeError as e:
+            raise Invalid('circuit-track-save: the database: %s' % e)
+        changes = tracks.describe_changes(row['led_track'], track, row['hold_sequence'])
+        seq = row['hold_sequence']
+
+        def save(app, out):
+            out('writing %d moves of %r over direct Postgres (db/.env)' % (len(track['moves']), name))
+            tracks.write(name, track, seq, out)
+            for line in changes or ['no move changed']:
+                out(line)
+            out('saved: the Pi reads it at the next cast of %r' % name)
+            return 0
+        return func_action('circuit track save %s' % name, save,
+                           'Save the track of %r (%d moves) to the live database: the next cast of it uses it. '
+                           '%s' % (name, len(track['moves']),
+                                   '%d moves change.' % len(changes) if changes else 'No move changes.'),
+                           confirm=True, preview={'diff': '\n'.join(changes) or '(no move changes)'}, timeout=60)
+    if kind == 'circuit-track-remove':
+        import tracks
+        try:
+            row = tracks.get_circuit(name)
+        except RuntimeError as e:
+            raise Invalid('circuit-track-remove: the database: %s' % e)
+        if not row:
+            raise Invalid('circuit-track-remove: no circuit called %r' % name)
+        if row['led_track'] is None:
+            raise Invalid('circuit-track-remove: %r has no track' % name)
+        seq = row['hold_sequence']
+
+        def remove(app, out):
+            tracks.write(name, None, seq, out)
+            out('removed: %r has no track now (its trace runs over the holds only)' % name)
+            return 0
+        return func_action('circuit track remove %s' % name, remove,
+                           'Remove the track of %r from the live database (an undo record is kept in '
+                           'console/data/undo/).' % name, confirm=True, timeout=60)
+    if kind == 'circuit-test-cast':
+        loop = args.get('loop') is True
+
+        def cast(app, out):
+            import supabase_api as supa
+            status, ms, sent, body, token = supa.cast_circuit(name, 3, loop, 3, app.env)
+            out('sent cast_circuit %r (3 s a move, %s, trace 3 s, run %s) at %s: HTTP %s in %d ms %s' % (
+                name, 'loop' if loop else 'once', token, time.strftime('%H:%M:%S', time.localtime(sent)),
+                status, ms, '' if status == 202 else body))
+            if status != 202:
+                return 1
+            LAST_TEST_RUN['token'] = token
+            out('waiting for the listener (up to 15 s)…')
+            got = {}
+            for _ in range(8):
+                time.sleep(2)
+                code, text, _ = app.remote.run("journalctl -u pb-listener --since @%d --no-pager -q "
+                                               "-o json --output-fields=MESSAGE" % int(sent - 1), timeout=20)
+                got = _circuit_receipt(text, name, sent)
+                if got.get('started') or got.get('ignored') or got.get('unknown'):
+                    break
+            for k in ('received', 'started', 'skipped', 'ignored', 'unknown'):
+                if got.get(k):
+                    out('%-9s %s' % (k, got[k]))
+            if not got.get('received'):
+                out("no 'circuit received' line from the listener: is it running and joined? (night ignores casts)")
+                return 1
+            return 0
+        return func_action('test cast circuit %s' % name, cast,
+                           'Cast the circuit %r to the real board with a 3 s route trace, 3 s a move, %s. '
+                           'Whoever is climbing sees it.%s' % (name, 'looping until stopped' if loop else 'once to the top',
+                                                               ' Stop ends it.' if loop else ''),
+                           confirm=True, busy=True, timeout=60)
+    if kind == 'circuit-test-stop':
+        token = LAST_TEST_RUN.get('token')
+        if not token:
+            raise Invalid('circuit-test-stop: no test cast from this console to stop')
+
+        def stop(app, out):
+            import supabase_api as supa
+            status, ms = supa.stop_circuit(token, app.env)
+            out('sent stop (run %s): HTTP %s in %d ms' % (token, status, ms))
+            return 0 if status == 202 else 1
+        return func_action('test stop circuit', stop, 'Stop the test circuit run %s' % token, timeout=30)
     raise Invalid('no action called %r' % kind)
+
+
+LAST_TEST_RUN = {}       # the run token of this console's last circuit test cast (its Stop sends it)
+
+
+def _circuit_receipt(json_lines, name, sent):
+    """From the listener's journal after a circuit test cast: received, started (with its ms), skipped
+    track moves, ignored at night, or unknown."""
+    got = {}
+    q = repr(name)
+    for line in json_lines.splitlines():
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        msg = str(r.get('MESSAGE') or '')
+        at = int(r.get('__REALTIME_TIMESTAMP', 0)) / 1e6
+        lag = '%s (%+d ms after sending)' % (time.strftime('%H:%M:%S', time.localtime(at)), round((at - sent) * 1000))
+        if msg.startswith('circuit received: ' + q) and 'received' not in got:
+            got['received'] = lag
+        elif msg.startswith('circuit started ' + q) and 'started' not in got:
+            got['started'] = '%s; %s' % (lag, msg)
+        elif msg.startswith('circuit %s: track moves skipped' % q):
+            got['skipped'] = msg
+        elif msg.startswith('circuit ' + q) and 'ignored' in msg:
+            got['ignored'] = '%s; %s' % (lag, msg)
+        elif msg.startswith('unknown circuit ' + q):
+            got['unknown'] = msg
+    return got
 
 
 def _receipt(json_lines, name, sent):

@@ -9,6 +9,7 @@ Phase 1 (browse, create, and an in-app Play preview, removed on 30 Oct 2026) is 
 - **Stop and the finish** crossfade the board into the idle pattern; a forgotten loop ends after 30 minutes (`CIRCUIT_MAX_S`).
 - **The wall screen** casts circuits too (its Circuits page, 30 Oct 2026).
 - **The Play preview is gone** (Ross, 30 Oct 2026): casting replaced it.
+- **Circuit tracks (1 Nov 2026):** a circuit can carry a track (`circuits.led_track`, db/37): the LEDs between each hold and the next. A cast now starts with 3 s of **route trace** (the route dim, a white spot running round it; the phone shows "Watch the route"), then the countdown; in the run the circuit's holds stay dim white (the ghost) and the current move's track glows dim pink, under Pulse and fade. Edited in PB Console's Circuit tracks tab; contract §8.6. Pat Burner's track is Ross's, from `tools/circuit-tracks-pat-burner.json`.
 - **Future releases, not now:** mirrored circuits (the Pi takes `mirror`, the app never sends it), and a Done filter for circuits ("done" means "done both sides" and applies to problems only; the circuits list's inert Exclude Done pill was removed).
 
 The original spec follows.

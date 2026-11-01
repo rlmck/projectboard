@@ -27,6 +27,7 @@ Needs: Python 3 (the standard library only; Pillow only for the desktop icon), G
 - **Deploy:** `bash pi/deploy.sh` from the page (the Pi's password typed in, never saved), a dry run, and a drift check: every file `install.sh` places, hashed on the Pi against the repo; files on the Pi the repo doesn't have, with a button to pull them in; NetworkManager profiles pulled with every password line stripped on the Pi.
 - **Release** (CLAUDE.md working rule 2): git status, pull, the diff, and three buttons. **Ship** commits the ticked files (new files start unticked; none ticked pushes what's committed) and pushes `main` (live), after one confirm. **Staging** pushes `HEAD` to `dev` (a fast-forward only). **Rollback** reverts one of `main`'s last 15 commits and pushes. Each runs `bash build.sh --check` (the syntax check and the three-places rule, the same gate Cloudflare runs) first and stops if it fails; **Build check** runs it alone. CACHE is stamped by the build; after a push the live (or staging) `sw.js` is polled until it shows the new stamp.
 - **LED map:** start and stop `pb-ledmap` and use it in the page beside the webcam; keep exported results in `console/data/ledmap/`.
+- **Circuit tracks** (contract §8.6, db/37): edit the LEDs between a circuit's holds, move by move, on the board photo: pick a circuit (read live from the database), pick a move, tap LEDs to add or remove them (a circuit hold jumps to its move), Suggested / Clear per move, a trace preview, Import JSON (the circuit trace demo's export). **Save** shows the moves that change, checks the track exactly as the Pi does and writes `circuits.led_track` over direct Postgres (`db/.env`), keeping the old value in `console/data/undo/`; **Remove track**; **Test cast** (a 3 s route trace, 3 s a move) and Stop. From the command line: `python console/tracks.py show NAME` / `import FILE [--dry-run]`.
 - **Test cast:** a real `cast_problem` (plain or mirrored), then when the listener received and lit it, from its journal; the problem's holds and where mirroring puts each.
 - **Activity:** when the board was last used, then every cast and circuit run newest first (date and time, the climb, from the wall kiosk, a phone or the console, the member's nickname or guest, mirrored, ignored at night; a circuit run with how it ended, the moves made, its speed and loop), casts per day and per hour, mirrored share, the most cast problems and circuits, from the Pi's journal. Members' nicknames come from the private cast log (db/34), read over direct Postgres with `db/.env` (`console/castlog.py`, read-only; without `db/.env` it says so and shows member/guest only).
 - **Tests:** the R8 acceptance checklist with a button per step and pass/fail notes (`console/data/acceptance.json`), and "check a night": the 23:00 and 08:00 switches from the journal.
@@ -44,7 +45,7 @@ Not built yet: **Data** (admin edits to board data, phase 13). Ross chose direct
 - **One action at a time:** a second one is refused while another runs (logs don't count).
 - **config.env stays in step:** night mode and night hours write `/etc/projectboard/config.env` on the Pi (through the helper, which backs up the old copy to `/var/lib/projectboard/config-backups/`) and then copy it to the laptop's `pi/config.env`, so the next `bash pi/deploy.sh` doesn't put the old values back. If the two copies already differ, the console refuses and shows the diff.
 - **pb-ledmap and pb-listener** never drive the strip together: the units' `Conflicts=` does it, and the console doesn't start either around it.
-- Migrations are never applied by the console.
+- Migrations are never applied by the console. Its only database writes are circuit tracks (`circuits.led_track`), each confirmed, one transaction, with an undo record.
 
 ## Security
 
@@ -67,7 +68,9 @@ Not built yet: **Data** (admin edits to board data, phase 13). Ross chose direct
 | `procs.py` | local programs and Python functions behind one streaming shape |
 | `gitops.py` | release: git status, diff, the CACHE stamp (`build.sh --stamp`), the gate (`build.sh --check`) |
 | `drift.py` | deploy drift: install.sh's files, hashed on the Pi |
-| `supabase_api.py` | Supabase with the anon key: problems, mirror map, the test cast, the export |
+| `supabase_api.py` | Supabase with the anon key: problems, mirror map, the test casts (problem and circuit), the export |
+| `tracks.py` | circuit tracks: the check (the Pi's `check_track()`), the board positions, the import, reads and writes over direct Postgres (`db/.env`) |
+| `castlog.py` | members' casts from the private cast log, over direct Postgres; its connection is shared with `tracks.py` |
 | `reports.py` | activity, the acceptance checklist and night check, mapping results, backups, the runbook |
 | `probe.py` | the read-only script the overview runs on the Pi |
 | `checks.py` | the laptop's checks: the live site, Supabase REST, a Realtime join |

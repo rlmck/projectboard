@@ -130,6 +130,16 @@ Relay on/off for the LED supplies. `pi/listener/power.py` is the hook; it's a no
 
 A tab that works without the Pi (static content, no ssh): the rescue hotspot steps (`projectboard-rescue`, the Pi at 10.42.0.1, stop `pb-netwatch` first), reading `netlog.txt` from the SD card, the rollback to the stopgap listener, the key commands from `pi/README.md` (pb-status, pb-idle, pb-ledmap, journalctl lines, deploy), and what each overview tile's red means and what to try. Generated from `pi/README.md` at start (so it stays in step), with the hotspot section always shown first when the Pi is unreachable.
 
+## Phase 16: Circuit tracks
+
+**Built 1 Nov 2026** (cast contract §8.6, db/37). A tab that edits a circuit's track: the LEDs between each hold and the next, which the Pi lights in the route trace before a run and dim pink under it.
+
+- **The editor** (`static/tracks.js`) is a port of `tools/circuit-trace-demo.html`'s "Edit the track": the board photo (`app/board-fallback.jpg`, served as `/board.jpg`) with positions from `app/hold_map.json` and empty cells estimated as the demo does (the mean x of the column's holds, the mean y of the row's; a test checks every cell against the demo's table). Pick a circuit (read live from the database), its stored track or the suggested straight lines; pick a move, tap LEDs to add or remove them, tap a circuit hold to jump to its move; per-move Suggested and Clear, Every move suggested; live counts of track LEDs under other holds (ringed); stale stored moves listed; a trace preview at the Pi's 30 fps; Import JSON in the demo's export format.
+- **Reads and writes** go over direct Postgres with `db/.env` (`console/tracks.py`, the connection `castlog.py` uses, as db/apply.py; never printed): the first write path of the planned Data phase, with its rules: a preview, one transaction (the row locked, refused if its holds changed since the check), the row count checked, the old value in `console/data/undo/`.
+- **Actions:** `circuit-track-save` (confirm; the confirm lists the moves that change; checked server-side by the Pi's own `check_track()`, loaded from `pi/listener/circuit.py`, plus every move present and the size limits: 200 moves, 40 LEDs a move, 32 KB), `circuit-track-remove` (confirm), `circuit-test-cast` (confirm and the busy check: `cast_circuit` with `trace_s: 3`, 3 s a move, once or looping, then the listener's journal: received, started, skipped moves) and `circuit-test-stop` (the test run's own token). All through the action table, the lock and the audit log; `GET /api/tracks` behind the token.
+- **The command line:** `python console/tracks.py show NAME` and `python console/tracks.py import FILE [--circuit NAME] [--dry-run]` (the same checks; how Pat Burner was seeded).
+- Tests: `console/tests/test_tracks.py`.
+
 ## Later: the phone
 
 If the console is ever served to Ross's phone, the security boundary becomes **Tailscale identity**, not a login page: bind to the Tailscale address, use `tailscale serve` or check the caller with the local Tailscale API (`/localapi/v0/whois`) against an allow-list of Ross's own devices, and keep the token, Host, Origin and confirm rules. Never expose it beyond the tailnet.

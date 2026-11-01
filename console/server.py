@@ -16,6 +16,7 @@ action at a time (a lock); every action goes to console/audit.log.
     GET  /api/logs?source=&since=&until=&lines=&filter=&follow=1   streamed text
     POST /api/preview {action, args}                 what a confirm would say, and the busy check
     POST /api/action  {action, args, confirm, override_busy}   streamed output, then '@@result {...}'
+    GET  /api/tracks                 circuits with their led_track (direct Postgres) and the board's cell positions
     GET  /api/whoami                 pid, code stamp, busy: a new launch reuses or replaces this one (session.py)
     POST /api/shutdown               stop, for a newer launch (refused mid-action)
 """
@@ -57,6 +58,8 @@ STATIC = {
     '/static/console.js': ('static/console.js', 'text/javascript; charset=utf-8'),
     '/static/more.js': ('static/more.js', 'text/javascript; charset=utf-8'),
     '/static/dash.js': ('static/dash.js', 'text/javascript; charset=utf-8'),
+    '/static/tracks.js': ('static/tracks.js', 'text/javascript; charset=utf-8'),
+    '/board.jpg': ('../app/board-fallback.jpg', 'image/jpeg'),         # the app's board photo (Circuit tracks)
     '/static/icon.svg': ('static/icon.svg', 'image/svg+xml'),
     '/tokens.css': ('../app/tokens.css', 'text/css; charset=utf-8'),   # the app's own design tokens
 }
@@ -260,6 +263,15 @@ def r_last_night(app, q):
     return reports.night_report(raw)
 
 
+def r_tracks(app, q):
+    import tracks
+    c = tracks.circuit_mod()
+    return {'circuits': tracks.list_circuits(), 'cells': tracks.cells(),
+            'limits': {'moves': c.TRACK_MAX_MOVES, 'cells': c.TRACK_MAX_CELLS, 'bytes': c.TRACK_MAX_BYTES},
+            'trace': {'lap': c.TRACE_LAP, 'step_min': c.TRACE_STEP_MIN, 'step_max': c.TRACE_STEP_MAX,
+                      'fade': c.TRACE_FADE, 'dim': c.TRACE_DIM}}
+
+
 def r_backups(app, q):
     return {'backups': reports.backups_list()}
 
@@ -271,7 +283,7 @@ def r_runbook(app, q):
 GET_ROUTES = {'/api/config': r_config, '/api/drift': r_drift, '/api/git': r_git, '/api/git-diff': r_git_diff,
               '/api/live': r_live, '/api/ledmap': r_ledmap, '/api/problems': r_problems, '/api/problem': r_problem,
               '/api/activity': r_activity, '/api/acceptance': r_acceptance, '/api/last-night': r_last_night,
-              '/api/backups': r_backups, '/api/runbook': r_runbook}
+              '/api/backups': r_backups, '/api/runbook': r_runbook, '/api/tracks': r_tracks}
 
 
 class ConsoleServer(ThreadingHTTPServer):

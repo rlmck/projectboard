@@ -71,7 +71,7 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
 - **What a listener can read with the anon key** (public-read RLS):
   - `problems`: `name`, `start_holds`, `intermediate_holds`, `finish_hold`, `feet_mode`
   - `board_config` where `wall = 'HangoutPortland'`: `mirror_map`
-  - `circuits`: `hold_sequence`, `start_count`, `loops`
+  - `circuits`: `hold_sequence`, `start_count`, `loops`, `led_track` (§8.6)
 - **What the old listener did** (a description, not a requirement):
   - subscribed with the anon key;
   - on a cast, selected the row `where name = problem_name` and built the order in §6.2;
@@ -194,6 +194,7 @@ A circuit cast runs a timed animation on the Pi: the phone sends one message to 
 | `loop` | boolean | no | Run once to the top, or loop until stopped. The app always sends it (defaulting to the circuit's `loops`, which the caster can change); absent means the circuit's `loops`. |
 | `mirror` | boolean, `true` when present | no | Mirror every hold through `board_config.mirror_map`, as §6.3. **No mirrored circuits for now** (Ross, 30 Oct 2026: a future release): the app never sends it; the listener would honour it. |
 | `run` | string, 1–64 characters | no | A token naming this run (the app sends 16 random hex characters). `stop` uses it. |
+| `trace_s` | number, 0–5 | no | Seconds of route trace before the countdown (§8.6). The app sends 3 (since 1 Nov 2026); absent means 0, the timing as before; anything else and the listener ignores the cast. |
 | `source`, `signed_in` | | no | As §3: the Activity log only. |
 
 ### 8.2 `stop`
@@ -208,17 +209,17 @@ Ends the running circuit if its token matches; with no `run`, ends any running c
 
 The look is direction 4, "Pulse and fade", chosen by Ross on 30 Oct 2026 in `tools/circuit-led-simulator.html` (the Pi's code is a port of it: change both together).
 
-- The listener reads `name, hold_sequence, start_count, loops` from `circuits` by exact name (one retry); an unknown name leaves the board as it is. The sequence is in climbing order (not inverted). Ids off the grid and the feet signs (`hold2`/`hold21`) light nothing but keep their place in the timing.
-- **Countdown, 5 s from when the Pi has read the circuit:** the start holds (1 or 2) flash red once a second, and the first two moves flash blue with them.
+- The listener reads `name, hold_sequence, start_count, loops, led_track` from `circuits` by exact name (one retry); an unknown name leaves the board as it is. The sequence is in climbing order (not inverted). Ids off the grid and the feet signs (`hold2`/`hold21`) light nothing but keep their place in the timing.
+- **The route trace first, `trace_s` seconds** (§8.6), then the **countdown, 5 s:** the start holds (1 or 2) flash red once a second, and the first two moves flash blue with them.
 - **Then one move every `interval` s.** With c the last hold reached: the holds you're on (c and c-1) show their colour (start holds green on the first lap only, then blue); the hold to go to (c+1) is solid blue (red if it's the finish of a run done once); the hold after that is amber `(255,110,0)`, swelling up once a second and a little brighter each time through the move; the hold just let go of (c-2) pulses softly red once a second, fading out over the move. A **match** (the hold to go to is one you're on) stays solid.
 - **Once:** at the top, a beat on the finish, then the route runs up in green and fades; then idle. **Loop:** runs until `stop`, a problem cast, another circuit, night, or `CIRCUIT_MAX_S` (30 min by default), then idle.
 - Brightness and the current cap are a problem cast's (`BRIGHTNESS`, `POWER_BUDGET_MA`); frames at `IDLE_FPS`. Night ignores circuit casts and ends a run, as it does problems. Latest cast wins across problems and circuits.
-- Log lines: `circuit received: 'Name', 3 s a move, loop [phone, member]`, `circuit started 'Name': … run <token>`, `stop received: run <token> […]`, and when the run ends, for any reason, one self-contained line that PB Console's Activity reads: `circuit ended: 'Name' stopped after 23 moves (74 s), 3 s a move, loop, run <token> [phone, member]` (how: `stopped`, `finished`, `replaced`, `night`, `time limit` or `sent to idle`). A circuit cast at night logs `circuit 'Name' ignored: night mode […]`.
+- Log lines: `circuit received: 'Name', 3 s a move, loop, trace 3 s [phone, member]`, `circuit started 'Name': … trace 3 s, track 11 moves, run <token>`, `circuit 'Name': track moves skipped: …` (once a cast, when any are), `stop received: run <token> […]`, and when the run ends, for any reason, one self-contained line that PB Console's Activity reads: `circuit ended: 'Name' stopped after 23 moves (74 s), 3 s a move, loop, run <token> [phone, member]` (how: `stopped`, `finished`, `replaced`, `night`, `time limit` or `sent to idle`). A circuit cast at night logs `circuit 'Name' ignored: night mode […]`.
 
 ### 8.4 The app (`app/circuits.js`, and the wall screen)
 
 - **Cast** beside the circuit's title opens a sheet: speed (Slow 5 s / Med 3 s / Fast 2 s, remembered on the device as `pb-circuit-speed`), Loop (the circuit's setting by default), and **Start on the board**. The same lenient geofence as a problem (`ensureCastLocation`, admins skip it), then `channel.httpSend('cast_circuit', …)`.
-- Once Realtime accepts it, the sheet is the run screen: the countdown with beeps, then the move count (and lap), and a big **Stop**, which sends `stop` with the run's token. The phone keeps its own clock from that moment (plus 0.25 s for the Pi's read), so it stays right after the screen sleeps; the screen is kept awake while it runs. The sheet can't be closed while a run is going. "Go again" starts a new run.
+- Once Realtime accepts it, the sheet is the run screen: "Watch the route" for the trace (`trace_s: 3`), then the countdown with beeps, then the move count (and lap), and a big **Stop**, which sends `stop` with the run's token. The phone keeps its own clock from that moment (plus `trace_s` and 0.25 s for the Pi's read), so it stays right after the screen sleeps; the screen is kept awake while it runs. The sheet can't be closed while a run is going. "Go again" starts a new run.
 - **The wall screen** (`/?wall`, since 30 Oct 2026) has a Circuits page: the list and the chosen circuit over the board; **Light it up** opens the same sheet (`openCircuitCast(c)`), sent with `source: "wall"`. The wall doesn't go idle while a run is going; night closes the sheet (the Pi ends the run).
 - As with problems, a sent cast or stop means Realtime accepted it, not that the Pi received it (§7 items 2 and 3).
 
@@ -226,6 +227,31 @@ The look is direction 4, "Pulse and fade", chosen by Ross on 30 Oct 2026 in `too
 
 - **Runs:** when a run ends on the phone (Stop, or the top of a run done once), a signed-in climber's run with at least one move is inserted into `circuit_logs` (`user_id`, `circuit_id`, `moves`, `looped`, `speed` = seconds a move; own-rows RLS, db/14). A move is one LED advance, counted across laps. Guests aren't logged. Nothing in the app reads it yet (Phase 3 is PBs and leaderboards). **"Done" is a problems-only idea** ("done both sides", the problems' Exclude Done): the circuits list has no Done filter (Ross, 30 Oct 2026; circuits may get one in a future release).
 - **Who cast (db/34, 30 Oct 2026):** the broadcasts never say who (the channel is public: anyone with the anon key can listen). After a problem or circuit cast Realtime accepted, a signed-in member's app inserts one private row into `cast_log` (`kind`, `name`, `mirror`, `source`, `run`; insert-only, nobody can read it through the API) with `logCast()` in `problems.js`. PB Console's Activity reads it over direct Postgres and puts the member's nickname on the matching journal line: a circuit by its `run` token, a problem by name within 2 minutes.
+
+### 8.6 Circuit tracks (built 1 Nov 2026)
+
+A circuit can carry a **track**: for each move, the ordered LEDs between one hold and the next. Ross designed it in `tools/circuit-trace-demo.html` ("Train track"); his Pat Burner track is `tools/circuit-tracks-pat-burner.json`.
+
+**Data:** `circuits.led_track` jsonb (db/37), null = no track:
+
+```json
+{ "version": 1, "moves": [ { "move": 7, "from": "hold235", "to": "hold206", "cells": ["hold203", "hold185"] } ] }
+```
+
+- `move` is 1-based: `from` = `hold_sequence[move-1]`, `to` = the next hold, wrapping to the first (the wrap move, `move` = the length, is used only when the run loops). `cells` are `holdN` grid cells ordered from `from` to `to`; each lights LED `led_index(N)` (§6.4). Every non-match move is stored, edited or not; a match (`from` = `to`) has none.
+- A CHECK pins the shape (an object, `version` 1, a `moves` array) and 32 KB. Public read like the rest of `circuits`; nobody writes it through the API (the `circuits_guard_track` trigger keeps it from `anon` and `authenticated`, as db/30 does `comment`). **PB Console writes it** (Circuit tracks tab, direct Postgres).
+- **Checked move by move** by `check_track()` in `pi/listener/circuit.py` (the Pi and the console use the same function): the move number in range and not twice; `from`/`to` equal to the circuit's `hold_sequence` now (a circuit edited since is **stale**); `cells` a list of at most 40 grid hold ids, never `hold2`/`hold21` (the feet signs, §6.5), none twice. A move that fails is **skipped and logged once a cast**; bad JSON never crashes the listener. The console saves only a track with no problems and every move.
+- A mirrored run has no track (the track is drawn for the unmirrored holds).
+
+**What the Pi shows, under Pulse and fade** (everything in §8.3 keeps its priority above these, so Pulse and fade is unchanged wherever it lights):
+- **TRACE, `trace_s` s before the countdown:** the circuit's holds dim white and the track cells dim pink `(236,72,153)` fade in over 0.3 s; a **white spot with a two-LED tail** (100% / 45% / 15%) runs along the **path**: each move's from-hold then its cells, in climbing order (matches skipped), then the last hold unless it loops; every LED once a lap (no strobing). Step = clamp(2.8 s / path length, 0.034, 0.15) s (0.034 keeps each step at least one frame at 30 fps). With no track the path is just the holds. The dim levels are `max(CIRCUIT_GHOST, 0.12)` and `max(CIRCUIT_TRACK_LEVEL, 0.12)`.
+- **Ghost, in the countdown and the run (not the finish):** every distinct circuit hold dim white at `CIRCUIT_GHOST`, the lowest layer.
+- **Track, in the run** (`CIRCUIT_TRACK_RUN`): `off`; `move` (the default: the current move's cells, from the hold you're on to the one to go to); `all` (every move's cells); dim pink at `CIRCUIT_TRACK_LEVEL`, just above the ghost; never on a circuit hold's LED.
+- The cast brightness and the current cap still apply on top.
+
+**Config keys** (`config.env`, `mode.py` DEFAULTS, PB Console's Config tab): `CIRCUIT_GHOST` 0–0.3 (0.12; 0 = off), `CIRCUIT_TRACK_RUN` off|move|all (move), `CIRCUIT_TRACK_LEVEL` 0–0.5 (0.2). A listener restart applies them.
+
+**PB Console** (Circuit tracks tab): edit a circuit's track on the board photo, preview the trace, import the demo's export, save (the moves that change shown first), remove, and a test cast with `trace_s: 3`. `tools/circuit-led-simulator.html` shows the trace, ghost and track under direction 4.
 
 ## 9. The live preview while setting (built 30 Oct 2026)
 
@@ -283,6 +309,7 @@ While a session is going (inside the geofence), the app subscribes to the channe
 2. Like casts, previews are unauthenticated (§7 item 15): anyone with the anon key can light the board this way. Night, the cast precedence and the 60 s timeout limit what that can do.
 
 ## Change history
+- **2026-11-01, Claude Code:** §5, §8.1, §8.3, §8.4 and a new §8.6: **circuit tracks.** A new optional `cast_circuit` field, `trace_s` (0–5, absent = 0: a listener from before this ignores it, and the app sends 3), and `circuits.led_track` (db/37), read with the circuit. The listener adds a route trace before the countdown, a ghost of the circuit's holds and the track in the run, all below Pulse and fade, with three new config keys. The phone's countdown starts `trace_s` later. `cast_problem`, `stop` and `preview_holds` are unchanged.
 - **2026-10-30, Claude Code (evening):** §2, §4, §5 and a new §9: **the live preview while setting.** A new event on the same channel, `preview_holds` (`session`, `start`, `hold`, `finish`, `feet`, `end`, `first`, `show`, `ping`, plus `source`/`signed_in`), sent by the phone's Create/Edit and the wall screen's new Create page; a `preview` state in the listener with its precedence (a cast takes over until Show on board, a circuit makes it wait, night blocks it, 60 s with no message ends it). The app opens a socket only while a preview session is going. `cast_problem`, `cast_circuit` and `stop` are unchanged; a listener from before this ignores the new event.
 - **2026-10-30, Claude Code (later):** §8.1, §8.3, §8.4, §8.5: no mirrored circuits for now; the listener logs a `circuit ended: …` line for PB Console's Activity; the wall screen casts circuits (`source: "wall"`); members' casts are recorded privately in `cast_log` (db/34), never in the broadcast. **No change to the channel, events or payloads.**
 - **2026-10-30, Claude Code:** §2, §4, §5, §7 item 13 and a new §8: **circuits.** Two new events on the same channel, `cast_circuit` (`circuit_name`, `interval`, `loop`, `mirror`, `run`, plus `source`/`signed_in`) and `stop` (`run`). The listener runs the circuit itself (`pi/listener/circuit.py`, Ross's direction 4); the app's Cast sheet sends them and logs signed-in runs to `circuit_logs`. `cast_problem` is unchanged; a listener from before this ignores the new events.
