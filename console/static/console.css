@@ -147,6 +147,13 @@ input[type=range] { accent-color: var(--accent); padding: 0; }
 .lvl-chip.bad::before { background: var(--lvl-bad); }
 button.lvl-chip { font-family: inherit; cursor: pointer; }
 button.lvl-chip:hover { border-color: var(--text-faint); }
+/* Dismiss: the x beside a hero chip */
+.chip-pair { display: inline-flex; align-items: center; gap: 2px; }
+.chip-x {
+  font: inherit; font-size: 14px; line-height: 1; color: var(--text-muted); background: none; border: 0;
+  padding: 2px 5px; border-radius: var(--radius-xs); cursor: pointer;
+}
+.chip-x:hover { color: var(--text); background: var(--surface2); }
 
 /* -- Overview: the tiles ------------------------------------------------------------------- */
 .bento { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; align-items: stretch; }

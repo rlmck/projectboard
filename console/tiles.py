@@ -21,8 +21,12 @@ TIMER_TITLES = {'pb-health': 'Health check', 'pb-mode': 'Night mode', 'pb-weekly
                 'pb-bootcheck': 'Boot check'}
 
 
-def tile(id, title, level, value, lines=()):
-    return {'id': id, 'title': title, 'level': level, 'value': value, 'lines': [l for l in lines if l]}
+def tile(id, title, level, value, lines=(), sig=None):
+    """`sig` is what the page's Dismiss remembers: the tile comes back when it changes (or the
+    level gets worse). By default the level and the value; a tile whose value drifts on its own
+    (counts over a sliding 24 h) gives one that changes only when something new happens."""
+    return {'id': id, 'title': title, 'level': level, 'value': value, 'lines': [l for l in lines if l],
+            'sig': sig if sig is not None else '%s|%s' % (level, value)}
 
 
 def worst(*levels):
@@ -203,7 +207,8 @@ def health_tile(h, services):
     nw = [l for l in h.get('netwatch_tail') or [] if 'watchdog start' not in l]
     if nw:
         lines.append('pb-netwatch: %s' % nw[-1][:100])
-    return tile('health', 'Self-healing', level, '%d actions in 24 h' % len(day), lines)
+    sig = '%s|%s|%d|%d' % (level, actions[-1]['at'] if actions else '-', watchdog, restarts)
+    return tile('health', 'Self-healing', level, '%d actions in 24 h' % len(day), lines, sig)
 
 
 def _iso_ts(s):
@@ -223,7 +228,9 @@ def errors_tile(e, warn_at=50, bad_at=500):
     lines.append('this boot: %s' % e.get('this_boot'))
     for r in (e.get('latest') or [])[-3:]:
         lines.append('%s %s: %s' % (time.strftime('%H:%M', time.localtime(r['at'])), r['source'], r['message'][:90]))
-    return tile('errors', 'Journal errors (24 h)', level, '%d (day before %d)' % (total, prev), lines)
+    newest = max([r.get('at') or 0 for r in e.get('latest') or []] or [0])
+    return tile('errors', 'Journal errors (24 h)', level, '%d (day before %d)' % (total, prev), lines,
+                '%s|%s' % (level, newest))
 
 
 def laptop_tiles(c):

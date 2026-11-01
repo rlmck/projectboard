@@ -9,6 +9,7 @@ the config.env sync between laptop and Pi; the overview tiles' thresholds; and
 pb-console-helper's own checks.
 """
 import contextlib
+import datetime
 import http.client
 import io
 import importlib.machinery
@@ -440,6 +441,26 @@ class TileTests(unittest.TestCase):
         lap['realtime'] = {'ok': False, 'error': 'refused'}
         self.assertEqual(tiles.laptop_tiles(lap)[1]['level'], tiles.BAD)
 
+
+    def test_dismiss_sig(self):
+        # the page's Dismiss keys on `sig`: it changes when something new happens, not as a 24 h count drifts
+        t = tiles.tile('wifi', 'Wi-Fi', tiles.WARN, 'Hangout 40%')
+        self.assertEqual(t['sig'], 'warn|Hangout 40%')
+        e1 = tiles.errors_tile({'last24h': {'kernel': 60}, 'before': {'kernel': 1},
+                                'latest': [{'at': 100.0, 'source': 'kernel', 'message': 'x'}]})
+        e2 = tiles.errors_tile({'last24h': {'kernel': 58}, 'before': {'kernel': 9},
+                                'latest': [{'at': 100.0, 'source': 'kernel', 'message': 'x'}]})
+        e3 = tiles.errors_tile({'last24h': {'kernel': 61}, 'before': {'kernel': 1},
+                                'latest': [{'at': 200.0, 'source': 'kernel', 'message': 'y'}]})
+        self.assertEqual(e1['sig'], e2['sig'])
+        self.assertNotEqual(e1['sig'], e3['sig'])
+        now = time.time()
+        iso = lambda s: datetime.datetime.fromtimestamp(now - s).astimezone().isoformat(timespec='seconds')
+        h1 = tiles.health_tile({'actions': [{'at': iso(3600), 'action': 'cam-restart', 'why': 'x'}]}, {})
+        h2 = tiles.health_tile({'actions': [{'at': iso(3600), 'action': 'cam-restart', 'why': 'x'},
+                                            {'at': iso(60), 'action': 'cam-restart', 'why': 'x'}]}, {})
+        self.assertEqual(h1['level'], tiles.WARN)
+        self.assertNotEqual(h1['sig'], h2['sig'])
 
     def test_metrics(self):
         p = {'ok': True, 'ms': 10, 'hardware': {'temp_c': 55, 'throttled': '0x0', 'disk_total': 100, 'disk_free': 60,

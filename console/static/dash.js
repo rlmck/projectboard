@@ -37,6 +37,26 @@
   let drawerKey = null;
   let tab = 'overview';
 
+  // Dismiss (1 Nov 2026): a tile that needs a look can be dismissed; it shows as dismissed until its
+  // `sig` (tiles.py) changes, so it comes back when something new happens or it gets worse. Recent
+  // actions can be cleared up to now (the Audit section keeps everything). Both live in this
+  // browser's localStorage, a convenience only: without it they last until the page reloads.
+  const DISMISS_KEY = 'pb-console-dismissed', CLEARED_KEY = 'pb-console-audit-cleared';
+  let dismissed = load(DISMISS_KEY, {});
+  let clearedAt = load(CLEARED_KEY, '');
+  let audit = null;
+
+  function load(key, fallback) {
+    try {
+      const v = JSON.parse(localStorage.getItem(key));
+      return v == null ? fallback : v;
+    } catch (e) { return fallback; }
+  }
+
+  function save(key, v) {
+    try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) { /* this page load only */ }
+  }
+
   // -- helpers -------------------------------------------------------------------------------
 
   function worst(levels) {
@@ -68,6 +88,12 @@
       el.tabIndex = 0;
     }
     el.innerHTML = html;
+    // a dismissed tile reads "Dismissed", not OK
+    const c = el.querySelector('.t-head .lvl-chip');
+    if (c && group && level === 'ok' && GROUPS[group].ids.some((i) => byId[i] && byId[i].dismissed)) {
+      c.className = 'lvl-chip';
+      c.textContent = 'Dismissed';
+    }
     // sizes go through the CSSOM: the CSP (style-src 'self') blocks inline style attributes
     el.querySelectorAll('[data-w]').forEach((x) => { x.style.width = x.dataset.w + '%'; });
     el.querySelectorAll('[data-h]').forEach((x) => { x.style.height = x.dataset.h + 'px'; });
@@ -182,11 +208,14 @@
     const hero = $('hero');
     hero.className = 'hero ' + level;
     hero.querySelector('.hero-icon').textContent = level === 'ok' ? '✓' : level === 'unknown' ? '…' : '!';
-    const n = bad.length + warn.length;
-    $('hero-title').textContent = !data.pi_ok ? "The Pi isn't answering" : !n ? 'Everything is running' :
+    const n = bad.length + warn.length, nd = tiles.filter((t) => t.dismissed).length;
+    $('hero-title').textContent = !data.pi_ok ? "The Pi isn't answering" : !n ? (nd ? 'Nothing new to look at' : 'Everything is running') :
       n + (n === 1 ? ' thing needs' : ' things need') + ' a look';
     $('hero-chips').innerHTML = bad.concat(warn).map((t) =>
-      '<button class="lvl-chip ' + t.level + '" data-tile="' + esc(t.id) + '" title="' + esc(t.value) + '">' + esc(t.title) + '</button>').join('');
+      '<span class="chip-pair"><button class="lvl-chip ' + t.level + '" data-tile="' + esc(t.id) + '" title="' + esc(t.value) + '">' + esc(t.title) +
+      '</button><button class="chip-x" data-dismiss="' + esc(t.id) + '" title="Dismiss until it changes" aria-label="Dismiss ' + esc(t.title) + '">×</button></span>').join('') +
+      (n > 1 ? '<button class="t-more" data-dismiss="*">Dismiss all</button>' : '') +
+      (nd ? '<button class="t-more" data-undismiss="*">' + nd + ' dismissed · show again</button>' : '');
     const l = m.listener || {}, cfg = (data.board && data.board.config) || {}, nt = night(cfg);
     const kpis = [
       ['Pi up', m.pi ? span(m.pi.uptime_s) : 'offline'],
@@ -380,12 +409,14 @@
   }
 
   function renderAudit(rows) {
-    const last = (rows || []).filter((r) => !/^console (start|stop)$/.test(r.action)).slice(-7).reverse();
-    setTile('t-audit', head('Recent actions', null, goBtn('audit', 'Audit')) +
+    if (rows) audit = rows;
+    const last = (audit || []).filter((r) => !/^console (start|stop)$/.test(r.action) && !(clearedAt && r.time <= clearedAt)).slice(-7).reverse();
+    setTile('t-audit', head('Recent actions', null, (last.length ? '<button class="t-more" data-clear-audit="1" title="Hide these here; the Audit section keeps them">Clear</button>' : '') +
+      goBtn('audit', 'Audit')) +
       (last.length ? '<ul class="list">' + last.map((r) => '<li><span class="when">' + esc(hhmm(r.time)) + '</span><span class="tag ' +
         (r.result === 'ok' ? 'ok' : r.result === 'cancelled' ? 'dim' : 'bad') + '">' + esc(r.result) + '</span><span class="grow"><b>' + esc(r.action) +
         '</b> <span class="muted">' + esc(r.detail || '') + '</span></span>' + (r.ms != null ? '<span class="when">' + (r.ms / 1000).toFixed(1) + ' s</span>' : '') +
-        '</li>').join('') + '</ul>' : '<p class="empty">Nothing run from the console yet.</p>'));
+        '</li>').join('') + '</ul>' : '<p class="empty">' + (clearedAt ? 'Nothing since you cleared it.' : 'Nothing run from the console yet.') + '</p>'));
   }
 
   function navDots() {
@@ -397,7 +428,37 @@
     set('logs', lvl(['errors']) === 'ok' ? '' : lvl(['errors']));
   }
 
+  // the server's tiles with this browser's dismissals applied (copies: PB.overview() stays as it came)
+  function applyDismissed(d) {
+    let changed = false;
+    const tiles = (d.tiles || []).map((t) => {
+      if (!(t.id in dismissed)) return t;
+      if ((t.level === 'warn' || t.level === 'bad') && dismissed[t.id] === t.sig) {
+        return Object.assign({}, t, { level: 'ok', was: t.level, dismissed: true });
+      }
+      delete dismissed[t.id];      // it changed, or it's fine now: forget the dismissal
+      changed = true;
+      return t;
+    });
+    if (changed) save(DISMISS_KEY, dismissed);
+    return Object.assign({}, d, { tiles });
+  }
+
+  function dismiss(id) {
+    const live = (PB.overview() || {}).tiles || [];
+    live.filter((t) => (id === '*' || t.id === id) && (t.level === 'warn' || t.level === 'bad')).forEach((t) => { dismissed[t.id] = t.sig; });
+    save(DISMISS_KEY, dismissed);
+    render(PB.overview());
+  }
+
+  function undismiss(id) {
+    if (id === '*') dismissed = {}; else delete dismissed[id];
+    save(DISMISS_KEY, dismissed);
+    render(PB.overview());
+  }
+
   function render(d) {
+    d = applyDismissed(d);
     data = d;
     byId = {};
     (d.tiles || []).forEach((t) => { byId[t.id] = t; });
@@ -449,7 +510,9 @@
     $('drawer-title').textContent = g.title;
     $('drawer-body').innerHTML = g.ids.filter((i) => byId[i]).map((i) => {
       const t = byId[i];
-      return '<section class="d-sec"><div class="t-head"><h3>' + esc(t.title) + '</h3>' + chip(t.level) + '</div><div class="d-val">' +
+      const act = t.dismissed ? '<span class="lvl-chip">Dismissed (was ' + esc(LABEL[t.was]) + ')</span><button class="t-more" data-undismiss="' + esc(t.id) + '">Show again</button>' :
+        chip(t.level) + (t.level === 'warn' || t.level === 'bad' ? '<button class="t-more" data-dismiss="' + esc(t.id) + '" title="Dismiss until it changes">Dismiss</button>' : '');
+      return '<section class="d-sec"><div class="t-head"><h3>' + esc(t.title) + '</h3>' + act + '</div><div class="d-val">' +
         esc(t.value) + '</div><ul>' + (t.lines || []).map((l) => '<li>' + esc(l) + '</li>').join('') + '</ul></section>';
     }).join('') + '<div class="btn-row"><button class="btn" data-goto="' + esc(g.tab) + '">Open ' + esc(g.go) + '</button></div>';
     $('drawer').hidden = false;
@@ -482,6 +545,9 @@
     a('Wall screen off', 'screen', { state: 'off' });
     (PB.state().units || []).forEach((u) => a('Restart ' + u, 'service', { unit: u, verb: 'restart' }));
     a('Reboot the Pi', 'reboot', {});
+    out.push({ label: 'Dismiss everything that needs a look', kind: 'Overview', run: () => dismiss('*') });
+    out.push({ label: 'Show dismissed things again', kind: 'Overview', run: () => undismiss('*') });
+    out.push({ label: 'Clear recent actions', kind: 'Overview', run: () => { PB.showTab('overview'); const b = document.querySelector('[data-clear-audit]'); if (b) b.click(); } });
     Object.keys(GROUPS).forEach((k) => out.push({ label: 'Details: ' + GROUPS[k].title, kind: 'Overview', run: () => { PB.showTab('overview'); openDrawer(k); } }));
     return out;
   }
@@ -546,6 +612,15 @@
     $('drawer-close').addEventListener('click', closeDrawer);
 
     document.body.addEventListener('click', (ev) => {
+      const dis = ev.target.closest('[data-dismiss]'), undis = ev.target.closest('[data-undismiss]');
+      if (dis) { dismiss(dis.dataset.dismiss); return; }
+      if (undis) { undismiss(undis.dataset.undismiss); return; }
+      if (ev.target.closest('[data-clear-audit]')) {
+        clearedAt = (audit || []).reduce((m, r) => (r.time > m ? r.time : m), clearedAt || '');
+        save(CLEARED_KEY, clearedAt);
+        renderAudit();
+        return;
+      }
       const go = ev.target.closest('[data-goto]');
       if (go) { closeDrawer(); PB.showTab(go.dataset.goto); return; }
       const chipEl = ev.target.closest('[data-tile]');
