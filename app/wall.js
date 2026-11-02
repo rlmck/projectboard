@@ -213,7 +213,9 @@
   }
 
   function wallBoardHtml(p, mirror) {
-    const overlay = p ? (boardShapeOverlayHtml(p, { mirror, dim: true }) || boardOverlayHtml(p, mirror)) : '';
+    // With nothing chosen the board is dimmed all over, as on the Circuits page.
+    const overlay = p ? (boardShapeOverlayHtml(p, { mirror, dim: true }) || boardOverlayHtml(p, mirror))
+      : `<div class="hold-layer">${wallDimOnlyHtml()}</div>`;
     return `<div class="board-wrap wall-board"><img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" />${overlay}</div>`;
   }
 
@@ -367,8 +369,9 @@
     wallRenderCircLit();
   }
 
-  // With no circuit chosen the board is dimmed all over, as the problem views dim
-  // around their holds (holdShapeLayerHtml's mask, here with no holds cut out).
+  // With no problem or circuit chosen the board is dimmed all over, as the problem
+  // views dim around their holds (holdShapeLayerHtml's mask, here with no holds cut
+  // out). Used by both the Problems and the Circuits page.
   function wallDimOnlyHtml() {
     return holdShapeLayerHtml({}, { dim: true })
       || '<svg class="hold-shape-layer hs-dim" viewBox="0 0 100 100" preserveAspectRatio="none"><rect width="100" height="100" fill="#000" opacity="0.62"/></svg>';
@@ -487,13 +490,17 @@
     || wallCreateName.trim() || createFeet !== 'any');
 
   // Create is offered only once the database says the wall key works.
+  // A failed ask (the network not up yet when the kiosk starts at 08:00) is asked
+  // again in a minute on its own, not only after the next good problems poll.
+  let wallKeyRetry = 0;
   function wallCheckKey() {
-    if (!WALL_KEY) return;
+    if (!WALL_KEY || wallKeyOk) return;
+    clearTimeout(wallKeyRetry);
     sb.rpc('wall_key_ok', { p_key: WALL_KEY }).then(({ data, error }) => {
-      if (error) return;               // offline, or db/35 not there yet: asked again at the next poll
+      if (error) { wallKeyRetry = setTimeout(wallCheckKey, 60 * 1000); return; }
       wallKeyOk = data === true;
       wallEl('wall-tab-create').hidden = !wallKeyOk;
-    });
+    }, () => { wallKeyRetry = setTimeout(wallCheckKey, 60 * 1000); });
   }
 
   function wallCreateOpen() {
@@ -644,7 +651,7 @@
       const code = error && error.message;
       showToast(WALL_SAVE_ERRORS[code] || 'Couldn’t save it — check the connection.', 'error');
       if (['name', 'name_taken', 'offensive'].includes(code)) wallKbOpen();
-      if (code === 'key') wallCheckKey();
+      if (code === 'key') { wallKeyOk = false; wallCheckKey(); }
       return;
     }
     allProblems.push(data);
