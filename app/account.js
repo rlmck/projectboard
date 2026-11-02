@@ -190,10 +190,11 @@
       on => showToast(on ? 'Added to favourites ♥' : 'Removed from favourites', 'success'));
   }
 
-  // ── Auth: nickname + passphrase accounts (db/30, plan.md) ─────────────────────
-  // No email and no Google. You sign up with a nickname and a four-word passphrase
-  // the app makes for you; Supabase Auth gets a placeholder email nobody ever sees
-  // or uses, and signing in looks it up by nickname (login_email()). Lose the
+  // ── Auth: nickname + PIN accounts (db/30, plan.md; PINs since 2 Nov 2026) ─────
+  // No email and no Google. You sign up with a nickname and a 4-digit PIN you
+  // choose (accounts made before 2 Nov 2026 have a four-word passphrase the app
+  // made, and keep it); Supabase Auth gets a placeholder email nobody ever sees or
+  // uses, and signing in looks it up by nickname (login_email()). Forget the PIN or
   // passphrase and only an admin can give you a new one (admin.js, the Edge
   // Function admin-reset-passphrase).
 
@@ -388,30 +389,28 @@
     getNickChecker('signup', 'signup-nick', 'signup-nick-check').run();
   }
 
-  // ── Passphrases ──────────────────────────────────────────────────────────────
-  // Four words from the EFF large wordlist (7,776 words, CC BY, credited on
-  // privacy.html; built by tools/make_wordlist.py), picked with
-  // crypto.getRandomValues: about 51.7 bits. Joined with hyphens. The Edge Function
-  // makes reset passphrases the same way from the same list.
-  let wordlistLoading = null;
-  function loadWordlist() {
-    if (!wordlistLoading) {
-      wordlistLoading = fetch('eff_large_wordlist.json')
-        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-        .then(j => {
-          if (!j || !Array.isArray(j.words) || j.words.length !== 7776) throw new Error('bad wordlist');
-          return j.words;
-        })
-        .catch(err => { wordlistLoading = null; throw err; });
-    }
-    return wordlistLoading;
-  }
-  async function makePassphrase() {
-    const words = await loadWordlist();
-    return Array.from({ length: 4 }, () => words[randomIndex(words.length)]).join('-');
-  }
-  // What people type at sign-in: any case, spaces or underscores between the words.
+  // ── PINs and passphrases ─────────────────────────────────────────────────────
+  // New accounts (2 Nov 2026) sign in with a 4-digit PIN. Accounts made before
+  // then keep their four-word passphrase (from the EFF large wordlist), and both
+  // sign in through the same field: a passphrase is always words, so exactly four
+  // digits can only be a PIN.
+  //
+  // Supabase Auth won't take a 4-character password (this project's minimum is 15,
+  // and Supabase's own floor is 6), so a PIN is padded into a fixed longer form
+  // before it's sent, and that is what Supabase stores (hashed). The padding is
+  // public and adds no secrecy: there are 10,000 PINs, by design (Ross, 2 Nov 2026:
+  // a small gym, accounts hold no personal data; no lockout or weak-PIN blocking).
+  // The robot check on sign-in is the only brake on guessing.
+  // KEEP IN SYNC with pinPassword() in supabase/functions/admin-reset-passphrase.
+  const PIN_RE = /^[0-9]{4}$/;
+  const pinPassword = pin => 'symmetryboard-pin-' + pin;
+  // A passphrase as people type it: any case, spaces or underscores between the words.
   const normalisePassphrase = s => String(s || '').trim().toLowerCase().replace(/[\s_]+/g, '-').replace(/-{2,}/g, '-');
+  // What the sign-in field holds, as Supabase expects it.
+  function signInSecret(raw) {
+    const compact = String(raw || '').replace(/\s+/g, '');
+    return PIN_RE.test(compact) ? pinPassword(compact) : normalisePassphrase(raw);
+  }
 
   // Copy text to the clipboard, falling back to selecting it (then long-press → Copy).
   async function copyText(text, el, btn) {
@@ -431,54 +430,69 @@
     }
   }
 
+  // ── The iPhone Safari note ──────────────────────────────────────────────────
+  // An app added to the Home Screen on iPhone has its own storage, separate from
+  // Safari's, so someone who signs in in Safari and then installs has to sign in
+  // once more inside the app. Shown on the sign-in and create screens in iPhone
+  // Safari only (not Chrome/Firefox/Edge on iPhone, not in-app browsers), never in
+  // the installed app (navigator.standalone), until it's dismissed.
+  const IOS_SIGNIN_NOTE_KEY = 'pb-ios-signin-note-dismissed';
+  function iphoneSafariInBrowser() {
+    const ua = navigator.userAgent;
+    if (!/iPhone/.test(ua) || !/Safari\//.test(ua)) return false;
+    if (/CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|GSA\/|DuckDuckGo|YaBrowser|Instagram|FBAN|FBAV|FB_IAB|Snapchat/.test(ua)) return false;
+    return navigator.standalone === false;
+  }
+  function updateIosSigninNote() {
+    // lsGet/lsSet (core.js) wrap localStorage in try/catch.
+    document.getElementById('auth-ios-note').hidden = !(iphoneSafariInBrowser() && lsGet(IOS_SIGNIN_NOTE_KEY) !== '1');
+  }
+  function dismissIosSigninNote() {
+    lsSet(IOS_SIGNIN_NOTE_KEY, '1');
+    document.getElementById('auth-ios-note').hidden = true;
+  }
+
   // ── The #auth screen ─────────────────────────────────────────────────────────
   const authError = msg => { document.getElementById('auth-error').textContent = msg || ''; };
 
-  // Switch step. Leaving step 2 forgets the passphrase (a new one is made next time).
+  // Switch between creating an account (the default: most people arriving here
+  // don't have one yet) and signing in. Switching clears the secrets typed.
   function setAuthMode(mode) {
-    authMode = mode;
-    const steps = { signin: 'auth-step-signin', signup: 'auth-step-nick', 'signup-save': 'auth-step-save' };
-    Object.entries(steps).forEach(([m, id]) => { document.getElementById(id).hidden = m !== mode; });
+    authMode = mode === 'signin' ? 'signin' : 'signup';
+    document.getElementById('auth-step-signin').hidden = authMode !== 'signin';
+    document.getElementById('auth-step-signup').hidden = authMode !== 'signup';
     const copy = {
-      signin:        ['Sign in', 'Accounts let you set problems and track your sends. Browsing and casting work without one.', 'Sign in', 'New here?', 'Create an account'],
-      signup:        ['Pick a nickname', 'No email needed. Step 1 of 2.', 'Next', 'Already have an account?', 'Sign in'],
-      'signup-save': ['Save your passphrase', 'Step 2 of 2. You’ll need this to sign in.', 'Create account', 'Wrong nickname?', 'Go back'],
-    }[mode];
+      signin: ['Sign in', 'Welcome back. Use your nickname and your PIN (or your passphrase, if you have an older account).', 'Sign in', 'New here?', 'Create an account'],
+      signup: ['Create an account', 'Set problems and track your sends. No email needed: just a nickname and a 4-digit PIN.', 'Create account', 'Already have an account?', 'Sign in'],
+    }[authMode];
     document.getElementById('auth-title').textContent = copy[0];
     document.getElementById('auth-sub').textContent = copy[1];
     document.getElementById('auth-submit').textContent = copy[2];
     document.getElementById('auth-toggle-text').textContent = copy[3];
     document.getElementById('auth-toggle-link').textContent = copy[4];
     authError('');
-    if (mode !== 'signup-save') forgetPassphrase();
-    if (mode === 'signup') hideCaptcha(); else showCaptcha();
+    clearAuthSecrets();
+    updateIosSigninNote();
+    showCaptcha();
     updateAuthSubmit();
   }
 
-  function forgetPassphrase() {
-    signupPass = '';
-    document.getElementById('signup-pass-show').textContent = '';
-    document.getElementById('signup-pass-field').value = '';
-    document.getElementById('signup-user-field').value = '';
-    document.getElementById('signup-saved').checked = false;
+  function clearAuthSecrets() {
+    ['signin-pass', 'signup-pin', 'signup-pin2'].forEach(id => { document.getElementById(id).value = ''; });
+    setShowPin('signin-show', ['signin-pass'], false);
+    setShowPin('signup-pin-show', ['signup-pin', 'signup-pin2'], false);
+    showPinCheck('');
   }
 
-  // The toggle link: sign in ↔ sign up; on step 2 it goes back to step 1.
-  function authToggle() {
-    if (authMode === 'signin') setAuthMode('signup');
-    else if (authMode === 'signup') setAuthMode('signin');
-    else setAuthMode('signup');
-  }
+  function authToggle() { setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); }
 
-  // The main button needs a passed robot check (sign-in and step 2) and, on step 2,
-  // the "I've saved it" box. (A busy button stays disabled until its request ends.)
+  // The main button needs a passed robot check. (A busy button stays disabled
+  // until its request ends.) Everything else is checked on submit, with a message
+  // saying what to fix, rather than a button that won't press.
   function updateAuthSubmit() {
     const btn = document.getElementById('auth-submit');
     if (btn.dataset.busy) return;
-    let ready = true;
-    if (authMode === 'signin') ready = !!captchaToken;
-    if (authMode === 'signup-save') ready = !!captchaToken && !!signupPass && document.getElementById('signup-saved').checked;
-    btn.disabled = !ready;
+    btn.disabled = !captchaToken;
   }
   function setAuthBusy(on) {
     const btn = document.getElementById('auth-submit');
@@ -489,61 +503,94 @@
   async function authSubmit(e) {
     if (e) e.preventDefault();
     if (document.getElementById('auth-submit').disabled) return;
-    if (authMode === 'signin') return signIn();
-    if (authMode === 'signup') return signupNext();
-    return signupCreate();
+    return authMode === 'signin' ? signIn() : signupCreate();
   }
 
-  // Sign-up step 1 → 2: the nickname must pass, then a passphrase is made.
-  async function signupNext() {
+  // ── Create account: nickname, PIN, PIN again ─────────────────────────────────
+  const PIN_MSG = {
+    short:    'Your PIN needs 4 numbers.',
+    again:    'Type your PIN again in the second box.',
+    mismatch: 'The two PINs don’t match. Type them again.',
+  };
+  function showPinCheck(text, ok) {
+    const out = document.getElementById('signup-pin-check');
+    out.textContent = text || '';
+    out.classList.toggle('ok', !!ok);
+  }
+  // null when the two PINs are fine, else a PIN_MSG code.
+  function pinProblem() {
+    const a = document.getElementById('signup-pin').value;
+    const b = document.getElementById('signup-pin2').value;
+    if (!PIN_RE.test(a)) return 'short';
+    if (!b) return 'again';
+    if (a !== b) return 'mismatch';
+    return null;
+  }
+  // As they type: digits only, at most 4; say "don't match" once both are full,
+  // and a tick when they match. Nothing nags while they're still typing.
+  function pinInput(e) {
+    const el = e.target;
+    const clean = el.value.replace(/\D/g, '').slice(0, 4);
+    if (clean !== el.value) el.value = clean;
+    const a = document.getElementById('signup-pin').value;
+    const b = document.getElementById('signup-pin2').value;
+    if (a.length === 4 && b.length === 4) showPinCheck(a === b ? '✓ PINs match' : PIN_MSG.mismatch, a === b);
+    else showPinCheck('');
+  }
+
+  // Show/Hide for a secret field (or the two PIN fields together).
+  function setShowPin(btnId, inputIds, show) {
+    inputIds.forEach(id => { document.getElementById(id).type = show ? 'text' : 'password'; });
+    const btn = document.getElementById(btnId);
+    btn.textContent = show ? 'Hide' : 'Show';
+    btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+  }
+  function toggleShowPass() {
+    setShowPin('signin-show', ['signin-pass'], document.getElementById('signin-pass').type === 'password');
+  }
+  function toggleShowPin() {
+    setShowPin('signup-pin-show', ['signup-pin', 'signup-pin2'], document.getElementById('signup-pin').type === 'password');
+  }
+
+  // Create the account. Nothing exists until this succeeds.
+  async function signupCreate() {
     authError('');
     setAuthBusy(true);
     const code = await getNickChecker('signup', 'signup-nick', 'signup-nick-check').run();
     if (code) {
       setAuthBusy(false);
+      // The message is under the nickname already, except for an empty field.
       if (code === 'empty') authError('Pick a nickname first.');
+      document.getElementById('signup-nick').focus();
       return;
     }
-    let pass;
-    try { pass = await makePassphrase(); }
-    catch (err) {
-      console.warn('wordlist load failed', err);
+    const pinCode = pinProblem();
+    if (pinCode) {
       setAuthBusy(false);
-      authError('Couldn’t make your passphrase. Check your connection and try again.');
+      showPinCheck(PIN_MSG[pinCode]);
+      if (pinCode === 'mismatch') document.getElementById('signup-pin2').value = '';
+      document.getElementById(pinCode === 'short' ? 'signup-pin' : 'signup-pin2').focus();
       return;
     }
-    setAuthBusy(false);
-    signupNick = document.getElementById('signup-nick').value.trim();
-    setAuthMode('signup-save');
-    signupPass = pass;
-    document.getElementById('signup-nick-show').textContent = signupNick;
-    document.getElementById('signup-pass-show').textContent = pass;
-    document.getElementById('signup-user-field').value = signupNick;
-    document.getElementById('signup-pass-field').value = pass;
-    updateAuthSubmit();
-  }
-
-  // Sign-up step 2: create the account. Nothing exists until this succeeds.
-  async function signupCreate() {
-    authError('');
-    if (!signupNick || !signupPass) { setAuthMode('signup'); return; }
-    setAuthBusy(true);
+    const nick = document.getElementById('signup-nick').value.trim();
+    const pin = document.getElementById('signup-pin').value;
     const { data, error } = await sb.auth.signUp({
       email: placeholderEmail(),
-      password: signupPass,
-      options: { data: { nickname: signupNick }, captchaToken },
+      password: pinPassword(pin),
+      // pin: true tells the admin reset (the Edge Function) to give a new PIN, not words.
+      options: { data: { nickname: nick, pin: true }, captchaToken },
     });
     resetCaptcha();
     if (error) {
       console.warn('sign-up failed', error);
       // Supabase hides the database's reason ("Database error saving new user"),
       // so ask whether the nickname is still free.
-      let code = null;
-      try { code = await nicknameProblem(signupNick); } catch (e) {}
+      let nickCode = null;
+      try { nickCode = await nicknameProblem(nick); } catch (e) {}
       setAuthBusy(false);
-      if (code) {
-        setAuthMode('signup');
-        authError(code === 'taken' ? 'That nickname was just taken. Pick another.' : NICK_MSG[code]);
+      if (nickCode) {
+        authError(nickCode === 'taken' ? 'That nickname was just taken. Pick another.' : NICK_MSG[nickCode]);
+        getNickChecker('signup', 'signup-nick', 'signup-nick-check').run();
         return;
       }
       authError(authErrorMessage(error));
@@ -554,18 +601,19 @@
       authError('Your account was made, but you’re not signed in. Try signing in.');
       return;
     }
-    const nick = signupNick;
-    signupNick = '';
-    forgetPassphrase();
+    clearAuthSecrets();
+    document.getElementById('signup-nick').value = '';
+    getNickChecker('signup', 'signup-nick', 'signup-nick-check').clear();
     showToast('Welcome, ' + nick, 'success');
     location.hash = '#list';   // onAuthStateChange loads the profile
   }
 
+  // ── Sign in: nickname + PIN or passphrase ───────────────────────────────────
   async function signIn() {
     authError('');
     const nick = document.getElementById('signin-nick').value.trim();
-    const password = normalisePassphrase(document.getElementById('signin-pass').value);
-    if (!nick || !password) { authError('Enter your nickname and passphrase.'); return; }
+    const password = signInSecret(document.getElementById('signin-pass').value);
+    if (!nick || !password) { authError('Enter your nickname and your PIN.'); return; }
     setAuthBusy(true);
     const { data: email, error: lookupErr } = await sb.rpc('login_email', { nick });
     if (lookupErr) {
@@ -574,7 +622,7 @@
       authError('Couldn’t sign in — check your connection.');
       return;
     }
-    if (!email) {   // unknown nickname: the same message as a wrong passphrase
+    if (!email) {   // unknown nickname: the same message as a wrong PIN
       setAuthBusy(false);
       authError(WRONG_LOGIN);
       return;
@@ -587,7 +635,7 @@
     location.hash = '#list';   // onAuthStateChange loads the profile, ticks and favourites
   }
 
-  const WRONG_LOGIN = 'That nickname and passphrase don’t match.';
+  const WRONG_LOGIN = 'That doesn’t match. Check your nickname and PIN (or passphrase) and try again.';
   function authErrorMessage(error) {
     const code = error && error.code;
     if (code === 'invalid_credentials') return WRONG_LOGIN;
@@ -597,15 +645,6 @@
     }
     if (error && (error.name === 'AuthRetryableFetchError' || error.status === 0)) return 'Couldn’t reach the server — check your connection.';
     return 'Something went wrong. Please try again.';
-  }
-
-  function toggleShowPass() {
-    const input = document.getElementById('signin-pass');
-    const btn = document.getElementById('signin-show');
-    const show = input.type === 'password';
-    input.type = show ? 'text' : 'password';
-    btn.textContent = show ? 'Hide' : 'Show';
-    btn.setAttribute('aria-pressed', show ? 'true' : 'false');
   }
 
   // ── Session ──────────────────────────────────────────────────────────────────
@@ -870,10 +909,12 @@
         <div class="shell-card profile-card">
           <div class="shell-icon">${userSvg}</div>
           <div class="shell-title">Browsing as guest</div>
-          <div class="shell-sub">Sign in to set problems and track your sends. No email needed: just a nickname.</div>
-          <button class="btn-block btn-primary" id="profile-signin">Sign in</button>
+          <div class="shell-sub">Make an account to set problems and track your sends. No email needed: just a nickname and a 4-digit PIN.</div>
+          <button class="btn-block btn-primary" id="profile-signup">Create an account</button>
+          <button class="btn-block btn-ghost" id="profile-signin">I already have an account</button>
         </div>`;
-      document.getElementById('profile-signin').addEventListener('click', () => { location.hash = '#auth'; });
+      document.getElementById('profile-signup').addEventListener('click', () => { location.hash = '#auth'; });
+      document.getElementById('profile-signin').addEventListener('click', () => { location.hash = '#auth/signin'; });
     }
   }
 

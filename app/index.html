@@ -394,10 +394,9 @@
 </section>
 
 <!-- ══ AUTH VIEW ══════════════════════════════════════════════════════
-     Nickname + passphrase accounts (db/30, account.js). Three steps in one card:
-       signin       nickname + passphrase + robot check
-       signup       step 1: pick a nickname (live check, Suggest one)
-       signup-save  step 2: save the generated passphrase, then Create account
+     Nickname + PIN accounts (db/30, account.js). Two modes in one card:
+       signup  (the default, #auth)  nickname (live check, Suggest one) + PIN + PIN again + robot check
+       signin  (#auth/signin)        nickname + PIN or passphrase (older accounts) + robot check
      No email anywhere: Supabase gets a placeholder address the app makes up.
      One form, so Enter submits and password managers see the fields. -->
 <section id="view-auth" class="view">
@@ -406,56 +405,56 @@
       <div class="shell-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
       </div>
-      <div class="shell-title" id="auth-title">Sign in</div>
-      <div class="shell-sub" id="auth-sub">Accounts let you set problems and track your sends. Browsing and casting work without one.</div>
+      <div class="shell-title" id="auth-title">Create an account</div>
+      <div class="shell-sub" id="auth-sub">Set problems and track your sends. No email needed: just a nickname and a 4-digit PIN.</div>
+
+      <!-- iPhone Safari only, not in the installed app, until dismissed (account.js) -->
+      <div class="auth-ios-note" id="auth-ios-note" hidden>
+        <p>Adding this to your Home Screen? You’ll need to sign in once more inside the app, just once.</p>
+        <button class="auth-ios-x" id="auth-ios-dismiss" type="button" aria-label="Dismiss">×</button>
+      </div>
 
       <!-- Sign in -->
-      <div class="auth-step" id="auth-step-signin">
+      <div class="auth-step" id="auth-step-signin" hidden>
         <input class="fld" id="signin-nick" type="text" placeholder="Nickname" maxlength="20"
                autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" />
         <div class="fld-wrap">
-          <input class="fld" id="signin-pass" type="password" placeholder="Passphrase (four words)"
+          <input class="fld" id="signin-pass" type="password" placeholder="PIN (or passphrase)"
                  autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" />
           <button class="fld-show" id="signin-show" type="button" aria-pressed="false">Show</button>
         </div>
-        <p class="auth-note">Lost your passphrase? Ask a member of staff: they can give you a new one.</p>
+        <p class="auth-note">Forgotten your PIN? Ask a member of staff: they can give you a new one.</p>
       </div>
 
-      <!-- Sign up, step 1: the nickname -->
-      <div class="auth-step" id="auth-step-nick" hidden>
+      <!-- Create an account -->
+      <div class="auth-step" id="auth-step-signup">
         <p class="auth-rule"><b>Use a nickname, not your real name.</b> Don’t use your email, phone number or social media name.</p>
         <div class="nick-row">
           <input class="fld" id="signup-nick" type="text" placeholder="Nickname" maxlength="20"
-                 autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" />
+                 autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" />
           <button class="btn-ghost nick-suggest" id="signup-suggest" type="button">Suggest one</button>
         </div>
         <div class="nick-check" id="signup-nick-check" aria-live="polite"></div>
         <p class="auth-note">3 to 20 letters, numbers, _ or -. If you set a problem, your nickname is shown on it.</p>
+        <div class="fld-wrap">
+          <input class="fld pin-fld" id="signup-pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4"
+                 placeholder="Choose a 4-digit PIN" autocomplete="new-password"
+                 passwordrules="minlength: 4; maxlength: 4; required: digit;" aria-label="Choose a 4-digit PIN" />
+          <button class="fld-show" id="signup-pin-show" type="button" aria-pressed="false">Show</button>
+        </div>
+        <input class="fld pin-fld" id="signup-pin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4"
+               placeholder="Type your PIN again" autocomplete="new-password"
+               passwordrules="minlength: 4; maxlength: 4; required: digit;" aria-label="Type your PIN again" />
+        <div class="nick-check" id="signup-pin-check" aria-live="polite"></div>
+        <p class="auth-note">Remember your PIN: you’ll need it to sign in. If you forget it, ask a member of staff for a new one.</p>
         <p class="auth-note">By creating an account you agree to use a nickname, not your real name. <a class="link" href="privacy.html">Privacy</a></p>
       </div>
 
-      <!-- Sign up, step 2: save the passphrase -->
-      <div class="auth-step" id="auth-step-save" hidden>
-        <!-- For the phone's password manager: it can offer to save the pair. -->
-        <input class="sr-only" id="signup-user-field" type="text" autocomplete="username" tabindex="-1" aria-hidden="true" readonly />
-        <input class="sr-only" id="signup-pass-field" type="password" autocomplete="new-password" tabindex="-1" aria-hidden="true" readonly />
-        <p class="auth-note">Your nickname: <b id="signup-nick-show"></b></p>
-        <div class="pass-card">
-          <div class="pass-words" id="signup-pass-show"></div>
-          <button class="btn-ghost pass-copy" id="signup-copy" type="button">Copy</button>
-        </div>
-        <p class="pass-warn">This is your passphrase. Write it down or save it somewhere safe now: it won’t be shown again. <b>If you lose your passphrase and no admin can reset it, your account is gone.</b></p>
-        <label class="check-row">
-          <input type="checkbox" id="signup-saved" />
-          <span>I’ve saved my passphrase somewhere safe</span>
-        </label>
-      </div>
-
-      <!-- Cloudflare Turnstile (the robot check) for sign-in and step 2 -->
+      <!-- Cloudflare Turnstile (the robot check), for both modes -->
       <div class="auth-captcha" id="auth-captcha"></div>
       <div class="auth-error" id="auth-error" aria-live="polite"></div>
-      <button class="btn-block btn-primary" id="auth-submit" type="submit">Sign in</button>
-      <div class="auth-toggle"><span id="auth-toggle-text">New here?</span> <a id="auth-toggle-link" role="button" tabindex="0">Create an account</a></div>
+      <button class="btn-block btn-primary" id="auth-submit" type="submit">Create account</button>
+      <div class="auth-toggle"><span id="auth-toggle-text">Already have an account?</span> <a id="auth-toggle-link" role="button" tabindex="0">Sign in</a></div>
       <button class="btn-block btn-ghost" id="auth-back" type="button">Back to problems</button>
     </form>
   </main>
@@ -866,16 +865,17 @@
   </div>
 </div>
 
-<!-- ══ NEW PASSPHRASE MODAL (admins) ══════════════════════════════════
-     Two stages: confirm, then the new passphrase, shown once. -->
+<!-- ══ NEW PIN / PASSPHRASE MODAL (admins) ════════════════════════════
+     Two stages: confirm, then the new PIN (accounts made since 2 Nov 2026) or
+     passphrase (older accounts), shown once. The Edge Function decides which. -->
 <div class="modal-overlay" id="user-reset-modal">
-  <div class="modal" role="dialog" aria-modal="true" aria-label="New passphrase">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="New PIN or passphrase">
     <div class="modal-header">
-      <div class="modal-title" id="user-reset-title">New passphrase?</div>
+      <div class="modal-title" id="user-reset-title">New PIN?</div>
     </div>
     <div class="name-body">
       <div id="user-reset-ask">
-        <p class="shell-sub" style="margin:0 0 16px">Give <b id="user-reset-name"></b> a new passphrase? Their old one stops working, and they’re signed out on every device. Only do this when you’re sure it’s them: check their recent activity with them first.</p>
+        <p class="shell-sub" style="margin:0 0 16px">Give <b id="user-reset-name"></b> a new PIN? (Older accounts get a new passphrase instead.) Their old one stops working, and they’re signed out on every device. Only do this when you’re sure it’s them: check their recent activity with them first.</p>
         <div class="auth-error" id="user-reset-error"></div>
         <div class="modal-actions">
           <button class="btn-block btn-ghost" id="user-reset-cancel">Cancel</button>
@@ -887,7 +887,7 @@
           <div class="pass-words" id="user-reset-pass"></div>
           <button class="btn-ghost pass-copy" id="user-reset-copy" type="button">Copy</button>
         </div>
-        <p class="pass-warn"><b>Read it to them now. It won’t be shown again.</b> They sign in with their nickname and this passphrase.</p>
+        <p class="pass-warn"><b>Read it to them now. It won’t be shown again.</b> <span id="user-reset-how"></span></p>
         <p class="shell-sub" id="user-reset-note" style="margin:0 0 12px" hidden></p>
         <button class="btn-block btn-primary" id="user-reset-close">Done</button>
       </div>

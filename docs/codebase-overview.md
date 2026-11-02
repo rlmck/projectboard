@@ -31,7 +31,7 @@ A PWA for the symmetry board at The Hangout, Portland (near Weymouth, UK). The b
  phone (PWA) ──static files──▶ Cloudflare Workers (static assets, built from main/dev)
      │
      ├──REST / Auth / Storage──▶ Supabase (project uqirowyfqwiceyjznosl, London)
-     │                             Postgres + RLS · Auth (nickname + passphrase) · Storage · one Edge Function
+     │                             Postgres + RLS · Auth (nickname + PIN) · Storage · one Edge Function
      │
      └──Realtime broadcast────▶ channel board:HangoutPortland, event cast_problem
                                      │
@@ -128,8 +128,8 @@ These are plain `<script>` tags, not ES modules. There's no build step and no fr
 | `state.js` | Supabase client + cast channel; grade ladders (`GRADE_ORDER`, `SPORT_GRADE_ORDER`, `gradeRank`, `fontGrade`); **all shared mutable state** (`allProblems`, `session`, `profile`, `HOLD_MAP`, `myTicks*`, filters, create/circuit state, leaderboard cache) |
 | `core.js` | Escaping, toast, name/setter/search helpers, hold order + role classification, dot and shape overlays, `boardPct` hit-testing, fullscreen controller, **routing** (`parseHash`, `setView`, `router`, `goBack`) |
 | `problems.js` | Problem list/filters/cards, detail, swipe, info modal, **geofence + `castByName`**, board data loaders (`loadBoardConfig`, `loadHoldMap`, `loadMirrorMap`, `loadHoldShapes`), problem loading, tick button, admin delete + grade edit |
-| `admin.js` | `#admin` hub: user list (nickname search) and detail (recent ticks), rename, new passphrase (the Edge Function), promote/demote, delete user |
-| `account.js` | Ticks, favourites, filter-pill sync, **auth** (nickname + passphrase sign-in and two-step sign-up, Turnstile, the nickname checker, passphrase generation, sign-out), change-nickname modal, profile page (Ranks switch, delete my account) |
+| `admin.js` | `#admin` hub: user list (nickname search) and detail (recent ticks), rename, new PIN or passphrase (the Edge Function), promote/demote, delete user |
+| `account.js` | Ticks, favourites, filter-pill sync, **auth** (create an account with a nickname + 4-digit PIN, sign in with a PIN or an older passphrase, `pinPassword()`, Turnstile, the nickname checker, the iPhone Safari note, sign-out), change-nickname modal, profile page (Ranks switch, delete my account) |
 | `authoring.js` | Create/edit problem (tap-to-cycle roles, finish zone, invert-on-save, the shared checks `createProblemMissing`/`createStatus`/`createLayerHtml`), **the live LEDs while setting** (`previewEdited`…`previewEnd`, contract §9), the hold-outline editor (`#outlines`: pinch/pan, drag/add/delete points, nudge, roundness, preview, draft, **Publish**), circuit helpers |
 | `circuits.js` | Circuits list, detail (swipe, info sheet), the circuit cast (the Cast sheet, the run screen, `circuit_logs`), create, delete |
 | `challenge.js` | Challenges (db/31, section 4.6a): loading, the circuit-detail link, the `#challenge` view (rules, the timed attempt, summary, save with retry, your best and history), and the challenge boards on Ranks (tabs, compare chart, admin delete) |
@@ -361,26 +361,28 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 ## 6. Auth
 
-**Nickname + passphrase accounts** (db/30, `pb-v108`; plan.md). Under-18s use the app, so an account holds no personal data: no email, no real name, no photo. **Google sign-in, email sign-up and password reset are gone.**
+**Nickname + PIN accounts** (db/30, `pb-v108`; PINs since 2 Nov 2026). Under-18s use the app, so an account holds no personal data: no email, no real name, no photo. **Google sign-in, email sign-up and password reset are gone.** Accounts made before 2 Nov 2026 have a four-word passphrase and keep it; nobody is moved to a PIN and no switch is offered.
 
-**Sign-up** (`#auth`, two steps, `account.js`):
-1. **Pick a nickname.** "Use a nickname, not your real name." A **Suggest one** button (`NICK_ADJ` × `NICK_ANIMAL`, e.g. `Crimpy_Otter`; every pair was checked to pass the rules) and a live check (`nickChecker()` → `nickname_problem()`).
-2. **Save your passphrase.** Four words from the EFF large wordlist (`app/eff_large_wordlist.json`, from `tools/make_wordlist.py`), picked with `crypto.getRandomValues` and rejection sampling (≈51.7 bits), joined with hyphens. Shown once, with Copy, the warning *"If you lose your passphrase and no admin can reset it, your account is gone"*, an "I've saved it" checkbox and Turnstile. **The account is only created on Create account.**
+**Create an account** (`#auth`, the default mode; `#auth/signin` opens Sign in; `account.js`). One step: a **nickname** ("Use a nickname, not your real name"; **Suggest one**, `NICK_ADJ` × `NICK_ANIMAL`, e.g. `Crimpy_Otter`; a live check, `nickChecker()` → `nickname_problem()`), a **4-digit PIN** and the PIN again (`type="password"`, `inputmode="numeric"`, digits only, at most 4; "✓ PINs match" or "The two PINs don't match" once both are full), Turnstile, then **Create account**. What's wrong is said on submit rather than by a button that won't press. The signed-out Profile leads with **Create an account**, then "I already have an account".
 
-Behind the scenes: `signUp({ email: 'u-<16 base32>@users.invalid', password, options: { data: { nickname }, captchaToken } })`. `.invalid` never receives mail, and nothing is ever sent: **Confirm email, reset and every security notification must stay off** (Supabase only checks an address's format at sign-up; its domain/MX checks run only when mail is sent; audit §10a). The trigger `handle_new_user()` (db/30) validates the nickname and inserts the profile with **no** `on conflict`, so a clash fails the whole sign-up; Supabase shows only "Database error saving new user", so the app asks `nickname_problem()` why.
+**The PIN as Supabase sees it:** Supabase Auth won't take a 4-character password (this project's minimum is 15; Supabase's floor is 6), so the app sends `pinPassword(pin)` = `'symmetryboard-pin-' + pin` (22 characters). The padding is public and adds no secrecy: 10,000 PINs, with **no lockout, rate limit or weak-PIN blocking, by design** (Ross, 2 Nov 2026: a small gym, no personal data). Turnstile on sign-in is the only brake. **Keep `pinPassword()` in step between `account.js` and the Edge Function.** No Auth setting changed for it.
+
+Behind the scenes: `signUp({ email: 'u-<16 base32>@users.invalid', password: pinPassword(pin), options: { data: { nickname, pin: true }, captchaToken } })`. `pin: true` in `user_metadata` marks a PIN account for the admin reset; a user could change their own metadata, and the only effect would be getting a PIN rather than words from a reset. `.invalid` never receives mail, and nothing is ever sent: **Confirm email, reset and every security notification must stay off** (Supabase only checks an address's format at sign-up; its domain/MX checks run only when mail is sent; audit §10a). The trigger `handle_new_user()` (db/30) validates the nickname and inserts the profile with **no** `on conflict`, so a clash fails the whole sign-up; Supabase shows only "Database error saving new user", so the app asks `nickname_problem()` why.
 
 **Keep in sync:** the placeholder pattern lives in `account.js` (`PLACEHOLDER_DOMAIN`, `placeholderEmail()`) and in db/30 (`auth_users_placeholder_only()`, `login_email()`).
 
-**Sign-in:** nickname + passphrase + Turnstile. `login_email(nick)` → `signInWithPassword`. The passphrase is normalised first (lower case, spaces/underscores → hyphens). An unknown nickname and a wrong passphrase get the same message.
+**Sign-in:** nickname + one secret field ("PIN (or passphrase)") + Turnstile. `login_email(nick)` → `signInWithPassword`. `signInSecret()`: exactly 4 digits (spaces ignored) is a PIN and goes through `pinPassword()`; anything else is a passphrase, normalised as before (lower case, spaces/underscores → hyphens). A passphrase is always words, so the two can't collide. An unknown nickname and a wrong PIN or passphrase get the same message.
 
-**Turnstile** (Cloudflare's robot check): Supabase's CAPTCHA protection covers **password sign-in as well as sign-up** (GoTrue only skips it for refresh, PKCE and id-token grants), so both forms carry it. The site key is in `account.js` (`TURNSTILE_SITE_KEY`, public); the secret key lives only in the Supabase dashboard. The script loads only when `#auth` opens. CSP: `script-src` and `frame-src https://challenges.cloudflare.com`.
+**iPhone Safari note:** on the sign-in and create screens, in iPhone Safari only (not Chrome/Firefox/Edge on iPhone or in-app browsers) and only when `navigator.standalone === false`: *"Adding this to your Home Screen? You'll need to sign in once more inside the app, just once."* (an installed iPhone app has its own storage). Dismissed for good with × (`pb-ios-signin-note-dismissed`, through `lsGet`/`lsSet`).
 
-**Lost passphrase:** an admin opens the account (`#admin/user/<id>`), checks its **recent activity** with the person, and taps **Generate new passphrase**. That calls the Edge Function `admin-reset-passphrase` with the admin's own session; it checks the caller is an admin, sets four new words, deletes the account's sessions (signed out everywhere; an access token already issued lasts up to an hour), logs `reset_passphrase`, and returns the words **once**. The service-role key exists only inside the function.
+**Turnstile** (Cloudflare's robot check): Supabase's CAPTCHA protection covers **password sign-in as well as sign-up** (GoTrue only skips it for refresh, PKCE and id-token grants), so both modes carry it. The site key is in `account.js` (`TURNSTILE_SITE_KEY`, public); the secret key lives only in the Supabase dashboard. The script loads only when `#auth` opens. CSP: `script-src` and `frame-src https://challenges.cloudflare.com`.
+
+**Forgotten PIN or passphrase:** an admin opens the account (`#admin/user/<id>`), checks its **recent activity** with the person, and taps **Give a new PIN**. That calls the Edge Function `admin-reset-passphrase` with the admin's own session; it checks the caller is an admin, reads the account's `user_metadata` (read only): `pin: true` gets a new 4-digit PIN (stored as `pinPassword()`), anything else four new EFF words (`eff_large_wordlist.ts`, from `tools/make_wordlist.py`) as before. It deletes the account's sessions (signed out everywhere; an access token already issued lasts up to an hour), logs `reset_passphrase` (for both), and returns `{ passphrase, kind: 'pin' | 'passphrase', signedOut }` **once**; the sheet says "New PIN for X" or "New passphrase for X". The service-role key exists only inside the function. Deploy: `npx supabase functions deploy admin-reset-passphrase --project-ref uqirowyfqwiceyjznosl --use-api` (Verify JWT stays on).
 
 **Profile:** the nickname (Change nickname, the same rules), **Show me on Ranks** (default off; covers Ranks only, setter names are always shown), points, ticks, hardest send, Sign out, and **Delete my account and all my data** (`delete_my_account()`: account, ticks, favourites and points go; problems and circuits stay with the nickname; the last admin is refused).
 
 **Session state:**
-- `session`, `profile` (`id, username, is_admin, is_public`), `authReady` (in `state.js`); `authMode`, `signupNick`, `signupPass` for the sign-up steps (the passphrase is memory-only and cleared on leaving step 2; a service-worker update waits while step 2 is open).
+- `session`, `profile` (`id, username, is_admin, is_public`), `authReady` (in `state.js`); `authMode` (`'signup'` or `'signin'`). The PINs typed live only in the fields, cleared on switching mode; a service-worker update waits while a PIN is typed on Create.
 - `onAuthStateChange` reloads the profile, ticks and faves on every event, and clears them on sign-out (with the cached admin member list).
 - **Sign-out is this device only** (`signOut({ scope: 'local' })`, Ross, 19 Sep 2026). supabase-js drops the local session even if the server call fails, so `doSignOut` judges success by whether a session is left.
 - **An admin write that RLS refuses** (grade edit, edit holds: no error, 0 rows) shows an error and calls `recheckAdmin()`, which re-reads the profile so a demoted admin loses the admin controls without a reload.
@@ -388,7 +390,7 @@ Behind the scenes: `signUp({ email: 'u-<16 base32>@users.invalid', password, opt
 
 **The admin model:**
 - Admin = `profiles.is_admin`. Set it in the SQL editor, or in-app through `admin_set_admin`. **Nobody can promote themselves.**
-- Admins can rename anyone (`admin_rename_user`, reserved words allowed), reset a passphrase (the Edge Function), promote/demote and delete members. **Every one of those is logged** in `admin_actions` (`select * from admin_actions order by created_at desc;` in the SQL editor; there's no in-app viewer).
+- Admins can rename anyone (`admin_rename_user`, reserved words allowed), give a new PIN or passphrase (the Edge Function), promote/demote and delete members. **Every one of those is logged** in `admin_actions` (`select * from admin_actions order by created_at desc;` in the SQL editor; there's no in-app viewer).
 - Admins bypass the geofence. **On staging too, which shares the live DB.**
 - "Add user" in the Supabase dashboard no longer works (it sends no nickname). Accounts only come from the app.
 
@@ -421,7 +423,7 @@ Behind the scenes: `signUp({ email: 'u-<16 base32>@users.invalid', password, opt
 | Service | What's configured | Notes |
 |---|---|---|
 | Cloudflare | Worker `projectboard` (git-connected, build `bash build.sh`, deploy `npx wrangler deploy`, non-production branch builds on); custom domain `symmetryboard.co.uk`; Registrar; Web Analytics (cookieless, auto-injected, so the CSP must allow its beacon); Email Routing `hello@symmetryboard.co.uk` → Ross's Gmail; `www` → apex redirect (done 10 Sep 2026) | ✅ **Always Use HTTPS** on (19 Oct 2026): `http://symmetryboard.co.uk` answers 301 → `https://` |
-| Supabase | Project `uqirowyfqwiceyjznosl` (London): DB, Auth (nickname + passphrase on the Email provider with placeholder addresses, confirmation off, CAPTCHA via Turnstile), Storage `board`, Realtime, the Edge Function `admin-reset-passphrase` | ✅ db/30 + function live, CAPTCHA on, Google provider off (18 Oct 2026). Keep the Email provider on: the placeholder addresses run on it |
+| Supabase | Project `uqirowyfqwiceyjznosl` (London): DB, Auth (nickname + PIN, older accounts a passphrase, on the Email provider with placeholder addresses, confirmation off, CAPTCHA via Turnstile), Storage `board`, Realtime, the Edge Function `admin-reset-passphrase` | ✅ db/30 + function live, CAPTCHA on, Google provider off (18 Oct 2026). Keep the Email provider on: the placeholder addresses run on it |
 | Cloudflare Turnstile | Widget for the sign-in / sign-up robot check; site key `0x4AAAAAAFaUU-JF4RC7asVt` (public, in `account.js`); the secret key is only in Supabase | ✅ widget created 18 Oct 2026 |
 | Google Cloud | The old Google sign-in OAuth client: **retired** with nickname accounts | ✅ client deleted (19 Oct 2026) |
 | GitHub | Public repo `rlmck/projectboard`; Pages source = `legacy` / root | never delete `legacy`, never make the repo private, **never rename the repo** |
@@ -498,7 +500,7 @@ All of these live in `tools/`. The Python scripts find their files relative to t
 
 ## 12. Known gaps (product, not bugs)
 
-- **No self-service passphrase change or recovery.** By design (no email): a lost passphrase needs an admin (section 6), and if no admin can help, the account is gone. Email setup (Resend/SMTP) is no longer planned.
+- **No self-service PIN or passphrase change or recovery.** By design (no email): a forgotten PIN or passphrase needs an admin (section 6), and if no admin can help, the account is gone. Email setup (Resend/SMTP) is no longer planned.
 - **The geofence centre is unverified on-site.** If it's off by more than the radius, members standing at the wall get "Casting only works at the gym". Admins would never notice, because they bypass the gate. Verify it with a non-admin phone at the board.
 - **`manifest.json` has `"orientation": "portrait"`.** On Android installs this locks portrait, so the landscape auto-fullscreen on detail views never fires there; the expand button still works. iOS ignores the manifest orientation.
 - **Circuits Phase 3** (PBs, leaderboards from `circuit_logs`) isn't built. Mirrored circuits and a circuits Done filter are future releases. The Pat Burner challenge (section 4.6a) is phone-timed and doesn't use any of it.

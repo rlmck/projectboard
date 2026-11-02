@@ -608,8 +608,8 @@
   document.getElementById('user-rename-modal').addEventListener('click', e => {
     if (e.target.id === 'user-rename-modal') closeUserRename();
   });
-  // The new-passphrase sheet closes only from its buttons (or Escape): a stray tap
-  // on the overlay mustn't hide a passphrase that's shown once.
+  // The new-PIN sheet closes only from its buttons (or Escape): a stray tap
+  // on the overlay mustn’t hide a PIN or passphrase that’s shown once.
   document.getElementById('user-reset-cancel').addEventListener('click', closeUserReset);
   document.getElementById('user-reset-confirm').addEventListener('click', doUserReset);
   document.getElementById('user-reset-close').addEventListener('click', closeUserReset);
@@ -659,7 +659,7 @@
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closeCircuitCast(); closeNameModal(); closeAccountDelete(); closeUserRename(); closeUserReset(); closeCompare(); closeAttemptDelete(); closeSortSheet(); closeGradeSheet(); } });
 
-  // Auth view (#auth): sign in, and sign-up's two steps, in one form (account.js).
+  // Auth view (#auth): create an account or sign in, in one form (account.js).
   document.getElementById('auth-form').addEventListener('submit', authSubmit);
   document.getElementById('auth-back').addEventListener('click', () => { location.hash = '#list'; });
   const authToggleLink = document.getElementById('auth-toggle-link');
@@ -668,9 +668,10 @@
   document.getElementById('signin-show').addEventListener('click', toggleShowPass);
   document.getElementById('signup-suggest').addEventListener('click', suggestNickname);
   getNickChecker('signup', 'signup-nick', 'signup-nick-check');   // the live check as you type
-  document.getElementById('signup-copy').addEventListener('click', e =>
-    copyText(signupPass, document.getElementById('signup-pass-show'), e.currentTarget));
-  document.getElementById('signup-saved').addEventListener('change', updateAuthSubmit);
+  document.getElementById('signup-pin').addEventListener('input', pinInput);
+  document.getElementById('signup-pin2').addEventListener('input', pinInput);
+  document.getElementById('signup-pin-show').addEventListener('click', toggleShowPin);
+  document.getElementById('auth-ios-dismiss').addEventListener('click', dismissIosSigninNote);
 
   // Profile: change nickname, delete my account
   document.getElementById('name-save').addEventListener('click', saveDisplayName);
@@ -693,8 +694,9 @@
     // The wall screen reloads only while nobody's using it (wall.js sends 'wall-idle').
     if (WALL && !wallIsIdle()) return true;
     if (currentView === 'outlines' && olDirty()) return true;
-    // Sign-up step 2: a reload would swap the passphrase being saved for a new one.
-    if (currentView === 'auth' && authMode === 'signup-save') return true;
+    // Creating an account, part-way through: a reload would clear the PINs typed.
+    if (currentView === 'auth' && authMode === 'signup' &&
+        (document.getElementById('signup-pin').value || document.getElementById('signup-pin2').value)) return true;
     // A challenge attempt (running in any view, or finished on screen): it's kept
     // on the device, but a reload would silence the beeps until the next tap.
     if (chRunning() || (currentView === 'challenge' && challengeRun)) return true;

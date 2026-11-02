@@ -973,7 +973,9 @@
         renderLeaderboard();                                  // spinner / cached rows
         loadLeaderboard().then(renderLeaderboard);            // fetch, then re-render
         break;
-      case 'auth':    setAuthMode('signin'); setView('auth'); break;
+      // #auth opens on Create account (most people here don't have one yet);
+      // #auth/signin opens on Sign in.
+      case 'auth':    setAuthMode(param === 'signin' ? 'signin' : 'signup'); setView('auth'); break;
       case 'profile': renderProfile(); setView('profile'); break;
       case 'list':
       default:        setView('list'); break;

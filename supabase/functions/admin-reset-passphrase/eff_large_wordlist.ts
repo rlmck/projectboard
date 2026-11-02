@@ -3,7 +3,6 @@
 // Licence: Creative Commons Attribution (CC BY), see https://www.eff.org/copyright.
 // Source: https://www.eff.org/files/2016/07/18/eff_large_wordlist.txt (sha256 addd35536511597a02fa0a9ff1e5284677b8883b83e986e43f15a3db996b903e)
 // About: https://www.eff.org/deeplinks/2016/07/new-wordlists-random-passphrases
-// The same list as app/eff_large_wordlist.json; regenerate both together.
 export const WORDS: readonly string[] = [
   "abacus",
   "abdomen",

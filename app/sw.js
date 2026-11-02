@@ -52,8 +52,7 @@ const ASSETS = [
   './board-fallback.jpg',
   './hold_map.json',
   './hold_shapes.json',
-  './mirror_map.json',
-  './eff_large_wordlist.json'   // the passphrase words (sign-up), see tools/make_wordlist.py
+  './mirror_map.json'
 ];
 
 const NAV_TIMEOUT = 5000;     // ms the network gets to answer a page before the cache does

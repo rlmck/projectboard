@@ -18,7 +18,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 ## Decisions
 - **End to end (30 Oct 2026):** Claude finishes the whole job, including applying migrations (`db/apply.py`, dry run first) and Pi deploys (busy check, passwordless). Still gated: deleting user data, force pushes, secrets.
 - **Deploy policy (29 Oct 2026):** ship by default to `main` once checks pass; "staging first" = `dev` only, with the staging URL; no rule about keeping `dev` and `main` level. Gated: DB migrations, Pi deploys (busy check), deleting data, force pushes, secrets. Rollback = `git revert` + push, never the Cloudflare dashboard. `CACHE` is stamped by the build from the shipped files' git blob ids (not the commit hash, so docs-only pushes don't make every phone re-download the app). Replaces the 19 Oct "two confirmations" rule.
-- Accounts are nickname + 4-word passphrase, no personal data, under-18s welcome, Ranks opt-in (`profiles.is_public`); a lost passphrase is reset by an admin (logged). Google sign-in removed. All 7 earlier accounts were migrated (18 Oct). The gym is the data controller.
+- **Accounts (2 Nov 2026):** nickname + 4-digit PIN for new accounts; accounts made before keep their 4-word passphrase (no switch offered) and sign in through the same field. No lockout, rate limit or weak-PIN blocking, by design. No personal data, under-18s welcome, Ranks opt-in (`profiles.is_public`); a forgotten PIN or passphrase is reset by an admin (activity check, logged), giving a new PIN or new words to match. Google sign-in removed. The gym is the data controller.
 - Points only for benchmark climbs (db/27).
 - **Feet rule (30 Oct 2026):** every problem is Any feet (default), Orange feet only or Black feet only (`problems.feet_mode`, db/33). Any lights no sign; Orange lights B2 (LED 25), Black lights B1 (LED 26), never mirrored; `hold2`/`hold21` are never in a hold list. Migrated: both signs or none → Any, one sign → that rule. Cast contract §6.5.
 - **Circuits (30 Oct 2026):** no mirrored circuits and no circuits Done filter for now (future releases); "done" means done both sides and is for problems only. No Play preview.
@@ -41,6 +41,7 @@ The ordered to-do list (next steps, backlog, and what not to build yet) lives in
 - **Ross: test the feet rule on the wall** (the listener is deployed, 30 Oct): Orange-only lights B2 only, Black-only B1 only, Any neither; the same mirrored (the first mirrored-cast check).
 - Ross: the relay module (eBay) and 74AHCT125 level shifter (Amazon) to arrive.
 - Ross: an on-site check of the cast geofence centre (a non-admin phone by the board and at the far end of the gym).
+- **Ross: try PIN accounts on a real iPhone** (live 2 Nov): create one in Safari (number pad, a mismatch), the Home Screen note, add to Home Screen and sign in there; an older passphrase account still signs in; an admin's **Give a new PIN** on a PIN account (4 digits) and on a passphrase account (4 words). Delete any test accounts after.
 - Ross: delete the local passphrase hand-out file in the archive (then empty the Recycle Bin) once all 7 migrated accounts have signed in.
 - Ross: what the wall screen does at night (keep it blank, or let the kiosk show the dimmed QR?), and whether 23:00 is always after the gym closes.
 
@@ -54,6 +55,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-11-02, Claude Code (PIN sign-up: TODO 9).**
+  - **Found:** Supabase Auth's minimum password length is 15 (its floor is 6), so a 4-digit PIN can't be the password itself; `#auth` opened on Sign in, not Create.
+  - **Changed:** new accounts: nickname (live check), PIN, PIN again, one step; `#auth` leads with Create (Profile too). The PIN goes to Supabase padded by `pinPassword()`; no Auth setting, migration or existing account touched. Sign-in takes a PIN or a passphrase in one field. Edge Function (v2, deployed): a PIN account (`user_metadata.pin`) gets a new PIN, an older one words as before. iPhone Safari note. App wordlist dropped. privacy.html, overview §6, CLAUDE.md.
+  - **Tested:** build, console 91, Pi 141; locally with sign-up/sign-in stubbed (no accounts made): PIN filter, mismatch, short, taken nickname, the padded PIN, passphrases unchanged, the note in an iPhone UA (Safari, installed, Chrome) and dismissing it; the function: deployed copy matched the repo first, 401 without a session.
+  - **Left:** Ross: a real PIN account, an old passphrase sign-in and both admin resets (needs a person: Turnstile and an admin login).
 
 - **2026-11-02, Claude Code (sorting and filtering: TODO 10).**
   - **Found:** the list was always sorted by grade then name; the wall's list was the same `visibleProblems()` with a ★. Ticks are own-rows-only, so Popular needed an RPC.
@@ -69,10 +76,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Changed:** PB Console: an x beside each "needs a look" chip on the Overview (and Dismiss all, Dismiss in the drawer, the Ctrl+K palette) hides it until it changes: each tile carries a `sig` (`tiles.py`: the level and value; for journal errors the newest error's time, for self-healing the last action), so a new error or a worse level brings it back. "N dismissed · show again" undoes it. Recent actions has **Clear** (the Audit section keeps everything). Both kept in the browser's localStorage.
   - **Tested:** console 75 tests (one new: the `sig`), a second console on another port in Chrome: dismiss, a refresh keeps it, show again, Clear.
   - **Left:** restart PB Console once to pick up `tiles.py`.
-
-- **2026-10-31, Claude Code (the Pi's SD card died: a self-installing replacement card).**
-  - **Found:** what the dead card held outside the repo: `pb-netwatch.sh` v2 and its unit (recovered word for word from a 28 Oct session's record), the `pb-rescue` profile, the kiosk's packages, user, PAM file and blank cursor theme (set up by hand on 26 Oct), the Wi-Fi connection, the Tailscale identity, the wall key. Raspberry Pi OS trixie + Imager 2 use cloud-init (`user-data`, `network-config`, `meta-data` on the boot partition), not `firstrun.sh`.
-  - **Changed:** `pi/firstboot/` (`firstboot.sh` + `pb-firstboot.service`, started by cloud-init's `runcmd`; `make-card.py` adds them to an Imager-written card and checks it; README with the full list); `setup.sh` (Wi-Fi country, the keyfile and the rescue hotspot first, waits for the internet, the kiosk packages, the wall key; Tailscale failure no longer fatal); `install.sh` installs `pb-netwatch` and the kiosk's pieces and cuts SD writes (journal capped and synced every 15 min, Chromium's cache in RAM, apt timers and swap file off); `pb-netlog` includes wpa_supplicant. db/36 applied: the new wall key's hash, the old key revoked. PB Console's drift map knows the new files.
-  - **Tested:** Pi 125 and console 74 tests, the build check, `install.sh --dry-run` in WSL, the new wall key accepted by `wall_key_ok`.
-  - **Then:** the card was written with Imager (which filled in the Wi-Fi after all, and an apt step that would run before any network: `make-card.py` now strips both) and made with `make-card.py`: every check passed; the wall key was then deleted from the laptop.
-  - **Left:** the first boot at the gym (Waiting on).

@@ -9,7 +9,7 @@
   //   #admin/user/<id>  -> one user: stats, recent activity, and the actions
   // Accounts hold no email (db/30): a row is a nickname, its roles and its counts.
   // Listing, activity, rename, promote and delete go through SECURITY DEFINER RPCs
-  // gated on is_admin() (db/12, db/13, db/30); a new passphrase goes through the
+  // gated on is_admin() (db/12, db/13, db/30); a new PIN or passphrase goes through the
   // Edge Function admin-reset-passphrase, which holds the service-role key. Every
   // one of those actions is logged server-side in admin_actions (db/30).
   let adminUsers = [];                // cached rows from admin_list_users()
@@ -79,7 +79,7 @@
           <div class="admin-card-icon">${usersIconSvg}</div>
           <div class="admin-card-text">
             <div class="admin-card-title">Users</div>
-            <div class="admin-card-sub">Find an account, rename it, or give it a new passphrase.</div>
+            <div class="admin-card-sub">Find an account, rename it, or give it a new PIN.</div>
           </div>
           <div class="admin-card-chev">${chevSvg}</div>
         </a>
@@ -141,14 +141,14 @@
     const isSelf = String(u.id) === String(profile.id);
     const routes = Number(u.route_count) || 0;
     const sends = Number(u.tick_count) || 0;
-    // Actions. Everyone can be renamed. Not on yourself: a new passphrase (ask
+    // Actions. Everyone can be renamed. Not on yourself: a new PIN (ask
     // another admin), the admin toggle (db/13) or delete (use Profile). Delete is
     // for members only: remove admin first.
     let action = `<button class="btn-block btn-ghost" id="user-rename-btn">Rename</button>`;
     if (isSelf) {
-      action += `<p class="user-detail-note">This is your account. Another admin can give you a new passphrase.</p>`;
+      action += `<p class="user-detail-note">This is your account. Another admin can give you a new PIN.</p>`;
     } else {
-      action += `<button class="btn-block btn-primary" id="user-reset-btn">Generate new passphrase</button>`;
+      action += `<button class="btn-block btn-primary" id="user-reset-btn">Give a new PIN</button>`;
       if (u.is_admin) {
         action += `<button class="btn-block btn-ghost" id="user-demote-btn">Remove admin</button>
           <p class="user-detail-note">Remove admin before deleting this account.</p>`;
@@ -271,15 +271,17 @@
     renderAdmin('user/' + id);
   }
 
-  // ── A new passphrase (admins only; the Edge Function admin-reset-passphrase) ──
-  // The function checks the caller is an admin, sets a new four-word passphrase,
-  // signs the account out on every device (plan.md D5), logs it and returns it
-  // ONCE. It's shown here, then wiped from the page when the sheet closes.
+  // ── A new PIN or passphrase (admins only; the Edge Function admin-reset-passphrase) ──
+  // The function checks the caller is an admin, then sets a new 4-digit PIN for an
+  // account made with a PIN (since 2 Nov 2026) or four new words for an older
+  // passphrase account, signs the account out on every device (plan.md D5), logs
+  // it ('reset_passphrase' for both) and returns it ONCE, with kind 'pin' or
+  // 'passphrase'. It's shown here, then wiped from the page when the sheet closes.
   let pendingReset = null;   // { id, name }
 
   function openUserReset(id, name) {
     pendingReset = { id, name };
-    document.getElementById('user-reset-title').textContent = 'New passphrase?';
+    document.getElementById('user-reset-title').textContent = 'New PIN?';
     document.getElementById('user-reset-name').textContent = name;
     document.getElementById('user-reset-error').textContent = '';
     document.getElementById('user-reset-ask').hidden = false;
@@ -313,11 +315,14 @@
       return;
     }
     if (!pendingReset || pendingReset.id !== id) return;   // closed meanwhile
-    document.getElementById('user-reset-title').textContent = 'New passphrase for ' + name;
+    const isPin = data.kind === 'pin';
+    const what = isPin ? 'PIN' : 'passphrase';
+    document.getElementById('user-reset-title').textContent = 'New ' + what + ' for ' + name;
     document.getElementById('user-reset-pass').textContent = data.passphrase;
+    document.getElementById('user-reset-how').textContent = 'They sign in with their nickname and this ' + what + '.';
     const note = document.getElementById('user-reset-note');
     note.hidden = data.signedOut !== false;
-    note.textContent = 'Their other devices couldn’t be signed out automatically. The old passphrase no longer works.';
+    note.textContent = 'Their other devices couldn’t be signed out automatically. The old ' + what + ' no longer works.';
     document.getElementById('user-reset-ask').hidden = true;
     document.getElementById('user-reset-done').hidden = false;
   }
@@ -330,7 +335,7 @@
     pendingAdminChange = { id, name, make };
     document.getElementById('user-admin-modal-title').textContent = make ? 'Make admin?' : 'Remove admin?';
     document.getElementById('user-admin-modal-text').innerHTML = make
-      ? `Give <b>${escHtml(name)}</b> admin rights? They’ll be able to delete and re-grade problems, edit the hold outlines, and manage users, including renaming them and giving them new passphrases.`
+      ? `Give <b>${escHtml(name)}</b> admin rights? They’ll be able to delete and re-grade problems, edit the hold outlines, and manage users, including renaming them and giving them new PINs.`
       : `Remove admin rights from <b>${escHtml(name)}</b>? They’ll go back to a normal member.`;
     document.getElementById('user-admin-error').textContent = '';
     const confirm = document.getElementById('user-admin-confirm');

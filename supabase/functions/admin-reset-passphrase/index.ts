@@ -1,6 +1,10 @@
-// admin-reset-passphrase: an admin gives an account a new passphrase.
+// admin-reset-passphrase: an admin gives an account a new PIN or passphrase.
 //
-// POST { target: "<account id>" }  ->  200 { passphrase: "word-word-word-word" }
+// POST { target: "<account id>" }
+//   ->  200 { passphrase: "1234", kind: "pin", signedOut }                  an account made with a PIN
+//   ->  200 { passphrase: "word-word-word-word", kind: "passphrase", signedOut }   an older account
+// (The field keeps the name `passphrase` for both, so an app that hasn't updated
+// yet still shows what was set.)
 //
 // The only place the service-role key is used, and it never leaves Supabase:
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected by Supabase at runtime.
@@ -12,13 +16,17 @@
 //   1. answers CORS for the app's origins only;
 //   2. reads the caller from their own access token, and refuses anyone who isn't
 //      an admin (403), their own account (400) and unknown accounts (404);
-//   3. picks four words from the EFF large wordlist with crypto.getRandomValues
-//      (rejection sampling, so no modulo bias: about 51.7 bits), the same way the
-//      app does at sign-up;
+//   3. reads the account's user_metadata: pin: true (set by the app at sign-up
+//      since 2 Nov 2026) means a PIN account, which gets a new 4-digit PIN, padded
+//      exactly as the app pads it (pinPassword(), keep in sync with app/account.js);
+//      anything else is an older passphrase account, which gets four words from
+//      the EFF large wordlist with crypto.getRandomValues (rejection sampling, so
+//      no modulo bias: about 51.7 bits), as before. Nothing about the account is
+//      changed except its password;
 //   4. sets it as the account's password;
 //   5. signs the account out on every device (admin_revoke_sessions, plan D5);
-//   6. logs 'reset_passphrase' in admin_actions (ids only);
-//   7. returns the passphrase once. It's never logged or stored in plain text.
+//   6. logs 'reset_passphrase' in admin_actions (ids only; the same for PINs);
+//   7. returns it once. It's never logged or stored in plain text.
 //
 // See plan.md §3 and db/30 items 11 and 17.
 
@@ -66,6 +74,15 @@ function makePassphrase(): string {
   return Array.from({ length: 4 }, () => WORDS[randomIndex(WORDS.length)]).join('-');
 }
 
+// A PIN: 4 digits, every one of the 10,000 equally likely.
+function makePin(): string {
+  return String(randomIndex(10000)).padStart(4, '0');
+}
+// What Supabase stores for a PIN: the project's minimum password length is 15, so
+// the 4 digits are padded into a fixed, public longer form. KEEP IN SYNC with
+// pinPassword() in app/account.js.
+const pinPassword = (pin: string) => 'symmetryboard-pin-' + pin;
+
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get('Origin');
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(origin) });
@@ -86,28 +103,37 @@ Deno.serve(async (req: Request) => {
 
   const { data: me, error: meErr } = await admin.from('profiles').select('is_admin').eq('id', callerId).maybeSingle();
   if (meErr) return reply({ error: 'Couldn’t check your admin role.' }, 500, origin);
-  if (!me?.is_admin) return reply({ error: 'Only admins can reset a passphrase.' }, 403, origin);
+  if (!me?.is_admin) return reply({ error: 'Only admins can give a new PIN or passphrase.' }, 403, origin);
 
   let body: { target?: unknown } | null = null;
   try { body = await req.json(); } catch { body = null; }
   const target = typeof body?.target === 'string' ? body.target : '';
   if (!UUID_RE.test(target)) return reply({ error: 'No account given.' }, 400, origin);
   if (target.toLowerCase() === callerId.toLowerCase()) {
-    return reply({ error: 'You can’t reset your own passphrase here. Ask another admin.' }, 400, origin);
+    return reply({ error: 'You can’t reset your own PIN here. Ask another admin.' }, 400, origin);
   }
 
   const { data: found, error: findErr } = await admin.from('profiles').select('id').eq('id', target).maybeSingle();
   if (findErr) return reply({ error: 'Couldn’t look up that account.' }, 500, origin);
   if (!found) return reply({ error: 'That account doesn’t exist any more.' }, 404, origin);
 
-  const passphrase = makePassphrase();
-  const { error: setErr } = await admin.auth.admin.updateUserById(target, { password: passphrase });
+  // PIN or passphrase? (Read only: nothing here changes the account.)
+  const { data: authUser, error: userErr } = await admin.auth.admin.getUserById(target);
+  if (userErr || !authUser?.user) {
+    console.error('reset: getUserById failed', userErr?.status, userErr?.code);
+    return reply({ error: 'Couldn’t look up that account. Nothing was changed.' }, 500, origin);
+  }
+  const kind = authUser.user.user_metadata?.pin === true ? 'pin' : 'passphrase';
+
+  const passphrase = kind === 'pin' ? makePin() : makePassphrase();
+  const password = kind === 'pin' ? pinPassword(passphrase) : passphrase;
+  const { error: setErr } = await admin.auth.admin.updateUserById(target, { password });
   if (setErr) {
     console.error('reset: updateUserById failed', setErr.status, setErr.code);
-    return reply({ error: 'Couldn’t set the new passphrase. Nothing was changed.' }, 500, origin);
+    return reply({ error: kind === 'pin' ? 'Couldn’t set the new PIN. Nothing was changed.' : 'Couldn’t set the new passphrase. Nothing was changed.' }, 500, origin);
   }
 
-  // The passphrase has changed now, so from here on it must be returned whatever
+  // The password has changed now, so from here on it must be returned whatever
   // else fails, or nobody would know it.
   let signedOut = true;
   const { error: revokeErr } = await admin.rpc('admin_revoke_sessions', { target });
@@ -117,5 +143,5 @@ Deno.serve(async (req: Request) => {
     .insert({ admin_id: callerId, target_id: target, action: 'reset_passphrase' });
   if (logErr) console.error('reset: admin_actions insert failed', logErr.code);
 
-  return reply({ passphrase, signedOut }, 200, origin);
+  return reply({ passphrase, kind, signedOut }, 200, origin);
 });

@@ -126,7 +126,7 @@
 
   /* Type */
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;  /* the passphrase */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;  /* PINs and passphrases */
 
   /* Radii */
   --radius: 12px;  /* cards, menus, panels */

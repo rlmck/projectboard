@@ -24,18 +24,17 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 
 ## App design and features
 8. **Wall screen auto-cast and a 15-minute idle:** on the wall screen only, tapping a problem in the list lights it on the board straight away, with no Cast / Light it up button. The wall's pick always takes over, whatever is on the board (the idle pattern or a phone's cast): the latest cast wins. Phones keep their Cast button. If nobody has cast for 15 minutes (any source; every cast resets the timer), the Pi goes back to the idle pattern; today the idle starts after 20 minutes, so change that and every place that says 20 (listener config, docs, tests). Use the existing cast path (channel `board:HangoutPortland`, event `cast_problem`). Update the cast contract and tests; also decide what a tap does on the wall's Create and Circuits pages (leave them as they are unless it's clearly wrong).
-9. **Revamp the profile stuff:** when the app loads, signed-out users should be offered Create account first, not Sign in (they won't have an account yet). Consider switching the 4-word passphrase to a PIN (Claude Code to suggest). Be careful with existing users.
-10. **Problem name/setter editing** (changes the cast key: contract open questions).
-11. **Wall screen, faster updates** (parked 27 Oct): check every 5 min instead of hourly and apply a waiting update after ~2 min untouched, keeping the chosen problem and scroll position.
-12. **More challenges** (a row in `challenges`), monthly boards, a metronome, casting the circuit at Start once Circuits Phase 2 exists.
-13. **Benchmarks:** admins can already mark a problem as a benchmark (detail ⋮ → "Mark as benchmark"); clarify what more is wanted.
-14. **Move a problem into Circuits (admins only):** when a problem was created but is really a circuit, an admin can move it into Circuits. A move, not a copy: afterwards it exists only as a circuit and is gone from the problems list. Design questions for the session: how the problem's holds become circuit moves, and what happens to its ticks, likes and any cast history.
+9. **Problem name/setter editing** (changes the cast key: contract open questions).
+10. **Wall screen, faster updates** (parked 27 Oct): check every 5 min instead of hourly and apply a waiting update after ~2 min untouched, keeping the chosen problem and scroll position.
+11. **More challenges** (a row in `challenges`), monthly boards, a metronome, casting the circuit at Start once Circuits Phase 2 exists.
+12. **Benchmarks:** admins can already mark a problem as a benchmark (detail ⋮ → "Mark as benchmark"); clarify what more is wanted.
+13. **Move a problem into Circuits (admins only):** when a problem was created but is really a circuit, an admin can move it into Circuits. A move, not a copy: afterwards it exists only as a circuit and is gone from the problems list. Design questions for the session: how the problem's holds become circuit moves, and what happens to its ticks, likes and any cast history.
 
 ## PB Console
-15. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
+14. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
 
 ## Bugs
-16. **Known bugs to triage:** `docs/codebase-overview.md` §13.
+15. **Known bugs to triage:** `docs/codebase-overview.md` §13.
 
 ## Not now
 Don't build yet: Circuits Phase 3 (PBs, leaderboards), mirrored circuits, a Done filter for circuits ("done" = done both sides, problems only), tags, session/logbook tracking beyond ticks, the Flutter migration.

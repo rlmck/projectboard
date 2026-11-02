@@ -1,14 +1,15 @@
-"""Build the passphrase wordlists from the EFF large wordlist.
+"""Build the passphrase wordlist from the EFF large wordlist.
 
     python tools/make_wordlist.py
 
 Downloads EFF's eff_large_wordlist.txt (7,776 words, one per five-dice roll),
-checks it, and writes the same list to the two places that pick passphrases:
+checks it, and writes it to the one place that still picks passphrases:
 
-    app/eff_large_wordlist.json                                  the app (sign-up)
     supabase/functions/admin-reset-passphrase/eff_large_wordlist.ts   the admin reset
 
-Both copies must hold the same words, so always regenerate them together.
+Since 2 Nov 2026 new accounts use a 4-digit PIN, so the app no longer makes
+passphrases and app/eff_large_wordlist.json is gone; the admin reset still gives
+an older (passphrase) account four new words.
 
 The list is by the Electronic Frontier Foundation. EFF's copyright page
 (https://www.eff.org/copyright, checked 18 Oct 2026) puts its original material
@@ -31,7 +32,6 @@ LICENCE = 'Creative Commons Attribution (CC BY), see https://www.eff.org/copyrig
 ATTRIBUTION = 'EFF large wordlist, by the Electronic Frontier Foundation'
 
 ROOT = Path(__file__).resolve().parent.parent
-APP_OUT = ROOT / 'app' / 'eff_large_wordlist.json'
 FN_OUT = ROOT / 'supabase' / 'functions' / 'admin-reset-passphrase' / 'eff_large_wordlist.ts'
 
 
@@ -68,15 +68,6 @@ def main():
     shortest = min(len(w) for w in words)
     print(f'{len(words)} words, shortest {shortest} letters, sha256 {sha}')
 
-    APP_OUT.write_text(json.dumps({
-        'source': URL,
-        'about': SOURCE_PAGE,
-        'attribution': ATTRIBUTION,
-        'licence': LICENCE,
-        'sha256': sha,
-        'words': words,
-    }, separators=(',', ':')) + '\n', encoding='utf-8', newline='\n')
-
     FN_OUT.parent.mkdir(parents=True, exist_ok=True)
     body = ',\n'.join('  ' + json.dumps(w) for w in words)
     FN_OUT.write_text(
@@ -85,11 +76,10 @@ def main():
         f'// Licence: {LICENCE}.\n'
         f'// Source: {URL} (sha256 {sha})\n'
         f'// About: {SOURCE_PAGE}\n'
-        '// The same list as app/eff_large_wordlist.json; regenerate both together.\n'
         'export const WORDS: readonly string[] = [\n' + body + '\n];\n',
         encoding='utf-8', newline='\n')
 
-    print(f'wrote {APP_OUT.relative_to(ROOT)} and {FN_OUT.relative_to(ROOT)}')
+    print(f'wrote {FN_OUT.relative_to(ROOT)}')
 
 
 if __name__ == '__main__':

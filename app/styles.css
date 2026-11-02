@@ -986,7 +986,7 @@
     }
     .info-value { font-size: 15px; line-height: 1.5; color: var(--text); }
 
-    /* ── Auth (nickname + passphrase: sign in, sign-up steps 1 and 2) ── */
+    /* ── Auth (nickname + PIN: create an account, sign in) ── */
     .auth-card { max-width: 380px; }
     .auth-step[hidden], .auth-captcha[hidden] { display: none; }
     .auth-toggle { font-size: 13px; color: var(--text-muted); margin: 14px 0 2px; }
@@ -1000,7 +1000,7 @@
       color: var(--text); background: var(--surface2); border: 1px solid var(--border);
       border-left: 3px solid var(--accent); border-radius: var(--radius-sm); padding: 10px 12px;
     }
-    /* Passphrase field with a Show/Hide button inside it */
+    /* A PIN or passphrase field with a Show/Hide button inside it */
     .fld-wrap { position: relative; }
     .fld-wrap .fld { padding-right: 64px; }
     .fld-show {
@@ -1029,9 +1029,25 @@
     .pass-copy { flex: none; }
     .pass-warn { font-size: 13px; line-height: 1.5; color: var(--gold); text-align: left; margin: 0 0 12px; }
     .pass-warn b { color: var(--gold); }
-    .check-row { display: flex; align-items: flex-start; gap: 10px; text-align: left; font-size: 14px; font-weight: 600; margin: 0 0 12px; cursor: pointer; }
-    .check-row input { width: 20px; height: 20px; flex: none; margin: 1px 0 0; accent-color: var(--accent); }
     .auth-captcha { min-height: 65px; margin: 4px 0; }
+    /* The PIN fields: digits spaced out, the same font as a shown passphrase */
+    .pin-fld { font-family: var(--font-mono); letter-spacing: 0.3em; }
+    .pin-fld::placeholder { font-family: var(--font-sans); letter-spacing: normal; }
+    /* iPhone Safari: "sign in once more inside the app" (dismissible) */
+    .auth-ios-note[hidden] { display: none; }
+    .auth-ios-note {
+      display: flex; align-items: flex-start; gap: 8px; text-align: left;
+      font-size: 13px; line-height: 1.5; color: var(--text);
+      background: var(--surface2); border: 1px solid var(--border);
+      border-left: 3px solid var(--gold); border-radius: var(--radius-sm);
+      padding: 10px 6px 10px 12px; margin: 0 0 12px;
+    }
+    .auth-ios-note p { flex: 1; min-width: 0; margin: 0; }
+    .auth-ios-x {
+      flex: none; width: 32px; height: 32px; margin: -6px 0 -6px; padding: 0;
+      background: transparent; border: none; color: var(--text-muted);
+      font-size: 20px; line-height: 1; cursor: pointer; touch-action: manipulation;
+    }
     /* Visually hidden, still there for password managers */
     .sr-only {
       position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;

@@ -100,9 +100,7 @@
   let gradeHi = null;             // ...and the highest (null = no upper limit); either set hides unknown grades
   let circuitFavesOnly = false;   // circuit list filter: only favourited circuits
   let circuitLoopOnly = false;    // circuit list filter: only looping circuits
-  let authMode = 'signin'; // the #auth step: 'signin' | 'signup' (pick a nickname) | 'signup-save' (save the passphrase)
-  let signupNick = '';     // sign-up: the nickname from step 1, held until the account is created
-  let signupPass = '';     // sign-up: the generated passphrase. Memory only; cleared on leaving step 2
+  let authMode = 'signup'; // the #auth mode: 'signup' (create an account: nickname + PIN twice) | 'signin'
 
   // ── Create-a-problem state ───────────────────────────────────────────────────
   let createRoles = {};        // hold id -> 'start' | 'int' | 'finish'
