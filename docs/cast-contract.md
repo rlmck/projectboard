@@ -1,6 +1,6 @@
 # Cast contract
 
-How a cast gets from the app to the LEDs. **This describes what the code does** (first written 19 Oct 2026; circuits added 30 Oct 2026, §8; the live preview while setting 30 Oct 2026, §9). Anything the code doesn't settle is under "Open questions"; nothing there is decided. Any change to the channel, event or payload must update this file in the same commit. The repo is public: no secrets here.
+How a cast gets from the app to the LEDs. **This describes what the code does** (first written 19 Oct 2026; circuits added 30 Oct 2026, §8; the live preview while setting 30 Oct 2026, §9; a circuit's static view 2 Nov 2026, §8.7). Anything the code doesn't settle is under "Open questions"; nothing there is decided. Any change to the channel, event or payload must update this file in the same commit. The repo is public: no secrets here.
 
 ## 1. Overview
 
@@ -17,7 +17,7 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
 | Mechanism | Realtime **Broadcast** (not Postgres Changes, not Presence) |
 | Channel topic | `board:HangoutPortland` (`HangoutPortland` is also `board_config.wall`) |
 | Channel type | public: no `config.private`, no Realtime Authorization policies |
-| Events | `cast_problem` (a problem, §3), `cast_circuit` and `stop` (a circuit run, §8), `preview_holds` (the holds being set, lit live, §9) |
+| Events | `cast_problem` (a problem, §3), `cast_circuit` and `stop` (a circuit run, §8), `show_circuit` (a circuit's holds, all lit at once, §8.7), `preview_holds` (the holds being set, lit live, §9) |
 | Persistence | none. Only listeners connected at that moment receive it; nothing is stored or replayed |
 | Database writes per cast | none (a signed-in climber's circuit run is logged by the app, §8.5, not by the cast) |
 
@@ -63,6 +63,7 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
   - **night mode, 23:00–08:00 by the Pi's clock** (day if the clock hasn't synced): the strip is cleared and casts are ignored (logged, not shown), while the socket stays joined;
   - **idle (an idle pattern, Glisten by default):** `IDLE_AFTER_S` after the last cast (15 min by default since 2 Nov 2026, was 20; every problem cast, from any source, restarts it), and on start or at the end of the night in the daytime, the problem crossfades (1.5 s) into an ambient animation (`IDLE_PATTERN`: one of ten patterns, or a cycle; `pb-idle` on the Pi tries them live; the teaser pattern reads the benchmark problems, unmirrored, every half hour); a cast cuts straight in. With `IDLE_ANIMATION=off` the strip is cleared instead. At night everything fades to black over 3 s. Details in `pi/README.md`;
   - on `cast_circuit` and `stop`, runs and ends a circuit (§8);
+  - on `show_circuit`, lights a circuit's holds all at once, shown as a problem cast (§8.7);
   - on `preview_holds`, lights the holds someone is setting, live (§9);
   - clears the strip on stop. It sends no reply, so a cast at night or with the Pi down still shows "Cast: X" in the app (§7 item 2);
   - health checks, watchdogs and deploy are in `pi/README.md`.
@@ -221,7 +222,7 @@ The look is direction 4, "Pulse and fade", chosen by Ross on 30 Oct 2026 in `too
 
 - **Cast** beside the circuit's title opens a sheet: speed (Slow 5 s / Med 3 s / Fast 2 s, remembered on the device as `pb-circuit-speed`), Loop (the circuit's setting by default), and **Start on the board**. The same lenient geofence as a problem (`ensureCastLocation`, admins skip it), then `channel.httpSend('cast_circuit', …)`.
 - Once Realtime accepts it, the sheet is the run screen: "Watch the route" for the trace (`trace_s: 3`), then the countdown with beeps, then the move count (and lap), and a big **Stop**, which sends `stop` with the run's token. The phone keeps its own clock from that moment (plus `trace_s` and 0.25 s for the Pi's read), so it stays right after the screen sleeps; the screen is kept awake while it runs. The sheet can't be closed while a run is going. "Go again" starts a new run.
-- **The wall screen** (`/?wall`, since 30 Oct 2026) has a Circuits page: the list and the chosen circuit over the board; **Light it up** opens the same sheet (`openCircuitCast(c)`), sent with `source: "wall"`. The wall doesn't go idle while a run is going; night closes the sheet (the Pi ends the run).
+- **The wall screen** (`/?wall`, since 30 Oct 2026) has a Circuits page: the list and the chosen circuit over the board (dimmed all over when none is chosen). Since 2 Nov 2026 a tap on a circuit lights all its holds at once (`show_circuit`, §8.7), and **Start circuit** (was "Light it up") opens the same sheet (`openCircuitCast(c)`), sent with `source: "wall"`. The wall doesn't go idle while a run is going; night closes the sheet (the Pi ends the run).
 - As with problems, a sent cast or stop means Realtime accepted it, not that the Pi received it (§7 items 2 and 3).
 
 ### 8.5 The logs
@@ -253,6 +254,27 @@ A circuit can carry a **track**: for each move, the ordered LEDs between one hol
 **Config keys** (`config.env`, `mode.py` DEFAULTS, PB Console's Config tab): `CIRCUIT_GHOST` 0–0.3 (0.12; 0 = off), `CIRCUIT_TRACK_RUN` off|move|all (move), `CIRCUIT_TRACK_LEVEL` 0–0.5 (0.2). A listener restart applies them.
 
 **PB Console** (Circuit tracks tab): edit a circuit's track on the board photo, preview the trace, import the demo's export, save (the moves that change shown first), remove, and a test cast with `trace_s: 3`. `tools/circuit-led-simulator.html` shows the trace, ghost and track under direction 4.
+
+### 8.7 A circuit's static view: `show_circuit` (built 2 Nov 2026)
+
+On the wall screen's Circuits page, a tap on a circuit lights the whole route at once, so climbers can see it on the wall before they start. No animation, no countdown; **Start circuit** is still the run (§8.1).
+
+```json
+{ "circuit_name": "Pat Burner", "source": "wall", "signed_in": false }
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `circuit_name` | string | yes | `circuits.name` exactly as stored (1–60 characters). |
+| `source`, `signed_in` | | no | As §3: the Activity log only. |
+
+No `mirror` (no mirrored circuits, Decisions) and no other fields. Why a new event (Ross agreed, 2 Nov 2026): `cast_problem` looks names up in `problems` (a circuit could share a problem's name), and `preview_holds` has a 60 s timeout, a takeover that needs Show on board and comes back after a run, and trusts the sender's holds; `show_circuit` reads the circuit by name like `cast_circuit`.
+
+**Colours** (`circuit.static_frame()`, the same rule as the app's `circuitHoldRoles()`, so the board matches the screen): each distinct hold in `hold_sequence` (climbing order, not inverted) lights once, in its strongest role across its places in the sequence. The **last** hold is the finish, red; the first `start_count` (clamped to 1–2, as a run) are starts, green; the rest are moves, blue (§6.2's colours). **Finish beats start beats a move**, as for a problem (`board.RANK`): a hold that's both a start and the last hold (a circuit ending where it began) is red, and a start repeated later in the sequence stays green. A repeated hold (a match, a loop past it) is lit once. `loops` changes nothing: it's the route's map, not the run (in a looping run the last hold isn't a finish). The feet signs and ids off the grid light nothing. No ghost or track.
+
+**On the Pi** it's shown exactly as a problem cast (the renderer's `cast` state): the cast brightness and current cap; latest cast wins (a problem cast, a phone's cast, a circuit run or another view replaces it, and it replaces a run, logged `circuit ended: … replaced`); a preview going is taken over; the idle pattern `IDLE_AFTER_S` after it; ignored at night. An unknown name leaves the board as it is. Log lines: `circuit view received: 'Name' [wall, guest]`, `lit circuit 'Name': N LEDs, ~M mA in T ms`, and at night `circuit view 'Name' ignored: night mode […]`. PB Console's Activity lists them ("holds lit"); `last_cast_at` is set, so the deploy busy check counts it.
+
+**The app** (`showCircuitByName()` in `circuits.js`, called by `wall.js`): only the wall screen sends it. Opening the Circuits page sends nothing and leaves the board as it is; a clean tap on a circuit (the Problems page's tap rules) picks it and sends `show_circuit`; a tap on the circuit already picked sends it again. The same lenient geofence first, then only if the same circuit is still on screen; one at a time, the latest tap next. A listener from before this ignores the event (nothing lights), so either side can be deployed first.
 
 ## 9. The live preview while setting (built 30 Oct 2026)
 
@@ -310,6 +332,7 @@ While a session is going (inside the geofence), the app subscribes to the channe
 2. Like casts, previews are unauthenticated (§7 item 15): anyone with the anon key can light the board this way. Night, the cast precedence and the 60 s timeout limit what that can do.
 
 ## Change history
+- **2026-11-02, Claude Code (later):** §2, §5, §8.4 and a new §8.7: **a circuit's static view.** A new event on the same channel, `show_circuit` (`circuit_name`, plus `source`/`signed_in`), sent when a circuit is tapped on the wall screen's Circuits page; the listener lights every hold at once (starts green, the last hold red, the rest blue; finish beats start) and shows it as a problem cast (latest wins, idle after `IDLE_AFTER_S`). The wall's "Light it up" is now "Start circuit". `cast_problem`, `cast_circuit`, `stop` and `preview_holds` are unchanged; a listener from before this ignores the new event.
 - **2026-11-02, Claude Code:** §4, §5, §7 items 1 and 12: **the wall screen casts on the pick** (a clean tap on a problem, Mirror, the benchmark slide, a save on Create; no Light it up button on its Problems page; one cast at a time, the latest tap next) and **the idle comes 15 minutes after the last cast** (`IDLE_AFTER_S` 900, was 1200). **No change to the channel, events or payloads** (`cast_problem` from the wall is the same message as before, `source: "wall"`).
 - **2026-11-01, Claude Code:** §5, §8.1, §8.3, §8.4 and a new §8.6: **circuit tracks.** A new optional `cast_circuit` field, `trace_s` (0–5, absent = 0: a listener from before this ignores it, and the app sends 3), and `circuits.led_track` (db/37), read with the circuit. The listener adds a route trace before the countdown, a ghost of the circuit's holds and the track in the run, all below Pulse and fade, with three new config keys. The phone's countdown starts `trace_s` later. `cast_problem`, `stop` and `preview_holds` are unchanged.
 - **2026-10-30, Claude Code (evening):** §2, §4, §5 and a new §9: **the live preview while setting.** A new event on the same channel, `preview_holds` (`session`, `start`, `hold`, `finish`, `feet`, `end`, `first`, `show`, `ping`, plus `source`/`signed_in`), sent by the phone's Create/Edit and the wall screen's new Create page; a `preview` state in the listener with its precedence (a cast takes over until Show on board, a circuit makes it wait, night blocks it, 60 s with no message ends it). The app opens a socket only while a preview session is going. `cast_problem`, `cast_circuit` and `stop` are unchanged; a listener from before this ignores the new event.

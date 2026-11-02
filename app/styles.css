@@ -2476,7 +2476,7 @@
     .wall-cast { background: var(--cast); border-color: var(--cast); color: var(--on-accent); }
     .wall-cast:active { background: var(--cast-hover); }
     .wall-cast.casting { opacity: 0.7; }
-    /* Problems: a tap on a card lights it (no button); this says how the cast went.
+    /* Problems and Circuits: a tap on a card lights it; this says how the cast went.
        A fixed width, so the name beside it doesn't move as the words change. */
     .wall-lit {
       flex: none; width: 200px; display: flex; align-items: center; justify-content: flex-end; gap: 8px;

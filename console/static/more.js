@@ -253,6 +253,7 @@
       rows.map((c) => '<tr><td>' + esc(when(c.at)) + '</td><td><strong>' + esc(c.name) + '</strong></td><td>' + esc(from(c)) +
         '</td><td>' + (c.nickname ? '<strong>' + esc(who(c)) + '</strong>' : esc(who(c))) + '</td><td>' +
         (c.kind === 'circuit' ? runNote(c)
+          : c.kind === 'view' ? (c.shown ? '<span class="tag dim">circuit</span> holds lit' : '<span class="tag bad">ignored: night</span>')
           : (c.mirror ? '<span class="tag dim">mirrored</span> ' : '') + (c.shown ? '' : '<span class="tag bad">ignored: night</span>')) +
         '</td></tr>').join('') + '</table>';
   }
@@ -268,7 +269,7 @@
     box.innerHTML =
       '<h3>Last used</h3>' + (last
         ? '<div class="big mid">' + esc(when(last.at)) + ' <span class="muted">(' + esc(ago(last.at)) + ')</span></div>' +
-          '<p><strong>' + esc(last.name) + '</strong>' + (last.kind === 'circuit' ? ' (circuit)' : '') + (last.mirror ? ' (mirrored)' : '') + ' · ' + esc(from(last)) + ' · ' + esc(who(last)) +
+          '<p><strong>' + esc(last.name) + '</strong>' + (last.kind === 'circuit' || last.kind === 'view' ? ' (circuit)' : '') + (last.mirror ? ' (mirrored)' : '') + ' · ' + esc(from(last)) + ' · ' + esc(who(last)) +
           (last.shown ? '' : ' · ignored: night mode') + '</p>'
         : '<p class="muted">No casts in this period.</p>') +
       (a.names !== 'ok' ? '<p class="note">Members\' names aren\'t shown: ' + esc(a.names) + '.</p>' : '') +
@@ -281,10 +282,11 @@
       '<h3>Casts per day</h3>' + bars(a.per_day, (d, short) => short ? d.slice(8) : d) +
       '<h3>Casts by hour of the day</h3>' + bars(a.per_hour, (h) => String(h).padStart(2, '0')) +
       '<h3>Most cast</h3><ol>' + a.top.map(([n, c]) => '<li>' + esc(n) + ' <span class="muted">' + c + '</span></li>').join('') + '</ol>' +
-      '<h3>Circuits</h3><p><strong>' + (a.circuit_runs || 0) + '</strong> runs, ' + (a.circuit_moves || 0) + ' moves in all.</p>' +
+      '<h3>Circuits</h3><p><strong>' + (a.circuit_runs || 0) + '</strong> runs, ' + (a.circuit_moves || 0) + ' moves in all; <strong>' +
+      (a.circuit_views || 0) + '</strong> circuits lit on the board (all their holds, from the wall).</p>' +
       ((a.top_circuits || []).length ? '<ol>' + a.top_circuits.map(([n, c]) => '<li>' + esc(n) + ' <span class="muted">' + c + '</span></li>').join('') + '</ol>' : '') +
       '<p class="note">From the Pi\'s journal: each cast says where it was sent from and whether someone was signed in, never who ' +
-      '(<code>docs/cast-contract.md</code> §3); a circuit run is listed when it ends. Members\' nicknames come from the private cast log ' +
+      '(<code>docs/cast-contract.md</code> §3); a circuit run is listed when it ends, and "holds lit" is a circuit chosen on the wall (all its holds at once, contract §8.7). Members\' nicknames come from the private cast log ' +
       '(db/34, read over the database connection), matched to the journal; casts before 30 Oct 2026 have none, and casts before 29 Oct show —.</p>';
   }
 

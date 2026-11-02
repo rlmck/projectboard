@@ -57,6 +57,11 @@ CAST_LINE = re.compile(r"^(\S+) \S+ \S+: cast (?:received: )?(['\"])(.*)\2( mirr
 CIRCUIT_LINE = re.compile(r"^(\S+) \S+ \S+: circuit ended: (['\"])(.*)\2 ([a-z][a-z ]*?) after (\d+) moves "
                           r"\((\d+) s\), ([\d.]+) s a move, (loop|once), run (\S+)(?: \[(\w+), (\w+)\])?$")
 CIRCUIT_NIGHT = re.compile(r"^(\S+) \S+ \S+: circuit (['\"])(.*)\2 ignored: night mode(?: \[(\w+), (\w+)\])?$")
+# A circuit's static view (show_circuit, contract 8.7: every hold lit at once, from the wall's
+# Circuits page): "circuit view received: 'Name' [wall, guest]" and
+# "circuit view 'Name' ignored: night mode [wall, guest]".
+VIEW_LINE = re.compile(r"^(\S+) \S+ \S+: circuit view (?:received: )?(['\"])(.*)\2"
+                       r"( ignored: night mode)?(?: \[(\w+), (\w+)\])?$")
 
 
 def casts_since(seconds):
@@ -214,11 +219,16 @@ def activity(days):
     """Casts from the listener's journal over the last `days` days (phase 10):
     casts [at, name, mirror, shown, source, who] (source/who None before the app sent them), and
     circuit runs [at (when it ended), name, how, moves, seconds, s a move, loop, run, source, who]
-    (how 'night mode' and moves None: ignored at night)."""
+    (how 'night mode' and moves None: ignored at night), and circuit views [at, name, shown, source, who]
+    (show_circuit, contract 8.7)."""
     out = sh('journalctl', '-u', 'pb-listener', '--since', '-%dd' % days, '-o', 'short-iso', '--no-pager', '-q',
-             '--grep', r'cast received|ignored: night mode|circuit ended', timeout=60)
-    casts, circuits = [], []
+             '--grep', r'cast received|ignored: night mode|circuit ended|circuit view received', timeout=60)
+    casts, circuits, views = [], [], []
     for line in out.splitlines():
+        m = VIEW_LINE.match(line)
+        if m:
+            views.append([m.group(1), m.group(3), not m.group(4), m.group(5), m.group(6)])
+            continue
         m = CAST_LINE.match(line)
         if m:
             casts.append([m.group(1), m.group(3), bool(m.group(4)), not m.group(5), m.group(6), m.group(7)])
@@ -234,7 +244,7 @@ def activity(days):
     boots = [l for l in sh('journalctl', '--list-boots', '--no-pager', '-q').splitlines() if l.strip()]
     first = boots[0].split() if boots else []
     # the oldest boot line: IDX BOOT-ID Day YYYY-MM-DD HH:MM:SS ZONE ...: the journal starts there
-    return {'casts': casts, 'circuits': circuits, 'days': days, 'journal_from': ' '.join(first[3:5]) if len(first) > 4 else None}
+    return {'casts': casts, 'circuits': circuits, 'views': views, 'days': days, 'journal_from': ' '.join(first[3:5]) if len(first) > 4 else None}
 
 
 def last_night(date):

@@ -3,6 +3,7 @@
 
 Supabase Realtime broadcasts on board:<wall> -> the WS2801 strip: `cast_problem`
 lights a problem, `cast_circuit` runs a circuit (circuit.py), `stop` ends it,
+`show_circuit` lights a circuit's holds all at once, as a problem (contract 8.7),
 `preview_holds` lights the holds someone is setting on Create/Edit (contract 9).
 Built to docs/cast-contract.md; the resilience rules are in the local
 docs/pi4-listener-kiosk-plan.md, section R1:
@@ -262,11 +263,12 @@ class Listener:
             job, self.pending = self.pending, None
             if job:
                 kind, args = job[0], job[1:]
+                fn, what = {'circuit': (self.show_circuit, 'circuit'),
+                            'view': (self.show_circuit_view, 'circuit view')}.get(kind, (self.show, 'cast'))
                 try:
-                    await (self.show_circuit if kind == 'circuit' else self.show)(*args)
+                    await fn(*args)
                 except Exception as e:
-                    self.error('%s %r failed: %s: %s' % (
-                        'circuit' if kind == 'circuit' else 'cast', args[0], type(e).__name__, e))
+                    self.error('%s %r failed: %s: %s' % (what, args[0], type(e).__name__, e))
 
     async def show(self, name, mirror, t0):
         row = await asyncio.to_thread(supa.fetch_problem, self.cfg, name)
@@ -293,6 +295,30 @@ class Listener:
         log('lit %r%s: %d LEDs, ~%d mA%s in %d ms' % (
             name, ' mirrored' if mirror else '', len(out), ma,
             ' (capped x%.2f)' % cap if cap < 1 else '', (time.monotonic() - t0) * 1000))
+
+    async def show_circuit_view(self, name, t0):
+        """show_circuit (contract 8.7): the circuit's holds, all lit at once, shown exactly as a
+        problem cast (latest wins, idle after IDLE_AFTER_S, it takes over a preview)."""
+        row = await asyncio.to_thread(supa.fetch_circuit, self.cfg, name)
+        if self.pending:
+            log('circuit view %r superseded by %r before it was shown' % (name, self.pending[1]))
+            return
+        if row is None:
+            warn('unknown circuit %r: board left as it is' % name)
+            return
+        leds, dropped = circuit.static_frame(row.get('hold_sequence'), row.get('start_count'))
+        if dropped:
+            warn('circuit view %r: hold ids off the grid ignored: %s' % (name, sorted(dropped)))
+        out, cap, ma = board.scale(leds, self.cfg['BRIGHTNESS'], float(self.cfg['POWER_BUDGET_MA']),
+                                   float(self.cfg['MA_PER_CHANNEL']))
+        if self.mode == 'night':
+            log('circuit view %r ignored: night began while it was fetched' % name)
+            return
+        self.leds.cast(out)
+        self.status['casts_shown'] += 1
+        self.set(last_cast_at=time.time(), last_cast_name='circuit: ' + name)
+        log('lit circuit %r: %d LEDs, ~%d mA%s in %d ms' % (
+            name, len(out), ma, ' (capped x%.2f)' % cap if cap < 1 else '', (time.monotonic() - t0) * 1000))
 
     async def show_circuit(self, name, interval, loop, mirror, token, tag, trace, t0):
         row = await asyncio.to_thread(supa.fetch_circuit, self.cfg, name)
@@ -385,6 +411,25 @@ class Listener:
         self.pending = ('circuit', name, float(interval), loop, mirror, token, tag, float(trace), time.monotonic())
         self.cast_ready.set()
 
+    def on_show_circuit(self, body):
+        """show_circuit (contract 8.7): circuit_name, plus source/signed_in. Lit like a problem."""
+        if not isinstance(body, dict):
+            warn('show_circuit with a non-object payload ignored: %r' % (body,))
+            return
+        name = body.get('circuit_name')
+        if not isinstance(name, str) or not 1 <= len(name) <= 60:
+            warn('show_circuit with a bad circuit_name ignored: %r' % (body,))
+            return
+        tag = board.origin(body)
+        if self.mode == 'night':
+            self.status['casts_ignored_night'] += 1
+            log('circuit view %r ignored: night mode%s' % (name, tag))
+            self.write_status()
+            return
+        log('circuit view received: %r%s' % (name, tag))
+        self.pending = ('view', name, time.monotonic())
+        self.cast_ready.set()
+
     def on_stop(self, body):
         """stop (contract 8): ends the circuit run with this run token, or any run without one."""
         body = body if isinstance(body, dict) else {}
@@ -426,7 +471,8 @@ class Listener:
         self.leds.preview(token, out, body.get('show') is True)
         self.status['last_preview_at'] = time.time()
 
-    EVENTS = {'cast_problem': on_cast, 'cast_circuit': on_circuit, 'stop': on_stop, 'preview_holds': on_preview}
+    EVENTS = {'cast_problem': on_cast, 'cast_circuit': on_circuit, 'stop': on_stop, 'preview_holds': on_preview,
+              'show_circuit': on_show_circuit}
 
     # -- the socket ---------------------------------------------------------
 

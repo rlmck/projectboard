@@ -332,6 +332,33 @@ class Reports(unittest.TestCase):
                          'no db/.env on this laptop')
         self.assertEqual(reports.activity(raw)['names'], 'not read')
 
+    def test_activity_circuit_views(self):
+        raw = {'days': 2, 'casts': [['2026-11-02T19:30:00+00:00', 'Crimp', False, True, 'wall', 'guest']],
+               'views': [['2026-11-02T19:31:00+00:00', 'Pat Burner', True, 'wall', 'guest'],
+                         ['2026-11-02T23:05:00+00:00', 'Pat Burner', False, 'wall', 'guest']]}
+        members = {'error': None, 'rows': [
+            {'at': '2026-11-02T19:31:00+00:00', 'kind': 'problem', 'name': 'Pat Burner', 'mirror': False,
+             'source': 'phone', 'run': None, 'nickname': 'ann'}]}
+        a = reports.activity(raw, members)
+        self.assertEqual(a['circuit_views'], 1)
+        self.assertEqual(a['total'], 1)                                     # problem casts only
+        self.assertEqual(a['ignored_night'], 1)
+        self.assertEqual([r['kind'] for r in a['recent']], ['view', 'view', 'problem'])
+        self.assertFalse(a['recent'][0]['shown'])
+        self.assertTrue(all('nickname' not in r for r in a['recent']))     # a view never takes a problem's name
+        self.assertEqual(a['top'], [('Crimp', 1)])
+
+    def test_probe_reads_circuit_view_lines(self):
+        m = probe.VIEW_LINE.match
+        r = m("2026-11-02T19:42:05+00:00 projectboard python3[812]: circuit view received: 'Pat Burner' [wall, guest]")
+        self.assertEqual(r.group(3, 4, 5, 6), ('Pat Burner', None, 'wall', 'guest'))
+        r = m("2026-11-02T23:42:05+00:00 projectboard python3[812]: circuit view 'Pat Burner' ignored: night mode [wall, guest]")
+        self.assertEqual(r.group(3, 4), ('Pat Burner', ' ignored: night mode'))
+        line = "2026-11-02T19:42:05+00:00 projectboard python3[812]: circuit view received: 'Pat Burner' [wall, guest]"
+        self.assertIsNone(probe.CAST_LINE.match(line))
+        self.assertIsNone(probe.CIRCUIT_NIGHT.match(line.replace('view received: ', '')
+                                                    .replace("' [", "' ignored: night mode [").replace('circuit ', 'circuit view ')))
+
     def test_probe_reads_every_cast_line(self):
         m = probe.CAST_LINE.match
         r = m("2026-10-29T19:42:05+00:00 projectboard python3[812]: cast received: 'Good Bug' mirrored [wall, guest]")

@@ -383,6 +383,28 @@
     return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
   }
 
+  // A circuit's static view (contract §8.7, 2 Nov 2026): every hold lit at once in a
+  // problem's colours, no animation; the Pi shows it like a problem cast (latest wins,
+  // then idle). Only the wall screen sends it, when a circuit is tapped on its
+  // Circuits page. Like castByName: the lenient geofence, then only sent if
+  // stillShowing() says the same circuit is still on screen. Resolves true once
+  // Realtime accepted it (not proof the board lit). Not in cast_log: the wall has
+  // no sign-in, so it's never a member's.
+  async function showCircuitByName(name, stillShowing = null) {
+    if (!name) return false;
+    const fence = await ensureCastLocation();
+    if (stillShowing && !stillShowing()) return false;
+    if (!fence.ok) return false;
+    try {
+      await channel.httpSend('show_circuit',
+        { circuit_name: name, source: WALL ? 'wall' : 'phone', signed_in: !!session }, { timeout: 10000 });
+      return true;
+    } catch (err) {
+      console.error(err);
+      return false;
+    }
+  }
+
   async function startCircuitCast() {
     const c = castSheetCircuit;
     const btn = document.getElementById('cast-sheet-start');

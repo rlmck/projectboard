@@ -34,6 +34,11 @@ The track is circuits.led_track (db/37): {"version": 1, "moves": [{"move", "from
 check_track() (PB Console saves through the same function); a move that fails
 is skipped. A mirrored run has no track (the track is drawn for the unmirrored
 holds).
+
+The static view (show_circuit, 2 Nov 2026, contract 8.7) is static_frame(): every
+hold of the circuit lit at once in a problem's colours (start green, the last
+hold red, the rest blue), as the wall screen draws it (circuitHoldRoles in
+app/circuits.js). No animation: the listener shows it like a problem cast.
 """
 import json
 import math
@@ -146,6 +151,43 @@ def check_track(led_track, seq):
             continue
         moves[n] = list(cells)
     return moves, problems
+
+
+def static_frame(seq, start_count):
+    """A circuit's static view (contract 8.7): ({led: (r, g, b)}, [dropped hold ids]).
+
+    Every distinct hold in the sequence (climbing order, not inverted) lit once, in
+    its strongest role across its places in the sequence: the last hold is the
+    finish (red), the first start_count (clamped to 1-2, as a run) are starts
+    (green), the rest moves (blue). Finish beats start beats a move, the rule of
+    the wall screen's board (circuitHoldRoles) and of a problem (board.RANK), so a
+    hold that's both a start and the last hold is red. `loops` changes nothing: the
+    view is the route's map, not the run. Feet signs and ids off the grid light
+    nothing. Never mirrored (no mirrored circuits). Raises ValueError for an empty
+    sequence or one that isn't hold ids."""
+    if not seq or not isinstance(seq, list) or not all(isinstance(h, str) for h in seq):
+        raise ValueError('hold_sequence is empty or not hold ids')
+    L = len(seq)
+    try:
+        s = max(1, min(int(start_count or 1), 2, L))
+    except (TypeError, ValueError):
+        s = 1
+    roles = {}
+    for pos, h in enumerate(seq):
+        role = board.FINISH if pos == L - 1 else board.START if pos < s else board.INT
+        if h not in roles or board.RANK[role] > board.RANK[roles[h]]:
+            roles[h] = role
+    leds, ranks, dropped = {}, {}, []
+    for h, role in roles.items():
+        n = board.hold_number(h)
+        if n is None or h in board.FEET_HOLDS:
+            dropped.append(h)
+            continue
+        i = board.led_index(n)
+        if i not in ranks or board.RANK[role] > ranks[i]:
+            ranks[i] = board.RANK[role]
+            leds[i] = board.COLOURS[role]
+    return leds, dropped
 
 
 class Run:

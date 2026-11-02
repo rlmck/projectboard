@@ -17,9 +17,13 @@
 //     with no location fix the geofence lets it through), one at a time, and
 //     rapid taps send only the latest.
 //   - Circuits: the list, and the chosen circuit (its numbered holds) over the
-//     board. Light it up opens the phone's Cast sheet (circuits.js): speed and
-//     loop, then the countdown, the move count and Stop. The wall doesn't go idle
-//     while a run is going; night closes the sheet (the Pi ends the run).
+//     board, dimmed when none is chosen. Opening the page lights nothing. Since
+//     2 Nov 2026 a clean tap on a circuit picks it and lights all its holds at once
+//     (show_circuit, contract 8.7: starts green, the last hold red, the rest blue;
+//     no animation), with the same tap rules and one-at-a-time sending as Problems.
+//     Start circuit opens the phone's Cast sheet (circuits.js): speed and loop,
+//     then the countdown, the move count and Stop. The wall doesn't go idle while
+//     a run is going; night closes the sheet (the Pi ends the run).
 //   - Create (db/35), when the wall key works: anyone at the wall sets a problem
 //     with no sign-in: the board to tap holds on (the phone's rules, cycleHold),
 //     the name on an on-screen keyboard, grade, feet rule, Undo, Clear, Cancel,
@@ -67,14 +71,16 @@
   let wallCastBusy = false;      // castByName is running for the wall
   let wallCastNext = null;       // the latest tap waiting for it: { name, mirror }
   let wallCastState = null;      // how the last one went: { name, mirror, state: 'sending' | 'sent' | 'failed' }
+  // The Circuits page's static views (show_circuit), sent the same way: one at a time, the latest next.
+  let wallCircCastBusy = false;
+  let wallCircCastNext = null;   // the circuit name waiting
+  let wallCircCastState = null;  // { name, state: 'sending' | 'sent' | 'failed' }
   // A clean tap: the finger went down while the list wasn't moving, and the list
   // didn't scroll and the finger didn't move more than WALL_TAP_SLOP px before it
   // came up. Anything else (a scroll, a drag, the touch that stops a fling) only
-  // moves the list: it never picks or casts.
+  // moves the list: it never picks or casts. Both lists (wallTapList).
   const WALL_TAP_SLOP = 10;      // px
   const WALL_FLING_MS = 150;     // the list scrolled this recently: a touch is stopping it
-  let wallListScrollAt = 0;      // when the list last scrolled (a finger or a fling)
-  let wallPress = null;          // { x, y, clean } for the finger on the list
   let wallKeyOk = false;         // the wall key works (wall_key_ok, db/35): Create is offered
   let wallCreateOn = false;      // the Create page is open (the create state in state.js is the wall's)
   let wallCreateName = '';
@@ -203,7 +209,7 @@
     mirror.setAttribute('aria-pressed', p && wallMirror ? 'true' : 'false');
     wallRenderLit();
     wallRenderOffline();
-    wallRenderCircSel();                 // its Light it up follows the connection and the night too
+    wallRenderCircSel();                 // its Start circuit and status follow the connection and the night too
   }
 
   function wallBoardHtml(p, mirror) {
@@ -356,8 +362,16 @@
       ? `<h1 class="wall-name">${escHtml(circuitName(c))}</h1>
          <div class="problem-meta wall-meta">${wallCircMetaHtml(c)}</div>`
       : `<h1 class="wall-name wall-name-empty">Pick a circuit</h1>
-         <p class="wall-hint">A long route, lit one move at a time at your speed.</p>`;
+         <p class="wall-hint">Tap one to light its holds. Start circuit runs it a move at a time.</p>`;
     wallEl('wall-ccast').disabled = !c || wallOffline() || wallNightOn;
+    wallRenderCircLit();
+  }
+
+  // With no circuit chosen the board is dimmed all over, as the problem views dim
+  // around their holds (holdShapeLayerHtml's mask, here with no holds cut out).
+  function wallDimOnlyHtml() {
+    return holdShapeLayerHtml({}, { dim: true })
+      || '<svg class="hold-shape-layer hs-dim" viewBox="0 0 100 100" preserveAspectRatio="none"><rect width="100" height="100" fill="#000" opacity="0.62"/></svg>';
   }
 
   function wallRenderCircStage() {
@@ -365,7 +379,7 @@
     const c = wallCircSelected();
     wallEl('wall-cstage').innerHTML =
       `<div class="board-wrap wall-board"><img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" />`
-      + (c ? `<div class="hold-layer">${circuitStaticOverlay(c)}</div>` : '') + '</div>'
+      + `<div class="hold-layer">${c ? circuitStaticOverlay(c) : wallDimOnlyHtml()}</div></div>`
       + (c ? '' : `<div class="wall-stage-hint">Tap a circuit on the left</div>`);
   }
 
@@ -380,7 +394,65 @@
     wallRenderCircStage();
   }
 
-  function wallCircCast() {
+  // A clean tap on a circuit: pick it and light all its holds. A tap on the one
+  // already picked lights it again (to take the board back from a phone).
+  function wallCircPickAndShow(id) {
+    if (String(id) !== String(wallCircId)) wallCircSelect(id);
+    wallCircShow();
+  }
+
+  // Lights the chosen circuit's holds, all at once (show_circuit): the board shows
+  // the latest cast, so this replaces a problem or a run, and a later cast replaces
+  // it. Not at night, idle or offline. One at a time, the latest tap next, as wallCast.
+  function wallCircShow() {
+    const c = wallCircSelected();
+    if (!c || wallPage !== 'circuits' || wallOffline() || wallIsIdle()) return;
+    const name = circuitName(c);
+    wallCircCastNext = name;
+    wallCircCastState = { name, state: 'sending' };
+    wallRenderCircLit();
+    wallCircShowPump();
+  }
+
+  async function wallCircShowPump() {
+    if (wallCircCastBusy || !wallCircCastNext) return;
+    const name = wallCircCastNext;
+    wallCircCastNext = null;
+    wallCircCastBusy = true;
+    let ok = false;
+    try {
+      ok = await showCircuitByName(name, () => {
+        const c = wallCircSelected();
+        return wallPage === 'circuits' && !wallIdleOn && !wallNightOn && !!c && circuitName(c) === name;
+      });
+    } finally {
+      wallCircCastBusy = false;
+    }
+    const st = wallCircCastState;
+    if (!wallCircCastNext && st && st.name === name) wallCircCastState = { name, state: ok ? 'sent' : 'failed' };
+    wallRenderCircLit();
+    wallCircShowPump();
+  }
+
+  // How the chosen circuit's view went, beside Start circuit (as #wall-lit).
+  function wallRenderCircLit() {
+    const el = wallEl('wall-clit');
+    const c = wallCircSelected();
+    const st = wallCircCastState;
+    const mine = !!c && !!st && st.name === circuitName(c);
+    let cls = '', text = '';
+    if (!c) text = '';
+    else if (wallOffline()) text = 'Offline: not lit';
+    else if (mine && st.state === 'sending') { cls = 'sending'; text = 'Lighting it up…'; }
+    else if (mine && st.state === 'sent') { cls = 'sent'; text = 'Sent to the board'; }
+    else if (mine && st.state === 'failed') { cls = 'failed'; text = 'Didn’t send: tap it again'; }
+    else text = 'Tap it to light it up';
+    el.className = 'wall-lit' + (cls ? ' ' + cls : '');
+    el.innerHTML = text ? WALL_LIT_ICON + `<span>${escHtml(text)}</span>` : '';
+  }
+
+  // Start circuit: the Cast sheet (speed, loop, the countdown and Stop).
+  function wallCircStart() {
     const c = wallCircSelected();
     if (!c || wallOffline() || wallNightOn) return;
     openCircuitCast(c);
@@ -867,6 +939,34 @@
     if (wallIdleOn && wallSlides()[wallSlide] === 'bench') wallRenderIdle();
   }
 
+  // Only a clean tap on a card (WALL_TAP_SLOP, WALL_FLING_MS) calls onTap(its id):
+  // a scroll, a drag or the touch that stops a fling only moves the list.
+  function wallTapList(list, onTap) {
+    let scrollAt = 0;                    // when the list last scrolled (a finger or a fling)
+    let press = null;                    // { x, y, clean } for the finger on the list
+    list.addEventListener('scroll', () => {
+      scrollAt = Date.now();
+      if (press) press.clean = false;    // the list moved under the finger
+    }, { passive: true });
+    list.addEventListener('pointerdown', e => {
+      press = { x: e.clientX, y: e.clientY, clean: Date.now() - scrollAt > WALL_FLING_MS };
+    }, { passive: true });
+    list.addEventListener('pointermove', e => {
+      if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > WALL_TAP_SLOP) press.clean = false;
+    }, { passive: true });
+    list.addEventListener('pointercancel', () => { if (press) press.clean = false; }, { passive: true });
+    list.addEventListener('click', e => {
+      const p = press;
+      press = null;
+      if (e.detail !== 0) {              // 0: a keyboard's Enter, which is always a clean tap
+        if (!p || !p.clean) return;
+        if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > WALL_TAP_SLOP) return;
+      }
+      const card = e.target.closest('.wall-card');
+      if (card) onTap(card.dataset.id);
+    });
+  }
+
   // ── Start (from app.js's boot) ────────────────────────────────────────────────
   function startWall() {
     wallFillQr(wallEl('wall'));
@@ -887,38 +987,15 @@
       listFiltersChanged();
     });
     let markQueued = false;
-    const list = wallEl('wall-list');
-    list.addEventListener('scroll', () => {
-      wallListScrollAt = Date.now();
-      if (wallPress) wallPress.clean = false;      // the list moved under the finger
+    wallEl('wall-list').addEventListener('scroll', () => {
       if (markQueued) return;
       markQueued = true;
       requestAnimationFrame(() => { markQueued = false; wallMarkGrade(); });
     }, { passive: true });
-    // Only a clean tap picks and casts (WALL_TAP_SLOP): a scroll or a drag never does.
-    list.addEventListener('pointerdown', e => {
-      wallPress = { x: e.clientX, y: e.clientY, clean: Date.now() - wallListScrollAt > WALL_FLING_MS };
-    }, { passive: true });
-    list.addEventListener('pointermove', e => {
-      if (wallPress && Math.hypot(e.clientX - wallPress.x, e.clientY - wallPress.y) > WALL_TAP_SLOP) wallPress.clean = false;
-    }, { passive: true });
-    list.addEventListener('pointercancel', () => { if (wallPress) wallPress.clean = false; }, { passive: true });
-    list.addEventListener('click', e => {
-      const press = wallPress;
-      wallPress = null;
-      if (e.detail !== 0) {              // 0: a keyboard's Enter, which is always a clean tap
-        if (!press || !press.clean) return;
-        if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > WALL_TAP_SLOP) return;
-      }
-      const card = e.target.closest('.wall-card');
-      if (card) wallPickAndCast(card.dataset.id);
-    });
+    wallTapList(wallEl('wall-list'), wallPickAndCast);
     wallEl('wall-mirror').addEventListener('click', wallToggleMirror);
-    wallEl('wall-clist').addEventListener('click', e => {
-      const card = e.target.closest('.wall-card');
-      if (card) wallCircSelect(card.dataset.id);
-    });
-    wallEl('wall-ccast').addEventListener('click', wallCircCast);
+    wallTapList(wallEl('wall-clist'), wallCircPickAndShow);
+    wallEl('wall-ccast').addEventListener('click', wallCircStart);
     wallEl('wall-c-board').addEventListener('click', wallCreateTap);
     wallEl('wall-c-name').addEventListener('click', wallKbOpen);
     wallEl('wall-c-grades').addEventListener('click', e => {

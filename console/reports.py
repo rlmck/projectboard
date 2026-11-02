@@ -63,6 +63,8 @@ def _nicknames(recent, members):
             if m:
                 r['nickname'] = m['nickname']
             continue
+        if r['kind'] != 'problem':          # a circuit view: sent from the wall, which has no sign-in
+            continue
         if r.get('who') not in ('member', None):
             continue
         t = _when(r['at'])
@@ -84,7 +86,8 @@ def activity(raw, members=None):
     casts per day and per hour, mirrored share, ignored at night, top problems, and the
     circuit runs with how they ended and the moves made.
     raw: the probe's {'casts': [[iso, name, mirror, shown, source, who]],
-    'circuits': [[iso, name, how, moves, seconds, interval, loop, run, source, who]], ...}.
+    'circuits': [[iso, name, how, moves, seconds, interval, loop, run, source, who]],
+    'views': [[iso, name, shown, source, who]] (a circuit's static view, contract 8.7), ...}.
     members: castlog.members() (db/34), or None. Names come only from there: the public
     broadcast says only whether someone was signed in, never who."""
     per_day, per_hour, names = collections.Counter(), collections.Counter(), collections.Counter()
@@ -129,6 +132,18 @@ def activity(raw, members=None):
             circuit_names[name] += 1
         else:
             ignored += 1
+    views = 0
+    for row in raw.get('views') or []:
+        at, name, shown, source, who = (list(row) + [None] * 5)[:5]
+        t = _when(at)
+        if t is None:
+            continue
+        recent.append({'kind': 'view', 'at': t.isoformat(timespec='seconds'), 'name': name, 'mirror': False,
+                       'shown': bool(shown), 'source': source, 'who': who})
+        if shown:
+            views += 1
+        else:
+            ignored += 1
     member_rows = (members or {}).get('rows') or []
     _nicknames(recent, member_rows)
     recent.sort(key=lambda r: r['at'], reverse=True)
@@ -144,7 +159,7 @@ def activity(raw, members=None):
             'recent': recent[:RECENT_CASTS], 'last': recent[0] if recent else None,
             'sources': dict(sources), 'who': dict(whos), 'journal_from': raw.get('journal_from'),
             'circuit_runs': len([r for r in runs if r['shown']]), 'circuit_moves': sum(r['moves'] or 0 for r in runs),
-            'top_circuits': circuit_names.most_common(10),
+            'top_circuits': circuit_names.most_common(10), 'circuit_views': views,
             'names': (members or {}).get('error') or ('ok' if members is not None else 'not read')}
 
 
