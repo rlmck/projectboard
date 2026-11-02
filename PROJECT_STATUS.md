@@ -3,7 +3,7 @@
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 15 KB: the 5 newest session entries live here, older ones in `docs/log/` (`docs/log/2026-10.md`, `docs/log/2026-11.md`).
 
 ## Current state (as of 2026-11-02)
-- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-538aea9b5d` since 2 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
+- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-055cbd292e` since 2 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
 - **Sorting and filtering (2 Nov 2026):** Sort (New default / Random / Easy / Hard / Popular, db/38), a Grade range slider and Clear in the list's pill row, phone and wall (§4.2a); the wall's rail only for Easy/Hard, idle resets all. Create "+" filled with `--cast`. Not yet tried on the touchscreen.
 - **Deploying:** ship by default; migrations and Pi deploys done by Claude end to end (Decisions). `build.sh` is the Cloudflare build gate; a pre-commit hook scans for secrets. Slash commands `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`.
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs; about 0.25–0.45 s from cast to LEDs). People use it: 50 casts on the evening of 26 Oct, 114 in the 3 days to 28 Oct. **Every hold's LED is checked on the wall** (28 Oct, `pb-ledmap`); three app labels were shifted and fixed by db/32 (188 real holds). **Mirrored casts are still unchecked.**
@@ -57,6 +57,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-02, Claude Code (Create: the finish zone no longer drawn).**
+  - **Changed:** the dashed line and label gone from Create, phone and wall (`.finish-zone`, `finishZoneEdge()`, 5 tokens). The top-25% rule is unchanged; no migration. Overview §4.5/§4.8a.
+  - **Tested:** build; Chrome, local: phone and wall Create, no marker (nothing sent).
+  - **Live:** `61d9ff0`, CACHE `pb-055cbd292e`.
+  - **New questions:** the hints still say "finish-zone hold": reword?
+
 - **2026-11-02, Claude Code (the wall's Circuits page: a tap lights the circuit).**
   - **Changed:** Circuits page: board dimmed with nothing chosen; opening it lights nothing; a tap lights every hold (new event `show_circuit`: starts green, last red, rest blue, finish beats start), shown as a problem cast (latest wins, idle after 15 min); "Light it up" → **Start circuit**. PB Console Activity ("holds lit"). Contract §8.7. `CACHE` `pb-538aea9b5d`.
   - **Tested:** build, Pi 153 (1 transient error in 4 runs), console 93; Chrome, broadcast stubbed: open (nothing sent), tap, re-tap, rapid taps (latest only), drag, Start circuit.
@@ -76,11 +82,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Changed:** new accounts: nickname (live check), PIN, PIN again, one step; `#auth` leads with Create (Profile too). The PIN goes to Supabase padded by `pinPassword()`; no Auth setting, migration or existing account touched. Sign-in takes a PIN or a passphrase in one field. Edge Function (v2, deployed): a PIN account (`user_metadata.pin`) gets a new PIN, an older one words as before. iPhone Safari note. App wordlist dropped. privacy.html, overview §6, CLAUDE.md.
   - **Tested:** build, console 91, Pi 141; locally with sign-up/sign-in stubbed (no accounts made): PIN filter, mismatch, short, taken nickname, the padded PIN, passphrases unchanged, the note in an iPhone UA (Safari, installed, Chrome) and dismissing it; the function: deployed copy matched the repo first, 401 without a session.
   - **Left:** Ross: a real PIN account, an old passphrase sign-in and both admin resets (needs a person: Turnstile and an admin login).
-
-- **2026-11-02, Claude Code (sorting and filtering: TODO 10).**
-  - **Found:** the list was always sorted by grade then name. Ticks are own-rows-only, so Popular needed an RPC.
-  - **Changed:** Sort / Grade / Clear pills, phone and wall, shared sheets (`problems.js`, `state.js`); Clear pinned right, the row scrolls. Default order **New** (was easiest first). Wall: pills replace the ★; rail and grade headers only for Easy/Hard; idle resets. Create "+" and the wall's Create tab filled `--cast`. Overview §4.2a, §4.7a.
-  - **Tested:** build, console 91, Pi 141; in Chrome on live data: each sort, the slider, Clear, the wall's idle reset; phone widths and 1280×720.
-  - **Then:** Ross: add Popular, keep the grade tabs. db/38 `problem_tick_counts()` applied; Popular sort; Clear no longer hides the pressed pill; privacy line.
-  - **Left:** try the slider and pills on the touchscreen with a finger.
-
