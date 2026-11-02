@@ -3,7 +3,7 @@
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 15 KB: the 5 newest session entries live here, older ones in `docs/log/` (`docs/log/2026-10.md`, `docs/log/2026-11.md`).
 
 ## Current state (as of 2026-11-02)
-- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-055cbd292e` since 2 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
+- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-8fae3d805c` since 2 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
 - **Sorting and filtering (2 Nov 2026):** Sort (New default / Random / Easy / Hard / Popular, db/38), a Grade range slider and Clear in the list's pill row, phone and wall (§4.2a); the wall's rail only for Easy/Hard, idle resets all. Create "+" filled with `--cast`. Not yet tried on the touchscreen.
 - **Deploying:** ship by default; migrations and Pi deploys done by Claude end to end (Decisions). `build.sh` is the Cloudflare build gate; a pre-commit hook scans for secrets. Slash commands `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`.
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs; about 0.25–0.45 s from cast to LEDs). People use it: 50 casts on the evening of 26 Oct, 114 in the 3 days to 28 Oct. **Every hold's LED is checked on the wall** (28 Oct, `pb-ledmap`); three app labels were shifted and fixed by db/32 (188 real holds). **Mirrored casts are still unchecked.**
@@ -36,7 +36,7 @@ The ordered to-do list (next steps, backlog, and what not to build yet) lives in
 
 ## Waiting on
 - **Ross, for the new card** (in and working since 1 Nov): Tailscale → disable key expiry for the new `projectboard`; a backup image of the working card; the wall tests below again on the new card.
-- **Ross: try creating a problem on the kiosk and a phone with live LEDs** (live 30 Oct): the wall's Create tab (keyboard, Save, Light it up), a phone's Create and an admin Edit at the gym, a cast while setting (Show on board).
+- **Ross: try wall Create on the touchscreen** (the tab should show; tabs Problems · Circuits · Ranks · Create · Get the app since 2 Nov), and a phone with live LEDs (live 30 Oct): the wall's Create tab (keyboard, Save, it lights on save), a phone's Create and an admin Edit at the gym, a cast while setting (Show on board).
 - **Ross: cast Pat Burner on the wall** (live 1 Nov): the trace, the ghost and the pink track; whether the dim levels (0.12, 0.2) read on the strip.
 - **Ross: try a circuit cast on the wall before opening** (live 30 Oct), from a phone and from the wall screen's Circuits page: the countdown, the look at each speed, Stop, a loop, the top of a run done once, a match (Pat Burner moves 6/7); whether the amber `(255,110,0)` reads as amber on the strip.
 - **Ross: try the wall's tap-to-cast on the touchscreen** (live 2 Nov): tap, scroll and fling, fast taps, Mirror (the first mirrored-cast check), a phone cast then a wall tap, the 15-minute LED idle; on Circuits, a tap lights the holds (colours as the screen), Start circuit replaces it.
@@ -57,6 +57,13 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-02, Claude Code (wall: the Create tab, the tab order, the dimmed Problems board).**
+  - **Found:** the wall-key chain is sound end to end, checked on the Pi without reading the key: the file is there (root:kiosk 0640, 43 chars), its SHA-256 is db/36's, `wall_keys` has 1 live key and it's that one, the kiosk passes it in `#k=`, a `wall_key_ok` call from the Pi with it says true, and a fresh Chromium on the Pi at 1280×720 shows Create. The live screen couldn't be seen; the kiosk was restarted at 14:19. Likeliest cause: a failed first ask at the 08:00 start, retried only after a good problems poll.
+  - **Changed:** `wallCheckKey` retries a failed ask every minute on its own; tabs Problems · Circuits · Ranks · Create · Get the app; Problems with nothing chosen is dimmed like Circuits (`wallDimOnlyHtml`). Overview §4.7a.
+  - **Tested:** build; Chrome at 1280×720, local: the order, the dim, a chosen problem (nothing sent).
+  - **Live:** `824d31b`, CACHE `pb-8fae3d805c`, kiosk at its next idle.
+  - **New questions:** the key is readable in the Pi's process list by local accounts (local note).
+
 - **2026-11-02, Claude Code (Create: the finish zone no longer drawn).**
   - **Changed:** the dashed line and label gone from Create, phone and wall (`.finish-zone`, `finishZoneEdge()`, 5 tokens). The top-25% rule is unchanged; no migration. Overview §4.5/§4.8a.
   - **Tested:** build; Chrome, local: phone and wall Create, no marker (nothing sent).
@@ -76,9 +83,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Left:** Ross: the touchscreen checks (session report), incl. the first mirrored cast.
 
 - **2026-11-02, chat.** Hardware status: the relays and 74AHCT125 have arrived (not fitted); the Pi is in the junction box. Left: the same in `pi/README.md` → Wiring.
-
-- **2026-11-02, Claude Code (PIN sign-up: TODO 9).**
-  - **Found:** Supabase Auth's minimum password length is 15 (its floor is 6), so a 4-digit PIN can't be the password itself; `#auth` opened on Sign in, not Create.
-  - **Changed:** new accounts: nickname (live check), PIN, PIN again, one step; `#auth` leads with Create (Profile too). The PIN goes to Supabase padded by `pinPassword()`; no Auth setting, migration or existing account touched. Sign-in takes a PIN or a passphrase in one field. Edge Function (v2, deployed): a PIN account (`user_metadata.pin`) gets a new PIN, an older one words as before. iPhone Safari note. App wordlist dropped. privacy.html, overview §6, CLAUDE.md.
-  - **Tested:** build, console 91, Pi 141; locally with sign-up/sign-in stubbed (no accounts made): PIN filter, mismatch, short, taken nickname, the padded PIN, passphrases unchanged, the note in an iPhone UA (Safari, installed, Chrome) and dismissing it; the function: deployed copy matched the repo first, 401 without a session.
-  - **Left:** Ross: a real PIN account, an old passphrase sign-in and both admin resets (needs a person: Turnstile and an admin login).
