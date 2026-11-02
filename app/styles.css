@@ -1143,20 +1143,6 @@
       background: transparent; border-style: dashed; color: var(--accent-hover);
     }
 
-    /* The finish zone, marked on the board: a faint red wash over the top band
-       with a dashed edge and a label. */
-    .finish-zone {
-      position: absolute; left: 0; right: 0; top: 0;
-      background: linear-gradient(to bottom, var(--finish-a07), var(--finish-a02));
-      border-bottom: 1.5px dashed var(--finish-text-a70);
-      pointer-events: none;
-    }
-    .finish-zone span {
-      position: absolute; left: 8px; bottom: 4px;
-      font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
-      color: var(--finish-zone-text); text-shadow: var(--text-shadow-finish-zone);
-    }
-
     /* Progress, pinned under the board (in the space the problem view leaves
        empty there): start · holds · finish, then what to tap next. */
     .create-status {

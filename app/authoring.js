@@ -6,8 +6,8 @@
   // The create view is laid out like the problem view: pinned, the same title
   // block (the name is typed in place as the title, the grade is the badge, tap
   // it for the grade sheet) and the board in the same place. The wall is dimmed
-  // to the problem view's level with every hold left bright, the finish zone is
-  // marked on the board, and a strip under the board shows what's set and what
+  // to the problem view's level with every hold left bright, and a strip under
+  // the board shows what's set and what
   // to tap next, instead of a paragraph of rules.
   // Holds keep their physical role in createRoles. On save we build the canonical
   // display order and store it INVERTED so the existing renderer
@@ -37,38 +37,19 @@
     return !!(HOLD_MAP && HOLD_MAP[h]) && HOLD_MAP[h].y <= topZoneThreshold();
   }
 
-  // Where to draw the finish zone's edge on the board (a % from the top): midway
-  // between the lowest hold inside the zone and the highest one below it, so the
-  // line never cuts through a hold.
-  function finishZoneEdge() {
-    if (!HOLD_MAP) return null;
-    const t = topZoneThreshold();
-    let lastIn = -Infinity, firstOut = Infinity;
-    for (const h in HOLD_MAP) {
-      const y = HOLD_MAP[h].y;
-      if (typeof y !== 'number') continue;
-      if (y <= t) lastIn = Math.max(lastIn, y);
-      else firstOut = Math.min(firstOut, y);
-    }
-    return (isFinite(lastIn) && isFinite(firstOut)) ? (lastIn + firstOut) / 2 : null;
-  }
-
   // Draw the board (dimmed wall, bright holds, the assigned ones outlined in their
-  // role colour, the finish zone marked) and refresh the progress strip.
-  // The board's layer: the holds' outlines (or dots) and the finish zone. The
-  // phone's create view and the wall screen's Create page both draw it.
+  // role colour) and refresh the progress strip. The finish zone still applies
+  // (cycleHold) but isn't drawn on the board (2 Nov 2026).
+  // The board's layer: the holds' outlines (or dots). The phone's create view and
+  // the wall screen's Create page both draw it.
   function createLayerHtml() {
     const svg = holdShapeLayerHtml(createRoles, { mirror: false, dim: true, lightAll: true });
-    const edge = finishZoneEdge();
-    const zone = edge == null ? ''
-      : `<div class="finish-zone" style="height:${edge}%"><span>Finish zone</span></div>`;
-    // Without traced outlines (an old board version), fall back to dots. The
-    // zone goes last so its edge and label sit above the dimming.
-    return ((svg != null) ? svg : Object.keys(createRoles).map(h => {
+    // Without traced outlines (an old board version), fall back to dots.
+    return (svg != null) ? svg : Object.keys(createRoles).map(h => {
       const pos = HOLD_MAP && HOLD_MAP[h];
       if (!pos) return '';
       return `<div class="hold-dot ${createRoles[h]}" style="left:${pos.x}%;top:${pos.y}%"></div>`;
-    }).join('')) + zone;
+    }).join('');
   }
 
   function applyCreateRoles() {
