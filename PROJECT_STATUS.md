@@ -4,7 +4,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 
 ## Current state (as of 2026-11-02)
 - **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). Since 29 Oct its service-worker `CACHE` is stamped by `build.sh` (`pb-` + a hash of the shipped files): `pb-e0bd53c890` live since 30 Oct (no star ratings, Cast beside the title, the feet rule). Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
-- **Sorting and filtering (2 Nov 2026):** Sort (New default / Random / Easy / Hard), a Grade range slider and Clear in the list's pill row, phone and wall (§4.2a); the wall's rail only for Easy/Hard, idle resets all. Create "+" filled with `--cast`. Not yet tried on the touchscreen.
+- **Sorting and filtering (2 Nov 2026):** Sort (New default / Random / Easy / Hard / Popular, db/38), a Grade range slider and Clear in the list's pill row, phone and wall (§4.2a); the wall's rail only for Easy/Hard, idle resets all. Create "+" filled with `--cast`. Not yet tried on the touchscreen.
 - **Deploying:** ship by default; migrations and Pi deploys done by Claude end to end (Decisions). `build.sh` is the Cloudflare build gate; a pre-commit hook scans for secrets. Slash commands `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`.
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs; about 0.25–0.45 s from cast to LEDs). People use it: 50 casts on the evening of 26 Oct, 114 in the 3 days to 28 Oct. **Every hold's LED is checked on the wall** (28 Oct, `pb-ledmap`); three app labels were shifted and fixed by db/32 (188 real holds). **Mirrored casts are still unchecked.**
 - **The Pi 4 is back on a new SD card (1 Nov 2026)** after the old card died on 31 Oct: it set itself up unattended at its first boot (`pi/firstboot/README.md`; everything the old card held outside the repo is now in `pi/` or the laptop's gitignored `pi/secrets.env`, with a new Tailscale key, rescue-hotspot password and wall key, db/36). Casting from a phone works again. The Pi 4 (Raspberry Pi OS Lite 64-bit, trixie, 2 GB; on the gym Wi-Fi and Tailscale as `projectboard`) runs the listener with self-healing, watchdogs and night mode 23:00–08:00 (`pi/`, `pi/README.md`). The night switch was seen working both ways on 27 Oct. The R8 acceptance tests are still to do. The idle pattern after 20 minutes is **`wave`** (ten patterns in `pi/listener/patterns/`, switched live with `pb-idle`). Wi-Fi: a random hardware address per join, a `pb-netwatch` watchdog (v2) and a rescue hotspot (`projectboard-rescue`).
@@ -51,15 +51,15 @@ Details in `docs/cast-contract.md` → "Open questions".
 3. Stale, duplicate or rapid casts: the listener shows the latest; is a rate limit wanted? (Casts carry no id or timestamp.)
 4. Is the problem name still the cast key once names become editable?
 5. Hardware: what each relay will switch; final cast brightness (the stopgap used 0.5).
-6. Sorting: add **Popular** (needs a `problem_tick_counts()` RPC, a schema change)? And keep the phone's grade tabs now the Grade range exists, or drop them?
 
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
 - **2026-11-02, Claude Code (sorting and filtering: TODO 10).**
-  - **Found:** the list was always sorted by grade then name; the wall's list was the same `visibleProblems()` with a ★ for benchmarks. Ticks are own-rows-only (RLS) and there's no count RPC, so **Popular** wasn't built (it needs a new SECURITY DEFINER function: Open question 6).
+  - **Found:** the list was always sorted by grade then name; the wall's list was the same `visibleProblems()` with a ★. Ticks are own-rows-only, so Popular needed an RPC.
   - **Changed:** Sort / Grade / Clear pills, phone and wall, shared sheets (`problems.js`, `state.js`); Clear pinned right, the row scrolls. Default order **New** (was easiest first). Wall: pills replace the ★; rail and grade headers only for Easy/Hard; idle resets. Create "+" and the wall's Create tab filled `--cast`. Overview §4.2a, §4.7a.
   - **Tested:** build, console 91, Pi 141; in Chrome on live data: each sort, the slider (drag, label tap), Clear, the wall's idle reset; 360/390/412 and 1280×720.
+  - **Then:** Ross: add Popular, keep the grade tabs. db/38 `problem_tick_counts()` applied; Popular sort; Clear no longer hides the pressed pill (row ends fade); privacy line.
   - **Left:** try the slider and pills on the touchscreen with a finger.
 
 - **2026-11-01, Claude Code (circuit tracks, end to end).** db/37 (`circuits.led_track`, written only over direct Postgres) applied and behaviour-tested; Pat Burner seeded (11 moves). Listener: `trace_s`, the route trace, ghost and track under Pulse and fade, 3 config keys, stale moves skipped; deployed 10:55 (it read Pat Burner's track cleanly). Simulator in step. App: `trace_s: 3`, "Watch the route", countdown 3 s later. PB Console: Circuit tracks tab. Contract §8.6, console-plan phase 16. Tested: Pi 141, console 91, build; the tab in Chrome on live data (nothing saved); the run screen locally. **Left:** see it on the wall; restart PB Console.

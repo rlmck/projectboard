@@ -235,6 +235,16 @@
     else if (pick.dataset.pick === 'grade') openGradeSheet();
     else if (pick.dataset.pick === 'clear') clearListFilters();
   });
+  // The pill rows: remember the pill pressed (so Clear appearing doesn't hide it)
+  // and fade an end of the row while there's more to scroll to that way.
+  document.addEventListener('pointerdown', e => {
+    const pill = e.target.closest && e.target.closest('.filter-row .filter-pill');
+    if (pill) filterLastTap = pill;
+  }, { capture: true, passive: true });
+  document.querySelectorAll('.filter-row .filter-pills').forEach(row =>
+    row.addEventListener('scroll', () => markFilterRowEdges(row), { passive: true }));
+  window.addEventListener('resize', () =>
+    document.querySelectorAll('.filter-row .filter-pills').forEach(markFilterRowEdges));
   document.getElementById('sort-opts').addEventListener('click', e => {
     const opt = e.target.closest('.sort-opt');
     if (opt) pickSort(opt.dataset.sort);

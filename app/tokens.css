@@ -175,6 +175,7 @@
   --feet-opt-h: 34px;  /* the create view's feet-rule options */
   --feet-rule-w: 380px;
   --pill-caret: 14px;  /* the chevron on the list's Sort and Grade pills */
+  --pill-fade: 28px;  /* the pill row fades out over this at an end with more to scroll (FILTER_FADE_PX, problems.js) */
   --range-thumb: 30px;  /* the Grade sheet's slider handles (the wall's below) */
   --range-track-h: 6px;
   --range-hit-h: 52px;  /* the slider's touch area, taller than the track */

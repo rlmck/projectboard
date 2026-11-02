@@ -734,6 +734,7 @@
     closeSortSheet();
     document.getElementById('grade-modal').classList.remove('show');
     resetListFilters();
+    wallEl('wall-filters').querySelector('.filter-pills').scrollLeft = 0;
     updateListControls();
     wallSelect(null);
     wallCircSelect(null);

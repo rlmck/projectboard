@@ -10,6 +10,7 @@
     ['random', 'Random', 'Shuffled. Choose it again to reshuffle'],
     ['easy',   'Easy',   'Easiest grade first'],
     ['hard',   'Hard',   'Hardest grade first'],
+    ['popular', 'Popular', 'Most climbers have sent it'],
   ];
   const sortLabel = key => (LIST_SORTS.find(s => s[0] === key) || LIST_SORTS[0])[1];
   const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''));
@@ -27,6 +28,7 @@
       // Hardest first; unknown grades (Project) still last, as in Easy.
       hard:   (a, b) => (gradeRank(a.grade) === 999) - (gradeRank(b.grade) === 999)
                         || gradeRank(b.grade) - gradeRank(a.grade) || byName(a, b),
+      popular: (a, b) => tickCount(b) - tickCount(a) || byName(a, b),
     }[listSort] || ((a, b) => 0);
     return arr.slice().sort(cmp);
   }
@@ -100,6 +102,54 @@
     });
     const atDefault = listFiltersAtDefault();
     document.querySelectorAll('[data-pick="clear"]').forEach(el => { el.hidden = atDefault; });
+    // Clear appearing narrows the scroller: keep the pill just tapped in view (it
+    // was often the one at the right edge, which Clear would otherwise hide).
+    document.querySelectorAll('.filter-row .filter-pills').forEach(row => {
+      // (focus isn't reliable: iOS doesn't focus a tapped button; app.js records the tap)
+      const tapped = filterLastTap && row.contains(filterLastTap) ? filterLastTap : null;
+      if (tapped) {
+        const r = row.getBoundingClientRect(), t = tapped.getBoundingClientRect();
+        if (t.right > r.right - FILTER_FADE_PX) row.scrollLeft += t.right - r.right + FILTER_FADE_PX;
+        else if (t.left < r.left + FILTER_FADE_PX) row.scrollLeft -= r.left + FILTER_FADE_PX - t.left;
+      }
+      markFilterRowEdges(row);
+    });
+  }
+
+  // The pill row's ends fade out where there's more to scroll to (.more-left /
+  // .more-right, styles.css), so a pill cut off at an end reads as "scroll", not
+  // as sitting under Clear. FILTER_FADE_PX matches --pill-fade in tokens.css.
+  const FILTER_FADE_PX = 28;
+  let filterLastTap = null;            // the pill last pressed (app.js, pointerdown)
+  function markFilterRowEdges(row) {
+    const max = row.scrollWidth - row.clientWidth;
+    row.classList.toggle('more-left', row.scrollLeft > 1);
+    row.classList.toggle('more-right', row.scrollLeft < max - 1);
+  }
+
+  // ── Popular: distinct climbers who've ticked each problem (db/38) ──
+  // Ticks are private, so the counts come from problem_tick_counts(), fetched when
+  // Popular is chosen and with each problem load while it's the sort (at most once
+  // a minute). Until they arrive (or offline) every count is 0: names A–Z.
+  let tickCountsLoading = null;
+  function tickCount(p) { return tickCounts.get(String(p.id)) || 0; }
+  function loadTickCounts() {
+    if (tickCountsLoading) return tickCountsLoading;
+    if (Date.now() - tickCountsAt < 60 * 1000) return Promise.resolve();
+    tickCountsLoading = (async () => {
+      try {
+        const { data, error } = await sb.rpc('problem_tick_counts');
+        if (error) throw error;
+        tickCounts = new Map((data || []).map(r => [String(r.problem_id), r.climbers || 0]));
+        tickCountsAt = Date.now();
+        if (listSort === 'popular') renderList();
+      } catch (e) {
+        console.warn('tick counts load failed', e);
+      } finally {
+        tickCountsLoading = null;
+      }
+    })();
+    return tickCountsLoading;
   }
 
   // A filter or the sort changed: re-render, and start the list from the top.
@@ -113,6 +163,8 @@
 
   function clearListFilters() {
     resetListFilters();
+    filterLastTap = null;
+    document.querySelectorAll('.filter-row .filter-pills').forEach(row => { row.scrollLeft = 0; });
     listFiltersChanged();
   }
 
@@ -129,6 +181,7 @@
     if (!LIST_SORTS.some(s => s[0] === key)) return;
     listSort = key;
     if (key === 'random') listRandom = new Map();   // a fresh shuffle every time it's chosen
+    if (key === 'popular') loadTickCounts();
     closeSortSheet();
     listFiltersChanged();
   }
@@ -800,6 +853,7 @@
   function showProblems(rows) {
     allProblems = rows;
     loaded = true;
+    if (listSort === 'popular') loadTickCounts();
     buildGradeTabs();
     renderList();
   }

@@ -404,12 +404,24 @@
        their sheets, then the filters; it scrolls sideways when it doesn't fit, and
        Clear sits outside the scroller on the right, shown only when something isn't
        the default. The circuits' row keeps its equal-width pills. */
-    .filter-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+    .filter-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
     .filter-row .filter-pills {
       flex: 1; min-width: 0; margin-top: 0;
       overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
     }
     .filter-row .filter-pills::-webkit-scrollbar { display: none; }
+    .filter-row .filter-pills.more-right {
+      -webkit-mask-image: linear-gradient(to right, var(--black) calc(100% - var(--pill-fade)), transparent);
+      mask-image: linear-gradient(to right, var(--black) calc(100% - var(--pill-fade)), transparent);
+    }
+    .filter-row .filter-pills.more-left {
+      -webkit-mask-image: linear-gradient(to left, var(--black) calc(100% - var(--pill-fade)), transparent);
+      mask-image: linear-gradient(to left, var(--black) calc(100% - var(--pill-fade)), transparent);
+    }
+    .filter-row .filter-pills.more-left.more-right {
+      -webkit-mask-image: linear-gradient(to right, transparent, var(--black) var(--pill-fade), var(--black) calc(100% - var(--pill-fade)), transparent);
+      mask-image: linear-gradient(to right, transparent, var(--black) var(--pill-fade), var(--black) calc(100% - var(--pill-fade)), transparent);
+    }
     .filter-row .filter-pill { flex: 0 0 auto; padding: 7px 12px; }
     .pick-pill { display: inline-flex; align-items: center; gap: 4px; }
     .pick-pill svg { width: var(--pill-caret); height: var(--pill-caret); flex: none; }
