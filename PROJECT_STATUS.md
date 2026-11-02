@@ -12,7 +12,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **Circuit tracks (1 Nov 2026):** `circuits.led_track` (db/37). A cast starts with a 3 s route trace, then the countdown; in the run a dim ghost of the holds and the move's track in dim pink sit under Pulse and fade. Edited in PB Console. Pat Burner has Ross's track. Contract §8.6. Not yet seen on the wall.
 - **The wall kiosk** (`kiosk.service`: cage + Chromium on `HDMI-A-2`, opening `/?wall` with the wall key in the URL fragment) runs on the 1280×720 touchscreen; it picks up a deploy within the hour, at its next idle. Not yet tried by hand on the touchscreen.
 - **Create on the wall, live LEDs while setting (30 Oct 2026):** the wall's Create saves as The Hangout (db/35, the wall key); taps on Create/Edit light the board (contract §9). Not yet tried on the wall.
-- **Hardware:** temporary wiring, loose on a ledge behind the board. Power enters the strip at six points (5.5 V under load, white at the far end). Two YU0510 5 V 10 A supplies (both needed to start the strip). No relays or level shifter yet (3.3 V data direct works); the 2-channel relay module and the 74AHCT125 are on order; a junction box and wiring parts are bought. Wiring: `pi/README.md` → "Wiring". A USB webcam streams the back of the board to Tailscale devices only.
+- **Hardware:** temporary wiring. The Pi is in the junction box (31 Oct); the rest goes in next. Power enters the strip at six points (5.5 V under load, white at the far end). Two YU0510 5 V 10 A supplies (both needed to start the strip). No relays or level shifter fitted (3.3 V data direct works); the 2-channel relay module and the 74AHCT125 (a bare chip) have arrived. Wiring: `pi/README.md` → "Wiring". A USB webcam streams the back of the board to Tailscale devices only.
 - **PB Console** (`console/`, `bash console/start.sh`): health dashboard, services, board controls, logs, config, Pi deploy with a drift check, release (Ship / Staging / Rollback since 29 Oct), LED map, test cast, **circuit tracks** (1 Nov, its first database write: direct Postgres), activity, the R8 checklist, backups, runbook. The Pi-side helper is deployed. Anything that needs a look can be **dismissed** until it changes, and Recent actions cleared (1 Nov). Phase 13 (Data) isn't built; phase 14 (Power) waits for the relays.
 
 ## Decisions
@@ -39,7 +39,6 @@ The ordered to-do list (next steps, backlog, and what not to build yet) lives in
 - **Ross: cast Pat Burner on the wall** (live 1 Nov): the trace, the ghost and the pink track; whether the dim levels (0.12, 0.2) read on the strip.
 - **Ross: try a circuit cast on the wall before opening** (live 30 Oct), from a phone and from the wall screen's Circuits page: the countdown, the look at each speed, Stop, a loop, the top of a run done once, a match (Pat Burner moves 6/7); whether the amber `(255,110,0)` reads as amber on the strip.
 - **Ross: test the feet rule on the wall** (the listener is deployed, 30 Oct): Orange-only lights B2 only, Black-only B1 only, Any neither; the same mirrored (the first mirrored-cast check).
-- Ross: the relay module (eBay) and 74AHCT125 level shifter (Amazon) to arrive.
 - Ross: an on-site check of the cast geofence centre (a non-admin phone by the board and at the far end of the gym).
 - **Ross: try PIN accounts on a real iPhone** (live 2 Nov): create one in Safari (number pad, a mismatch), the Home Screen note, add to Home Screen and sign in there; an older passphrase account still signs in; an admin's **Give a new PIN** on a PIN account (4 digits) and on a passphrase account (4 words). Delete any test accounts after.
 - Ross: delete the local passphrase hand-out file in the archive (then empty the Recycle Bin) once all 7 migrated accounts have signed in.
@@ -55,6 +54,8 @@ Details in `docs/cast-contract.md` → "Open questions".
 
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-11-02, chat.** Hardware status: the relays and 74AHCT125 have arrived (not fitted); the Pi is in the junction box. Left: the same in `pi/README.md` → Wiring.
 
 - **2026-11-02, Claude Code (PIN sign-up: TODO 9).**
   - **Found:** Supabase Auth's minimum password length is 15 (its floor is 6), so a 4-digit PIN can't be the password itself; `#auth` opened on Sign in, not Create.
