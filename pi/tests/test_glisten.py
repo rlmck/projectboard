@@ -104,6 +104,26 @@ class States(unittest.TestCase):
         run_for(r, clock, 40, dt=0.5)
         self.assertEqual(r.state, renderer.CAST)
 
+    def test_the_default_timeout_is_15_minutes(self):
+        # Ross, 2 Nov 2026: back to the idle pattern 15 minutes after the last
+        # cast (was 20). The default lives in mode.py, renderer.py's fallback
+        # and config.env.example: all three must agree.
+        import mode
+        self.assertEqual(mode.DEFAULTS['IDLE_AFTER_S'], '900')
+        with open(os.path.join(ROOT, 'pi', 'config.env.example'), encoding='utf-8') as f:
+            self.assertIn('IDLE_AFTER_S=900\n', f.read())
+        cfg = {k: v for k, v in CFG.items() if k != 'IDLE_AFTER_S'}
+        clock, strip, logs = Clock(), Strip(), []
+        r = renderer.Renderer(strip, cfg, False, logs.append, logs.append, logs.append, clock=clock, seed=7)
+        self.assertEqual(r.idle_after, 900)
+        r.cast(CAST)
+        run_for(r, clock, 600, dt=1)
+        r.cast(CAST)                                    # any cast restarts the 15 minutes
+        run_for(r, clock, 899, dt=1)
+        self.assertEqual(r.state, renderer.CAST)
+        run_for(r, clock, 2, dt=1)
+        self.assertEqual(r.state, renderer.IDLE)
+
     def test_idle_now(self):
         r, clock, _, _ = make()
         r.cast(CAST)

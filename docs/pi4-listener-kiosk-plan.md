@@ -148,7 +148,7 @@ Over Tailscale, watched on the board webcam (`http://projectboard:8080/stream`) 
 
 ## Decisions needed from Ross
 1. ~~Where the new listener lives~~ **`pi/`, committed** (resilience spec, 27 Oct).
-2. ~~Idle in the daytime~~ **An idle pattern after 20 minutes, `wave` chosen** (28 Oct; `pi/listener/patterns/`).
+2. ~~Idle in the daytime~~ **An idle pattern after 15 minutes (20 until 2 Nov 2026), `wave` chosen** (28 Oct; `pi/listener/patterns/`).
 3. Brightness: cast brightness (stopgap 0.5) and the power budget once both 8-way feeds are wired.
 4. Feet indicators `hold2`/`hold21` (LEDs 26/25): the stopgap lights them blue like Gareth did. Keep, skip, or give them their own colours?
 5. Name match: exact (recommended, it's what the app sends) or trimmed / case-insensitive?

@@ -9,7 +9,7 @@ Everything that runs on the Pi 4 behind the board: the cast listener that lights
 | Unit | What it does |
 |---|---|
 | `leds-off-at-boot` | Clears the strip early in boot (`leds.py --off`). |
-| `pb-listener` | The cast listener (`listener/pb_listener.py`). It joins Supabase Realtime `board:HangoutPortland`, and on each `cast_problem` looks the problem up by name and lights it (contract §6). On `cast_circuit` it reads the circuit and runs it (`listener/circuit.py`: countdown, moving holds, finish) until it finishes, a `stop` with its run token, or `CIRCUIT_MAX_S` (contract §8). On `preview_holds` it lights the holds someone is setting, live (contract §9). systemd restarts it if it exits, and its watchdog restarts it if it freezes for 30 s. When nobody has cast for 20 minutes it runs an **idle pattern** (below). Status goes to `/run/projectboard/listener.json`. |
+| `pb-listener` | The cast listener (`listener/pb_listener.py`). It joins Supabase Realtime `board:HangoutPortland`, and on each `cast_problem` looks the problem up by name and lights it (contract §6). On `cast_circuit` it reads the circuit and runs it (`listener/circuit.py`: countdown, moving holds, finish) until it finishes, a `stop` with its run token, or `CIRCUIT_MAX_S` (contract §8). On `preview_holds` it lights the holds someone is setting, live (contract §9). systemd restarts it if it exits, and its watchdog restarts it if it freezes for 30 s. When nobody has cast for 15 minutes (any source; each cast restarts it) it runs an **idle pattern** (below). Status goes to `/run/projectboard/listener.json`. |
 | `pb-health.timer` | Every 2 min, as root (`ops/pb-health`). Network: brings Wi-Fi back up, restarts NetworkManager, and reboots after 10 min down (at most 1 an hour and 3 a day). It also restarts Tailscale, a stuck listener or the webcam when needed, and logs temperature, disk and throttling. |
 | `pb-mode.timer` | Every minute (`ops/pb-mode`). Night (23:00–08:00 by default, from the clock) stops the kiosk and turns the screen off; day turns them back on. The listener clears the LEDs and ignores casts at night by itself. In the day the screen also stays off while `/run/projectboard/screen-off` exists (PB Console's Screen off; gone at the next reboot). |
 | `pb-weekly-reboot.timer` | Monday 07:45, skipped if the Pi has been up under an hour. |
@@ -42,7 +42,7 @@ While someone sets a problem (the phone's Create or Edit, or the wall screen's C
 
 ## Idle patterns
 
-From `IDLE_AFTER_S` (1200 s) after the last cast, and when the listener starts or the night ends in the daytime, the board runs an idle pattern. It fades in over 1.5 s from whatever was lit. A cast cuts straight in, with no fade. At 23:00 everything fades to black over 3 s. The same brightness, gamma (2.2), `IDLE_MAX_AMPS` cap and frame rate apply to every pattern.
+From `IDLE_AFTER_S` (900 s, 15 minutes since 2 Nov 2026; was 1200) after the last cast, and when the listener starts or the night ends in the daytime, the board runs an idle pattern. It fades in over 1.5 s from whatever was lit. A cast cuts straight in, with no fade. At 23:00 everything fades to black over 3 s. The same brightness, gamma (2.2), `IDLE_MAX_AMPS` cap and frame rate apply to every pattern.
 
 | Pattern | What it does | Pi 4 ms/frame |
 |---|---|---|

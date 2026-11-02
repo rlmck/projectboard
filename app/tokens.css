@@ -160,7 +160,6 @@
   --text-shadow-finish-zone: 0 1px 3px rgba(0,0,0,0.9);
   --drop-hold-lines: 0 0 1px rgba(0,0,0,0.85);  /* used as drop-shadow(var(...)) */
   --drop-ol-x: 0 0 1.5px #000;
-  --shadow-offer: 0 0 0 8px rgba(236,72,153,0.4);  /* the wall's Light it up, pulsing after a save on Create */
   --shadow-lights-on: 0 0 0 3px rgba(34,197,94,0.28);  /* the 'lit on the board' dot */
 
   /* Sizes */

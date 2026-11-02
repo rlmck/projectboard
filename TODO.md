@@ -11,7 +11,7 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 
 ## Testing
 1. **The R8 acceptance tests** (PB Console → Tests; `docs/pi4-listener-kiosk-plan.md` R8): kill, freeze, Wi-Fi drop, Supabase blocked, reboot mid-cast, the clock across 23:00/08:00, boot with no network (on-site), the weekly-reboot skip.
-2. **Try the wall mode on the touchscreen:** the rail with a real finger, whether ~8 rows feels right, the 20-minute idle, a first real cast from the wall.
+2. **Try the wall mode on the touchscreen:** the rail with a real finger, whether ~8 rows feels right, the 20-minute screen idle, a first real cast from the wall.
 
 ## Hardware
 3. **Tidy and box the wiring;** when they arrive, fit the relay module and the 74AHCT125; then relay control in `pb-mode` (`pi/listener/power.py` is the hook) and the console's Power phase. `pb-mode` mustn't cut the LED supplies while `pb-ledmap` runs.
@@ -23,18 +23,17 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 7. **A mock listener on the laptop** that turns a cast into LED indices (lower priority now the webcam shows the real board).
 
 ## App design and features
-8. **Wall screen auto-cast and a 15-minute idle:** on the wall screen only, tapping a problem in the list lights it on the board straight away, with no Cast / Light it up button. The wall's pick always takes over, whatever is on the board (the idle pattern or a phone's cast): the latest cast wins. Phones keep their Cast button. If nobody has cast for 15 minutes (any source; every cast resets the timer), the Pi goes back to the idle pattern; today the idle starts after 20 minutes, so change that and every place that says 20 (listener config, docs, tests). Use the existing cast path (channel `board:HangoutPortland`, event `cast_problem`). Update the cast contract and tests; also decide what a tap does on the wall's Create and Circuits pages (leave them as they are unless it's clearly wrong).
-9. **Problem name/setter editing** (changes the cast key: contract open questions).
-10. **Wall screen, faster updates** (parked 27 Oct): check every 5 min instead of hourly and apply a waiting update after ~2 min untouched, keeping the chosen problem and scroll position.
-11. **More challenges** (a row in `challenges`), monthly boards, a metronome, casting the circuit at Start once Circuits Phase 2 exists.
-12. **Benchmarks:** admins can already mark a problem as a benchmark (detail ⋮ → "Mark as benchmark"); clarify what more is wanted.
-13. **Move a problem into Circuits (admins only):** when a problem was created but is really a circuit, an admin can move it into Circuits. A move, not a copy: afterwards it exists only as a circuit and is gone from the problems list. Design questions for the session: how the problem's holds become circuit moves, and what happens to its ticks, likes and any cast history.
+8. **Problem name/setter editing** (changes the cast key: contract open questions).
+9. **Wall screen, faster updates** (parked 27 Oct): check every 5 min instead of hourly and apply a waiting update after ~2 min untouched, keeping the chosen problem and scroll position.
+10. **More challenges** (a row in `challenges`), monthly boards, a metronome, casting the circuit at Start once Circuits Phase 2 exists.
+11. **Benchmarks:** admins can already mark a problem as a benchmark (detail ⋮ → "Mark as benchmark"); clarify what more is wanted.
+12. **Move a problem into Circuits (admins only):** when a problem was created but is really a circuit, an admin can move it into Circuits. A move, not a copy: afterwards it exists only as a circuit and is gone from the problems list. Design questions for the session: how the problem's holds become circuit moves, and what happens to its ticks, likes and any cast history.
 
 ## PB Console
-14. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
+13. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
 
 ## Bugs
-15. **Known bugs to triage:** `docs/codebase-overview.md` §13.
+14. **Known bugs to triage:** `docs/codebase-overview.md` §13.
 
 ## Not now
 Don't build yet: Circuits Phase 3 (PBs, leaderboards), mirrored circuits, a Done filter for circuits ("done" = done both sides, problems only), tags, session/logbook tracking beyond ticks, the Flutter migration.

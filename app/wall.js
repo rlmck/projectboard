@@ -8,10 +8,14 @@
 //   - Problems: the phone's Sort, Grade, Benchmarks and Clear pills over the list
 //     (problems.js; the same state and sheets), the list (sorted Easy or Hard: a
 //     header per grade and a rail of grades down the left edge, a tap jumps the
-//     list to that grade), and on the right the chosen problem's name, Mirror and "Light it up"
-//     over the board (its outlines over the dimmed wall). Light it up casts
-//     through castByName() exactly as the phone does (guests can cast; with no
-//     location fix the geofence lets it through).
+//     list to that grade), and on the right the chosen problem's name, Mirror and
+//     how its cast went, over the board (its outlines over the dimmed wall).
+//     Since 2 Nov 2026 there's no cast button: a clean tap on a card (not a
+//     scroll) picks the problem and lights it, a tap on Mirror flips it and
+//     lights that side, and the wall's pick takes over whatever is on the board.
+//     It casts through castByName() exactly as the phone does (guests can cast;
+//     with no location fix the geofence lets it through), one at a time, and
+//     rapid taps send only the latest.
 //   - Circuits: the list, and the chosen circuit (its numbered holds) over the
 //     board. Light it up opens the phone's Cast sheet (circuits.js): speed and
 //     loop, then the countdown, the move count and Stop. The wall doesn't go idle
@@ -21,13 +25,14 @@
 //     the name on an on-screen keyboard, grade, feet rule, Undo, Clear, Cancel,
 //     Save. Every tap lights the board (authoring.js, contract §9). Saved through
 //     wall_create_problem() with the wall key, as The Hangout; then the new
-//     problem is chosen on Problems, ready to light up. No idle slides while it's
+//     problem is chosen on Problems and lit on the board. No idle slides while it's
 //     open; 5 minutes untouched asks, then discards it; night closes it.
 //   - Ranks, read-only: Points and each challenge's board side by side.
 //   - Get the app: the /scan QR, in place of Profile. No sign-in anywhere.
 // After WALL_IDLE_MS without a touch it goes back to the list (the filters and the
-// sort back to the defaults, the choice cleared, the list at the top) and plays slides: the QR and the benchmark of the day. A touch ends
-// them (on the benchmark slide it picks that problem); a reload while they're up
+// sort back to the defaults, the choice cleared, the list at the top) and plays
+// slides: the QR and the benchmark of the day. A touch ends them (on the
+// benchmark slide it picks that problem and lights it); a reload while they're up
 // (an app update) comes back to them, not to 20 minutes of the list. At
 // night (the Pi's 23:00–08:00) it shows only a dimmed QR, and casting is off: the
 // Pi ignores casts then anyway. With no connection the saved list stays up with a
@@ -57,7 +62,19 @@
   let wallSlideAt = 0;           // when the current slide went up
   let wallNetDown = false;       // the last fetch of the problems failed
   let wallLastPoll = Date.now(); // boot has just loaded everything
-  let wallCastHtml = '';         // the cast button's resting markup
+  // The wall's casts (Problems): one is sent at a time; a tap while one is going
+  // waits in wallCastNext, and a newer tap replaces it, so rapid taps never queue.
+  let wallCastBusy = false;      // castByName is running for the wall
+  let wallCastNext = null;       // the latest tap waiting for it: { name, mirror }
+  let wallCastState = null;      // how the last one went: { name, mirror, state: 'sending' | 'sent' | 'failed' }
+  // A clean tap: the finger went down while the list wasn't moving, and the list
+  // didn't scroll and the finger didn't move more than WALL_TAP_SLOP px before it
+  // came up. Anything else (a scroll, a drag, the touch that stops a fling) only
+  // moves the list: it never picks or casts.
+  const WALL_TAP_SLOP = 10;      // px
+  const WALL_FLING_MS = 150;     // the list scrolled this recently: a touch is stopping it
+  let wallListScrollAt = 0;      // when the list last scrolled (a finger or a fling)
+  let wallPress = null;          // { x, y, clean } for the finger on the list
   let wallKeyOk = false;         // the wall key works (wall_key_ok, db/35): Create is offered
   let wallCreateOn = false;      // the Create page is open (the create state in state.js is the wall's)
   let wallCreateName = '';
@@ -179,13 +196,12 @@
       ? `<h1 class="wall-name">${escHtml(displayName(p))}</h1>
          <div class="problem-meta wall-meta">${wallMetaHtml(p)}</div>`
       : `<h1 class="wall-name wall-name-empty">Pick a problem</h1>
-         <p class="wall-hint">Choose one from the list, then light it up on the wall.</p>`;
+         <p class="wall-hint">Tap one in the list to light it up on the wall.</p>`;
     const mirror = wallEl('wall-mirror');
     mirror.disabled = !p;
     mirror.classList.toggle('active', !!p && wallMirror);
     mirror.setAttribute('aria-pressed', p && wallMirror ? 'true' : 'false');
-    const cast = wallEl('wall-cast');
-    if (!castTarget) cast.disabled = !p || wallOffline();   // a cast in progress owns the button
+    wallRenderLit();
     wallRenderOffline();
     wallRenderCircSel();                 // its Light it up follows the connection and the night too
   }
@@ -202,16 +218,11 @@
       + (p ? '' : `<div class="wall-stage-hint">Tap a problem on the left</div>`);
   }
 
+  // Picks a problem (null: none), unmirrored. A cast for the one before that is
+  // still waiting on the location check isn't sent: its stillShowing says no.
   function wallSelect(id) {
     wallSelId = id === null || id === undefined ? null : id;
     wallMirror = false;
-    const p = wallSelected();
-    // A cast still waiting on the location check for the problem before lets go
-    // of the button; castByName drops it when the check returns (as renderDetail).
-    if (castTarget && (!p || castTarget.name !== p.name || castTarget.mirror !== wallMirror)) {
-      castTarget = null;
-      wallResetCast();
-    }
     document.querySelectorAll('#wall-list .wall-card').forEach(c => {
       const on = String(c.dataset.id) === String(wallSelId);
       c.classList.toggle('selected', on);
@@ -221,32 +232,79 @@
     wallRenderStage();
   }
 
-  function wallResetCast() {
-    const btn = wallEl('wall-cast');
-    resetCastButton(btn);
-    btn.innerHTML = wallCastHtml;
-    const p = wallSelected();
-    btn.disabled = !p || wallOffline();
+  // A clean tap on a card: pick it and light it. A tap on the card already
+  // picked lights it again (to take the board back from a phone's cast).
+  function wallPickAndCast(id) {
+    if (String(id) !== String(wallSelId)) wallSelect(id);
+    wallCast();
   }
 
+  // Mirror flips the view and lights that side straight away; back again lights
+  // the problem the right way round.
   function wallToggleMirror() {
     if (!wallSelected()) return;
     wallMirror = !wallMirror;
-    if (castTarget) { castTarget = null; wallResetCast(); }
     wallRenderSel();
     wallRenderStage();
+    wallCast();
   }
 
-  // Same path as the phone's cast button: name and orientation fixed at the tap,
-  // and only sent if they're still on screen once the location check returns.
-  function wallCast(e) {
+  // Lights what's on screen: the chosen problem, the way round it's shown. The
+  // wall's pick always takes over the board (the Pi shows the latest cast). Not
+  // at night, idle or offline. One cast at a time: a tap while one is being sent
+  // waits, replacing any tap already waiting, so only the latest goes next.
+  function wallCast() {
     const p = wallSelected();
-    if (!p || wallOffline() || wallNightOn) return;
-    const name = p.name, mirror = wallMirror;
-    castByName(name, e.currentTarget, mirror, () => {
-      const q = wallSelected();
-      return wallPage === 'problems' && !wallIdleOn && !wallNightOn && !!q && q.name === name && wallMirror === mirror;
-    });
+    if (!p || wallPage !== 'problems' || wallOffline() || wallIsIdle()) return;
+    wallCastNext = { name: p.name, mirror: wallMirror };
+    wallCastState = { name: p.name, mirror: wallMirror, state: 'sending' };
+    wallRenderLit();
+    wallCastPump();
+  }
+
+  // The same path as the phone's cast button: name and orientation fixed at the
+  // tap, and only sent if they're still on screen once the location check
+  // returns. castByName gets a button of its own that isn't on the page; the
+  // wall shows how it went in #wall-lit instead.
+  async function wallCastPump() {
+    if (wallCastBusy || !wallCastNext) return;
+    const { name, mirror } = wallCastNext;
+    wallCastNext = null;
+    wallCastBusy = true;
+    let ok = false;
+    try {
+      ok = await castByName(name, document.createElement('button'), mirror, () => {
+        const q = wallSelected();
+        return wallPage === 'problems' && !wallIdleOn && !wallNightOn && !!q && q.name === name && wallMirror === mirror;
+      }, { quiet: true });
+    } finally {
+      wallCastBusy = false;
+    }
+    const st = wallCastState;
+    if (!wallCastNext && st && st.name === name && st.mirror === mirror) {
+      wallCastState = { name, mirror, state: ok ? 'sent' : 'failed' };
+    }
+    wallRenderLit();
+    wallCastPump();
+  }
+
+  // How the chosen problem's cast went, beside Mirror. "Sent" means Realtime took
+  // it, which isn't proof the board lit (contract §4), so it never says "lit".
+  const WALL_LIT_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zM21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>';
+  function wallRenderLit() {
+    const el = wallEl('wall-lit');
+    const p = wallSelected();
+    const st = wallCastState;
+    const mine = !!p && !!st && st.name === p.name && st.mirror === wallMirror;
+    let cls = '', text = '';
+    if (!p) text = '';
+    else if (wallOffline()) text = 'Offline: not lit';
+    else if (mine && st.state === 'sending') { cls = 'sending'; text = 'Lighting it up…'; }
+    else if (mine && st.state === 'sent') { cls = 'sent'; text = 'Sent to the board'; }
+    else if (mine && st.state === 'failed') { cls = 'failed'; text = 'Didn’t send: tap it again'; }
+    else text = 'Tap it to light it up';
+    el.className = 'wall-lit' + (cls ? ' ' + cls : '');
+    el.innerHTML = text ? WALL_LIT_ICON + `<span>${escHtml(text)}</span>` : '';
   }
 
   // ── Circuits page ─────────────────────────────────────────────────────────────
@@ -525,10 +583,8 @@
     wallSelect(data.id);
     const card = document.querySelector(`#wall-list .wall-card[data-id="${CSS.escape(String(data.id))}"]`);
     if (card) card.scrollIntoView({ block: 'center' });
-    const cast = wallEl('wall-cast');
-    cast.classList.add('offer');
-    setTimeout(() => cast.classList.remove('offer'), 6000);
-    showToast(`Saved “${data.name}”: light it up to see it on the wall`, 'success');
+    showToast(`Saved “${data.name}”`, 'success');
+    wallCast();                        // and lit on the board, as a tap on its card would
   }
 
   // ── Offline ───────────────────────────────────────────────────────────────────
@@ -691,7 +747,7 @@
           <p class="wall-kicker">Benchmark of the day</p>
           <h1>${escHtml(displayName(p))}</h1>
           <div class="problem-meta wall-meta">${wallMetaHtml(p)}</div>
-          <p class="wall-slide-sub">Benchmarks score points on Ranks. Touch the screen to pick it, then light it up.</p>
+          <p class="wall-slide-sub">Benchmarks score points on Ranks. Touch the screen to light it up.</p>
         </div>
       </div>`;
   }
@@ -751,7 +807,7 @@
   }
 
   // A touch on the slides ends them (the touch does nothing else). On the
-  // benchmark slide it picks that problem. At night it stays put.
+  // benchmark slide it picks that problem and lights it. At night it stays put.
   function wallWake() {
     if (wallNightOn) return;
     const kind = wallSlides()[wallSlide];
@@ -765,6 +821,7 @@
         wallSelect(p.id);
         const card = document.querySelector(`#wall-list .wall-card[data-id="${CSS.escape(String(p.id))}"]`);
         if (card) card.scrollIntoView({ block: 'center' });
+        wallCast();
       }
     }
   }
@@ -812,7 +869,6 @@
 
   // ── Start (from app.js's boot) ────────────────────────────────────────────────
   function startWall() {
-    wallCastHtml = wallEl('wall-cast').innerHTML;
     wallFillQr(wallEl('wall'));
 
     // Any touch counts as someone using the screen: a tap, or the start of a
@@ -831,17 +887,33 @@
       listFiltersChanged();
     });
     let markQueued = false;
-    wallEl('wall-list').addEventListener('scroll', () => {
+    const list = wallEl('wall-list');
+    list.addEventListener('scroll', () => {
+      wallListScrollAt = Date.now();
+      if (wallPress) wallPress.clean = false;      // the list moved under the finger
       if (markQueued) return;
       markQueued = true;
       requestAnimationFrame(() => { markQueued = false; wallMarkGrade(); });
     }, { passive: true });
-    wallEl('wall-list').addEventListener('click', e => {
+    // Only a clean tap picks and casts (WALL_TAP_SLOP): a scroll or a drag never does.
+    list.addEventListener('pointerdown', e => {
+      wallPress = { x: e.clientX, y: e.clientY, clean: Date.now() - wallListScrollAt > WALL_FLING_MS };
+    }, { passive: true });
+    list.addEventListener('pointermove', e => {
+      if (wallPress && Math.hypot(e.clientX - wallPress.x, e.clientY - wallPress.y) > WALL_TAP_SLOP) wallPress.clean = false;
+    }, { passive: true });
+    list.addEventListener('pointercancel', () => { if (wallPress) wallPress.clean = false; }, { passive: true });
+    list.addEventListener('click', e => {
+      const press = wallPress;
+      wallPress = null;
+      if (e.detail !== 0) {              // 0: a keyboard's Enter, which is always a clean tap
+        if (!press || !press.clean) return;
+        if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > WALL_TAP_SLOP) return;
+      }
       const card = e.target.closest('.wall-card');
-      if (card) wallSelect(card.dataset.id);
+      if (card) wallPickAndCast(card.dataset.id);
     });
     wallEl('wall-mirror').addEventListener('click', wallToggleMirror);
-    wallEl('wall-cast').addEventListener('click', wallCast);
     wallEl('wall-clist').addEventListener('click', e => {
       const card = e.target.closest('.wall-card');
       if (card) wallCircSelect(card.dataset.id);

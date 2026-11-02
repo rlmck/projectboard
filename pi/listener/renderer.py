@@ -70,7 +70,7 @@ class Renderer:
         self.log, self.warn, self.err = log, warn, err
         self.clock = clock
         self.seed = seed
-        self.idle_after = float(cfg.get('IDLE_AFTER_S') or 1200)
+        self.idle_after = float(cfg.get('IDLE_AFTER_S') or 900)
         self.animate = _on(cfg.get('IDLE_ANIMATION'))
         self.dt = 1.0 / max(1.0, min(60.0, float(cfg.get('IDLE_FPS') or 30)))
         # A circuit run's frames: the cast brightness and current cap, as a problem's (board.scale).

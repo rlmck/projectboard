@@ -2476,10 +2476,16 @@
     .wall-cast { background: var(--cast); border-color: var(--cast); color: var(--on-accent); }
     .wall-cast:active { background: var(--cast-hover); }
     .wall-cast.casting { opacity: 0.7; }
-    .wall-cast.sent { animation: flash 0.4s ease; }
-    /* After a save on Create: "light it up" is the next thing to do. */
-    .wall-cast.offer { animation: wall-offer 1.2s ease-in-out 5; }
-    @keyframes wall-offer { 50% { box-shadow: var(--shadow-offer); } }
+    /* Problems: a tap on a card lights it (no button); this says how the cast went.
+       A fixed width, so the name beside it doesn't move as the words change. */
+    .wall-lit {
+      flex: none; width: 200px; display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+      color: var(--text-muted); font-size: 16px; font-weight: 700; line-height: 1.25; text-align: right;
+    }
+    .wall-lit svg { width: 22px; height: 22px; flex: none; }
+    .wall-lit.sending { color: var(--text-soft); }
+    .wall-lit.sent { color: var(--cast); }
+    .wall-lit.failed { color: var(--error-text); }
     .wall-offline {
       padding: 10px 14px;
       background: var(--surface2); border: 1px solid var(--error-text-a40); border-radius: var(--radius-chip);

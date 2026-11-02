@@ -640,8 +640,10 @@
   // seconds; if it says the thing tapped is no longer on screen (a swipe, the
   // mirror flipped, the view left) nothing is sent. Otherwise the wall would
   // light the problem you swiped away from.
-  async function castByName(name, btn, mirror = false, stillShowing = null) {
-    if (!name) return;
+  // quiet: no "Cast cancelled" toast (the wall screen, whose next tap casts again).
+  // Resolves true once Realtime accepted the cast, false otherwise.
+  async function castByName(name, btn, mirror = false, stillShowing = null, { quiet = false } = {}) {
+    if (!name) return false;
     // Icon-only cast buttons keep their icon; text buttons swap to status text.
     const isIcon = btn.classList.contains('cast-icon-btn');
     const prev = btn.innerHTML;
@@ -665,13 +667,13 @@
     if (!mine() || (stillShowing && !stillShowing())) {
       const superseded = castTarget !== null && !mine();
       restore();
-      if (!superseded) showToast('Cast cancelled — the problem changed', 'error');
-      return;
+      if (!superseded && !quiet) showToast('Cast cancelled — the problem changed', 'error');
+      return false;
     }
     if (!fence.ok) {
       restore();
       showToast('Casting only works at the gym', 'error');
-      return;
+      return false;
     }
     if (!isIcon) btn.innerHTML = 'Sending';
 
@@ -688,15 +690,17 @@
       await channel.httpSend('cast_problem', payload, { timeout: 10000 });
       logCast('problem', name, mirror);
       showToast(`${mirror ? 'Mirror cast' : 'Cast'}: ${name}`, 'success');
-      if (!mine()) return;          // swiped on while sending: that button isn't ours
+      if (!mine()) return true;     // swiped on while sending: that button isn't ours
       btn.classList.remove('casting');
       btn.classList.add('sent');
       if (!isIcon) btn.innerHTML = 'Sent';
       setTimeout(restore, 2000);
+      return true;
     } catch (err) {
       restore();
       showToast('Cast failed — check connection', 'error');
       console.error(err);
+      return false;
     }
   }
 

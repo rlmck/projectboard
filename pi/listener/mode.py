@@ -26,7 +26,7 @@ DEFAULTS = {
     'IDLE_PATTERN': 'glisten',
     'IDLE_CYCLE': '',
     'IDLE_CYCLE_MIN': '10',
-    'IDLE_AFTER_S': '1200',
+    'IDLE_AFTER_S': '900',
     'IDLE_BRIGHTNESS': '1.0',
     'IDLE_MAX_AMPS': '2.0',
     'IDLE_FPS': '30',
