@@ -328,12 +328,14 @@
       padding: 0 2px;
     }
 
-    /* "+" create button in the list search row */
-    .add-btn {
-      color: var(--accent);
-      border-color: var(--accent);
+    /* "+" create button in the list search row: filled like the Cast button (no glow).
+       .icon-btn comes later in the file, so these need its specificity too. */
+    .icon-btn.add-btn {
+      background: var(--cast);
+      color: var(--on-accent);
+      border-color: var(--cast);
     }
-    .add-btn:active { background: var(--accent-a12); }
+    .icon-btn.add-btn:active { background: var(--cast-hover); }
     .add-btn svg { width: 22px; height: 22px; }
 
     /* ── Grade filter tabs ───────────────────────────────────────────── */
@@ -397,6 +399,73 @@
     }
     /* Auth-only pills for a guest: muted but still tappable (taps fire a sign-in toast). */
     .filter-pill.disabled { opacity: 0.4; }
+
+    /* The problem list's row (and the wall's, #wall-filters): Sort and Grade open
+       their sheets, then the filters; it scrolls sideways when it doesn't fit, and
+       Clear sits outside the scroller on the right, shown only when something isn't
+       the default. The circuits' row keeps its equal-width pills. */
+    .filter-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+    .filter-row .filter-pills {
+      flex: 1; min-width: 0; margin-top: 0;
+      overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    .filter-row .filter-pills::-webkit-scrollbar { display: none; }
+    .filter-row .filter-pill { flex: 0 0 auto; padding: 7px 12px; }
+    .pick-pill { display: inline-flex; align-items: center; gap: 4px; }
+    .pick-pill svg { width: var(--pill-caret); height: var(--pill-caret); flex: none; }
+    .filter-pill.filter-clear { flex: none; color: var(--accent-hover); border-color: var(--accent-a40); }
+    .filter-clear[hidden] { display: none; }
+
+    /* The Sort sheet: one row per order, the current one lit */
+    .sort-opts { display: flex; flex-direction: column; gap: 8px; }
+    .sort-opt {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+      width: 100%; padding: 14px 16px;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: var(--btn-radius);
+      color: var(--text); font: inherit; text-align: left;
+      cursor: pointer; touch-action: manipulation;
+    }
+    .sort-opt:active { transform: scale(0.98); }
+    .sort-opt-name { font-size: 16px; font-weight: 700; }
+    .sort-opt-note { font-size: 13px; color: var(--text-muted); text-align: right; }
+    .sort-opt.active { background: var(--accent-a12); border-color: var(--accent); }
+    .sort-opt.active .sort-opt-name { color: var(--accent-hover); }
+
+    /* The Grade sheet: the range, a two-handle slider, the grades under it. The
+       track runs between the handles' centres at either end, so step i sits at
+       i/(n-1) of its width (problems.js). */
+    .gr-value { margin-bottom: 6px; text-align: center; font-size: 1.6rem; font-weight: 800; color: var(--accent-hover); }
+    .gr-slider {
+      position: relative; height: var(--range-hit-h);
+      touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer;
+    }
+    .gr-slider[hidden], .gr-ticks[hidden] { display: none; }
+    .gr-track {
+      position: absolute; top: 50%;
+      left: calc(var(--range-thumb) / 2); right: calc(var(--range-thumb) / 2);
+      height: var(--range-track-h); transform: translateY(-50%);
+      background: var(--surface2); border-radius: var(--radius-pill);
+    }
+    .gr-fill { position: absolute; top: 0; bottom: 0; background: var(--accent); border-radius: var(--radius-pill); }
+    .gr-thumb {
+      position: absolute; top: 50%; z-index: 2;
+      width: var(--range-thumb); height: var(--range-thumb);
+      transform: translate(-50%, -50%);
+      background: var(--white); border: 3px solid var(--accent); border-radius: 50%;
+      box-shadow: var(--shadow-hold);
+    }
+    .gr-thumb.under { z-index: 1; }
+    .gr-thumb:focus { outline: none; }
+    .gr-thumb:focus-visible { outline: 2px solid var(--accent-hover); outline-offset: 3px; }
+    .gr-ticks { position: relative; height: var(--range-tick-h); margin: 0 calc(var(--range-thumb) / 2) 18px; }
+    .gr-tick {
+      position: absolute; top: 0; transform: translateX(-50%);
+      padding: 4px 2px; background: none; border: none;
+      color: var(--text-faint); font: inherit; font-size: 12px; font-weight: 700;
+      cursor: pointer; touch-action: manipulation; white-space: nowrap;
+    }
+    .gr-tick.in { color: var(--text); }
+    .list-sheet #gr-reset { flex: 0 0 auto; width: auto; padding-left: 18px; padding-right: 18px; }
 
     /* ── Main content ────────────────────────────────────────────────── */
     main {
@@ -2262,7 +2331,7 @@
       cursor: pointer; touch-action: manipulation;
     }
     .wall-tab:active { transform: scale(0.97); }
-    .wall-tab-create { display: inline-flex; align-items: center; gap: 8px; color: var(--accent-hover); border-color: var(--accent-a40); }
+    .wall-tab-create { display: inline-flex; align-items: center; gap: 8px; background: var(--cast); color: var(--on-accent); border-color: var(--cast); }
     .wall-tab-create svg { width: 18px; height: 18px; }
     #wall-tab-create[hidden] { display: none; }
     .wall-tab.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
@@ -2284,8 +2353,37 @@
     body.wall .cast-sheet .cc-option-label { font-size: 17px; }
     body.wall .cast-sheet .btn-block { padding-top: 16px; padding-bottom: 16px; font-size: 18px; }
 
-    /* Problems: the rail | the list | the chosen problem's bar over the board */
-    .wall-problems.active { grid-template-columns: var(--wall-rail-w) calc(var(--wall-side-w) - var(--wall-rail-w)) minmax(0, 1fr); }
+    /* Problems: the pills over the rail | the list, then the chosen problem's bar
+       over the board. Sorted New or Random (.wall-flat) there's no rail: the list
+       takes its column too. */
+    .wall-problems.active {
+      grid-template-columns: var(--wall-rail-w) calc(var(--wall-side-w) - var(--wall-rail-w)) minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .wall-filters {
+      grid-column: 1 / 3; grid-row: 1; margin-top: 0; gap: 8px;
+      padding: 10px 12px 10px 14px;
+      border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    }
+    .wall-filters .filter-pills { gap: 8px; }
+    .wall-filters .filter-pill { min-height: var(--wall-pill-h); padding: 0 18px; font-size: 17px; }
+    .wall-filters .pick-pill svg { width: var(--wall-pill-caret); height: var(--wall-pill-caret); }
+    .wall-problems .wall-rail { grid-column: 1; grid-row: 2; }
+    .wall-problems .wall-list { grid-column: 2; grid-row: 2; }
+    .wall-problems .wall-main { grid-column: 3; grid-row: 1 / 3; }
+    .wall-problems.wall-flat .wall-rail { display: none; }
+    .wall-problems.wall-flat .wall-list { grid-column: 1 / 3; padding-top: 12px; }
+    /* The Sort and Grade sheets on the wall: wider, and sized for a finger */
+    body.wall { --range-thumb: var(--wall-range-thumb); --range-hit-h: var(--wall-range-hit); --range-tick-h: var(--wall-range-tick-h); }
+    body.wall .list-sheet { max-width: var(--wall-sheet-w); }
+    body.wall .sort-opt { padding: 18px 22px; }
+    body.wall .sort-opt-name { font-size: 20px; }
+    body.wall .sort-opt-note { font-size: 16px; }
+    body.wall .gr-value { font-size: 30px; }
+    body.wall .gr-tick { padding: 8px 4px; font-size: 17px; }
+    body.wall .list-sheet .btn-block { padding-top: 16px; padding-bottom: 16px; font-size: 18px; }
+    body.wall .list-sheet .modal-close { width: var(--wall-pill-h); height: var(--wall-pill-h); font-size: 20px; }
+    body.wall .list-sheet .modal-title { font-size: 24px; }
     .wall-rail {
       display: flex; flex-direction: column; gap: 5px; min-height: 0;
       padding: 10px 8px;
@@ -2302,8 +2400,6 @@
     .wall-rail-btn.long { font-size: 12px; }
     .wall-rail-btn:active { transform: scale(0.96); }
     .wall-rail-btn.here { background: var(--accent-a12); border-color: var(--accent); color: var(--accent-hover); }
-    .wall-bench { flex: none; height: 52px; max-height: none; color: var(--gold); font-size: 22px; }
-    .wall-bench.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
     .wall-list {
       position: relative;                  /* the sections' offsetTop, for the rail */
       min-height: 0; overflow-y: auto; overscroll-behavior: contain;

@@ -123,10 +123,17 @@
       </button>
     </div>
     <div class="grade-tabs" id="grade-tabs"></div>
-    <div class="filter-pills" id="filter-pills">
-      <button class="filter-pill" id="pill-faves" type="button" aria-pressed="false">Favourites</button>
-      <button class="filter-pill" id="pill-bench" type="button" aria-pressed="false">Benchmarks</button>
-      <button class="filter-pill" id="pill-done" type="button" aria-pressed="false">Exclude Done</button>
+    <!-- Sort and Grade open their sheets; Clear shows only when something isn't
+         the default. The wall's row (#wall-filters) has the same pills. -->
+    <div class="filter-row">
+      <div class="filter-pills" id="filter-pills">
+        <button class="filter-pill pick-pill" id="pill-sort" type="button" data-pick="sort" aria-haspopup="dialog"><span class="pill-label">Sort: New</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        <button class="filter-pill pick-pill" id="pill-grade" type="button" data-pick="grade" aria-haspopup="dialog"><span class="pill-label">Grade</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        <button class="filter-pill" id="pill-faves" type="button" aria-pressed="false">Favourites</button>
+        <button class="filter-pill" id="pill-bench" type="button" aria-pressed="false">Benchmarks</button>
+        <button class="filter-pill" id="pill-done" type="button" aria-pressed="false">Exclude Done</button>
+      </div>
+      <button class="filter-pill filter-clear" id="pill-clear" type="button" data-pick="clear" hidden>✕ Clear</button>
     </div>
   </header>
   <div class="list-pull" id="list-pull" aria-hidden="true"><div class="list-pull-icon"></div></div>
@@ -251,6 +258,39 @@
 </section>
 
 <!-- Grade picker for the create view (a sheet, like the info sheet) -->
+<!-- The problem list's Sort and Grade sheets (problems.js), for the phone and the wall -->
+<div class="modal-overlay" id="sort-modal">
+  <div class="modal list-sheet" role="dialog" aria-modal="true" aria-labelledby="sort-title">
+    <div class="modal-header">
+      <div class="modal-title" id="sort-title">Sort</div>
+      <button class="modal-close" id="sort-close" aria-label="Close">✕</button>
+    </div>
+    <div class="sort-opts" id="sort-opts"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="grade-modal">
+  <div class="modal list-sheet" role="dialog" aria-modal="true" aria-labelledby="grade-range-title">
+    <div class="modal-header">
+      <div class="modal-title" id="grade-range-title">Grade</div>
+      <button class="modal-close" id="grade-close" aria-label="Close">✕</button>
+    </div>
+    <div class="gr-value" id="gr-value">All grades</div>
+    <div class="gr-slider" id="gr-slider">
+      <div class="gr-track" id="gr-track">
+        <div class="gr-fill" id="gr-fill"></div>
+        <div class="gr-thumb" id="gr-lo" role="slider" tabindex="0" aria-label="Easiest grade"></div>
+        <div class="gr-thumb" id="gr-hi" role="slider" tabindex="0" aria-label="Hardest grade"></div>
+      </div>
+    </div>
+    <div class="gr-ticks" id="gr-ticks"></div>
+    <div class="modal-actions">
+      <button class="btn-block btn-ghost" id="gr-reset" type="button">All grades</button>
+      <button class="btn-block btn-primary" id="gr-done" type="button">Show problems</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="create-grade-modal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="create-grade-title">
     <div class="modal-header">
@@ -951,11 +991,19 @@
     <div class="wall-status" id="wall-status" hidden>Offline</div>
   </header>
 
-  <!-- Problems: a rail of grades (jumps the list; the star filters to benchmarks),
-       the list with a header per grade, and the chosen problem over the board -->
+  <!-- Problems: the phone's Sort / Grade / Benchmarks / Clear pills over the list;
+       sorted Easy or Hard, a rail of grades (jumps the list) and a header per grade;
+       and the chosen problem over the board -->
   <section class="wall-page wall-problems active" data-page="problems">
+    <div class="filter-row wall-filters" id="wall-filters">
+      <div class="filter-pills">
+        <button class="filter-pill pick-pill" type="button" data-pick="sort" aria-haspopup="dialog"><span class="pill-label">Sort: New</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        <button class="filter-pill pick-pill" type="button" data-pick="grade" aria-haspopup="dialog"><span class="pill-label">Grade</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        <button class="filter-pill" id="wall-bench" type="button" aria-pressed="false">Benchmarks</button>
+      </div>
+      <button class="filter-pill filter-clear" type="button" data-pick="clear" hidden>✕ Clear</button>
+    </div>
     <nav class="wall-rail" aria-label="Jump to a grade">
-      <button class="wall-rail-btn wall-bench" id="wall-bench" type="button" aria-pressed="false" aria-label="Benchmarks only">★</button>
       <div class="wall-rail-grades" id="wall-rail"></div>
     </nav>
     <div class="wall-list" id="wall-list"></div>

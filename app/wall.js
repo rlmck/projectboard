@@ -5,9 +5,10 @@
 //
 // The Pi's kiosk (pi/systemd/kiosk.service) opens /?wall on a 1280×720 landscape
 // touchscreen. Browse and cast only:
-//   - Problems: a rail of grades down the left edge (a tap jumps the list to that
-//     grade; the star filters to benchmarks), the whole list with a header per
-//     grade, and on the right the chosen problem's name, Mirror and "Light it up"
+//   - Problems: the phone's Sort, Grade, Benchmarks and Clear pills over the list
+//     (problems.js; the same state and sheets), the list (sorted Easy or Hard: a
+//     header per grade and a rail of grades down the left edge, a tap jumps the
+//     list to that grade), and on the right the chosen problem's name, Mirror and "Light it up"
 //     over the board (its outlines over the dimmed wall). Light it up casts
 //     through castByName() exactly as the phone does (guests can cast; with no
 //     location fix the geofence lets it through).
@@ -24,8 +25,8 @@
 //     open; 5 minutes untouched asks, then discards it; night closes it.
 //   - Ranks, read-only: Points and each challenge's board side by side.
 //   - Get the app: the /scan QR, in place of Profile. No sign-in anywhere.
-// After WALL_IDLE_MS without a touch it goes back to the list (the filter and the
-// choice cleared, the list at the top) and plays slides: the QR and the benchmark of the day. A touch ends
+// After WALL_IDLE_MS without a touch it goes back to the list (the filters and the
+// sort back to the defaults, the choice cleared, the list at the top) and plays slides: the QR and the benchmark of the day. A touch ends
 // them (on the benchmark slide it picks that problem); a reload while they're up
 // (an app update) comes back to them, not to 20 minutes of the list. At
 // night (the Pi's 23:00–08:00) it shows only a dimmed QR, and casting is off: the
@@ -103,11 +104,12 @@
       </button>`;
   }
 
-  // The list, a section per grade with a sticky header, and the rail of the
-  // grades in it. Called from renderList, so it follows every load, refresh and
-  // setter-name update. The only filter is the phone list's own benchOnly (the
-  // star); activeGrades stays empty on the wall, and search, favourites and done
-  // stay off without a keyboard or account.
+  // The list: sorted Easy or Hard, a section per grade with a sticky header and
+  // the rail of the grades in it; sorted New or Random, one flat list and no rail.
+  // Called from renderList, so it follows every load, refresh and setter-name
+  // update. The filters are the phone list's own (visibleProblems): Sort, the
+  // grade range and Benchmarks have pills here; activeGrades stays empty on the
+  // wall, and search, favourites and done stay off without a keyboard or account.
   function wallRenderList() {
     if (!WALL) return;
     const box = wallEl('wall-list');
@@ -115,6 +117,8 @@
     const bench = wallEl('wall-bench');
     bench.classList.toggle('active', benchOnly);
     bench.setAttribute('aria-pressed', benchOnly ? 'true' : 'false');
+    const grouped = sortIsByGrade();
+    document.querySelector('#wall .wall-problems').classList.toggle('wall-flat', !grouped);
 
     let grades = [];
     if (!loaded) {
@@ -122,20 +126,23 @@
         ? `<div class="state-msg"><div class="icon">⚠️</div>Can’t reach the server right now.<br>Trying again by itself.</div>`
         : `<div class="spinner"></div>`;
     } else {
-      const sections = [];                 // [{ g, ps }] in list order (visibleProblems sorts by grade)
-      visibleProblems().forEach(p => {
+      const list = visibleProblems();
+      const sections = [];                 // [{ g, ps }] in list order (Easy / Hard sort by grade)
+      if (grouped) list.forEach(p => {
         const g = wallGradeKey(p);
         if (!sections.length || sections[sections.length - 1].g !== g) sections.push({ g, ps: [] });
         sections[sections.length - 1].ps.push(p);
       });
       grades = sections.map(x => x.g);
-      box.innerHTML = sections.length
-        ? sections.map(({ g, ps }) => `
-            <section class="wall-grade" data-grade="${escAttr(g)}">
-              <h2 class="wall-grade-head">${escHtml(wallGradeLabel(g))}<span>${ps.length} problem${ps.length === 1 ? '' : 's'}</span></h2>
-              ${ps.map(wallCardHtml).join('')}
-            </section>`).join('')
-        : `<div class="state-msg"><div class="icon">🔎</div>No benchmarks yet.</div>`;
+      box.innerHTML = !list.length
+        ? `<div class="state-msg"><div class="icon">🔎</div>None match these filters.</div>`
+        : grouped
+          ? sections.map(({ g, ps }) => `
+              <section class="wall-grade" data-grade="${escAttr(g)}">
+                <h2 class="wall-grade-head">${escHtml(wallGradeLabel(g))}<span>${ps.length} problem${ps.length === 1 ? '' : 's'}</span></h2>
+                ${ps.map(wallCardHtml).join('')}
+              </section>`).join('')
+          : `<div class="wall-flat-list">${list.map(wallCardHtml).join('')}</div>`;
       box.scrollTop = top;
     }
     wallEl('wall-rail').innerHTML = grades.map(g => {
@@ -718,12 +725,16 @@
       : slides.map((_, i) => `<i class="${i === wallSlide ? 'on' : ''}"></i>`).join('');
   }
 
-  // Back to the start: the Problems page, no filter, nothing chosen, the list at
-  // the top. Then the slides.
+  // Back to the start: the Problems page, the filters and the sort at their
+  // defaults (any open Sort / Grade sheet closed), nothing chosen, the list at the
+  // top. Then the slides.
   function wallGoIdle() {
     abandonCircuitCast();
     wallSetPage('problems', true);     // Create closes (its LEDs end) without asking
-    benchOnly = false;
+    closeSortSheet();
+    document.getElementById('grade-modal').classList.remove('show');
+    resetListFilters();
+    updateListControls();
     wallSelect(null);
     wallCircSelect(null);
     wallEl('wall-clist').scrollTop = 0;
@@ -816,9 +827,7 @@
     });
     wallEl('wall-bench').addEventListener('click', () => {
       benchOnly = !benchOnly;
-      wallRenderList();
-      wallEl('wall-list').scrollTop = 0;
-      wallMarkGrade();
+      listFiltersChanged();
     });
     let markQueued = false;
     wallEl('wall-list').addEventListener('scroll', () => {

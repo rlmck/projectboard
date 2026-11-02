@@ -92,6 +92,10 @@
   let favesOnly = false;          // list filter: show only favourited problems
   let benchOnly = false;          // list filter: show only benchmark problems
   let excludeDone = false;        // list filter: hide fully-done (both orientations sent)
+  let listSort = 'new';           // problem list order: 'new' (default) | 'random' | 'easy' | 'hard' (LIST_SORTS, problems.js)
+  let listRandom = new Map();     // Random's order: problem id -> a random key, drawn when Random is chosen
+  let gradeLo = null;             // grade range filter: the lowest grade shown (null = no lower limit)
+  let gradeHi = null;             // ...and the highest (null = no upper limit); either set hides unknown grades
   let circuitFavesOnly = false;   // circuit list filter: only favourited circuits
   let circuitLoopOnly = false;    // circuit list filter: only looping circuits
   let authMode = 'signin'; // the #auth step: 'signin' | 'signup' (pick a nickname) | 'signup-save' (save the passphrase)

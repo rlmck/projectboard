@@ -3,12 +3,64 @@
 // state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: problem list, detail, swipe, info, cast, board loaders, tick/delete/grade/benchmark buttons.
 
   // ── List: filter + sort ──────────────────────────────────────────────────────
+  // The phone list and the wall's list share these (the wall's list is the same
+  // visibleProblems()), and so do their Sort, Grade and Clear pills.
+  const LIST_SORTS = [
+    ['new',    'New',    'Newest first'],
+    ['random', 'Random', 'Shuffled. Choose it again to reshuffle'],
+    ['easy',   'Easy',   'Easiest grade first'],
+    ['hard',   'Hard',   'Hardest grade first'],
+  ];
+  const sortLabel = key => (LIST_SORTS.find(s => s[0] === key) || LIST_SORTS[0])[1];
+  const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''));
+  const createdMs = p => { const t = Date.parse(p.created_at || ''); return isNaN(t) ? 0 : t; };
+  function randomKey(p) {
+    const id = String(p.id);
+    if (!listRandom.has(id)) listRandom.set(id, Math.random());   // a problem added since: somewhere at random
+    return listRandom.get(id);
+  }
+  function sortProblems(arr) {
+    const cmp = {
+      new:    (a, b) => createdMs(b) - createdMs(a) || byName(a, b),
+      random: (a, b) => randomKey(a) - randomKey(b),
+      easy:   (a, b) => gradeRank(a.grade) - gradeRank(b.grade) || byName(a, b),
+      // Hardest first; unknown grades (Project) still last, as in Easy.
+      hard:   (a, b) => (gradeRank(a.grade) === 999) - (gradeRank(b.grade) === 999)
+                        || gradeRank(b.grade) - gradeRank(a.grade) || byName(a, b),
+    }[listSort] || ((a, b) => 0);
+    return arr.slice().sort(cmp);
+  }
+  // Easy and Hard group the list by grade (the wall shows its grade sections and rail then).
+  const sortIsByGrade = () => listSort === 'easy' || listSort === 'hard';
+
+  // The grade range: the ladder grades present in the problems, easiest first.
+  function gradeSteps() {
+    return [...new Set(allProblems.map(p => String(p.grade || '').toLowerCase()))]
+      .filter(g => gradeRank(g) !== 999)
+      .sort((a, b) => gradeRank(a) - gradeRank(b));
+  }
+  const gradeNarrowed = () => gradeLo !== null || gradeHi !== null;
+  function inGradeRange(p) {
+    if (!gradeNarrowed()) return true;
+    const r = gradeRank(p.grade);
+    if (r === 999) return false;
+    return (gradeLo === null || r >= gradeRank(gradeLo)) && (gradeHi === null || r <= gradeRank(gradeHi));
+  }
+  // "6B–7A", "6B" (one grade), or '' when the range isn't narrowed.
+  function gradeRangeLabel() {
+    if (!gradeNarrowed()) return '';
+    const steps = gradeSteps();
+    const lo = gradeLo || steps[0] || '', hi = gradeHi || steps[steps.length - 1] || '';
+    return lo === hi ? fontGrade(lo) : `${fontGrade(lo)}–${fontGrade(hi)}`;
+  }
+
   function visibleProblems() {
     let arr = allProblems;
     if (favesOnly) arr = arr.filter(p => isFaved(p.id));
     if (benchOnly) arr = arr.filter(p => p.is_benchmark);
     if (excludeDone) arr = arr.filter(p => !isFullyDone(p.id));
     if (activeGrades.size) arr = arr.filter(p => activeGrades.has(p.grade));
+    if (gradeNarrowed()) arr = arr.filter(inGradeRange);
     const q = searchNorm(searchQuery);
     if (q) {
       arr = arr.filter(p =>
@@ -17,10 +69,205 @@
         searchNorm(p.grade).includes(q)
       );
     }
-    return arr.slice().sort((a, b) =>
-      gradeRank(a.grade) - gradeRank(b.grade) ||
-      String(a.name || '').localeCompare(String(b.name || ''))
-    );
+    return sortProblems(arr);
+  }
+
+  // Everything the Clear pill resets (search has its own ×).
+  const listFiltersAtDefault = () =>
+    !favesOnly && !benchOnly && !excludeDone && !activeGrades.size && listSort === 'new' && !gradeNarrowed();
+
+  // Back to the defaults (Clear, and the wall going idle). State only: the caller renders.
+  function resetListFilters() {
+    favesOnly = false; benchOnly = false; excludeDone = false;
+    activeGrades.clear();
+    listSort = 'new';
+    listRandom = new Map();
+    gradeLo = null; gradeHi = null;
+  }
+
+  // The Sort, Grade and Clear pills, on the phone and the wall (they're found by
+  // data-pick, so both rows follow). Called from every renderList.
+  function updateListControls() {
+    document.querySelectorAll('[data-pick="sort"]').forEach(el => {
+      el.querySelector('.pill-label').textContent = `Sort: ${sortLabel(listSort)}`;
+      el.classList.toggle('active', listSort !== 'new');
+    });
+    const range = gradeRangeLabel();
+    document.querySelectorAll('[data-pick="grade"]').forEach(el => {
+      el.querySelector('.pill-label').textContent = range || 'Grade';
+      el.classList.toggle('active', !!range);
+      el.setAttribute('aria-label', range ? `Grades ${range}` : 'Grade range');
+    });
+    const atDefault = listFiltersAtDefault();
+    document.querySelectorAll('[data-pick="clear"]').forEach(el => { el.hidden = atDefault; });
+  }
+
+  // A filter or the sort changed: re-render, and start the list from the top.
+  function listFiltersChanged() {
+    updateFaveControls();               // the Favourites / Benchmarks / Exclude Done pills
+    buildGradeTabs();
+    renderList();
+    if (currentView === 'list' && !WALL) window.scrollTo(0, 0);
+    if (WALL) { wallEl('wall-list').scrollTop = 0; wallMarkGrade(); }
+  }
+
+  function clearListFilters() {
+    resetListFilters();
+    listFiltersChanged();
+  }
+
+  // ── The Sort sheet ──
+  function openSortSheet() {
+    document.getElementById('sort-opts').innerHTML = LIST_SORTS.map(([key, name, note]) => `
+      <button class="sort-opt${key === listSort ? ' active' : ''}" type="button" data-sort="${key}" aria-pressed="${key === listSort}">
+        <span class="sort-opt-name">${name}</span><span class="sort-opt-note">${note}</span>
+      </button>`).join('');
+    document.getElementById('sort-modal').classList.add('show');
+  }
+  function closeSortSheet() { document.getElementById('sort-modal').classList.remove('show'); }
+  function pickSort(key) {
+    if (!LIST_SORTS.some(s => s[0] === key)) return;
+    listSort = key;
+    if (key === 'random') listRandom = new Map();   // a fresh shuffle every time it's chosen
+    closeSortSheet();
+    listFiltersChanged();
+  }
+
+  // ── The Grade sheet: a two-handle range slider over gradeSteps() ──
+  // While it's open the handles are indices into grSteps; the filter (gradeLo /
+  // gradeHi) follows them at once, the count follows as they move, and the list
+  // re-renders when a handle is let go (a 280-row re-render per step is heavy on the
+  // wall's Pi). A handle at either end means no limit on that side.
+  let grSteps = [];
+  let grLo = 0, grHi = 0;
+  let grDrag = null;                    // 'lo' | 'hi' while a handle is held
+
+  function openGradeSheet() {
+    grSteps = gradeSteps();
+    const n = grSteps.length;
+    grLo = gradeLo === null ? 0 : Math.max(0, grSteps.findIndex(g => gradeRank(g) >= gradeRank(gradeLo)));
+    grHi = n - 1;
+    if (gradeHi !== null) {
+      for (let i = n - 1; i >= 0; i--) if (gradeRank(grSteps[i]) <= gradeRank(gradeHi)) { grHi = i; break; }
+    }
+    if (grHi < grLo) grHi = grLo;
+    document.getElementById('gr-ticks').innerHTML = grSteps.map((g, i) =>
+      `<button class="gr-tick" type="button" data-i="${i}" style="left:${grPct(i)}%">${escHtml(fontGrade(g))}</button>`).join('');
+    document.getElementById('gr-slider').hidden = n < 2;
+    document.getElementById('gr-ticks').hidden = n < 2;
+    grRender();
+    document.getElementById('grade-modal').classList.add('show');
+  }
+  function closeGradeSheet() {
+    const modal = document.getElementById('grade-modal');
+    if (!modal.classList.contains('show')) return;
+    modal.classList.remove('show');
+    grDrag = null;
+    listFiltersChanged();
+  }
+  const grPct = i => (grSteps.length < 2 ? 0 : (i / (grSteps.length - 1)) * 100);
+
+  // Handles -> the filter state, then the sheet's own display.
+  function grApply() {
+    const n = grSteps.length;
+    gradeLo = grLo <= 0 ? null : grSteps[grLo];
+    gradeHi = grHi >= n - 1 ? null : grSteps[grHi];
+    grRender();
+  }
+  function grRender() {
+    const lo = document.getElementById('gr-lo'), hi = document.getElementById('gr-hi');
+    lo.style.left = grPct(grLo) + '%';
+    hi.style.left = grPct(grHi) + '%';
+    const fill = document.getElementById('gr-fill');
+    fill.style.left = grPct(grLo) + '%';
+    fill.style.width = (grPct(grHi) - grPct(grLo)) + '%';
+    [[lo, grLo], [hi, grHi]].forEach(([el, i]) => {
+      el.setAttribute('aria-valuemin', '0');
+      el.setAttribute('aria-valuemax', String(Math.max(0, grSteps.length - 1)));
+      el.setAttribute('aria-valuenow', String(i));
+      el.setAttribute('aria-valuetext', fontGrade(grSteps[i] || ''));
+    });
+    // The upper handle on top when both sit at the far left, so it can still be dragged off.
+    lo.classList.toggle('under', grLo === grHi && grLo === 0);
+    document.querySelectorAll('#gr-ticks .gr-tick').forEach(t => {
+      const i = +t.dataset.i;
+      t.classList.toggle('in', i >= grLo && i <= grHi);
+    });
+    const label = gradeRangeLabel();
+    document.getElementById('gr-value').textContent = !grSteps.length ? 'No grades yet' : label || 'All grades';
+    const n = visibleProblems().length;
+    document.getElementById('gr-done').textContent = `Show ${n} problem${n === 1 ? '' : 's'}`;
+    document.getElementById('gr-reset').disabled = !gradeNarrowed();
+  }
+
+  // The step nearest a pointer's x on the track.
+  function grStepAt(clientX) {
+    const r = document.getElementById('gr-track').getBoundingClientRect();
+    const f = r.width ? (clientX - r.left) / r.width : 0;
+    return Math.round(Math.min(1, Math.max(0, f)) * (grSteps.length - 1));
+  }
+  function grMoveTo(which, i) {
+    if (which === 'lo') grLo = Math.min(i, grHi);
+    else grHi = Math.max(i, grLo);
+    grApply();
+  }
+  // Which handle a touch at step i should move: the nearer one; on a tie (both
+  // handles on one step) the side the finger is on.
+  function grPick(i) {
+    if (grLo === grHi) return i < grLo ? 'lo' : i > grHi ? 'hi' : (grLo === 0 ? 'hi' : 'lo');
+    return Math.abs(i - grLo) <= Math.abs(i - grHi) ? 'lo' : 'hi';
+  }
+  function grPointerDown(e) {
+    if (grSteps.length < 2 || (e.button !== undefined && e.button > 0)) return;
+    const i = grStepAt(e.clientX);
+    const thumb = e.target.closest('.gr-thumb');
+    grDrag = thumb ? (thumb.id === 'gr-lo' ? 'lo' : 'hi') : grPick(i);
+    if (grDrag === 'lo' && grLo === grHi && i > grHi) grDrag = 'hi';   // both on one step: drag apart either way
+    if (grDrag === 'hi' && grLo === grHi && i < grLo) grDrag = 'lo';
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    grMoveTo(grDrag, i);
+    e.preventDefault();
+  }
+  function grPointerMove(e) {
+    if (!grDrag) return;
+    const i = grStepAt(e.clientX);
+    const cur = grDrag === 'lo' ? grLo : grHi;
+    if (i !== cur) grMoveTo(grDrag, i);
+  }
+  function grPointerUp() {
+    if (!grDrag) return;
+    grDrag = null;
+    renderList();
+    updateListControls();
+  }
+  function grKey(e) {
+    const which = e.currentTarget.id === 'gr-lo' ? 'lo' : 'hi';
+    const cur = which === 'lo' ? grLo : grHi;
+    const step = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[e.key];
+    let i = null;
+    if (step) i = cur + step;
+    else if (e.key === 'Home') i = 0;
+    else if (e.key === 'End') i = grSteps.length - 1;
+    if (i === null) return;
+    e.preventDefault();
+    grMoveTo(which, Math.max(0, Math.min(grSteps.length - 1, i)));
+    renderList();
+    updateListControls();
+  }
+  // A grade label under the track: the nearer handle jumps there.
+  function grTickTap(e) {
+    const t = e.target.closest('.gr-tick');
+    if (!t) return;
+    const i = +t.dataset.i;
+    grMoveTo(grPick(i), i);
+    renderList();
+    updateListControls();
+  }
+  function grReset() {
+    grLo = 0; grHi = Math.max(0, grSteps.length - 1);
+    grApply();
+    renderList();
+    updateListControls();
   }
 
   function cardHtml(p) {
@@ -42,6 +289,7 @@
   }
 
   function renderList() {
+    updateListControls();
     if (WALL) wallRenderList();           // the wall screen's list follows every render of this one
     const container = document.getElementById('list-container');
     const list = visibleProblems();
@@ -51,7 +299,7 @@
       // Only show the favourites onboarding hint when faves is the *only* active
       // filter — otherwise the empty result may be down to the other filters, so
       // keep the message generic.
-      const otherFilters = searchQuery || activeGrades.size || benchOnly || excludeDone;
+      const otherFilters = searchQuery || activeGrades.size || benchOnly || excludeDone || gradeNarrowed();
       container.innerHTML = (favesOnly && !otherFilters)
         ? `<div class="state-msg"><div class="icon">♡</div>No favourites yet. Tap the heart on a problem to save it here.</div>`
         : `<div class="state-msg"><div class="icon">🔎</div>None match these filters.</div>`;

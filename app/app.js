@@ -226,6 +226,38 @@
   wirePill('pill-bench', () => benchOnly,   v => benchOnly = v,   renderList);
   wirePill('pill-done',  () => excludeDone, v => excludeDone = v, renderList, { needsAuth: true, guestMsg: 'Sign in to filter your sends' });
 
+  // Sort, Grade and Clear (problems.js): on the phone's pill row and the wall's,
+  // found by data-pick. The sheets are shared by both.
+  document.addEventListener('click', e => {
+    const pick = e.target.closest('[data-pick]');
+    if (!pick) return;
+    if (pick.dataset.pick === 'sort') openSortSheet();
+    else if (pick.dataset.pick === 'grade') openGradeSheet();
+    else if (pick.dataset.pick === 'clear') clearListFilters();
+  });
+  document.getElementById('sort-opts').addEventListener('click', e => {
+    const opt = e.target.closest('.sort-opt');
+    if (opt) pickSort(opt.dataset.sort);
+  });
+  document.getElementById('sort-close').addEventListener('click', closeSortSheet);
+  document.getElementById('sort-modal').addEventListener('click', e => {
+    if (e.target.id === 'sort-modal') closeSortSheet();
+  });
+  const grTrack = document.getElementById('gr-slider');
+  grTrack.addEventListener('pointerdown', grPointerDown);
+  grTrack.addEventListener('pointermove', grPointerMove);
+  grTrack.addEventListener('pointerup', grPointerUp);
+  grTrack.addEventListener('pointercancel', grPointerUp);
+  grTrack.addEventListener('lostpointercapture', grPointerUp);
+  ['gr-lo', 'gr-hi'].forEach(id => document.getElementById(id).addEventListener('keydown', grKey));
+  document.getElementById('gr-ticks').addEventListener('click', grTickTap);
+  document.getElementById('gr-reset').addEventListener('click', grReset);
+  document.getElementById('gr-done').addEventListener('click', closeGradeSheet);
+  document.getElementById('grade-close').addEventListener('click', closeGradeSheet);
+  document.getElementById('grade-modal').addEventListener('click', e => {
+    if (e.target.id === 'grade-modal') closeGradeSheet();
+  });
+
   // Overflow (⋮) menu: the button toggles its menu (stopPropagation so the
   // document-level tap below doesn't immediately re-close it); a tap on a menu
   // item runs its action and then bubbles here to close. A tap anywhere else
@@ -615,7 +647,7 @@
   document.getElementById('info-modal').addEventListener('click', e => {
     if (e.target.id === 'info-modal') closeInfo();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closeCircuitCast(); closeNameModal(); closeAccountDelete(); closeUserRename(); closeUserReset(); closeCompare(); closeAttemptDelete(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closeCircuitCast(); closeNameModal(); closeAccountDelete(); closeUserRename(); closeUserReset(); closeCompare(); closeAttemptDelete(); closeSortSheet(); closeGradeSheet(); } });
 
   // Auth view (#auth): sign in, and sign-up's two steps, in one form (account.js).
   document.getElementById('auth-form').addEventListener('submit', authSubmit);

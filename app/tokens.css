@@ -174,12 +174,23 @@
   --title-cast-icon: 16px;
   --feet-opt-h: 34px;  /* the create view's feet-rule options */
   --feet-rule-w: 380px;
+  --pill-caret: 14px;  /* the chevron on the list's Sort and Grade pills */
+  --range-thumb: 30px;  /* the Grade sheet's slider handles (the wall's below) */
+  --range-track-h: 6px;
+  --range-hit-h: 52px;  /* the slider's touch area, taller than the track */
+  --range-tick-h: 28px;  /* the row of grade labels under it */
 
   /* Wall-screen mode (?wall, wall.js): the 1280×720 touchscreen by the board */
   --wall-head-h: 64px;  /* the header with the page tabs */
   --wall-rail-w: 84px;  /* the grade rail down the left edge */
   --wall-side-w: 584px;  /* the rail and the problem list together; the board fills the rest */
   --wall-row-h: 72px;  /* a row of the problem list: a finger's width with room to spare */
+  --wall-pill-h: 48px;  /* the Sort / Grade / Benchmarks / Clear pills over the list */
+  --wall-pill-caret: 18px;
+  --wall-sheet-w: 760px;  /* the Sort and Grade sheets on the wall */
+  --wall-range-thumb: 48px;  /* the Grade slider's handles on the wall */
+  --wall-range-hit: 80px;
+  --wall-range-tick-h: 44px;
   --wall-tap: 60px;  /* Mirror and Light it up: big enough for a chalky finger */
   --wall-qr: 340px;  /* the QR on Get the app and the first idle slide */
   --wall-qr-night: 260px;  /* the QR on the night screen */
