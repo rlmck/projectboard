@@ -3,8 +3,8 @@
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 15 KB: the 5 newest session entries live here, older ones in `docs/log/` (`docs/log/2026-10.md`, `docs/log/2026-11.md`).
 
 ## Current state (as of 2026-11-04)
-- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-8fae3d805c` since 2 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
-- **Sorting and filtering (Filter sheet, 4 Nov 2026):** a filter icon (pink + count when not default) and one-tap pills per list; the icon opens a Filter sheet (phone) or panel (wall): Sort (New default; circuits without Popular), Grade slider, quick filters. Problems and circuits, phone and wall (§4.2a). Holds filter next. Not yet tried on the touchscreen.
+- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-c900459de0` since 4 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
+- **Sorting and filtering (Filter sheet, 4 Nov 2026):** a filter icon (pink + count when not default) and one-tap pills per list; the icon opens a Filter sheet (phone) or panel (wall): Sort (New default; circuits without Popular), Grade slider, quick filters. Problems and circuits, phone and wall (§4.2a). **Holds** (4 Nov): pick holds on the board to see only items that use them all, as set. Not yet tried on the touchscreen.
 - **Deploying:** ship by default; migrations and Pi deploys done by Claude end to end (Decisions). `build.sh` is the Cloudflare build gate; a pre-commit hook scans for secrets. Slash commands `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`.
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs; about 0.25–0.45 s from cast to LEDs). People use it: 50 casts on the evening of 26 Oct, 114 in the 3 days to 28 Oct. **Every hold's LED is checked on the wall** (28 Oct, `pb-ledmap`); three app labels were shifted and fixed by db/32 (188 real holds). **Mirrored casts are still unchecked.**
 - **The Pi 4 is back on a new SD card (1 Nov 2026)** after the old card died on 31 Oct: it set itself up unattended at its first boot (`pi/firstboot/README.md`; everything the old card held outside the repo is now in `pi/` or the laptop's gitignored `pi/secrets.env`, with a new Tailscale key, rescue-hotspot password and wall key, db/36). Casting from a phone works again. The Pi 4 (Raspberry Pi OS Lite 64-bit, trixie, 2 GB; on the gym Wi-Fi and Tailscale as `projectboard`) runs the listener with self-healing, watchdogs and night mode 23:00–08:00 (`pi/`, `pi/README.md`). The night switch was seen working both ways on 27 Oct. The R8 acceptance tests are still to do. The idle pattern, 15 minutes after the last cast (20 until 2 Nov), is **`wave`** (ten patterns in `pi/listener/patterns/`, switched live with `pb-idle`). Wi-Fi: a random hardware address per join, a `pb-netwatch` watchdog (v2) and a rescue hotspot (`projectboard-rescue`).
@@ -57,6 +57,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-04, Claude Code (the hold filter, problems and circuits, phone and wall).**
+  - **Changed:** the Filter's Holds section: items using all picked holds, any role, as set. Phone: a row (thumbnail, names) opens a hold picker (whole board, live count, chips, Clear holds, Show N); pinch or expand → the fullscreen viewer, taps pick. Wall: the board beside the open panel is the picker; no Mirror, casts or `show_circuit`; idle clears. Badge +1; Reset/Clear filters clear it. Overview §4.2a/§4.7a/§4.8.
+  - **Tested:** build; Chrome 390×844 and 1280×720 `?wall`, broadcast stubbed: 1–3 holds match a recount, faded hold, chips, Clear, Reset, viewer, circuits, drag ≠ tap, no casts, idle.
+  - **Live:** `25ca555`, CACHE `pb-c900459de0`.
+  - **Left:** Ross: try it with real fingers on a phone and the touchscreen.
+
 - **2026-11-04, Claude Code (the Filter sheet, problems and circuits, phone and wall).**
   - **Changed:** grade tabs and the Sort/Grade/Clear pills gone; a filter icon in each row opens one Filter sheet (phone) or panel (wall): Sort, Grade, Quick filters (in step with the row), a Holds slot, Reset, Show N. Circuits gain sorts (New default) and a grade range. Empty lists offer Clear filters. Fixes admin Edit grade (a duplicate `grade-modal` id opened the list's sheet). Overview §4.2a/§4.3/§4.7a.
   - **Tested:** build; Chrome 390×844, 1280×720 `?wall`, no casts: sorts, slider, toggles, badge, Reset, empty, circuits.
@@ -76,9 +82,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
 
 - **2026-11-04, chat.** Touchscreen shows no picture (touch works): confirmed hardware. Proposal: drop the adapter and coupler, one HDMI cable from the screen into the micro-HDMI adapter. Left: Ross tries it (TODO 3).
 
-- **2026-11-02, Claude Code (wall: the Create tab, the tab order, the dimmed Problems board).**
-  - **Found:** the wall-key chain is sound end to end, checked on the Pi without reading the key: the file is there (root:kiosk 0640, 43 chars), its SHA-256 is db/36's, `wall_keys` has 1 live key and it's that one, the kiosk passes it in `#k=`, a `wall_key_ok` call from the Pi with it says true, and a fresh Chromium on the Pi at 1280×720 shows Create. The live screen couldn't be seen; the kiosk was restarted at 14:19. Likeliest cause: a failed first ask at the 08:00 start, retried only after a good problems poll.
-  - **Changed:** `wallCheckKey` retries a failed ask every minute on its own; tabs Problems · Circuits · Ranks · Create · Get the app; Problems with nothing chosen is dimmed like Circuits (`wallDimOnlyHtml`). Overview §4.7a.
-  - **Tested:** build; Chrome at 1280×720, local: the order, the dim, a chosen problem (nothing sent).
-  - **Live:** `824d31b`, CACHE `pb-8fae3d805c`, kiosk at its next idle.
-  - **New questions:** the key is readable in the Pi's process list by local accounts (local note).
