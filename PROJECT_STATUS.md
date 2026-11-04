@@ -59,7 +59,8 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
 
 - **2026-11-04, Claude Code (the Filter sheet, problems and circuits, phone and wall).**
   - **Changed:** grade tabs and the Sort/Grade/Clear pills gone; a filter icon in each row opens one Filter sheet (phone) or panel (wall): Sort, Grade, Quick filters (in step with the row), a Holds slot, Reset, Show N. Circuits gain sorts (New default) and a grade range. Empty lists offer Clear filters. Fixes admin Edit grade (a duplicate `grade-modal` id opened the list's sheet). Overview §4.2a/§4.3/§4.7a.
-  - **Tested:** build; Chrome 390×844 and headless 1280×720 `?wall`, broadcast stubbed: sorts, slider, toggles both ways, badge, Reset, empty state, circuits, wall idle.
+  - **Tested:** build; Chrome 390×844, 1280×720 `?wall`, no casts: sorts, slider, toggles, badge, Reset, empty, circuits.
+  - **Live:** `3ac8028`, CACHE `pb-8733480f5d`.
   - **Left:** Ross: try it on a phone and the touchscreen. Next: the hold filter.
 
 - **2026-11-04, Claude Code (Create: pinch in and out of the viewer).**
