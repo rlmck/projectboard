@@ -3,8 +3,8 @@
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 15 KB: the 5 newest session entries live here, older ones in `docs/log/` (`docs/log/2026-10.md`, `docs/log/2026-11.md`).
 
 ## Current state (as of 2026-11-04)
-- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-c900459de0` since 4 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
-- **Sorting and filtering (Filter sheet, 4 Nov 2026):** a filter icon (pink + count when not default) and one-tap pills per list; the icon opens a Filter sheet (phone) or panel (wall): Sort (New default; circuits without Popular), Grade slider, quick filters. Problems and circuits, phone and wall (§4.2a). **Holds** (4 Nov): pick holds on the board to see only items that use them all, as set. Not yet tried on the touchscreen.
+- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-2e83db5fe9` since 4 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
+- **Sorting and filtering (Filter sheet, 4 Nov 2026):** a filter icon (pink + count when not default) and one-tap pills per list; the icon opens a Filter sheet (phone) or panel (wall): Sort (New default; circuits without Popular), Grade slider, quick filters. Problems and circuits, phone and wall (§4.2a). **Holds** (4 Nov): pick holds on the board to see only items that use them all, as set. **Wall search + Clear** (4 Nov): the wall searches like the phone (on-screen keyboard over the board); `✕ Clear` on every row when anything isn't default. Not yet tried on the touchscreen.
 - **Deploying:** ship by default; migrations and Pi deploys done by Claude end to end (Decisions). `build.sh` is the Cloudflare build gate; a pre-commit hook scans for secrets. Slash commands `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`.
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs; about 0.25–0.45 s from cast to LEDs). People use it: 50 casts on the evening of 26 Oct, 114 in the 3 days to 28 Oct. **Every hold's LED is checked on the wall** (28 Oct, `pb-ledmap`); three app labels were shifted and fixed by db/32 (188 real holds). **Mirrored casts are still unchecked.**
 - **The Pi 4 is back on a new SD card (1 Nov 2026)** after the old card died on 31 Oct: it set itself up unattended at its first boot (`pi/firstboot/README.md`; everything the old card held outside the repo is now in `pi/` or the laptop's gitignored `pi/secrets.env`, with a new Tailscale key, rescue-hotspot password and wall key, db/36). Casting from a phone works again. The Pi 4 (Raspberry Pi OS Lite 64-bit, trixie, 2 GB; on the gym Wi-Fi and Tailscale as `projectboard`) runs the listener with self-healing, watchdogs and night mode 23:00–08:00 (`pi/`, `pi/README.md`). The night switch was seen working both ways on 27 Oct. The R8 acceptance tests are still to do. The idle pattern, 15 minutes after the last cast (20 until 2 Nov), is **`wave`** (ten patterns in `pi/listener/patterns/`, switched live with `pb-idle`). Wi-Fi: a random hardware address per join, a `pb-netwatch` watchdog (v2) and a rescue hotspot (`projectboard-rescue`).
@@ -41,6 +41,7 @@ The ordered to-do list (next steps, backlog, and what not to build yet) lives in
 - **Ross: try a circuit cast on the wall before opening** (live 30 Oct), from a phone and from the wall screen's Circuits page: the countdown, the look at each speed, Stop, a loop, the top of a run done once, a match (Pat Burner moves 6/7); whether the amber `(255,110,0)` reads as amber on the strip.
 - **Ross: try the wall's tap-to-cast on the touchscreen** (live 2 Nov): tap, scroll and fling, fast taps, Mirror (the first mirrored-cast check), a phone cast then a wall tap, the 15-minute LED idle; on Circuits, a tap lights the holds (colours as the screen), Start circuit replaces it.
 - **Ross: test the feet rule on the wall** (the listener is deployed, 30 Oct): Orange-only lights B2 only, Black-only B1 only, Any neither; the same mirrored.
+- **Ross: try search and Clear on the touchscreen** (live 4 Nov, once it has a picture): typing, a tap on the list closes the keyboard without lighting anything, Done, ×, Clear; Clear on a phone.
 - Ross: an on-site check of the cast geofence centre (a non-admin phone by the board and at the far end of the gym).
 - **Ross: try PIN accounts on a real iPhone** (live 2 Nov): create one in Safari (number pad, a mismatch), the Home Screen note, add to Home Screen and sign in there; an older passphrase account still signs in; an admin's **Give a new PIN** on a PIN account (4 digits) and on a passphrase account (4 words). Delete any test accounts after.
 - Ross: delete the local passphrase hand-out file in the archive (then empty the Recycle Bin) once all 7 migrated accounts have signed in.
@@ -56,6 +57,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
+
+- **2026-11-04, Claude Code (wall search and the Clear pill, phone and wall).**
+  - **Changed:** wall rows get the phone's search (same state and matching) on Create's keyboard, now shared (`wallKbOpen(target)`), docked over the board for a search. A tap outside closes it and never casts; panel, page change, Clear, idle close it. `✕ Clear` pinned right on all four rows (the phone had none since the Filter sheet) = `clearFilters`, now clearing the wall's search. Overview §4.2a/§4.7a.
+  - **Tested:** build; Chrome wall and phone 390 px, casts stubbed: filtering, rail in Easy, empty list, panel, taps while open never cast, idle, Create's name.
+  - **Live:** `fb622d4`, CACHE `pb-2e83db5fe9`.
+  - **Left:** Ross: try it on the touchscreen and a phone.
 
 - **2026-11-04, Claude Code (the hold filter, problems and circuits, phone and wall).**
   - **Changed:** the Filter's Holds section: items using all picked holds, any role, as set. Phone: a row (thumbnail, names) opens a hold picker (whole board, live count, chips, Clear holds, Show N); pinch or expand → the fullscreen viewer, taps pick. Wall: the board beside the open panel is the picker; no Mirror, casts or `show_circuit`; idle clears. Badge +1; Reset/Clear filters clear it. Overview §4.2a/§4.7a/§4.8.
@@ -79,6 +86,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Changed:** Activity = the approved prototype (`tools/activity-dashboard-prototype.html`, kept as reference) on real data, cross-filtered, with a Log view; old charts gone. The console keeps its own cast history (`console/data/`, gitignored) as the journal expires; nicknames, ticks and accounts live from Postgres. UK time. `console/README.md` → Activity.
   - **Tested:** console tests (13 new); Chrome: filters, toggles, keyboard, no CSP errors, Log agrees, no-`db/.env` view.
   - **Left:** Ross: a look. Cast history starts 1 Nov (the new card).
-
-- **2026-11-04, chat.** Touchscreen shows no picture (touch works): confirmed hardware. Proposal: drop the adapter and coupler, one HDMI cable from the screen into the micro-HDMI adapter. Left: Ross tries it (TODO 3).
-
