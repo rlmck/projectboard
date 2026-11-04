@@ -113,11 +113,46 @@
   }
 
   // ── Circuit list ───────────────────────────────────────────────────────────────
+  // Sorted and filtered like the problem list (problems.js), through the same
+  // Filter sheet: New (default) / Random / Easy / Hard (no Popular), the sport
+  // grade range, Favourites and Looping.
+  const CIRCUIT_SORTS = LIST_SORTS.filter(s => s[0] !== 'popular');
+  const byCircuitName = (a, b) => circuitName(a).localeCompare(circuitName(b));
+  function circuitRandomKey(c) {
+    const id = String(c.id);
+    if (!circuitRandom.has(id)) circuitRandom.set(id, Math.random());
+    return circuitRandom.get(id);
+  }
+  function sortCircuits(arr) {
+    const cmp = {
+      new:    (a, b) => createdMs(b) - createdMs(a) || byCircuitName(a, b),
+      random: (a, b) => circuitRandomKey(a) - circuitRandomKey(b),
+      easy:   (a, b) => sportRank(a.grade) - sportRank(b.grade) || byCircuitName(a, b),
+      hard:   (a, b) => (sportRank(a.grade) === 999) - (sportRank(b.grade) === 999)
+                        || sportRank(b.grade) - sportRank(a.grade) || byCircuitName(a, b),
+    }[circuitSort] || ((a, b) => 0);
+    return arr.slice().sort(cmp);
+  }
+
+  // The sport-ladder grades present in the circuits, easiest first.
+  function circuitGradeSteps() {
+    return [...new Set(allCircuits.map(c => String(c.grade || '').toLowerCase()))]
+      .filter(g => sportRank(g) !== 999)
+      .sort((a, b) => sportRank(a) - sportRank(b));
+  }
+  const circuitGradeNarrowed = () => circuitGradeLo !== null || circuitGradeHi !== null;
+  function inCircuitGradeRange(c) {
+    if (!circuitGradeNarrowed()) return true;
+    const r = sportRank(String(c.grade || '').toLowerCase());
+    if (r === 999) return false;
+    return (circuitGradeLo === null || r >= sportRank(circuitGradeLo)) && (circuitGradeHi === null || r <= sportRank(circuitGradeHi));
+  }
+
   function visibleCircuits() {
     let arr = allCircuits;
     if (circuitFavesOnly) arr = arr.filter(c => isCircuitFaved(c.id));
     if (circuitLoopOnly) arr = arr.filter(c => c.loops);
-    if (activeCircuitGrades.size) arr = arr.filter(c => activeCircuitGrades.has(c.grade));
+    if (circuitGradeNarrowed()) arr = arr.filter(inCircuitGradeRange);
     const q = searchNorm(circuitSearch);
     if (q) {
       arr = arr.filter(c =>
@@ -126,24 +161,42 @@
         searchNorm(c.grade).includes(q)
       );
     }
-    return arr.slice().sort((a, b) =>
-      sportRank(a.grade) - sportRank(b.grade) || circuitName(a).localeCompare(circuitName(b))
-    );
+    return sortCircuits(arr);
   }
 
-  // Rebuilt on every render (search keystrokes included), so it keeps the
-  // strip's horizontal scroll rather than jumping back to "All".
-  function buildCircuitGradeTabs() {
-    const present = [...new Set(allCircuits.map(c => c.grade).filter(Boolean))]
-      .sort((a, b) => sportRank(a) - sportRank(b) || a.localeCompare(b));
-    // Drop a filter whose grade no longer exists (its last circuit deleted).
-    [...activeCircuitGrades].forEach(g => { if (!present.includes(g)) activeCircuitGrades.delete(g); });
-    const el = document.getElementById('circuit-grade-tabs');
-    const scroll = el.scrollLeft;
-    el.innerHTML = gradeTabButtons(['all', ...present],
-      g => g === 'all' ? activeCircuitGrades.size === 0 : activeCircuitGrades.has(g));
-    el.scrollLeft = scroll;
+  // The filter icon's badge: the sort, the grade range, each quick filter.
+  const circuitFilterCount = () =>
+    (circuitSort !== 'new') + circuitGradeNarrowed() + circuitFavesOnly + circuitLoopOnly;
+
+  // Back to the defaults (Reset, Clear filters, the wall going idle). State only.
+  function resetCircuitFilters() {
+    circuitFavesOnly = false; circuitLoopOnly = false;
+    circuitSort = 'new';
+    circuitRandom = new Map();
+    circuitGradeLo = null; circuitGradeHi = null;
   }
+
+  // The circuit list's kind for the Filter sheet (problems.js).
+  FILTER_KINDS.circuits = {
+    noun: 'circuit',
+    sorts: () => CIRCUIT_SORTS,
+    getSort: () => circuitSort,
+    setSort: key => {
+      circuitSort = key;
+      if (key === 'random') circuitRandom = new Map();   // a fresh shuffle every time it's chosen
+    },
+    steps: () => circuitGradeSteps(),
+    rank: g => sportRank(g),
+    fmt: g => g,                        // sport grades stay lowercase
+    getRange: () => [circuitGradeLo, circuitGradeHi],
+    setRange: (lo, hi) => { circuitGradeLo = lo; circuitGradeHi = hi; },
+    toggles: () => (WALL ? ['loop'] : ['cfaves', 'loop']),
+    count: () => visibleCircuits().length,
+    nOn: () => circuitFilterCount(),
+    reset: () => resetCircuitFilters(),
+    render: () => { renderCircuits(); wallRenderCircuits(); },
+    search: 'circuit-search',
+  };
 
   function circuitCardHtml(c) {
     const n = circuitSeq(c).length;
@@ -165,7 +218,7 @@
   }
 
   function renderCircuits() {
-    buildCircuitGradeTabs();
+    updateFilterControls();
     const container = document.getElementById('circuit-list-container');
     const countEl = document.getElementById('circuit-count');
     if (!circuitsLoaded) {
@@ -180,12 +233,13 @@
     if (!list.length) {
       // Show the favourites onboarding hint only when faves is the *only* active
       // filter; otherwise keep it generic (the other filters may be the cause).
-      const otherFilters = circuitSearch || activeCircuitGrades.size || circuitLoopOnly;
-      container.innerHTML = (circuitFavesOnly && !otherFilters)
-        ? `<div class="state-msg"><div class="icon">♡</div>No favourite circuits yet. Tap the heart on a circuit to save it here.</div>`
-        : allCircuits.length
-          ? `<div class="state-msg"><div class="icon">🔎</div>None match these filters.</div>`
-          : `<div class="state-msg"><div class="icon">🧗</div>No circuits yet — tap + to set the first one.</div>`;
+      const otherFilters = circuitSearch || circuitFilterCount() > 1;
+      container.innerHTML = !allCircuits.length
+        ? `<div class="state-msg"><div class="icon">🧗</div>No circuits yet — tap + to set the first one.</div>`
+        : (circuitFavesOnly && !otherFilters)
+          ? `<div class="state-msg f-empty"><div class="icon">♡</div>No favourite circuits yet. Tap the heart on a circuit to save it here.`
+            + `<button class="btn-block btn-ghost f-empty-btn" type="button" data-act="clear-filters" data-kind="circuits">Clear filters</button></div>`
+          : filterEmptyHtml('circuits');
       return;
     }
     container.innerHTML = `<div class="problem-list">${list.map(circuitCardHtml).join('')}</div>`;

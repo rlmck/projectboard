@@ -378,7 +378,6 @@
       leaderboardLoaded = false;         // edit may change grade -> base points; refetch next view
       const id = editing.id;
       resetCreate();
-      buildGradeTabs();                 // a new grade may add/remove a filter tab
       renderList();
       showToast('Problem updated ✓', 'success');
       // Replace the #create entry with the problem's (re-rendered) detail.
@@ -406,7 +405,6 @@
     }
 
     allProblems.push(data);
-    buildGradeTabs();
     renderList();
     resetCreate();
     showToast('Problem created ✓', 'success');

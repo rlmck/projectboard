@@ -122,18 +122,16 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
       </button>
     </div>
-    <div class="grade-tabs" id="grade-tabs"></div>
-    <!-- Sort and Grade open their sheets; Clear shows only when something isn't
-         the default. The wall's row (#wall-filters) has the same pills. -->
+    <!-- The filter icon opens the Filter sheet (sort, grade range, quick filters);
+         the pills are one-tap filters, in step with the same toggles in the sheet
+         (problems.js). The wall's row (#wall-filters) works the same way. -->
     <div class="filter-row">
       <div class="filter-pills" id="filter-pills">
-        <button class="filter-pill pick-pill" id="pill-sort" type="button" data-pick="sort" aria-haspopup="dialog"><span class="pill-label">Sort: New</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
-        <button class="filter-pill pick-pill" id="pill-grade" type="button" data-pick="grade" aria-haspopup="dialog"><span class="pill-label">Grade</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
-        <button class="filter-pill" id="pill-faves" type="button" aria-pressed="false">Favourites</button>
-        <button class="filter-pill" id="pill-bench" type="button" aria-pressed="false">Benchmarks</button>
-        <button class="filter-pill" id="pill-done" type="button" aria-pressed="false">Exclude Done</button>
+        <button class="filter-pill filter-btn" type="button" data-pick="filter" data-kind="problems" aria-haspopup="dialog" aria-label="Filter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5L3 5z"></path></svg><span class="filter-badge" hidden></span></button>
+        <button class="filter-pill" type="button" data-toggle="faves" aria-pressed="false">Favourites</button>
+        <button class="filter-pill" type="button" data-toggle="bench" aria-pressed="false">Benchmarks</button>
+        <button class="filter-pill" type="button" data-toggle="done" aria-pressed="false">Exclude Done</button>
       </div>
-      <button class="filter-pill filter-clear" id="pill-clear" type="button" data-pick="clear" hidden>✕ Clear</button>
     </div>
   </header>
   <div class="list-pull" id="list-pull" aria-hidden="true"><div class="list-pull-icon"></div></div>
@@ -257,40 +255,14 @@
   </main>
 </section>
 
+<!-- The Filter sheet for the problem and circuit lists (phone): built by
+     openFilter() in problems.js each time it opens. On the wall the same sheet
+     is a panel over the list column instead (#wall-fpanel, #wall-cfpanel). -->
+<div class="modal-overlay" id="filter-modal">
+  <div class="modal list-sheet filter-sheet" id="filter-sheet" role="dialog" aria-modal="true" aria-labelledby="f-title"></div>
+</div>
+
 <!-- Grade picker for the create view (a sheet, like the info sheet) -->
-<!-- The problem list's Sort and Grade sheets (problems.js), for the phone and the wall -->
-<div class="modal-overlay" id="sort-modal">
-  <div class="modal list-sheet" role="dialog" aria-modal="true" aria-labelledby="sort-title">
-    <div class="modal-header">
-      <div class="modal-title" id="sort-title">Sort</div>
-      <button class="modal-close" id="sort-close" aria-label="Close">✕</button>
-    </div>
-    <div class="sort-opts" id="sort-opts"></div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="grade-modal">
-  <div class="modal list-sheet" role="dialog" aria-modal="true" aria-labelledby="grade-range-title">
-    <div class="modal-header">
-      <div class="modal-title" id="grade-range-title">Grade</div>
-      <button class="modal-close" id="grade-close" aria-label="Close">✕</button>
-    </div>
-    <div class="gr-value" id="gr-value">All grades</div>
-    <div class="gr-slider" id="gr-slider">
-      <div class="gr-track" id="gr-track">
-        <div class="gr-fill" id="gr-fill"></div>
-        <div class="gr-thumb" id="gr-lo" role="slider" tabindex="0" aria-label="Easiest grade"></div>
-        <div class="gr-thumb" id="gr-hi" role="slider" tabindex="0" aria-label="Hardest grade"></div>
-      </div>
-    </div>
-    <div class="gr-ticks" id="gr-ticks"></div>
-    <div class="modal-actions">
-      <button class="btn-block btn-ghost" id="gr-reset" type="button">All grades</button>
-      <button class="btn-block btn-primary" id="gr-done" type="button">Show problems</button>
-    </div>
-  </div>
-</div>
-
 <div class="modal-overlay" id="create-grade-modal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="create-grade-title">
     <div class="modal-header">
@@ -485,10 +457,12 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
       </button>
     </div>
-    <div class="grade-tabs" id="circuit-grade-tabs"></div>
-    <div class="filter-pills" id="circuit-filter-pills">
-      <button class="filter-pill" id="cpill-faves" type="button" aria-pressed="false">Favourites</button>
-      <button class="filter-pill" id="cpill-loop" type="button" aria-pressed="false">Looping</button>
+    <div class="filter-row">
+      <div class="filter-pills" id="circuit-filter-pills">
+        <button class="filter-pill filter-btn" type="button" data-pick="filter" data-kind="circuits" aria-haspopup="dialog" aria-label="Filter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5L3 5z"></path></svg><span class="filter-badge" hidden></span></button>
+        <button class="filter-pill" type="button" data-toggle="cfaves" aria-pressed="false">Favourites</button>
+        <button class="filter-pill" type="button" data-toggle="loop" aria-pressed="false">Looping</button>
+      </div>
     </div>
   </header>
   <div class="list-pull" id="circuit-pull" aria-hidden="true"><div class="list-pull-icon"></div></div>
@@ -991,18 +965,18 @@
     <div class="wall-status" id="wall-status" hidden>Offline</div>
   </header>
 
-  <!-- Problems: the phone's Sort / Grade / Benchmarks / Clear pills over the list;
-       sorted Easy or Hard, a rail of grades (jumps the list) and a header per grade;
-       and the chosen problem over the board -->
+  <!-- Problems: the filter icon and Benchmarks over the list; sorted Easy or Hard,
+       a rail of grades (jumps the list) and a header per grade; and the chosen
+       problem over the board. The filter icon opens the Filter panel (#wall-fpanel)
+       over the list's column (built by openFilter, problems.js). -->
   <section class="wall-page wall-problems active" data-page="problems">
     <div class="filter-row wall-filters" id="wall-filters">
       <div class="filter-pills">
-        <button class="filter-pill pick-pill" type="button" data-pick="sort" aria-haspopup="dialog"><span class="pill-label">Sort: New</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
-        <button class="filter-pill pick-pill" type="button" data-pick="grade" aria-haspopup="dialog"><span class="pill-label">Grade</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
-        <button class="filter-pill" id="wall-bench" type="button" aria-pressed="false">Benchmarks</button>
+        <button class="filter-pill filter-btn" type="button" data-pick="filter" data-kind="problems" aria-haspopup="dialog" aria-label="Filter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5L3 5z"></path></svg><span class="filter-badge" hidden></span></button>
+        <button class="filter-pill" type="button" data-toggle="bench" aria-pressed="false">Benchmarks</button>
       </div>
-      <button class="filter-pill filter-clear" type="button" data-pick="clear" hidden>✕ Clear</button>
     </div>
+    <div class="wall-fpanel" id="wall-fpanel" role="dialog" aria-labelledby="f-title"></div>
     <nav class="wall-rail" aria-label="Jump to a grade">
       <div class="wall-rail-grades" id="wall-rail"></div>
     </nav>
@@ -1021,10 +995,18 @@
     </div>
   </section>
 
-  <!-- Circuits: the list, and the chosen circuit over the board (dimmed when none);
+  <!-- Circuits: the filter icon and Looping over the list (the Filter panel,
+       #wall-cfpanel, as on Problems), and the chosen circuit over the board (dimmed when none);
        a tap on a circuit lights all its holds (show_circuit); Start circuit opens
        the same Cast sheet as the phone (speed, loop, then the countdown and Stop) -->
   <section class="wall-page wall-circuits" data-page="circuits">
+    <div class="filter-row wall-filters">
+      <div class="filter-pills">
+        <button class="filter-pill filter-btn" type="button" data-pick="filter" data-kind="circuits" aria-haspopup="dialog" aria-label="Filter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5L3 5z"></path></svg><span class="filter-badge" hidden></span></button>
+        <button class="filter-pill" type="button" data-toggle="loop" aria-pressed="false">Looping</button>
+      </div>
+    </div>
+    <div class="wall-fpanel" id="wall-cfpanel" role="dialog" aria-labelledby="f-title"></div>
     <div class="wall-list" id="wall-clist"></div>
     <div class="wall-main">
       <div class="wall-bar">

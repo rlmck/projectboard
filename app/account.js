@@ -109,25 +109,20 @@
     btn.setAttribute('aria-label', faved ? 'Remove from favourites' : 'Add to favourites');
   }
 
-  // Sync the filter pills' enabled + lit state. The auth-only pills (favourites /
-  // exclude-done) render muted for a guest and reset their state; they stay clickable
-  // so a tap can show the "sign in" toast. Benchmarks/Looping are never disabled.
-  function updateFaveControls() {
+  // Sync the one-tap filters' lit state, in the list rows and the Filter sheet
+  // (every [data-toggle], FILTER_TOGGLES in problems.js). The auth-only ones
+  // (favourites / exclude done) render muted for a guest and reset their state;
+  // they stay clickable so a tap can show the "sign in" toast. Benchmarks and
+  // Looping are never disabled. Called from updateFilterControls.
+  function syncFilterToggles() {
     if (!session) { favesOnly = false; excludeDone = false; circuitFavesOnly = false; }
-    // [pill id, active state, needs-auth] for both lists.
-    const pills = [
-      ['pill-faves',  favesOnly,           true],
-      ['pill-bench',  benchOnly,           false],
-      ['pill-done',   excludeDone,         true],
-      ['cpill-faves', circuitFavesOnly,    true],
-      ['cpill-loop',  circuitLoopOnly,     false],
-    ];
-    pills.forEach(([id, active, needsAuth]) => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.classList.toggle('active', active);
-      el.setAttribute('aria-pressed', active ? 'true' : 'false');
-      el.classList.toggle('disabled', needsAuth && !session);
+    document.querySelectorAll('[data-toggle]').forEach(el => {
+      const t = FILTER_TOGGLES[el.dataset.toggle];
+      if (!t) return;
+      const on = t.get();
+      el.classList.toggle('active', on);
+      el.setAttribute('aria-pressed', on ? 'true' : 'false');
+      el.classList.toggle('disabled', !!t.guest && !session);
     });
   }
 
@@ -658,7 +653,7 @@
     authReady = true;
     if (session) { await loadTicks(); await loadFaves(); }
     retryChallengeSaves();   // a challenge attempt kept on the phone from last time (challenge.js)
-    updateFaveControls();
+    updateFilterControls();
     renderProfile();
     if (loaded) renderList();   // refresh tick + fave flags (skip if problems still loading)
     if (currentView === 'detail') { updateTickButton(); updateFaveButton(); }
@@ -691,7 +686,7 @@
     // Challenge boards and history belong to whoever was signed in.
     forgetChallengeData();
     retryChallengeSaves();
-    updateFaveControls();
+    updateFilterControls();
     renderProfile();
     if (loaded) renderList();
     if (currentView === 'detail') { updateTickButton(); updateFaveButton(); }

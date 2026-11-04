@@ -130,16 +130,13 @@
   // The list: sorted Easy or Hard, a section per grade with a sticky header and
   // the rail of the grades in it; sorted New or Random, one flat list and no rail.
   // Called from renderList, so it follows every load, refresh and setter-name
-  // update. The filters are the phone list's own (visibleProblems): Sort, the
-  // grade range and Benchmarks have pills here; activeGrades stays empty on the
-  // wall, and search, favourites and done stay off without a keyboard or account.
+  // update. The filters are the phone list's own (visibleProblems): the filter
+  // icon (the Filter panel: sort, grade range, Benchmarks) and the Benchmarks pill
+  // are here; search, favourites and done stay off without a keyboard or account.
   function wallRenderList() {
     if (!WALL) return;
     const box = wallEl('wall-list');
     const top = box.scrollTop;
-    const bench = wallEl('wall-bench');
-    bench.classList.toggle('active', benchOnly);
-    bench.setAttribute('aria-pressed', benchOnly ? 'true' : 'false');
     const grouped = sortIsByGrade();
     document.querySelector('#wall .wall-problems').classList.toggle('wall-flat', !grouped);
 
@@ -158,7 +155,7 @@
       });
       grades = sections.map(x => x.g);
       box.innerHTML = !list.length
-        ? `<div class="state-msg"><div class="icon">🔎</div>None match these filters.</div>`
+        ? filterEmptyHtml('problems')
         : grouped
           ? sections.map(({ g, ps }) => `
               <section class="wall-grade" data-grade="${escAttr(g)}">
@@ -329,7 +326,8 @@
       ${c.loops ? '<span class="loop-badge">↻ Loop</span>' : ''}`;
   }
 
-  // Easiest first, as the phone's list; circuits are few, so no grade rail.
+  // The phone's list order and filters (visibleCircuits: the Filter panel and the
+  // Looping pill; no search or favourites here). Circuits are few, so no grade rail.
   function wallRenderCircuits() {
     if (!WALL) return;
     const box = wallEl('wall-clist');
@@ -339,8 +337,7 @@
         ? `<div class="state-msg"><div class="icon">⚠️</div>Can’t reach the server right now.<br>Trying again by itself.</div>`
         : `<div class="spinner"></div>`;
     } else {
-      const list = allCircuits.slice().sort((a, b) =>
-        sportRank(a.grade) - sportRank(b.grade) || circuitName(a).localeCompare(circuitName(b)));
+      const list = visibleCircuits();
       box.innerHTML = list.length ? list.map(c => {
         const sel = String(c.id) === String(wallCircId);
         return `
@@ -350,7 +347,9 @@
               <span class="problem-meta">${wallCircMetaHtml(c)}</span>
             </span>
           </button>`;
-      }).join('') : `<div class="state-msg"><div class="icon">🧗</div>No circuits yet.</div>`;
+      }).join('') : allCircuits.length
+        ? filterEmptyHtml('circuits')
+        : `<div class="state-msg"><div class="icon">🧗</div>No circuits yet.</div>`;
       box.scrollTop = top;
     }
     if (wallCircId !== null && circuitsLoaded && !wallCircSelected()) wallCircSelect(null);   // deleted since
@@ -655,7 +654,6 @@
       return;
     }
     allProblems.push(data);
-    buildGradeTabs();
     renderList();                      // -> wallRenderList
     if (!wallCreateOn) return;         // night or idle closed it while it saved: it's saved anyway
     wallSetPage('problems', true);     // closes Create (and its LEDs)
@@ -762,6 +760,7 @@
       if (!discard && wallCreateDirty()) { wallAskDiscard('leave', () => wallSetPage(page, true)); return; }
       wallCreateClose();
     }
+    if (page !== wallPage) closeFilter();   // the Filter panel belongs to its page
     wallPage = page;
     document.querySelectorAll('.wall-tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
     document.querySelectorAll('.wall-page').forEach(s => s.classList.toggle('active', s.dataset.page === page));
@@ -860,21 +859,21 @@
       : slides.map((_, i) => `<i class="${i === wallSlide ? 'on' : ''}"></i>`).join('');
   }
 
-  // Back to the start: the Problems page, the filters and the sort at their
-  // defaults (any open Sort / Grade sheet closed), nothing chosen, the list at the
-  // top. Then the slides.
+  // Back to the start: the Problems page, both lists' filters and sorts at their
+  // defaults (the Filter panel closed), nothing chosen, the lists at the top.
+  // Then the slides.
   function wallGoIdle() {
     abandonCircuitCast();
     wallSetPage('problems', true);     // Create closes (its LEDs end) without asking
-    closeSortSheet();
-    document.getElementById('grade-modal').classList.remove('show');
+    closeFilter();
     resetListFilters();
-    wallEl('wall-filters').querySelector('.filter-pills').scrollLeft = 0;
-    updateListControls();
+    resetCircuitFilters();
     wallSelect(null);
     wallCircSelect(null);
+    wallRenderCircuits();
     wallEl('wall-clist').scrollTop = 0;
     wallRenderList();
+    updateFilterControls();            // the filter icons back to plain
     wallEl('wall-list').scrollTop = 0;
     wallMarkGrade();
     wallIdleOn = true;
@@ -988,10 +987,6 @@
     wallEl('wall-rail').addEventListener('click', e => {
       const b = e.target.closest('.wall-rail-btn');
       if (b) wallJumpTo(b.dataset.grade);
-    });
-    wallEl('wall-bench').addEventListener('click', () => {
-      benchOnly = !benchOnly;
-      listFiltersChanged();
     });
     let markQueued = false;
     wallEl('wall-list').addEventListener('scroll', () => {

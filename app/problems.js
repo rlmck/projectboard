@@ -4,15 +4,16 @@
 
   // ── List: filter + sort ──────────────────────────────────────────────────────
   // The phone list and the wall's list share these (the wall's list is the same
-  // visibleProblems()), and so do their Sort, Grade and Clear pills.
+  // visibleProblems()), and so do their filter icon and one-tap pills. Everything
+  // else (sort, grade range, the quick filters) is in the Filter sheet below,
+  // which serves the circuit list too (FILTER_KINDS.circuits, circuits.js).
   const LIST_SORTS = [
-    ['new',    'New',    'Newest first'],
-    ['random', 'Random', 'Shuffled. Choose it again to reshuffle'],
-    ['easy',   'Easy',   'Easiest grade first'],
-    ['hard',   'Hard',   'Hardest grade first'],
-    ['popular', 'Popular', 'Most climbers have sent it'],
+    ['new',     'New'],
+    ['random',  'Random'],       // choose it again to reshuffle
+    ['easy',    'Easy'],
+    ['hard',    'Hard'],
+    ['popular', 'Popular'],      // most climbers have sent it (db/38)
   ];
-  const sortLabel = key => (LIST_SORTS.find(s => s[0] === key) || LIST_SORTS[0])[1];
   const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''));
   const createdMs = p => { const t = Date.parse(p.created_at || ''); return isNaN(t) ? 0 : t; };
   function randomKey(p) {
@@ -48,20 +49,12 @@
     if (r === 999) return false;
     return (gradeLo === null || r >= gradeRank(gradeLo)) && (gradeHi === null || r <= gradeRank(gradeHi));
   }
-  // "6B–7A", "6B" (one grade), or '' when the range isn't narrowed.
-  function gradeRangeLabel() {
-    if (!gradeNarrowed()) return '';
-    const steps = gradeSteps();
-    const lo = gradeLo || steps[0] || '', hi = gradeHi || steps[steps.length - 1] || '';
-    return lo === hi ? fontGrade(lo) : `${fontGrade(lo)}–${fontGrade(hi)}`;
-  }
 
   function visibleProblems() {
     let arr = allProblems;
     if (favesOnly) arr = arr.filter(p => isFaved(p.id));
     if (benchOnly) arr = arr.filter(p => p.is_benchmark);
     if (excludeDone) arr = arr.filter(p => !isFullyDone(p.id));
-    if (activeGrades.size) arr = arr.filter(p => activeGrades.has(p.grade));
     if (gradeNarrowed()) arr = arr.filter(inGradeRange);
     const q = searchNorm(searchQuery);
     if (q) {
@@ -74,53 +67,116 @@
     return sortProblems(arr);
   }
 
-  // Everything the Clear pill resets (search has its own ×).
-  const listFiltersAtDefault = () =>
-    !favesOnly && !benchOnly && !excludeDone && !activeGrades.size && listSort === 'new' && !gradeNarrowed();
+  // How many settings differ from the default (the filter icon's badge): the sort,
+  // the grade range, each quick filter. (Next session: + 1 when holds are picked.)
+  const problemFilterCount = () =>
+    (listSort !== 'new') + gradeNarrowed() + favesOnly + benchOnly + excludeDone;
+  const listFiltersAtDefault = () => problemFilterCount() === 0;
 
-  // Back to the defaults (Clear, and the wall going idle). State only: the caller renders.
+  // Back to the defaults (Reset, Clear filters, and the wall going idle). State only: the caller renders.
   function resetListFilters() {
     favesOnly = false; benchOnly = false; excludeDone = false;
-    activeGrades.clear();
     listSort = 'new';
     listRandom = new Map();
     gradeLo = null; gradeHi = null;
   }
 
-  // The Sort, Grade and Clear pills, on the phone and the wall (they're found by
-  // data-pick, so both rows follow). Called from every renderList.
-  function updateListControls() {
-    document.querySelectorAll('[data-pick="sort"]').forEach(el => {
-      el.querySelector('.pill-label').textContent = `Sort: ${sortLabel(listSort)}`;
-      el.classList.toggle('active', listSort !== 'new');
-    });
-    const range = gradeRangeLabel();
-    document.querySelectorAll('[data-pick="grade"]').forEach(el => {
-      el.querySelector('.pill-label').textContent = range || 'Grade';
-      el.classList.toggle('active', !!range);
-      el.setAttribute('aria-label', range ? `Grades ${range}` : 'Grade range');
-    });
-    const atDefault = listFiltersAtDefault();
-    document.querySelectorAll('[data-pick="clear"]').forEach(el => { el.hidden = atDefault; });
-    // Clear appearing narrows the scroller: keep the pill just tapped in view (it
-    // was often the one at the right edge, which Clear would otherwise hide).
-    document.querySelectorAll('.filter-row .filter-pills').forEach(row => {
-      // (focus isn't reliable: iOS doesn't focus a tapped button; app.js records the tap)
-      const tapped = filterLastTap && row.contains(filterLastTap) ? filterLastTap : null;
-      if (tapped) {
-        const r = row.getBoundingClientRect(), t = tapped.getBoundingClientRect();
-        if (t.right > r.right - FILTER_FADE_PX) row.scrollLeft += t.right - r.right + FILTER_FADE_PX;
-        else if (t.left < r.left + FILTER_FADE_PX) row.scrollLeft -= r.left + FILTER_FADE_PX - t.left;
-      }
-      markFilterRowEdges(row);
-    });
+  // ── The Filter: one sheet (phone) or panel (wall) for either list ─────────────
+  // A "kind" says how the sheet reads and writes one list's state. The circuits'
+  // kind is added in circuits.js (FILTER_KINDS.circuits), which loads later.
+  const FILTER_KINDS = {
+    problems: {
+      noun: 'problem',
+      sorts: () => LIST_SORTS,
+      getSort: () => listSort,
+      setSort: key => {
+        listSort = key;
+        if (key === 'random') listRandom = new Map();   // a fresh shuffle every time it's chosen
+        if (key === 'popular') loadTickCounts();
+      },
+      steps: () => gradeSteps(),
+      rank: g => gradeRank(g),
+      fmt: g => fontGrade(g),
+      getRange: () => [gradeLo, gradeHi],
+      setRange: (lo, hi) => { gradeLo = lo; gradeHi = hi; },
+      toggles: () => (WALL ? ['bench'] : ['bench', 'faves', 'done']),
+      count: () => visibleProblems().length,
+      nOn: () => problemFilterCount(),
+      reset: () => resetListFilters(),
+      render: () => renderList(),
+      search: 'search',                 // the phone's search field, cleared by Clear filters
+    },
+  };
+
+  // The one-tap filters: a pill in the list's row and the same toggle in the sheet
+  // ([data-toggle], app.js), kept in step by syncFilterToggles (account.js).
+  const FILTER_TOGGLES = {
+    bench:  { kind: 'problems', label: 'Benchmarks',   get: () => benchOnly,        set: v => { benchOnly = v; } },
+    faves:  { kind: 'problems', label: 'Favourites',   get: () => favesOnly,        set: v => { favesOnly = v; },        guest: 'Sign in to filter favourites' },
+    done:   { kind: 'problems', label: 'Exclude Done', get: () => excludeDone,      set: v => { excludeDone = v; },      guest: 'Sign in to filter your sends' },
+    cfaves: { kind: 'circuits', label: 'Favourites',   get: () => circuitFavesOnly, set: v => { circuitFavesOnly = v; }, guest: 'Sign in to filter favourites' },
+    loop:   { kind: 'circuits', label: 'Looping',      get: () => circuitLoopOnly,  set: v => { circuitLoopOnly = v; } },
+  };
+
+  function toggleFilter(key) {
+    const t = FILTER_TOGGLES[key];
+    if (!t) return;
+    if (t.guest && !session) { showToast(t.guest, 'success'); return; }
+    t.set(!t.get());
+    filtersChanged(t.kind);
   }
 
-  // The pill row's ends fade out where there's more to scroll to (.more-left /
-  // .more-right, styles.css), so a pill cut off at an end reads as "scroll", not
-  // as sitting under Clear. FILTER_FADE_PX matches --pill-fade in tokens.css.
-  const FILTER_FADE_PX = 28;
-  let filterLastTap = null;            // the pill last pressed (app.js, pointerdown)
+  // A filter or the sort changed: re-render (which updates every control), and
+  // start the list from the top.
+  function filtersChanged(kind) {
+    FILTER_KINDS[kind].render();
+    if (!WALL && currentView === (kind === 'problems' ? 'list' : 'circuits')) window.scrollTo(0, 0);
+    if (WALL) {
+      if (kind === 'problems') { wallEl('wall-list').scrollTop = 0; wallMarkGrade(); }
+      else wallEl('wall-clist').scrollTop = 0;
+    }
+  }
+
+  // The empty list's button: every filter back to the default, and the search too.
+  function clearFilters(kind) {
+    const k = FILTER_KINDS[kind];
+    if (!k) return;
+    k.reset();
+    const input = !WALL && k.search && document.getElementById(k.search);
+    if (input && input.value) {
+      input.value = '';
+      input.dispatchEvent(new Event('input'));   // its own handler clears the query and the ×
+    }
+    if (filterKind === kind) grInit();
+    filtersChanged(kind);
+  }
+
+  // The empty list, phone and wall: say so, and offer the way back.
+  function filterEmptyHtml(kind) {
+    return `<div class="state-msg f-empty"><div class="icon">🔎</div>No ${FILTER_KINDS[kind].noun}s match these filters.`
+      + `<button class="btn-block btn-ghost f-empty-btn" type="button" data-act="clear-filters" data-kind="${kind}">Clear filters</button></div>`;
+  }
+
+  // The filter icons (both lists, phone and wall: found by data-pick + data-kind),
+  // the toggles, and the open sheet. Called from every render of either list.
+  function updateFilterControls() {
+    syncFilterToggles();
+    Object.keys(FILTER_KINDS).forEach(kind => {
+      const n = FILTER_KINDS[kind].nOn();
+      document.querySelectorAll(`[data-pick="filter"][data-kind="${kind}"]`).forEach(b => {
+        b.classList.toggle('on', n > 0);
+        b.setAttribute('aria-label', n ? `Filter, ${n} on` : 'Filter');
+        const badge = b.querySelector('.filter-badge');
+        badge.hidden = !n;
+        badge.textContent = n ? String(n) : '';
+      });
+    });
+    document.querySelectorAll('.filter-row .filter-pills').forEach(markFilterRowEdges);
+    fsRender();
+  }
+
+  // The pill rows' ends fade out where there's more to scroll to (.more-left /
+  // .more-right, styles.css), on a phone too narrow for the row.
   function markFilterRowEdges(row) {
     const max = row.scrollWidth - row.clientWidth;
     row.classList.toggle('more-left', row.scrollLeft > 1);
@@ -152,83 +208,172 @@
     return tickCountsLoading;
   }
 
-  // A filter or the sort changed: re-render, and start the list from the top.
-  function listFiltersChanged() {
-    updateFaveControls();               // the Favourites / Benchmarks / Exclude Done pills
-    buildGradeTabs();
-    renderList();
-    if (currentView === 'list' && !WALL) window.scrollTo(0, 0);
-    if (WALL) { wallEl('wall-list').scrollTop = 0; wallMarkGrade(); }
+  // ── The Filter sheet / panel ──
+  // Built afresh each time it opens, into the phone's #filter-sheet or the wall
+  // page's panel (only one is ever open, so the gr-* ids are unique). Sections:
+  // Sort, Grade, Quick filters, (Holds, next session), then Reset and Show N.
+  // Every change applies at once: the list behind re-renders as it goes.
+  function filterContainer(kind) {
+    if (!WALL) return document.getElementById('filter-sheet');
+    return wallEl(kind === 'circuits' ? 'wall-cfpanel' : 'wall-fpanel');
   }
 
-  function clearListFilters() {
-    resetListFilters();
-    filterLastTap = null;
-    document.querySelectorAll('.filter-row .filter-pills').forEach(row => { row.scrollLeft = 0; });
-    listFiltersChanged();
+  function filterSheetHtml(kind) {
+    const k = FILTER_KINDS[kind];
+    const sorts = k.sorts().map(([key, name]) =>
+      `<button class="f-sort-opt" type="button" role="radio" data-fsort="${key}">${name}</button>`).join('');
+    const toggles = k.toggles().map(key =>
+      `<button class="filter-pill" type="button" data-toggle="${key}" aria-pressed="false">${FILTER_TOGGLES[key].label}</button>`).join('');
+    return `
+      <div class="modal-header f-head">
+        <div class="modal-title" id="f-title">Filter</div>
+        <button class="modal-close" type="button" data-f="close" aria-label="Close">✕</button>
+      </div>
+      <div class="f-body">
+        <section class="f-section">
+          <div class="f-label" id="f-sort-label">Sort</div>
+          <div class="f-sort" role="radiogroup" aria-labelledby="f-sort-label">${sorts}</div>
+        </section>
+        <section class="f-section">
+          <div class="f-label">Grade</div>
+          <div class="gr-slider" id="gr-slider">
+            <div class="gr-track" id="gr-track">
+              <div class="gr-fill" id="gr-fill"></div>
+              <div class="gr-thumb" id="gr-lo" role="slider" tabindex="0" aria-label="Easiest grade"></div>
+              <div class="gr-thumb" id="gr-hi" role="slider" tabindex="0" aria-label="Hardest grade"></div>
+            </div>
+          </div>
+          <div class="gr-ticks" id="gr-ticks"></div>
+          <p class="f-none" id="gr-none" hidden>No grades yet.</p>
+        </section>
+        <section class="f-section">
+          <div class="f-label">Quick filters</div>
+          <div class="f-toggles">${toggles}</div>
+        </section>
+        ${filterHoldsHtml(kind)}
+      </div>
+      <div class="modal-actions f-foot">
+        <button class="btn-block btn-ghost" type="button" data-f="reset">Reset</button>
+        <button class="btn-block btn-primary" type="button" data-f="done">Show ${k.noun}s</button>
+      </div>`;
   }
 
-  // ── The Sort sheet ──
-  function openSortSheet() {
-    document.getElementById('sort-opts').innerHTML = LIST_SORTS.map(([key, name, note]) => `
-      <button class="sort-opt${key === listSort ? ' active' : ''}" type="button" data-sort="${key}" aria-pressed="${key === listSort}">
-        <span class="sort-opt-name">${name}</span><span class="sort-opt-note">${note}</span>
-      </button>`).join('');
-    document.getElementById('sort-modal').classList.add('show');
-  }
-  function closeSortSheet() { document.getElementById('sort-modal').classList.remove('show'); }
-  function pickSort(key) {
-    if (!LIST_SORTS.some(s => s[0] === key)) return;
-    listSort = key;
-    if (key === 'random') listRandom = new Map();   // a fresh shuffle every time it's chosen
-    if (key === 'popular') loadTickCounts();
-    closeSortSheet();
-    listFiltersChanged();
+  // ═══ HOLDS (next session) ═══════════════════════════════════════════════════
+  // The hold filter's section goes here, the last section before the buttons
+  // (docs/prototypes/filter-prototype.html: a board thumbnail with the picked holds,
+  // what's picked, and a way into the hold picker). When it lands: its state in
+  // state.js, the filter in visibleProblems(), +1 in problemFilterCount(), and
+  // cleared by resetListFilters(). Nothing yet.
+  function filterHoldsHtml(kind) {
+    return '';
   }
 
-  // ── The Grade sheet: a two-handle range slider over gradeSteps() ──
-  // While it's open the handles are indices into grSteps; the filter (gradeLo /
-  // gradeHi) follows them at once, the count follows as they move, and the list
-  // re-renders when a handle is let go (a 280-row re-render per step is heavy on the
-  // wall's Pi). A handle at either end means no limit on that side.
+  function openFilter(kind) {
+    if (!FILTER_KINDS[kind]) return;
+    if (filterKind) closeFilter();
+    filterKind = kind;
+    const box = filterContainer(kind);
+    box.innerHTML = filterSheetHtml(kind);
+    const slider = document.getElementById('gr-slider');
+    slider.addEventListener('pointerdown', grPointerDown);
+    slider.addEventListener('pointermove', grPointerMove);
+    slider.addEventListener('pointerup', grPointerUp);
+    slider.addEventListener('pointercancel', grPointerUp);
+    slider.addEventListener('lostpointercapture', grPointerUp);
+    ['gr-lo', 'gr-hi'].forEach(id => document.getElementById(id).addEventListener('keydown', grKey));
+    document.getElementById('gr-ticks').addEventListener('click', grTickTap);
+    grInit();
+    updateFilterControls();             // the toggles and the buttons
+    if (WALL) document.querySelector(`#wall .wall-page[data-page="${kind}"]`).classList.add('filtering');
+    else document.getElementById('filter-modal').classList.add('show');
+  }
+
+  function closeFilter() {
+    if (!filterKind) return;
+    const kind = filterKind;
+    filterKind = null;
+    grDrag = null;
+    filterContainer(kind).innerHTML = '';
+    if (WALL) document.querySelector(`#wall .wall-page[data-page="${kind}"]`).classList.remove('filtering');
+    else document.getElementById('filter-modal').classList.remove('show');
+  }
+
+  function filterPickSort(key) {
+    const k = FILTER_KINDS[filterKind];
+    if (!k || !k.sorts().some(s => s[0] === key)) return;
+    k.setSort(key);
+    filtersChanged(filterKind);
+  }
+
+  function filterReset() {
+    const kind = filterKind;
+    if (!kind) return;
+    FILTER_KINDS[kind].reset();
+    grInit();
+    filtersChanged(kind);
+  }
+
+  // The open sheet's own display: the sort lit, Show N (live), Reset.
+  function fsRender() {
+    if (!filterKind) return;
+    const k = FILTER_KINDS[filterKind];
+    const box = filterContainer(filterKind);
+    const sort = k.getSort();
+    box.querySelectorAll('.f-sort-opt').forEach(b => {
+      const on = b.dataset.fsort === sort;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+    const n = k.count();
+    const done = box.querySelector('[data-f="done"]');
+    done.textContent = n ? `Show ${n} ${k.noun}${n === 1 ? '' : 's'}` : `No ${k.noun}s match`;
+    done.disabled = !n;
+    box.querySelector('[data-f="reset"]').disabled = k.nOn() === 0;
+  }
+
+  // ── The Grade section: a two-handle range slider over the kind's steps ──
+  // The handles are indices into grSteps; the filter (the kind's lo / hi) follows
+  // them at once, the count follows as they move, and the list re-renders when a
+  // handle is let go (a 280-row re-render per step is heavy on the wall's Pi). A
+  // handle at either end means no limit on that side; a narrowed range hides
+  // unknown grades.
   let grSteps = [];
   let grLo = 0, grHi = 0;
   let grDrag = null;                    // 'lo' | 'hi' while a handle is held
 
-  function openGradeSheet() {
-    grSteps = gradeSteps();
+  // The handles from the kind's range (on open, and after Reset / Clear filters).
+  function grInit() {
+    const k = FILTER_KINDS[filterKind];
+    if (!k) return;
+    grSteps = k.steps();
     const n = grSteps.length;
-    grLo = gradeLo === null ? 0 : Math.max(0, grSteps.findIndex(g => gradeRank(g) >= gradeRank(gradeLo)));
+    const [lo, hi] = k.getRange();
+    grLo = lo === null ? 0 : Math.max(0, grSteps.findIndex(g => k.rank(g) >= k.rank(lo)));
     grHi = n - 1;
-    if (gradeHi !== null) {
-      for (let i = n - 1; i >= 0; i--) if (gradeRank(grSteps[i]) <= gradeRank(gradeHi)) { grHi = i; break; }
+    if (hi !== null) {
+      for (let i = n - 1; i >= 0; i--) if (k.rank(grSteps[i]) <= k.rank(hi)) { grHi = i; break; }
     }
     if (grHi < grLo) grHi = grLo;
     document.getElementById('gr-ticks').innerHTML = grSteps.map((g, i) =>
-      `<button class="gr-tick" type="button" data-i="${i}" style="left:${grPct(i)}%">${escHtml(fontGrade(g))}</button>`).join('');
+      `<button class="gr-tick" type="button" data-i="${i}" style="left:${grPct(i)}%">${escHtml(k.fmt(g))}</button>`).join('');
     document.getElementById('gr-slider').hidden = n < 2;
     document.getElementById('gr-ticks').hidden = n < 2;
+    document.getElementById('gr-none').hidden = n >= 2;
     grRender();
-    document.getElementById('grade-modal').classList.add('show');
-  }
-  function closeGradeSheet() {
-    const modal = document.getElementById('grade-modal');
-    if (!modal.classList.contains('show')) return;
-    modal.classList.remove('show');
-    grDrag = null;
-    listFiltersChanged();
   }
   const grPct = i => (grSteps.length < 2 ? 0 : (i / (grSteps.length - 1)) * 100);
 
-  // Handles -> the filter state, then the sheet's own display.
+  // Handles -> the filter state, then the sheet's display (the count, not the list).
   function grApply() {
     const n = grSteps.length;
-    gradeLo = grLo <= 0 ? null : grSteps[grLo];
-    gradeHi = grHi >= n - 1 ? null : grSteps[grHi];
+    FILTER_KINDS[filterKind].setRange(grLo <= 0 ? null : grSteps[grLo], grHi >= n - 1 ? null : grSteps[grHi]);
     grRender();
+    fsRender();
   }
   function grRender() {
+    const k = FILTER_KINDS[filterKind];
     const lo = document.getElementById('gr-lo'), hi = document.getElementById('gr-hi');
+    if (!k || !lo) return;
     lo.style.left = grPct(grLo) + '%';
     hi.style.left = grPct(grHi) + '%';
     const fill = document.getElementById('gr-fill');
@@ -238,7 +383,7 @@
       el.setAttribute('aria-valuemin', '0');
       el.setAttribute('aria-valuemax', String(Math.max(0, grSteps.length - 1)));
       el.setAttribute('aria-valuenow', String(i));
-      el.setAttribute('aria-valuetext', fontGrade(grSteps[i] || ''));
+      el.setAttribute('aria-valuetext', grSteps[i] ? k.fmt(grSteps[i]) : '');
     });
     // The upper handle on top when both sit at the far left, so it can still be dragged off.
     lo.classList.toggle('under', grLo === grHi && grLo === 0);
@@ -246,11 +391,6 @@
       const i = +t.dataset.i;
       t.classList.toggle('in', i >= grLo && i <= grHi);
     });
-    const label = gradeRangeLabel();
-    document.getElementById('gr-value').textContent = !grSteps.length ? 'No grades yet' : label || 'All grades';
-    const n = visibleProblems().length;
-    document.getElementById('gr-done').textContent = `Show ${n} problem${n === 1 ? '' : 's'}`;
-    document.getElementById('gr-reset').disabled = !gradeNarrowed();
   }
 
   // The step nearest a pointer's x on the track.
@@ -290,8 +430,7 @@
   function grPointerUp() {
     if (!grDrag) return;
     grDrag = null;
-    renderList();
-    updateListControls();
+    filtersChanged(filterKind);
   }
   function grKey(e) {
     const which = e.currentTarget.id === 'gr-lo' ? 'lo' : 'hi';
@@ -304,8 +443,7 @@
     if (i === null) return;
     e.preventDefault();
     grMoveTo(which, Math.max(0, Math.min(grSteps.length - 1, i)));
-    renderList();
-    updateListControls();
+    filtersChanged(filterKind);
   }
   // A grade label under the track: the nearer handle jumps there.
   function grTickTap(e) {
@@ -313,14 +451,7 @@
     if (!t) return;
     const i = +t.dataset.i;
     grMoveTo(grPick(i), i);
-    renderList();
-    updateListControls();
-  }
-  function grReset() {
-    grLo = 0; grHi = Math.max(0, grSteps.length - 1);
-    grApply();
-    renderList();
-    updateListControls();
+    filtersChanged(filterKind);
   }
 
   function cardHtml(p) {
@@ -342,42 +473,33 @@
   }
 
   function renderList() {
-    updateListControls();
+    updateFilterControls();
     if (WALL) wallRenderList();           // the wall screen's list follows every render of this one
     const container = document.getElementById('list-container');
     const list = visibleProblems();
     document.getElementById('count').textContent = `${list.length} problem${list.length !== 1 ? 's' : ''}`;
 
     if (list.length === 0) {
-      // Only show the favourites onboarding hint when faves is the *only* active
-      // filter — otherwise the empty result may be down to the other filters, so
-      // keep the message generic.
-      const otherFilters = searchQuery || activeGrades.size || benchOnly || excludeDone || gradeNarrowed();
+      // The favourites onboarding hint only when favourites is the *only* thing
+      // narrowing the list; otherwise the filters may be the cause.
+      const otherFilters = searchQuery || problemFilterCount() > 1;
       container.innerHTML = (favesOnly && !otherFilters)
-        ? `<div class="state-msg"><div class="icon">♡</div>No favourites yet. Tap the heart on a problem to save it here.</div>`
-        : `<div class="state-msg"><div class="icon">🔎</div>None match these filters.</div>`;
+        ? `<div class="state-msg f-empty"><div class="icon">♡</div>No favourites yet. Tap the heart on a problem to save it here.`
+          + `<button class="btn-block btn-ghost f-empty-btn" type="button" data-act="clear-filters" data-kind="problems">Clear filters</button></div>`
+        : filterEmptyHtml('problems');
       return;
     }
     container.innerHTML = `<div class="problem-list">${list.map(cardHtml).join('')}</div>`;
   }
 
-  // Shared grade-tab markup. `isActive(g)` decides the highlight; 'all' renders as
-  // "All". `fmt` (optional) formats the LABEL only — data-grade keeps the raw value
-  // for matching. Problem tabs pass fontGrade (capitalised); circuit tabs don't.
+  // Shared grade-tab markup (the create and grade-edit pickers). `isActive(g)`
+  // decides the highlight. `fmt` (optional) formats the LABEL only — data-grade
+  // keeps the raw value for matching. Problem grades pass fontGrade (capitalised);
+  // circuit grades don't.
   function gradeTabButtons(grades, isActive, fmt) {
     return grades.map(g =>
       `<button class="grade-tab${isActive(g) ? ' active' : ''}" data-grade="${escAttr(g)}" type="button">${g === 'all' ? 'All' : escHtml(fmt ? fmt(g) : g)}</button>`
     ).join('');
-  }
-
-  function buildGradeTabs() {
-    const present = [...new Set(allProblems.map(p => p.grade).filter(Boolean))]
-      .sort((a, b) => gradeRank(a) - gradeRank(b) || a.localeCompare(b));
-    // Drop any active filter whose grade no longer exists (last problem deleted/regraded),
-    // otherwise visibleProblems() would filter on an absent grade and show nothing.
-    [...activeGrades].forEach(g => { if (!present.includes(g)) activeGrades.delete(g); });
-    document.getElementById('grade-tabs').innerHTML =
-      gradeTabButtons(['all', ...present], g => g === 'all' ? activeGrades.size === 0 : activeGrades.has(g), fontGrade);
   }
 
   // ── Detail ───────────────────────────────────────────────────────────────────
@@ -858,7 +980,6 @@
     allProblems = rows;
     loaded = true;
     if (listSort === 'popular') loadTickCounts();
-    buildGradeTabs();
     renderList();
   }
 
@@ -1033,7 +1154,6 @@
     myFaves.delete(String(p.id));
     leaderboardLoaded = false;           // its ticks cascade away — refetch the board next view
     closeDeleteConfirm();
-    buildGradeTabs();
     renderList();
     showToast('Problem deleted', 'success');
 
@@ -1116,7 +1236,6 @@
     p.grade = editGrade;                // update in place (same object lives in allProblems)
     leaderboardLoaded = false;           // base points depend on grade — refetch the board next view
     closeGradeEdit();
-    buildGradeTabs();                    // a new grade may add/remove a filter tab
     renderList();
     if (currentView === 'detail') renderDetail(p.id);
     showToast('Grade updated', 'success');

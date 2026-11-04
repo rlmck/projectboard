@@ -4,7 +4,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 
 ## Current state (as of 2026-11-04)
 - **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-8fae3d805c` since 2 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
-- **Sorting and filtering (2 Nov 2026):** Sort (New default / Random / Easy / Hard / Popular, db/38), a Grade range slider and Clear in the list's pill row, phone and wall (§4.2a); the wall's rail only for Easy/Hard, idle resets all. Create "+" filled with `--cast`. Not yet tried on the touchscreen.
+- **Sorting and filtering (Filter sheet, 4 Nov 2026):** a filter icon (pink + count when not default) and one-tap pills per list; the icon opens a Filter sheet (phone) or panel (wall): Sort (New default; circuits without Popular), Grade slider, quick filters. Problems and circuits, phone and wall (§4.2a). Holds filter next. Not yet tried on the touchscreen.
 - **Deploying:** ship by default; migrations and Pi deploys done by Claude end to end (Decisions). `build.sh` is the Cloudflare build gate; a pre-commit hook scans for secrets. Slash commands `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`.
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs; about 0.25–0.45 s from cast to LEDs). People use it: 50 casts on the evening of 26 Oct, 114 in the 3 days to 28 Oct. **Every hold's LED is checked on the wall** (28 Oct, `pb-ledmap`); three app labels were shifted and fixed by db/32 (188 real holds). **Mirrored casts are still unchecked.**
 - **The Pi 4 is back on a new SD card (1 Nov 2026)** after the old card died on 31 Oct: it set itself up unattended at its first boot (`pi/firstboot/README.md`; everything the old card held outside the repo is now in `pi/` or the laptop's gitignored `pi/secrets.env`, with a new Tailscale key, rescue-hotspot password and wall key, db/36). Casting from a phone works again. The Pi 4 (Raspberry Pi OS Lite 64-bit, trixie, 2 GB; on the gym Wi-Fi and Tailscale as `projectboard`) runs the listener with self-healing, watchdogs and night mode 23:00–08:00 (`pi/`, `pi/README.md`). The night switch was seen working both ways on 27 Oct. The R8 acceptance tests are still to do. The idle pattern, 15 minutes after the last cast (20 until 2 Nov), is **`wave`** (ten patterns in `pi/listener/patterns/`, switched live with `pb-idle`). Wi-Fi: a random hardware address per join, a `pb-netwatch` watchdog (v2) and a rescue hotspot (`projectboard-rescue`).
@@ -57,6 +57,11 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-04, Claude Code (the Filter sheet, problems and circuits, phone and wall).**
+  - **Changed:** grade tabs and the Sort/Grade/Clear pills gone; a filter icon in each row opens one Filter sheet (phone) or panel (wall): Sort, Grade, Quick filters (in step with the row), a Holds slot, Reset, Show N. Circuits gain sorts (New default) and a grade range. Empty lists offer Clear filters. Fixes admin Edit grade (a duplicate `grade-modal` id opened the list's sheet). Overview §4.2a/§4.3/§4.7a.
+  - **Tested:** build; Chrome 390×844 and headless 1280×720 `?wall`, broadcast stubbed: sorts, slider, toggles both ways, badge, Reset, empty state, circuits, wall idle.
+  - **Left:** Ross: try it on a phone and the touchscreen. Next: the hold filter.
+
 - **2026-11-04, Claude Code (Create: pinch in and out of the viewer).**
   - **Changed:** problem Create/Edit pinches like detail: a spread opens the viewer, pinching to fit closes it (also after the expand button), a double-tap closes only when both taps miss every hold; on a hold it still cycles twice; taps never hide the bar; no landscape auto-open. New hint. Circuit create shares the viewer, not the gestures: unchanged. Overview §4.8.
   - **Tested:** build; Chrome, synthetic touch pointers: holds, name, grade, Undo and bar counts survive; detail as before. Real fingers not yet.
@@ -76,9 +81,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Tested:** build; Chrome at 1280×720, local: the order, the dim, a chosen problem (nothing sent).
   - **Live:** `824d31b`, CACHE `pb-8fae3d805c`, kiosk at its next idle.
   - **New questions:** the key is readable in the Pi's process list by local accounts (local note).
-
-- **2026-11-02, Claude Code (Create: the finish zone no longer drawn).**
-  - **Changed:** the dashed line and label gone from Create, phone and wall (`.finish-zone`, `finishZoneEdge()`, 5 tokens). The top-25% rule is unchanged; no migration. Overview §4.5/§4.8a.
-  - **Tested:** build; Chrome, local: phone and wall Create, no marker (nothing sent).
-  - **Live:** `61d9ff0`, CACHE `pb-055cbd292e`.
-  - **New questions:** the hints still say "finish-zone hold": reword?

@@ -110,97 +110,6 @@
     searchInput.focus(); // pop the keyboard, ready for a fresh search
   });
 
-  // Grade tabs — simple tap selects one grade, tap-and-hold builds a multi-select.
-  // The Problems and Circuits strips behave the same; each passes its own set of
-  // selected grades and its own re-render.
-  //
-  // Simple tap — meaning depends on how many grades are selected:
-  //   • single-select (0–1 active) → switch to just this grade; tapping the active
-  //     grade again clears back to "All".
-  //   • multi-select  (2+ active)  → toggle this grade in/out. Dropping back to
-  //     one grade returns to single-select, so the next tap switches again.
-  function tapGrade(grades, g) {
-    if (g === 'all') {
-      grades.clear();
-    } else if (grades.size >= 2) {               // multi-select: tap toggles
-      if (grades.has(g)) grades.delete(g);
-      else grades.add(g);
-    } else if (grades.has(g)) {                  // tapping the active grade → All
-      grades.clear();
-    } else {                                     // single-select: tap switches
-      grades.clear();
-      grades.add(g);
-    }
-  }
-
-  // Tap-and-hold: the way to grow a selection — adds this grade (entering
-  // multi-select from a single grade). On an already-selected grade it removes
-  // it, unless it's the only one left (then keep it). "All" just clears.
-  function holdGrade(grades, g) {
-    if (g === 'all') grades.clear();
-    else if (grades.has(g)) { if (grades.size > 1) grades.delete(g); }
-    else grades.add(g);
-  }
-
-  const HOLD_MS = 450;
-  function wireGradeTabs(el, grades, refresh) {
-    let holdTimer = null, holdStartX = 0, holdStartY = 0, suppressTabClick = false;
-
-    el.addEventListener('touchstart', e => {
-      const tab = e.target.closest('.grade-tab');
-      if (!tab || e.touches.length !== 1) return;
-      suppressTabClick = false;
-      holdStartX = e.touches[0].clientX;
-      holdStartY = e.touches[0].clientY;
-      const g = tab.dataset.grade;
-      clearTimeout(holdTimer);
-      holdTimer = setTimeout(() => {
-        holdTimer = null;
-        suppressTabClick = true;                 // swallow the click that follows touchend
-        if (navigator.vibrate) navigator.vibrate(15);
-        holdGrade(grades, g);
-        refresh();
-      }, HOLD_MS);
-    }, { passive: true });
-
-    // A drag means the user is scrolling the strip, not holding — cancel the hold.
-    el.addEventListener('touchmove', e => {
-      if (!holdTimer) return;
-      const t = e.touches[0];
-      if (Math.abs(t.clientX - holdStartX) > 10 || Math.abs(t.clientY - holdStartY) > 10) {
-        clearTimeout(holdTimer); holdTimer = null;
-      }
-    }, { passive: true });
-
-    const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
-    el.addEventListener('touchend', cancelHold, { passive: true });
-    el.addEventListener('touchcancel', cancelHold, { passive: true });
-
-    // Click handles the simple tap (mouse + touch). Skipped right after a hold fired.
-    el.addEventListener('click', e => {
-      const tab = e.target.closest('.grade-tab');
-      if (!tab) return;
-      if (suppressTabClick) { suppressTabClick = false; return; }
-      tapGrade(grades, tab.dataset.grade);
-      refresh();
-    });
-
-    // Suppress the long-press context menu on the tabs (mobile + desktop).
-    el.addEventListener('contextmenu', e => e.preventDefault());
-  }
-
-  // Problems: re-render the tabs + list, preserving the strip's horizontal scroll.
-  // (Both sets are only ever mutated in place, never reassigned.)
-  const gradeTabsEl = document.getElementById('grade-tabs');
-  wireGradeTabs(gradeTabsEl, activeGrades, () => {
-    const scroll = gradeTabsEl.scrollLeft;
-    buildGradeTabs();
-    gradeTabsEl.scrollLeft = scroll;
-    renderList();
-  });
-  // Circuits: renderCircuits rebuilds the tabs itself, keeping their scroll.
-  wireGradeTabs(document.getElementById('circuit-grade-tabs'), activeCircuitGrades, renderCircuits);
-
   // List clicks: heart toggles favourite (without opening), card opens detail.
   document.getElementById('list-container').addEventListener('click', e => {
     const fav = e.target.closest('.card-fave');
@@ -209,64 +118,30 @@
     if (card) location.hash = '#detail/' + encodeURIComponent(card.dataset.id);
   });
 
-  // Filter pills (under the grade tabs). A pill toggles a filter state, lights up,
-  // and re-renders. Auth-only pills (favourites / exclude-done) show a non-invasive
-  // toast for guests instead of filtering (and render muted via updateFaveControls).
-  function wirePill(id, getActive, setActive, rerender, opts = {}) {
-    const el = document.getElementById(id);
-    el.addEventListener('click', () => {
-      if (opts.needsAuth && !session) { showToast(opts.guestMsg, 'success'); return; }
-      setActive(!getActive());
-      el.classList.toggle('active', getActive());
-      el.setAttribute('aria-pressed', getActive() ? 'true' : 'false');
-      rerender();
-    });
-  }
-  wirePill('pill-faves', () => favesOnly,   v => favesOnly = v,   renderList, { needsAuth: true, guestMsg: 'Sign in to filter favourites' });
-  wirePill('pill-bench', () => benchOnly,   v => benchOnly = v,   renderList);
-  wirePill('pill-done',  () => excludeDone, v => excludeDone = v, renderList, { needsAuth: true, guestMsg: 'Sign in to filter your sends' });
-
-  // Sort, Grade and Clear (problems.js): on the phone's pill row and the wall's,
-  // found by data-pick. The sheets are shared by both.
+  // The filter (problems.js): the funnel icon opens the Filter sheet (phone) or
+  // panel (wall) for its list (data-kind); a [data-toggle] is a one-tap filter, in
+  // a list's row or in the sheet, and they stay in step; the sheet's sort options,
+  // Reset, Show N and close; the empty list's Clear filters. All by delegation:
+  // the sheet is rebuilt each time it opens.
   document.addEventListener('click', e => {
-    const pick = e.target.closest('[data-pick]');
-    if (!pick) return;
-    if (pick.dataset.pick === 'sort') openSortSheet();
-    else if (pick.dataset.pick === 'grade') openGradeSheet();
-    else if (pick.dataset.pick === 'clear') clearListFilters();
+    const el = e.target.closest('[data-pick="filter"], [data-toggle], [data-fsort], [data-f], [data-act="clear-filters"]');
+    if (!el) return;
+    if (el.dataset.pick === 'filter') openFilter(el.dataset.kind);
+    else if (el.dataset.toggle) toggleFilter(el.dataset.toggle);
+    else if (el.dataset.fsort) filterPickSort(el.dataset.fsort);
+    else if (el.dataset.f === 'reset') filterReset();
+    else if (el.dataset.f === 'done' || el.dataset.f === 'close') closeFilter();
+    else if (el.dataset.act === 'clear-filters') clearFilters(el.dataset.kind);
   });
-  // The pill rows: remember the pill pressed (so Clear appearing doesn't hide it)
-  // and fade an end of the row while there's more to scroll to that way.
-  document.addEventListener('pointerdown', e => {
-    const pill = e.target.closest && e.target.closest('.filter-row .filter-pill');
-    if (pill) filterLastTap = pill;
-  }, { capture: true, passive: true });
+  document.getElementById('filter-modal').addEventListener('click', e => {
+    if (e.target.id === 'filter-modal') closeFilter();
+  });
+  // A pill row too wide for a narrow phone scrolls, its ends fading while there's more.
   document.querySelectorAll('.filter-row .filter-pills').forEach(row =>
     row.addEventListener('scroll', () => markFilterRowEdges(row), { passive: true }));
   window.addEventListener('resize', () =>
     document.querySelectorAll('.filter-row .filter-pills').forEach(markFilterRowEdges));
-  document.getElementById('sort-opts').addEventListener('click', e => {
-    const opt = e.target.closest('.sort-opt');
-    if (opt) pickSort(opt.dataset.sort);
-  });
-  document.getElementById('sort-close').addEventListener('click', closeSortSheet);
-  document.getElementById('sort-modal').addEventListener('click', e => {
-    if (e.target.id === 'sort-modal') closeSortSheet();
-  });
-  const grTrack = document.getElementById('gr-slider');
-  grTrack.addEventListener('pointerdown', grPointerDown);
-  grTrack.addEventListener('pointermove', grPointerMove);
-  grTrack.addEventListener('pointerup', grPointerUp);
-  grTrack.addEventListener('pointercancel', grPointerUp);
-  grTrack.addEventListener('lostpointercapture', grPointerUp);
-  ['gr-lo', 'gr-hi'].forEach(id => document.getElementById(id).addEventListener('keydown', grKey));
-  document.getElementById('gr-ticks').addEventListener('click', grTickTap);
-  document.getElementById('gr-reset').addEventListener('click', grReset);
-  document.getElementById('gr-done').addEventListener('click', closeGradeSheet);
-  document.getElementById('grade-close').addEventListener('click', closeGradeSheet);
-  document.getElementById('grade-modal').addEventListener('click', e => {
-    if (e.target.id === 'grade-modal') closeGradeSheet();
-  });
+  document.querySelectorAll('.filter-row .filter-pills').forEach(markFilterRowEdges);
 
   // Overflow (⋮) menu: the button toggles its menu (stopPropagation so the
   // document-level tap below doesn't immediately re-close it); a tap on a menu
@@ -469,7 +344,7 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') previewEnd(); });
 
   // ── Circuits wiring ─────────────────────────────────────────────────────────
-  // List: search + open detail + create (the grade tabs are wired with the problems').
+  // List: search + open detail + create (the filter is wired with the problems').
   const circuitSearchInput = document.getElementById('circuit-search');
   const circuitSearchClear = document.getElementById('circuit-search-clear');
   circuitSearchInput.addEventListener('input', e => {
@@ -493,8 +368,6 @@
     const card = e.target.closest('.problem-card');
     if (card) location.hash = '#circuit/' + encodeURIComponent(card.dataset.id);
   });
-  wirePill('cpill-faves', () => circuitFavesOnly,   v => circuitFavesOnly = v,   renderCircuits, { needsAuth: true, guestMsg: 'Sign in to filter favourites' });
-  wirePill('cpill-loop',  () => circuitLoopOnly,    v => circuitLoopOnly = v,    renderCircuits);
   document.getElementById('circuit-create-btn').addEventListener('click', () => {
     location.hash = session ? '#circuit-create' : '#auth';
   });
@@ -667,7 +540,7 @@
   document.getElementById('info-modal').addEventListener('click', e => {
     if (e.target.id === 'info-modal') closeInfo();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closeCircuitCast(); closeNameModal(); closeAccountDelete(); closeUserRename(); closeUserReset(); closeCompare(); closeAttemptDelete(); closeSortSheet(); closeGradeSheet(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closeCircuitCast(); closeNameModal(); closeAccountDelete(); closeUserRename(); closeUserReset(); closeCompare(); closeAttemptDelete(); closeFilter(); } });
 
   // Auth view (#auth): create an account or sign in, in one form (account.js).
   document.getElementById('auth-form').addEventListener('submit', authSubmit);

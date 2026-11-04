@@ -56,7 +56,6 @@
 
   // ── State ────────────────────────────────────────────────────────────────────
   let allProblems = [];
-  let activeGrades = new Set();   // selected grade filters; empty = "All"
   let searchQuery = '';
   let loaded = false;
   let currentView = 'list';
@@ -100,6 +99,11 @@
   let gradeHi = null;             // ...and the highest (null = no upper limit); either set hides unknown grades
   let circuitFavesOnly = false;   // circuit list filter: only favourited circuits
   let circuitLoopOnly = false;    // circuit list filter: only looping circuits
+  let circuitSort = 'new';        // circuit list order: 'new' (default) | 'random' | 'easy' | 'hard' (CIRCUIT_SORTS, circuits.js)
+  let circuitRandom = new Map();  // Random's order for circuits: circuit id -> a random key
+  let circuitGradeLo = null;      // the circuit grade range (sport ladder), as gradeLo / gradeHi
+  let circuitGradeHi = null;
+  let filterKind = null;          // the open Filter sheet (phone) or panel (wall): 'problems' | 'circuits' | null
   let authMode = 'signup'; // the #auth mode: 'signup' (create an account: nickname + PIN twice) | 'signin'
 
   // ── Create-a-problem state ───────────────────────────────────────────────────
@@ -117,7 +121,6 @@
   let allCircuits = [];
   let circuitsLoaded = false;
   let circuitsError = null;          // last load error (the list shows "Failed to load circuits")
-  let activeCircuitGrades = new Set(); // grade filter, same tap / tap-and-hold rules as the problem tabs (empty = All)
   let circuitSearch = '';
   let currentCircuit = null;
   let circuitTrail = [];  // circuit ids swiped through to reach the current one (as detailTrail)

@@ -895,6 +895,7 @@
     // board-fs classes (re-entered below if still landscape on a board view).
     exitBoardFs();
     closeOverflowMenus();
+    if (name !== currentView) closeFilter();   // the Filter sheet belongs to its list (problems.js)
 
     // Preserve the list's scroll position across navigation.
     if (currentView === 'list' && name !== 'list') listScroll = window.scrollY;

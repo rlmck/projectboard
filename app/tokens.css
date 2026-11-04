@@ -168,9 +168,26 @@
   --title-cast-icon: 16px;
   --feet-opt-h: 34px;  /* the create view's feet-rule options */
   --feet-rule-w: 380px;
-  --pill-caret: 14px;  /* the chevron on the list's Sort and Grade pills */
-  --pill-fade: 28px;  /* the pill row fades out over this at an end with more to scroll (FILTER_FADE_PX, problems.js) */
-  --range-thumb: 30px;  /* the Grade sheet's slider handles (the wall's below) */
+  --pill-fade: 28px;  /* the pill row fades out over this at an end with more to scroll */
+  --filter-pill-pad-y: 7px;  /* a one-tap filter pill in a list's row */
+  --filter-pill-pad-x: 9px;  /* ...its sides: the problems row fits a 390 px phone */
+  --filter-btn-w: 44px;  /* the filter icon pill, first in a list's row */
+  --filter-btn-icon: 17px;  /* the funnel in it */
+  --filter-badge: 18px;  /* the count on it when filters are on */
+  --filter-badge-font: 11px;
+  --filter-badge-pad: 5px;
+  --filter-badge-room: 6px;  /* how far the badge pokes out of the pill (the row makes room) */
+  --filter-sheet-max-h: 92vh;  /* the Filter sheet scrolls past this */
+  --f-section-gap: 22px;  /* between the sheet's sections */
+  --f-label-gap: 10px;  /* under a section's label */
+  --f-label-size: 14px;
+  --f-opt-gap: 6px;  /* between the sort options and between the toggles */
+  --f-opt-pad-y: 10px;
+  --f-opt-size: 14px;  /* the sort options and toggles: one line on a 390 px phone */
+  --f-foot-gap: 24px;  /* above Reset and Show N */
+  --f-reset-pad-x: 18px;  /* Reset, and the empty list's Clear filters */
+  --f-empty-btn-gap: 16px;  /* above Clear filters */
+  --range-thumb: 30px;  /* the Grade slider's handles (the wall's below) */
   --range-track-h: 6px;
   --range-hit-h: 52px;  /* the slider's touch area, taller than the track */
   --range-tick-h: 28px;  /* the row of grade labels under it */
@@ -180,9 +197,24 @@
   --wall-rail-w: 84px;  /* the grade rail down the left edge */
   --wall-side-w: 584px;  /* the rail and the problem list together; the board fills the rest */
   --wall-row-h: 72px;  /* a row of the problem list: a finger's width with room to spare */
-  --wall-pill-h: 48px;  /* the Sort / Grade / Benchmarks / Clear pills over the list */
-  --wall-pill-caret: 18px;
-  --wall-sheet-w: 760px;  /* the Sort and Grade sheets on the wall */
+  --wall-pill-h: 48px;  /* the filter icon and pills over a list, and the Filter panel's options */
+  --wall-filter-btn-w: 64px;  /* the filter icon pill on the wall */
+  --wall-filter-btn-icon: 24px;
+  --wall-filter-badge: 24px;
+  --wall-filter-badge-font: 14px;
+  --wall-filter-badge-room: 8px;
+  --wall-f-pad-x: 22px;  /* the Filter panel's sides */
+  --wall-f-pad-y: 14px;
+  --wall-f-title-size: 24px;
+  --wall-f-close-size: 20px;
+  --wall-f-label-size: 17px;
+  --wall-f-section-gap: 26px;
+  --wall-f-opt-size: 18px;  /* its sort options and toggles */
+  --wall-f-pill-pad-x: 20px;
+  --wall-f-btn-pad-y: 16px;  /* Reset and Show N */
+  --wall-f-btn-size: 18px;
+  --wall-f-reset-pad-x: 24px;
+  --wall-f-empty-size: 18px;  /* the empty list's message on the wall */
   --wall-range-thumb: 48px;  /* the Grade slider's handles on the wall */
   --wall-range-hit: 80px;
   --wall-range-tick-h: 44px;

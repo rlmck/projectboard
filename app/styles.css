@@ -338,18 +338,7 @@
     .icon-btn.add-btn:active { background: var(--cast-hover); }
     .add-btn svg { width: 22px; height: 22px; }
 
-    /* ── Grade filter tabs ───────────────────────────────────────────── */
-    .grade-tabs {
-      display: flex;
-      gap: 6px;
-      margin-top: 10px;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: none;
-      padding-bottom: 2px;
-    }
-    .grade-tabs::-webkit-scrollbar { display: none; }
-
+    /* ── Grade tabs: the create and grade-edit pickers' grade buttons ── */
     .grade-tab {
       flex: 0 0 auto;
       background: var(--surface);
@@ -374,7 +363,7 @@
       color: var(--on-accent);
     }
 
-    /* ── Filter pills (under the grade tabs) — 3 equal-width toggles ──── */
+    /* ── Filter pills: the one-tap filters ───────────────────────────── */
     .filter-pills { display: flex; gap: 6px; margin-top: 8px; }
     .filter-pill {
       flex: 1 1 0;
@@ -400,13 +389,13 @@
     /* Auth-only pills for a guest: muted but still tappable (taps fire a sign-in toast). */
     .filter-pill.disabled { opacity: 0.4; }
 
-    /* The problem list's row (and the wall's, #wall-filters): Sort and Grade open
-       their sheets, then the filters; it scrolls sideways when it doesn't fit, and
-       Clear sits outside the scroller on the right, shown only when something isn't
-       the default. The circuits' row keeps its equal-width pills. */
+    /* A list's row (problems, circuits, and the wall's #wall-filters): the filter
+       icon first, then the one-tap filters, which share out the width. On a phone
+       too narrow for it the row scrolls sideways, its ends faded where there's more. */
     .filter-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
     .filter-row .filter-pills {
-      flex: 1; min-width: 0; margin-top: 0;
+      flex: 1; min-width: 0; margin-top: calc(-1 * var(--filter-badge-room));
+      padding-top: var(--filter-badge-room); padding-right: var(--filter-badge-room);   /* room for the badge */
       overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
     }
     .filter-row .filter-pills::-webkit-scrollbar { display: none; }
@@ -422,31 +411,51 @@
       -webkit-mask-image: linear-gradient(to right, transparent, var(--black) var(--pill-fade), var(--black) calc(100% - var(--pill-fade)), transparent);
       mask-image: linear-gradient(to right, transparent, var(--black) var(--pill-fade), var(--black) calc(100% - var(--pill-fade)), transparent);
     }
-    .filter-row .filter-pill { flex: 0 0 auto; padding: 7px 12px; }
-    .pick-pill { display: inline-flex; align-items: center; gap: 4px; }
-    .pick-pill svg { width: var(--pill-caret); height: var(--pill-caret); flex: none; }
-    .filter-pill.filter-clear { flex: none; color: var(--accent-hover); border-color: var(--accent-a40); }
-    .filter-clear[hidden] { display: none; }
+    .filter-row .filter-pill { flex: 1 0 auto; padding: var(--filter-pill-pad-y) var(--filter-pill-pad-x); }
 
-    /* The Sort sheet: one row per order, the current one lit */
-    .sort-opts { display: flex; flex-direction: column; gap: 8px; }
-    .sort-opt {
-      display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-      width: 100%; padding: 14px 16px;
-      background: var(--surface2); border: 1px solid var(--border); border-radius: var(--btn-radius);
-      color: var(--text); font: inherit; text-align: left;
-      cursor: pointer; touch-action: manipulation;
+    /* The filter icon: a funnel in a square pill, first in the row. With anything
+       not at its default it goes pink and carries how many (updateFilterControls). */
+    .filter-row .filter-pill.filter-btn {
+      position: relative; flex: none;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: var(--filter-btn-w); padding-left: 0; padding-right: 0;
+      color: var(--text);
     }
-    .sort-opt:active { transform: scale(0.98); }
-    .sort-opt-name { font-size: 16px; font-weight: 700; }
-    .sort-opt-note { font-size: 13px; color: var(--text-muted); text-align: right; }
-    .sort-opt.active { background: var(--accent-a12); border-color: var(--accent); }
-    .sort-opt.active .sort-opt-name { color: var(--accent-hover); }
+    .filter-btn svg { width: var(--filter-btn-icon); height: var(--filter-btn-icon); }
+    .filter-row .filter-pill.filter-btn.on { border-color: var(--accent); color: var(--accent-hover); background: var(--accent-a12); }
+    .filter-badge {
+      position: absolute; top: calc(-1 * var(--filter-badge-room)); right: calc(-1 * var(--filter-badge-room));
+      min-width: var(--filter-badge); height: var(--filter-badge); padding: 0 var(--filter-badge-pad);
+      display: flex; align-items: center; justify-content: center;
+      background: var(--accent); color: var(--on-accent); border-radius: var(--radius-pill);
+      font-size: var(--filter-badge-font); font-weight: 800; line-height: 1;
+    }
+    .filter-badge[hidden] { display: none; }
 
-    /* The Grade sheet: the range, a two-handle slider, the grades under it. The
-       track runs between the handles' centres at either end, so step i sits at
-       i/(n-1) of its width (problems.js). */
-    .gr-value { margin-bottom: 6px; text-align: center; font-size: 1.6rem; font-weight: 800; color: var(--accent-hover); }
+    /* The Filter sheet (phone) and panel (wall): Sort, Grade, Quick filters, then
+       Reset and Show N (problems.js, filterSheetHtml). */
+    .filter-sheet { max-height: var(--filter-sheet-max-h); overflow-y: auto; }
+    .f-section + .f-section { margin-top: var(--f-section-gap); }
+    .f-label { margin-bottom: var(--f-label-gap); color: var(--text-muted); font-size: var(--f-label-size); font-weight: 700; }
+    .f-sort { display: flex; gap: var(--f-opt-gap); }
+    .f-sort-opt {
+      flex: 1 1 0; min-width: 0; padding: var(--f-opt-pad-y) 0;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: var(--btn-radius);
+      color: var(--text-muted); font: inherit; font-size: var(--f-opt-size); font-weight: 700;
+      cursor: pointer; touch-action: manipulation; white-space: nowrap;
+    }
+    .f-sort-opt:active { transform: scale(0.97); }
+    .f-sort-opt.active { background: var(--accent-a12); border-color: var(--accent); color: var(--accent-hover); }
+    .f-toggles { display: flex; gap: var(--f-opt-gap); }
+    .f-toggles .filter-pill { flex: 1 0 auto; padding: var(--f-opt-pad-y) var(--filter-pill-pad-x); font-size: var(--f-opt-size); }
+    .f-none { margin: 0; color: var(--text-faint); font-size: var(--f-label-size); }
+    .f-none[hidden] { display: none; }
+    .f-foot { margin-top: var(--f-foot-gap); }
+    .f-foot .btn-block[data-f="reset"] { flex: 0 0 auto; width: auto; padding-left: var(--f-reset-pad-x); padding-right: var(--f-reset-pad-x); }
+
+    /* The Grade section: a two-handle slider, the grades under it. The track runs
+       between the handles' centres at either end, so step i sits at i/(n-1) of its
+       width (problems.js). */
     .gr-slider {
       position: relative; height: var(--range-hit-h);
       touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer;
@@ -469,7 +478,7 @@
     .gr-thumb.under { z-index: 1; }
     .gr-thumb:focus { outline: none; }
     .gr-thumb:focus-visible { outline: 2px solid var(--accent-hover); outline-offset: 3px; }
-    .gr-ticks { position: relative; height: var(--range-tick-h); margin: 0 calc(var(--range-thumb) / 2) 18px; }
+    .gr-ticks { position: relative; height: var(--range-tick-h); margin: 0 calc(var(--range-thumb) / 2); }
     .gr-tick {
       position: absolute; top: 0; transform: translateX(-50%);
       padding: 4px 2px; background: none; border: none;
@@ -477,7 +486,9 @@
       cursor: pointer; touch-action: manipulation; white-space: nowrap;
     }
     .gr-tick.in { color: var(--text); }
-    .list-sheet #gr-reset { flex: 0 0 auto; width: auto; padding-left: 18px; padding-right: 18px; }
+
+    /* Nothing matches: say so, and offer the way back (filterEmptyHtml) */
+    .f-empty .f-empty-btn { display: block; width: auto; margin: var(--f-empty-btn-gap) auto 0; padding-left: var(--f-reset-pad-x); padding-right: var(--f-reset-pad-x); }
 
     /* ── Main content ────────────────────────────────────────────────── */
     main {
@@ -2360,8 +2371,10 @@
     .wall-page.active { display: grid; }
 
     /* Circuits: the list | the chosen circuit's bar over the board */
-    .wall-circuits.active { grid-template-columns: var(--wall-side-w) minmax(0, 1fr); }
-    .wall-circuits .wall-list { padding-top: 12px; }
+    .wall-circuits.active { grid-template-columns: var(--wall-side-w) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+    .wall-circuits .wall-filters { grid-column: 1; }
+    .wall-circuits .wall-list { grid-column: 1; grid-row: 2; padding-top: 12px; }
+    .wall-circuits .wall-main { grid-column: 2; grid-row: 1 / 3; }
     /* The Cast sheet over the wall, sized for a finger a step back from the screen */
     body.wall .cast-sheet .cc-seg-btn { padding: 14px 24px; font-size: 18px; }
     body.wall .cast-sheet .cc-option-label { font-size: 17px; }
@@ -2379,25 +2392,43 @@
       padding: 10px 12px 10px 14px;
       border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
     }
-    .wall-filters .filter-pills { gap: 8px; }
-    .wall-filters .filter-pill { min-height: var(--wall-pill-h); padding: 0 18px; font-size: 17px; }
-    .wall-filters .pick-pill svg { width: var(--wall-pill-caret); height: var(--wall-pill-caret); }
+    .wall-filters .filter-pills { gap: 8px; --filter-badge-room: var(--wall-filter-badge-room); }
+    .wall-filters .filter-pill { flex: 0 0 auto; min-height: var(--wall-pill-h); padding: 0 18px; font-size: 17px; }
+    .wall-filters .filter-pill.filter-btn { width: var(--wall-filter-btn-w); }
+    .wall-filters .filter-btn svg { width: var(--wall-filter-btn-icon); height: var(--wall-filter-btn-icon); }
+    .wall-filters .filter-badge { min-width: var(--wall-filter-badge); height: var(--wall-filter-badge); font-size: var(--wall-filter-badge-font); }
     .wall-problems .wall-rail { grid-column: 1; grid-row: 2; }
     .wall-problems .wall-list { grid-column: 2; grid-row: 2; }
     .wall-problems .wall-main { grid-column: 3; grid-row: 1 / 3; }
     .wall-problems.wall-flat .wall-rail { display: none; }
     .wall-problems.wall-flat .wall-list { grid-column: 1 / 3; padding-top: 12px; }
-    /* The Sort and Grade sheets on the wall: wider, and sized for a finger */
+    /* The Filter panel on the wall: over the list's column (the pills, rail and
+       list hide while it's open), sized for a finger; the board stays as it is. */
     body.wall { --range-thumb: var(--wall-range-thumb); --range-hit-h: var(--wall-range-hit); --range-tick-h: var(--wall-range-tick-h); }
-    body.wall .list-sheet { max-width: var(--wall-sheet-w); }
-    body.wall .sort-opt { padding: 18px 22px; }
-    body.wall .sort-opt-name { font-size: 20px; }
-    body.wall .sort-opt-note { font-size: 16px; }
-    body.wall .gr-value { font-size: 30px; }
+    .wall-fpanel {
+      grid-column: 1 / 3; grid-row: 1 / 3; display: none; flex-direction: column; min-height: 0;
+      border-right: 1px solid var(--border);
+    }
+    .wall-circuits .wall-fpanel { grid-column: 1; }
+    .wall-page.filtering .wall-fpanel { display: flex; }
+    .wall-page.filtering .wall-filters,
+    .wall-page.filtering .wall-list,
+    .wall-page.filtering .wall-rail { display: none; }
+    .wall-fpanel .f-head { margin-bottom: 0; padding: var(--wall-f-pad-y) var(--wall-f-pad-x) 0; }
+    .wall-fpanel .modal-title { font-size: var(--wall-f-title-size); }
+    .wall-fpanel .modal-close { width: var(--wall-pill-h); height: var(--wall-pill-h); font-size: var(--wall-f-close-size); }
+    .wall-fpanel .f-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--wall-f-pad-y) var(--wall-f-pad-x); }
+    .wall-fpanel .f-label { font-size: var(--wall-f-label-size); }
+    .wall-fpanel .f-section + .f-section { margin-top: var(--wall-f-section-gap); }
+    .wall-fpanel .f-sort-opt,
+    .wall-fpanel .f-toggles .filter-pill { min-height: var(--wall-pill-h); padding-top: 0; padding-bottom: 0; font-size: var(--wall-f-opt-size); }
+    .wall-fpanel .f-toggles .filter-pill { flex: 0 0 auto; padding-left: var(--wall-f-pill-pad-x); padding-right: var(--wall-f-pill-pad-x); }
     body.wall .gr-tick { padding: 8px 4px; font-size: 17px; }
-    body.wall .list-sheet .btn-block { padding-top: 16px; padding-bottom: 16px; font-size: 18px; }
-    body.wall .list-sheet .modal-close { width: var(--wall-pill-h); height: var(--wall-pill-h); font-size: 20px; }
-    body.wall .list-sheet .modal-title { font-size: 24px; }
+    .wall-fpanel .f-foot { margin-top: 0; padding: var(--wall-f-pad-y) var(--wall-f-pad-x); border-top: 1px solid var(--border); }
+    .wall-fpanel .f-foot .btn-block { padding-top: var(--wall-f-btn-pad-y); padding-bottom: var(--wall-f-btn-pad-y); font-size: var(--wall-f-btn-size); }
+    .wall-fpanel .f-foot [data-f="reset"] { padding-left: var(--wall-f-reset-pad-x); padding-right: var(--wall-f-reset-pad-x); }
+    body.wall .f-empty { font-size: var(--wall-f-empty-size); }
+    body.wall .f-empty .f-empty-btn { min-height: var(--wall-pill-h); font-size: var(--wall-f-btn-size); }
     .wall-rail {
       display: flex; flex-direction: column; gap: 5px; min-height: 0;
       padding: 10px 8px;
