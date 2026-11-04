@@ -11,30 +11,31 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 
 ## Testing
 1. **The R8 acceptance tests** (PB Console → Tests; `docs/pi4-listener-kiosk-plan.md` R8): kill, freeze, Wi-Fi drop, Supabase blocked, reboot mid-cast, the clock across 23:00/08:00, boot with no network (on-site), the weekly-reboot skip.
-2. **Try the wall mode on the touchscreen:** the rail with a real finger, whether ~8 rows feels right, the 20-minute screen idle, a first real cast from the wall.
+2. **Try the wall mode on the touchscreen:** the rail with a real finger, whether ~8 rows feels right, the 20-minute screen idle, a first real cast from the wall. Waits on the touchscreen's picture (item 3).
 
 ## Hardware
-3. **Tidy and box the wiring;** when they arrive, fit the relay module and the 74AHCT125; then relay control in `pb-mode` (`pi/listener/power.py` is the hook) and the console's Power phase. `pb-mode` mustn't cut the LED supplies while `pb-ledmap` runs.
-4. **Docs: the touchscreen's HDMI port.** Since the rebuild the screen's video is on the Pi's **`HDMI-A-1`** (the micro-HDMI port nearest the USB-C power), not `HDMI-A-2`: seen 2 Nov 2026 in `/sys/class/drm` (`card0-HDMI-A-1` connected and enabled, `HDMI-A-2` disconnected). `cage` uses whichever output is connected, so nothing is broken; fix the text in `pi/README.md` ("Touchscreen" under Wiring) and the wall kiosk line in `PROJECT_STATUS.md`, and check nothing else names `HDMI-A-2`.
+3. **Fix the touchscreen's picture** (hardware, confirmed; none since 4 Nov 2026, touch works). The video path is screen HDMI → a big adapter (VGA to HDMI? unconfirmed) → female-to-male HDMI coupler → HDMI to micro-HDMI adapter → Pi. Proposal: drop the adapter and coupler, one HDMI cable from the screen straight into the micro-HDMI adapter. Once it works, write the real chain into `pi/README.md` → Wiring → "Touchscreen" (with item 5).
+4. **Tidy and box the wiring;** when they arrive, fit the relay module and the 74AHCT125; then relay control in `pb-mode` (`pi/listener/power.py` is the hook) and the console's Power phase. `pb-mode` mustn't cut the LED supplies while `pb-ledmap` runs.
+5. **Docs: the touchscreen's HDMI port.** Since the rebuild the screen's video is on the Pi's **`HDMI-A-1`** (the micro-HDMI port nearest the USB-C power), not `HDMI-A-2`: seen 2 Nov 2026 in `/sys/class/drm` (`card0-HDMI-A-1` connected and enabled, `HDMI-A-2` disconnected). `cage` uses whichever output is connected, so nothing is broken; fix the text in `pi/README.md` ("Touchscreen" under Wiring) and the wall kiosk line in `PROJECT_STATUS.md`, and check nothing else names `HDMI-A-2`.
 
 ## Pi and infrastructure
-5. **Circuit LED match rule:** when the hold to go to is a match, light the next different hold at once, full blue, at the start of the match beat (today it's only a dim amber pulse and the beat feels stale). The match beat stays a full interval, so the climber has the match beat plus the next move's time to see it. Change `pi/listener/circuit.py` and `tools/circuit-led-simulator.html` together; update contract §8.3 and `pi/tests/test_circuit.py`.
-6. **Pull the Pi-only files into `pi/`** (PB Console → Deploy): `pb-netwatch.sh` v2 and its unit, the `pb-rescue` profile (secrets stripped), the newer `pb-netlog` unit; then add their `install.sh` lines. Look at the kernel errors seen on 28 Oct (about 3,460 in 24 h, nearly all kernel) in Logs once the gym is closed.
-7. **A heartbeat from the Pi to Supabase** so the app can show "board online".
-8. **A mock listener on the laptop** that turns a cast into LED indices (lower priority now the webcam shows the real board).
+6. **Circuit LED match rule:** when the hold to go to is a match, light the next different hold at once, full blue, at the start of the match beat (today it's only a dim amber pulse and the beat feels stale). The match beat stays a full interval, so the climber has the match beat plus the next move's time to see it. Change `pi/listener/circuit.py` and `tools/circuit-led-simulator.html` together; update contract §8.3 and `pi/tests/test_circuit.py`.
+7. **Pull the Pi-only files into `pi/`** (PB Console → Deploy): `pb-netwatch.sh` v2 and its unit, the `pb-rescue` profile (secrets stripped), the newer `pb-netlog` unit; then add their `install.sh` lines. Look at the kernel errors seen on 28 Oct (about 3,460 in 24 h, nearly all kernel) in Logs once the gym is closed.
+8. **A heartbeat from the Pi to Supabase** so the app can show "board online".
+9. **A mock listener on the laptop** that turns a cast into LED indices (lower priority now the webcam shows the real board).
 
 ## App design and features
-9. **Problem name/setter editing** (changes the cast key: contract open questions).
-10. **Wall screen, faster updates** (parked 27 Oct): check every 5 min instead of hourly and apply a waiting update after ~2 min untouched, keeping the chosen problem and scroll position.
-11. **More challenges** (a row in `challenges`), monthly boards, a metronome, casting the circuit at Start once Circuits Phase 2 exists.
-12. **Benchmarks:** admins can already mark a problem as a benchmark (detail ⋮ → "Mark as benchmark"); clarify what more is wanted.
-13. **Move a problem into Circuits (admins only):** when a problem was created but is really a circuit, an admin can move it into Circuits. A move, not a copy: afterwards it exists only as a circuit and is gone from the problems list. Design questions for the session: how the problem's holds become circuit moves, and what happens to its ticks, likes and any cast history.
+10. **Problem name/setter editing** (changes the cast key: contract open questions).
+11. **Wall screen, faster updates** (parked 27 Oct): check every 5 min instead of hourly and apply a waiting update after ~2 min untouched, keeping the chosen problem and scroll position.
+12. **More challenges** (a row in `challenges`), monthly boards, a metronome, casting the circuit at Start once Circuits Phase 2 exists.
+13. **Benchmarks:** admins can already mark a problem as a benchmark (detail ⋮ → "Mark as benchmark"); clarify what more is wanted.
+14. **Move a problem into Circuits (admins only):** when a problem was created but is really a circuit, an admin can move it into Circuits. A move, not a copy: afterwards it exists only as a circuit and is gone from the problems list. Design questions for the session: how the problem's holds become circuit moves, and what happens to its ticks, likes and any cast history.
 
 ## PB Console
-14. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
+15. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
 
 ## Bugs
-15. **Known bugs to triage:** `docs/codebase-overview.md` §13.
+16. **Known bugs to triage:** `docs/codebase-overview.md` §13.
 
 ## Not now
 Don't build yet: Circuits Phase 3 (PBs, leaderboards), mirrored circuits, a Done filter for circuits ("done" = done both sides, problems only), tags, session/logbook tracking beyond ticks, the Flutter migration.
