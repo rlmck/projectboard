@@ -30,7 +30,7 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 12. **More challenges** (a row in `challenges`), monthly boards, a metronome, casting the circuit at Start once Circuits Phase 2 exists.
 13. **Benchmarks:** admins can already mark a problem as a benchmark (detail ⋮ → "Mark as benchmark"); clarify what more is wanted.
 14. **Move a problem into Circuits (admins only):** when a problem was created but is really a circuit, an admin can move it into Circuits. A move, not a copy: afterwards it exists only as a circuit and is gone from the problems list. Design questions for the session: how the problem's holds become circuit moves, and what happens to its ticks, likes and any cast history.
-15. **Grade consensus when ticking a problem.**
+15. **Grade consensus when ticking a problem.** After a tick (recorded first, never blocked), a prompt asks what grade it felt like: a picker pre-selected on the set grade, three steps either side. Confirming casts the vote (confirming the set grade counts as agreeing); closing it casts none. One vote per problem, not per side: once someone has voted, ticking the mirror doesn't ask again (closing without voting means they're asked on the mirror). The problem's info button shows the consensus for everyone: how many have sent it and how the votes spread across grades. Informational only, it never changes the grade; admins get a view of the biggest gaps between set grade and consensus, to regrade from. Design questions for the session: can a vote be changed later, and how many votes before a consensus is shown.
 
 ## PB Console
 16. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
