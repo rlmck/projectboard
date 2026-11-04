@@ -57,10 +57,11 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
-- **2026-11-04, Claude Code (Create: pinch in and out of the viewer, staging only).**
+- **2026-11-04, Claude Code (Create: pinch in and out of the viewer).**
   - **Changed:** problem Create/Edit pinches like detail: a spread opens the viewer, pinching to fit closes it (also after the expand button), a double-tap closes only when both taps miss every hold; on a hold it still cycles twice; taps never hide the bar; no landscape auto-open. New hint. Circuit create shares the viewer, not the gestures: unchanged. Overview §4.8.
   - **Tested:** build; Chrome, synthetic touch pointers: holds, name, grade, Undo and bar counts survive; detail as before. Real fingers not yet.
-  - **Left:** Ross: try on staging, then ship. The hint shows only the first 3 viewer opens ever.
+  - **Live:** `cc4c74a`, CACHE `pb-a39886ca6c`.
+  - **Left:** Ross: try it with real fingers. The hint shows only the first 3 viewer opens ever.
 
 - **2026-11-04, Claude Code (PB Console: the Activity dashboard, TODO 17).**
   - **Changed:** Activity = the approved prototype (`tools/activity-dashboard-prototype.html`, kept as reference) on real data, cross-filtered, with a Log view; old charts gone. The console keeps its own cast history (`console/data/`, gitignored) as the journal expires; nicknames, ticks and accounts live from Postgres. UK time. `console/README.md` → Activity.
