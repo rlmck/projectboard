@@ -206,6 +206,7 @@
     reset: () => resetCircuitFilters(),
     render: () => { renderCircuits(); wallRenderCircuits(); },
     search: 'circuit-search',
+    searching: () => !!circuitSearch,
   };
 
   function circuitCardHtml(c) {

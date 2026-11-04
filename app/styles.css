@@ -431,6 +431,14 @@
       font-size: var(--filter-badge-font); font-weight: 800; line-height: 1;
     }
     .filter-badge[hidden] { display: none; }
+    /* Clear: outside the scroller, pinned at the right of the row, shown whenever
+       anything isn't the default (the sort, grade, quick filters, holds or the
+       search; updateFilterControls). One tap: clearFilters(kind). Phone and wall. */
+    .filter-row .filter-pill.filter-clear {
+      flex: none; padding-left: var(--filter-clear-pad-x); padding-right: var(--filter-clear-pad-x);
+      background: var(--accent-a12); border-color: var(--accent-a40); color: var(--accent-hover); font-weight: 700;
+    }
+    .filter-row .filter-clear[hidden] { display: none; }
 
     /* The Filter sheet (phone) and panel (wall): Sort, Grade, Quick filters, then
        Reset and Show N (problems.js, filterSheetHtml). */
@@ -2474,6 +2482,23 @@
     .wall-filters .filter-pill.filter-btn { width: var(--wall-filter-btn-w); }
     .wall-filters .filter-btn svg { width: var(--wall-filter-btn-icon); height: var(--wall-filter-btn-icon); }
     .wall-filters .filter-badge { min-width: var(--wall-filter-badge); height: var(--wall-filter-badge); font-size: var(--wall-filter-badge-font); }
+    .wall-filters .filter-pills { flex: none; }
+    .wall-filters .filter-pill.filter-clear { padding-left: var(--wall-clear-pad-x); padding-right: var(--wall-clear-pad-x); }
+    /* The wall's search: looks like the phone's field, but it's a button that
+       opens the on-screen keyboard (wall.js, wallKbOpen), with the same ×. */
+    .wall-search { flex: 1; min-width: 0; }
+    .wall-search-field {
+      width: 100%; min-height: var(--wall-pill-h); display: flex; align-items: center;
+      padding: 0 calc(var(--wall-search-clear) + 10px) 0 var(--wall-search-pad-x);
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--btn-radius);
+      color: var(--text); font: inherit; font-size: var(--wall-search-font); font-weight: 600; text-align: left;
+      white-space: pre; overflow: hidden; cursor: pointer; touch-action: manipulation;
+      transition: border-color 0.15s;
+    }
+    .wall-search-field.on { border-color: var(--accent); }
+    .wall-search-ph { color: var(--text-muted); font-weight: 500; }
+    .wall-search-field .wall-kb-caret { height: calc(var(--wall-search-font) + 4px); }
+    .wall-search .search-clear { width: var(--wall-search-clear); height: var(--wall-search-clear); font-size: var(--wall-search-clear-font); }
     .wall-problems .wall-rail { grid-column: 1; grid-row: 2; }
     .wall-problems .wall-list { grid-column: 2; grid-row: 2; }
     .wall-problems .wall-main { grid-column: 3; grid-row: 1 / 3; }
@@ -2673,6 +2698,11 @@
     .wall-key.fn { background: var(--surface); color: var(--text-muted); font-size: 26px; }
     .wall-key.fn.on { color: var(--accent-hover); border-color: var(--accent); }
     .wall-key.space { grid-column: span 5; font-size: 18px; color: var(--text-muted); }
+    /* For a search it docks over the board, so the whole list stays in view and
+       follows each key (wallKbOpen('problems' | 'circuits')). */
+    .wall-kb.search { left: var(--wall-side-w); border-left: 1px solid var(--border); }
+    .wall-kb.search .wall-key.space { grid-column: span 7; }
+    .wall-kb.search .wall-key.wide { grid-column: span 3; }
 
     /* Discard? (leaving with something set, or 5 minutes untouched) */
     .wall-c-confirm {

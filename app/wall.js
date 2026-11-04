@@ -5,8 +5,10 @@
 //
 // The Pi's kiosk (pi/systemd/kiosk.service) opens /?wall on a 1280×720 landscape
 // touchscreen. Browse and cast only:
-//   - Problems: the phone's Sort, Grade, Benchmarks and Clear pills over the list
-//     (problems.js; the same state and sheets), the list (sorted Easy or Hard: a
+//   - Problems: the phone's filter row over the list (problems.js; the same state
+//     and Filter panel): the filter icon, Benchmarks, a search field (typed on the
+//     on-screen keyboard, docked over the board so the list stays in view; the
+//     phone's searchQuery and matching) and Clear, then the list (sorted Easy or Hard: a
 //     header per grade and a rail of grades down the left edge, a tap jumps the
 //     list to that grade), and on the right the chosen problem's name, Mirror and
 //     how its cast went, over the board (its outlines over the dimmed wall).
@@ -16,7 +18,7 @@
 //     It casts through castByName() exactly as the phone does (guests can cast;
 //     with no location fix the geofence lets it through), one at a time, and
 //     rapid taps send only the latest.
-//   - Circuits: the list, and the chosen circuit (its numbered holds) over the
+//   - Circuits: the same row (Looping, search, Clear), the list, and the chosen circuit (its numbered holds) over the
 //     board, dimmed when none is chosen. Opening the page lights nothing. Since
 //     2 Nov 2026 a clean tap on a circuit picks it and lights all its holds at once
 //     (show_circuit, contract 8.7: starts green, the last hold red, the rest blue;
@@ -33,8 +35,9 @@
 //     open; 5 minutes untouched asks, then discards it; night closes it.
 //   - Ranks, read-only: Points and each challenge's board side by side.
 //   - Get the app: the /scan QR, in place of Profile. No sign-in anywhere.
-// After WALL_IDLE_MS without a touch it goes back to the list (the filters and the
-// sort back to the defaults, the choice cleared, the list at the top) and plays
+// After WALL_IDLE_MS without a touch it goes back to the list (the filters, the
+// search and the sort back to the defaults, the keyboard closed, the choice
+// cleared, the list at the top) and plays
 // slides: the QR and the benchmark of the day. A touch ends them (on the
 // benchmark slide it picks that problem and lights it); a reload while they're up
 // (an app update) comes back to them, not to 20 minutes of the list. At
@@ -84,7 +87,13 @@
   let wallKeyOk = false;         // the wall key works (wall_key_ok, db/35): Create is offered
   let wallCreateOn = false;      // the Create page is open (the create state in state.js is the wall's)
   let wallCreateName = '';
-  let wallKbShift = true;        // the next letter is a capital (at the start, and after a space)
+  let wallKbShift = true;        // the next letter is a capital (at the start, and after a space; the name only)
+  // What the on-screen keyboard types into: null (closed), 'name' (Create's name)
+  // or a list's search, 'problems' | 'circuits' (WALL_KB_TARGETS).
+  let wallKbFor = null;
+  // The search text as typed, per list; searchQuery / circuitSearch (state.js) hold
+  // it trimmed and lowercased, as the phone's fields do, and do the filtering.
+  const wallSearch = { problems: '', circuits: '' };
   let wallAsk = null;            // the discard sheet: { kind: 'idle' | 'leave', then, until }
 
   const wallEl = id => document.getElementById(id);
@@ -131,8 +140,9 @@
   // the rail of the grades in it; sorted New or Random, one flat list and no rail.
   // Called from renderList, so it follows every load, refresh and setter-name
   // update. The filters are the phone list's own (visibleProblems): the filter
-  // icon (the Filter panel: sort, grade range, Benchmarks) and the Benchmarks pill
-  // are here; search, favourites and done stay off without a keyboard or account.
+  // icon (the Filter panel: sort, grade range, Benchmarks, holds), the Benchmarks
+  // pill, the search (on the on-screen keyboard) and Clear are here; favourites and
+  // done stay off without an account.
   function wallRenderList() {
     if (!WALL) return;
     const box = wallEl('wall-list');
@@ -262,7 +272,7 @@
   // waits, replacing any tap already waiting, so only the latest goes next.
   function wallCast() {
     const p = wallSelected();
-    if (!p || wallPage !== 'problems' || wallOffline() || wallIsIdle() || wallPicking('problems')) return;
+    if (!p || wallPage !== 'problems' || wallOffline() || wallIsIdle() || wallPicking('problems') || wallKbSearching()) return;
     wallCastNext = { name: p.name, mirror: wallMirror };
     wallCastState = { name: p.name, mirror: wallMirror, state: 'sending' };
     wallRenderLit();
@@ -328,8 +338,8 @@
       ${c.loops ? '<span class="loop-badge">↻ Loop</span>' : ''}`;
   }
 
-  // The phone's list order and filters (visibleCircuits: the Filter panel and the
-  // Looping pill; no search or favourites here). Circuits are few, so no grade rail.
+  // The phone's list order and filters (visibleCircuits: the Filter panel, the
+  // Looping pill and the search; no favourites here). Circuits are few, so no grade rail.
   function wallRenderCircuits() {
     if (!WALL) return;
     const box = wallEl('wall-clist');
@@ -412,7 +422,7 @@
   // it. Not at night, idle or offline. One at a time, the latest tap next, as wallCast.
   function wallCircShow() {
     const c = wallCircSelected();
-    if (!c || wallPage !== 'circuits' || wallOffline() || wallIsIdle() || wallPicking('circuits')) return;
+    if (!c || wallPage !== 'circuits' || wallOffline() || wallIsIdle() || wallPicking('circuits') || wallKbSearching()) return;
     const name = circuitName(c);
     wallCircCastNext = name;
     wallCircCastState = { name, state: 'sending' };
@@ -492,8 +502,10 @@
     wallRenderPickBar(kind);
     wallRenderPickBoard(kind);
   }
-  // The panel opened or closed: the bar and the board follow (problems.js).
+  // The panel opened or closed: the bar and the board follow (problems.js). The
+  // search keyboard closes (the row it types into is under the panel).
   function wallFilterShown(kind) {
+    wallKbCloseSearch();
     if (kind === 'circuits') { wallRenderCircSel(); wallRenderCircStage(); }
     else { wallRenderSel(); wallRenderStage(); }
   }
@@ -523,8 +535,8 @@
   const WALL_CREATE_IDLE_MS = 5 * 60 * 1000;  // untouched this long: ask, then discard
   const WALL_CREATE_ASK_S = 30;               // the countdown on that sheet
   const WALL_NAME_MAX = 60;                   // as the phone's field and the problems CHECK
-  // The keyboard: the characters wall_create_problem() accepts. Letters show as
-  // capitals while shift is on (it is at the start and after a space).
+  // The keyboard for the name: the characters wall_create_problem() accepts.
+  // Letters show as capitals while shift is on (it is at the start and after a space).
   const WALL_KB_ROWS = [
     ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
     ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
@@ -532,6 +544,17 @@
     ['shift', 'z', 'x', 'c', 'v', 'b', 'n', 'm', '-', 'back'],
     ['!', '?', '&', 'space', '.', ',']
   ];
+  // ...and for a search: lowercase (the search ignores case), + for grades like
+  // 6a+ (searchNorm, core.js, matches on letters and digits only, as the phone
+  // does), and a key that empties it.
+  const WALL_KB_SEARCH_ROWS = [
+    ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+    ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+    ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', "'"],
+    ['z', 'x', 'c', 'v', 'b', 'n', 'm', '+', '-', 'back'],
+    ['clear', 'space']
+  ];
+  const WALL_SEARCH_MAX = 40;
   // wall_create_problem's refusals (SQLSTATE P0001, the code as the message).
   const WALL_SAVE_ERRORS = {
     key: 'This screen can’t save problems right now.',
@@ -617,40 +640,113 @@
     wallCreateRender();
   }
 
-  // The name, on the on-screen keyboard.
-  function wallKbOpen() {
-    wallEl('wall-kb').hidden = false;
+  // ── The on-screen keyboard: Create's name, or a list's search ──
+  // One keyboard (#wall-kb) for both. For the name it sits full width over the
+  // bottom; for a search it docks over the board (.search), so the whole list
+  // stays in view and follows each key. Done, or a tap anywhere else (startWall),
+  // closes it; a tap that closes it does nothing else, so it never casts.
+  const WALL_KB_TARGETS = {
+    name: {
+      get: () => wallCreateName, set: v => { wallCreateName = v; },
+      rows: WALL_KB_ROWS, max: WALL_NAME_MAX, caps: true, ph: 'Name your problem',
+    },
+    problems: {
+      get: () => wallSearch.problems, set: v => wallSearchSet('problems', v),
+      rows: WALL_KB_SEARCH_ROWS, max: WALL_SEARCH_MAX, caps: false, ph: 'Search name, setter, grade',
+    },
+    circuits: {
+      get: () => wallSearch.circuits, set: v => wallSearchSet('circuits', v),
+      rows: WALL_KB_SEARCH_ROWS, max: WALL_SEARCH_MAX, caps: false, ph: 'Search name, setter, grade',
+    },
+  };
+  const wallKbSearching = () => wallKbFor === 'problems' || wallKbFor === 'circuits';
+
+  function wallKbOpen(target = 'name') {
+    if (!WALL_KB_TARGETS[target]) return;
+    if (target !== 'name' && (wallIsIdle() || filterKind || wallPage !== target)) return;
+    wallKbFor = target;
+    const kb = wallEl('wall-kb');
+    kb.classList.toggle('search', target !== 'name');
+    kb.hidden = false;
     wallKbRender();
+    wallRenderSearch();
   }
   function wallKbClose() {
+    wallKbFor = null;
     wallEl('wall-kb').hidden = true;
+    wallRenderSearch();
     if (wallCreateOn) wallCreateRender();
   }
+  function wallKbCloseSearch() {
+    if (wallKbSearching()) wallKbClose();
+  }
   function wallKbRender() {
-    wallEl('wall-kb-text').innerHTML = (wallCreateName ? escHtml(wallCreateName)
-      : '<span class="wall-kb-ph">Name your problem</span>') + '<i class="wall-kb-caret"></i>';
-    wallEl('wall-kb-keys').innerHTML = WALL_KB_ROWS.map(row => row.map(k => {
-      const label = k === 'shift' ? '⇧' : k === 'back' ? '⌫' : k === 'space' ? 'space'
-        : (wallKbShift && /[a-z]/.test(k) ? k.toUpperCase() : k);
-      const cls = k === 'shift' ? (wallKbShift ? ' fn on' : ' fn') : k === 'back' ? ' fn' : k === 'space' ? ' space' : '';
-      const aria = k === 'shift' ? ' aria-label="Capital letter"' : k === 'back' ? ' aria-label="Delete"' : '';
+    const t = WALL_KB_TARGETS[wallKbFor];
+    if (!t) return;
+    const text = t.get();
+    const shift = t.caps && wallKbShift;
+    wallEl('wall-kb-text').innerHTML = (text ? escHtml(text)
+      : `<span class="wall-kb-ph">${escHtml(t.ph)}</span>`) + '<i class="wall-kb-caret"></i>';
+    wallEl('wall-kb-keys').innerHTML = t.rows.map(row => row.map(k => {
+      const label = k === 'shift' ? '⇧' : k === 'back' ? '⌫' : k === 'space' ? 'space' : k === 'clear' ? 'Clear'
+        : (shift && /[a-z]/.test(k) ? k.toUpperCase() : k);
+      const cls = k === 'shift' ? (shift ? ' fn on' : ' fn') : k === 'back' ? ' fn' : k === 'space' ? ' space'
+        : k === 'clear' ? ' fn wide' : '';
+      const aria = k === 'shift' ? ' aria-label="Capital letter"' : k === 'back' ? ' aria-label="Delete"'
+        : k === 'clear' ? ' aria-label="Clear the search"' : '';
       return `<button class="wall-key${cls}" type="button" data-k="${escAttr(k)}"${aria}>${escHtml(label)}</button>`;
     }).join('')).join('');
   }
   function wallKbPress(k) {
+    const t = WALL_KB_TARGETS[wallKbFor];
+    if (!t) return;
+    let text = t.get();
     if (k === 'shift') {
       wallKbShift = !wallKbShift;
     } else if (k === 'back') {
-      wallCreateName = wallCreateName.slice(0, -1);
-      wallKbShift = !wallCreateName || wallCreateName.endsWith(' ');
-    } else if (wallCreateName.length < WALL_NAME_MAX) {
+      text = text.slice(0, -1);
+      if (t.caps) wallKbShift = !text || text.endsWith(' ');
+    } else if (k === 'clear') {
+      text = '';
+    } else if (text.length < t.max) {
       let c = k === 'space' ? ' ' : k;
-      if (c === ' ' && (!wallCreateName || wallCreateName.endsWith(' '))) return;   // no leading or double space
-      if (wallKbShift && /[a-z]/.test(c)) c = c.toUpperCase();
-      wallCreateName += c;
-      wallKbShift = c === ' ';
+      if (c === ' ' && (!text || text.endsWith(' '))) return;   // no leading or double space
+      if (t.caps && wallKbShift && /[a-z]/.test(c)) c = c.toUpperCase();
+      text += c;
+      if (t.caps) wallKbShift = c === ' ';
     }
+    if (text !== t.get()) t.set(text);
     wallKbRender();
+  }
+
+  // ── Search (a list's row): the phone's own state and matching ──
+  // The text goes into searchQuery / circuitSearch, trimmed and lowercased as the
+  // phone's input handler does, and the list re-renders (and goes back to the top)
+  // with every key. `quiet`: state only, no render, and the keyboard closes
+  // (clearFilters and the idle, which render themselves).
+  function wallSearchSet(kind, text, quiet = false) {
+    if (!(kind in wallSearch)) return;
+    wallSearch[kind] = text;
+    const q = text.trim().toLowerCase();
+    if (kind === 'problems') searchQuery = q; else circuitSearch = q;
+    if (quiet) wallKbCloseSearch();
+    wallRenderSearch();
+    if (!quiet) filtersChanged(kind);
+  }
+  // The search fields: the text (or the placeholder), a caret while the keyboard
+  // types into it, and the × whenever there's text.
+  function wallRenderSearch() {
+    if (!WALL) return;
+    document.querySelectorAll('#wall [data-wsearch]').forEach(f => {
+      const kind = f.dataset.wsearch;
+      const text = wallSearch[kind] || '';
+      const on = wallKbFor === kind;
+      f.classList.toggle('on', on);
+      f.setAttribute('aria-expanded', on ? 'true' : 'false');
+      f.innerHTML = (text ? escHtml(text) : `<span class="wall-search-ph">${escHtml(f.dataset.ph || 'Search')}</span>`)
+        + (on ? '<i class="wall-kb-caret"></i>' : '');
+    });
+    document.querySelectorAll('#wall [data-wsearch-clear]').forEach(b => { b.hidden = !wallSearch[b.dataset.wsearchClear]; });
   }
 
   // The discard sheet: leaving Create with something set, or 5 minutes untouched
@@ -819,6 +915,7 @@
       if (!discard && wallCreateDirty()) { wallAskDiscard('leave', () => wallSetPage(page, true)); return; }
       wallCreateClose();
     }
+    wallKbCloseSearch();                     // the search keyboard belongs to its list
     if (page !== wallPage) closeFilter();   // the Filter panel belongs to its page
     wallPage = page;
     document.querySelectorAll('.wall-tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
@@ -918,8 +1015,9 @@
       : slides.map((_, i) => `<i class="${i === wallSlide ? 'on' : ''}"></i>`).join('');
   }
 
-  // Back to the start: the Problems page, both lists' filters and sorts at their
-  // defaults (the Filter panel closed), nothing chosen, the lists at the top.
+  // Back to the start: the Problems page, both lists' filters, searches and sorts
+  // at their defaults (the Filter panel and the keyboard closed), nothing chosen,
+  // the lists at the top.
   // Then the slides.
   function wallGoIdle() {
     abandonCircuitCast();
@@ -927,6 +1025,8 @@
     closeFilter();
     resetListFilters();
     resetCircuitFilters();
+    wallSearchSet('problems', '', true);
+    wallSearchSet('circuits', '', true);
     wallSelect(null);
     wallCircSelect(null);
     wallRenderCircuits();
@@ -1060,7 +1160,7 @@
     wallTapBoard('problems');
     wallTapBoard('circuits');
     wallEl('wall-c-board').addEventListener('click', wallCreateTap);
-    wallEl('wall-c-name').addEventListener('click', wallKbOpen);
+    wallEl('wall-c-name').addEventListener('click', () => wallKbOpen('name'));
     wallEl('wall-c-grades').addEventListener('click', e => {
       const t = e.target.closest('.grade-tab');
       if (t) wallPickGrade(t.dataset.grade);
@@ -1078,6 +1178,23 @@
       if (k) wallKbPress(k.dataset.k);
     });
     wallEl('wall-kb-done').addEventListener('click', wallKbClose);
+    // The search fields: a tap opens the keyboard for that list; the × empties it.
+    document.querySelectorAll('#wall [data-wsearch]').forEach(f =>
+      f.addEventListener('click', () => wallKbOpen(f.dataset.wsearch)));
+    document.querySelectorAll('#wall [data-wsearch-clear]').forEach(b =>
+      b.addEventListener('click', () => wallSearchSet(b.dataset.wsearchClear, '')));
+    // While a search keyboard is open, a tap anywhere but the keyboard and the
+    // list's row closes it. On the list or the board (a card, Mirror, Start
+    // circuit) that tap does nothing else: closing the keyboard never casts.
+    // The tabs and the rail still work (a tab closes it anyway). Capture, so it
+    // runs before the list's and the board's own handlers.
+    document.addEventListener('click', e => {
+      if (!wallKbSearching()) return;
+      const t = e.target;
+      if (!(t instanceof Element) || t.closest('#wall-kb, .wall-filters')) return;
+      wallKbClose();
+      if (t.closest('.wall-list, .wall-main')) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
     wallEl('wall-c-keep').addEventListener('click', () => wallAskAnswer(false));
     wallEl('wall-c-discard').addEventListener('click', () => wallAskAnswer(true));
     wallEl('wall-c-confirm').addEventListener('click', e => { if (e.target.id === 'wall-c-confirm') wallAskAnswer(false); });
@@ -1088,6 +1205,7 @@
     wallRenderList();
     wallRenderStage();
     wallRenderCircuits();
+    wallRenderSearch();
     wallNightOn = wallIsNight();
     if (wallNightOn || ssGet(WALL_IDLE_KEY)) wallGoIdle();
     wallCheckKey();

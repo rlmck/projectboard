@@ -124,7 +124,9 @@
     </div>
     <!-- The filter icon opens the Filter sheet (sort, grade range, quick filters);
          the pills are one-tap filters, in step with the same toggles in the sheet
-         (problems.js). The wall's row (#wall-filters) works the same way. -->
+         (problems.js). Clear, pinned right, shows whenever anything (the search
+         too) isn't the default and resets it all in one tap (clearFilters). The
+         wall's row (#wall-filters) works the same way. -->
     <div class="filter-row">
       <div class="filter-pills" id="filter-pills">
         <button class="filter-pill filter-btn" type="button" data-pick="filter" data-kind="problems" aria-haspopup="dialog" aria-label="Filter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5L3 5z"></path></svg><span class="filter-badge" hidden></span></button>
@@ -132,6 +134,7 @@
         <button class="filter-pill" type="button" data-toggle="bench" aria-pressed="false">Benchmarks</button>
         <button class="filter-pill" type="button" data-toggle="done" aria-pressed="false">Exclude Done</button>
       </div>
+      <button class="filter-pill filter-clear" type="button" data-act="clear-filters" data-kind="problems" aria-label="Clear the search and every filter" hidden>✕ Clear</button>
     </div>
   </header>
   <div class="list-pull" id="list-pull" aria-hidden="true"><div class="list-pull-icon"></div></div>
@@ -489,6 +492,7 @@
         <button class="filter-pill" type="button" data-toggle="cfaves" aria-pressed="false">Favourites</button>
         <button class="filter-pill" type="button" data-toggle="loop" aria-pressed="false">Looping</button>
       </div>
+      <button class="filter-pill filter-clear" type="button" data-act="clear-filters" data-kind="circuits" aria-label="Clear the search and every filter" hidden>✕ Clear</button>
     </div>
   </header>
   <div class="list-pull" id="circuit-pull" aria-hidden="true"><div class="list-pull-icon"></div></div>
@@ -991,7 +995,8 @@
     <div class="wall-status" id="wall-status" hidden>Offline</div>
   </header>
 
-  <!-- Problems: the filter icon and Benchmarks over the list; sorted Easy or Hard,
+  <!-- Problems: the filter icon, Benchmarks, search (a tap opens the on-screen
+       keyboard over the board, wall.js) and Clear over the list; sorted Easy or Hard,
        a rail of grades (jumps the list) and a header per grade; and the chosen
        problem over the board. The filter icon opens the Filter panel (#wall-fpanel)
        over the list's column (built by openFilter, problems.js). -->
@@ -1001,6 +1006,11 @@
         <button class="filter-pill filter-btn" type="button" data-pick="filter" data-kind="problems" aria-haspopup="dialog" aria-label="Filter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5L3 5z"></path></svg><span class="filter-badge" hidden></span></button>
         <button class="filter-pill" type="button" data-toggle="bench" aria-pressed="false">Benchmarks</button>
       </div>
+      <div class="search-wrap wall-search">
+        <button class="wall-search-field" type="button" data-wsearch="problems" data-ph="Search problems" aria-label="Search problems: name, setter, grade"></button>
+        <button class="search-clear" type="button" data-wsearch-clear="problems" aria-label="Clear search" hidden>&times;</button>
+      </div>
+      <button class="filter-pill filter-clear" type="button" data-act="clear-filters" data-kind="problems" aria-label="Clear the search and every filter" hidden>✕ Clear</button>
     </div>
     <div class="wall-fpanel" id="wall-fpanel" role="dialog" aria-labelledby="f-title"></div>
     <nav class="wall-rail" aria-label="Jump to a grade">
@@ -1021,7 +1031,7 @@
     </div>
   </section>
 
-  <!-- Circuits: the filter icon and Looping over the list (the Filter panel,
+  <!-- Circuits: the filter icon, Looping, search and Clear over the list (the Filter panel,
        #wall-cfpanel, as on Problems), and the chosen circuit over the board (dimmed when none);
        a tap on a circuit lights all its holds (show_circuit); Start circuit opens
        the same Cast sheet as the phone (speed, loop, then the countdown and Stop) -->
@@ -1031,6 +1041,11 @@
         <button class="filter-pill filter-btn" type="button" data-pick="filter" data-kind="circuits" aria-haspopup="dialog" aria-label="Filter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5L3 5z"></path></svg><span class="filter-badge" hidden></span></button>
         <button class="filter-pill" type="button" data-toggle="loop" aria-pressed="false">Looping</button>
       </div>
+      <div class="search-wrap wall-search">
+        <button class="wall-search-field" type="button" data-wsearch="circuits" data-ph="Search circuits" aria-label="Search circuits: name, setter, grade"></button>
+        <button class="search-clear" type="button" data-wsearch-clear="circuits" aria-label="Clear search" hidden>&times;</button>
+      </div>
+      <button class="filter-pill filter-clear" type="button" data-act="clear-filters" data-kind="circuits" aria-label="Clear the search and every filter" hidden>✕ Clear</button>
     </div>
     <div class="wall-fpanel" id="wall-cfpanel" role="dialog" aria-labelledby="f-title"></div>
     <div class="wall-list" id="wall-clist"></div>
@@ -1099,7 +1114,8 @@
     </div>
   </section>
 
-  <!-- The on-screen keyboard for the name (the kiosk has no keyboard) -->
+  <!-- The on-screen keyboard (the kiosk has no keyboard): Create's name, full
+       width at the bottom, or a list's search, docked over the board (wall.js) -->
   <div class="wall-kb" id="wall-kb" hidden>
     <div class="wall-kb-top">
       <div class="wall-kb-text" id="wall-kb-text"></div>

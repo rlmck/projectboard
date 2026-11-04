@@ -121,13 +121,14 @@
   // The filter (problems.js): the funnel icon opens the Filter sheet (phone) or
   // panel (wall) for its list (data-kind); a [data-toggle] is a one-tap filter, in
   // a list's row or in the sheet, and they stay in step; the sheet's sort options,
-  // Reset, Show N and close; the empty list's Clear filters. All by delegation:
+  // Reset, Show N and close; the row's Clear pill and the empty list's Clear
+  // filters (both clearFilters: everything, the search too). All by delegation:
   // the sheet is rebuilt each time it opens.
   document.addEventListener('click', e => {
     const el = e.target.closest('[data-pick="filter"], [data-toggle], [data-fsort], [data-f], [data-act="clear-filters"]');
     if (!el) return;
     if (el.dataset.pick === 'filter') openFilter(el.dataset.kind);
-    else if (el.dataset.toggle) toggleFilter(el.dataset.toggle);
+    else if (el.dataset.toggle) { toggleFilter(el.dataset.toggle); keepPillInView(el); }
     else if (el.dataset.fsort) filterPickSort(el.dataset.fsort);
     else if (el.dataset.f === 'reset') filterReset();
     else if (el.dataset.f === 'done' || el.dataset.f === 'close') closeFilter();

@@ -115,6 +115,7 @@
       reset: () => resetListFilters(),
       render: () => renderList(),
       search: 'search',                 // the phone's search field, cleared by Clear filters
+      searching: () => !!searchQuery,   // search text in (phone or wall): Clear shows
     },
   };
 
@@ -148,11 +149,14 @@
     }
   }
 
-  // The empty list's button: every filter back to the default, and the search too.
+  // The row's Clear pill and the empty list's Clear filters, phone and wall: every
+  // filter back to the default, the picked holds and the search too. Not the
+  // sheet's Reset, which leaves the search alone.
   function clearFilters(kind) {
     const k = FILTER_KINDS[kind];
     if (!k) return;
     k.reset();
+    if (WALL) wallSearchSet(kind, '', true);     // the wall's search (and its keyboard, closed)
     const input = !WALL && k.search && document.getElementById(k.search);
     if (input && input.value) {
       input.value = '';
@@ -169,11 +173,14 @@
   }
 
   // The filter icons (both lists, phone and wall: found by data-pick + data-kind),
-  // the toggles, and the open sheet. Called from every render of either list.
+  // the Clear pills, the toggles, and the open sheet. Called from every render of
+  // either list.
   function updateFilterControls() {
     syncFilterToggles();
     Object.keys(FILTER_KINDS).forEach(kind => {
       const n = FILTER_KINDS[kind].nOn();
+      const atDefault = !n && !FILTER_KINDS[kind].searching();
+      document.querySelectorAll(`.filter-clear[data-kind="${kind}"]`).forEach(b => { b.hidden = atDefault; });
       document.querySelectorAll(`[data-pick="filter"][data-kind="${kind}"]`).forEach(b => {
         b.classList.toggle('on', n > 0);
         b.setAttribute('aria-label', n ? `Filter, ${n} on` : 'Filter');
@@ -184,6 +191,19 @@
     });
     document.querySelectorAll('.filter-row .filter-pills').forEach(markFilterRowEdges);
     fsRender();
+  }
+
+  // A pill just tapped stays in view: Clear appearing narrows the row, and the
+  // pill tapped was often the one at the right end, which would slide under the
+  // fade. --pill-fade (tokens.css) is the fade's width.
+  function keepPillInView(pill) {
+    const row = pill && pill.closest('.filter-row .filter-pills');
+    if (!row) return;
+    const fade = parseFloat(getComputedStyle(row).getPropertyValue('--pill-fade')) || 0;
+    const r = row.getBoundingClientRect(), t = pill.getBoundingClientRect();
+    if (t.right > r.right - fade) row.scrollLeft += t.right - r.right + fade;
+    else if (t.left < r.left + fade) row.scrollLeft -= r.left + fade - t.left;
+    markFilterRowEdges(row);
   }
 
   // The pill rows' ends fade out where there's more to scroll to (.more-left /

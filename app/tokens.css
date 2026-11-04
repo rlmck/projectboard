@@ -177,6 +177,7 @@
   --filter-badge-font: 11px;
   --filter-badge-pad: 5px;
   --filter-badge-room: 6px;  /* how far the badge pokes out of the pill (the row makes room) */
+  --filter-clear-pad-x: 11px;  /* the row's Clear pill, pinned at the right while anything isn't the default */
   --filter-sheet-max-h: 92vh;  /* the Filter sheet scrolls past this */
   --f-section-gap: 22px;  /* between the sheet's sections */
   --f-label-gap: 10px;  /* under a section's label */
@@ -254,6 +255,11 @@
   --wall-grade-h: 50px;  /* a grade on the Create page */
   --wall-key-h: 66px;  /* a key on the on-screen keyboard */
   --wall-kb-max-w: 1180px;  /* the keyboard's width (the screen is 1280) */
+  --wall-search-font: 18px;  /* the wall's search field in a list's row */
+  --wall-search-pad-x: 16px;
+  --wall-search-clear: 34px;  /* its × */
+  --wall-search-clear-font: 24px;
+  --wall-clear-pad-x: 18px;  /* the row's Clear pill on the wall */
   --lights-dot: 8px;  /* the "lit on the board" dot by the create board */
   --qr-dark: #000;  /* QR modules: black on white, or phone cameras struggle */
   --qr-light: #fff;
