@@ -297,6 +297,38 @@
       + `<svg class="hold-shape-layer hs-lines" viewBox="0 0 100 100" preserveAspectRatio="none">${outlines.join('')}</svg>`;
   }
 
+  // The hold filter's picker board (problems.js, HOLDS): the board dimmed a little
+  // more than a problem view (.hp-dim: --hold-pick-dim), the `bright` holds cut out
+  // of the dim, and each of `picks` ringed: a dark halo under a white outline with
+  // a pink wash (.hs.pick-halo, .hs.pick), so it reads on any part of the board.
+  // Traced outlines when they fit this board, dots otherwise. The paths are cached:
+  // the mask is redrawn on every tap, and on the wall that's the Pi.
+  const hpPathCache = new WeakMap();    // a hold's outline points -> its path
+  function holdPickLayerHtml(bright, picks) {
+    if (!HOLD_MAP) return '';
+    const usable = shapesUsable();
+    const rx = 2.3, ry = +(rx * (boardAspect || 1)).toFixed(2);
+    const shape = (h, attrs) => {
+      const pts = usable && HOLD_SHAPES[h];
+      if (pts && pts.length >= 3) {
+        let d = hpPathCache.get(pts);
+        if (!d) { d = smoothShapePath(pts); hpPathCache.set(pts, d); }
+        return `<path d="${d}" ${attrs}/>`;
+      }
+      const pos = HOLD_MAP[h];
+      return pos && typeof pos.x === 'number' ? `<ellipse cx="${pos.x}" cy="${pos.y}" rx="${rx}" ry="${ry}" ${attrs}/>` : '';
+    };
+    const maskId = 'hsmask-' + (++hsMaskSeq);
+    let holes = '';
+    bright.forEach(h => { holes += shape(h, 'fill="#000"'); });
+    return `<svg class="hold-shape-layer hs-dim" viewBox="0 0 100 100" preserveAspectRatio="none">`
+      + `<mask id="${maskId}" maskUnits="userSpaceOnUse"><rect width="100" height="100" fill="#fff"/>${holes}</mask>`
+      + `<rect class="hp-dim" width="100" height="100" fill="#000" mask="url(#${maskId})"/></svg>`
+      + `<svg class="hold-shape-layer hs-lines hs-picks" viewBox="0 0 100 100" preserveAspectRatio="none">`
+      + picks.map(h => shape(h, 'class="hs pick-halo"')).join('')
+      + picks.map(h => shape(h, 'class="hs pick"')).join('') + `</svg>`;
+  }
+
   // Problem-detail entry point: derive roles from the (un-inverted) hold order.
   function boardShapeOverlayHtml(p, opts = {}) {
     const order = problemHoldOrder(p);
@@ -353,11 +385,15 @@
   // there's no tap-to-hide, a drag or pinch never counts as a tap, and on problem
   // Create a double-tap closes the viewer only when both taps miss every hold
   // (nearestHold), so double-tapping a hold still cycles it twice.
+  // The hold filter's picker (#hp-screen over the Filter sheet, problems.js) is
+  // the 'holds' view here (fsView()): it pinches in and out as Create does, a tap
+  // picks or drops a hold, and the bar shows the live count.
   // Zoom resizes the board-wrap itself (its overlays are %-positioned and scale
   // with it, while outlines, dots and move tags keep their pixel sizes) and pan is
   // a translate, so boardPct needs nothing special.
   const AUTO_FS_VIEWS = new Set(['detail', 'circuit-detail']);           // landscape opens the viewer
-  const PINCH_FS_VIEWS = new Set(['detail', 'circuit-detail', 'create']); // a pinch opens and closes it
+  const PINCH_FS_VIEWS = new Set(['detail', 'circuit-detail', 'create', 'holds']); // a pinch opens and closes it
+  const PICK_FS_VIEWS = new Set(['create', 'holds']);  // a tap sets a hold; a double tap on empty board closes
   const FS_MAX_ZOOM = 5;        // relative to the whole board fitting the screen
   const FS_PINCH_GAIN = 1;      // pinch sensitivity: zoom = (finger spread ratio)^gain; 1 = the board stays under the fingers
   const FS_PINCH_ENTER = 1.06;  // fingers spreading this much on a detail board open the viewer
@@ -380,12 +416,18 @@
   const landscapeMQ = window.matchMedia('(orientation: landscape)');
   const fsReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
+  // The viewer's view: the route's, or 'holds' while the hold picker is open over it.
+  function fsView() { return holdPickerOpen ? 'holds' : currentView; }
+  function fsHostEl() {
+    return document.getElementById(holdPickerOpen ? 'hp-screen' : 'view-' + currentView);
+  }
   function activeBoardWrap() {
-    const v = document.getElementById('view-' + currentView);
+    if (holdPickerOpen) return document.getElementById('hp-board');
+    const v = fsHostEl();
     return v ? v.querySelector('.board-wrap') : null;
   }
   // The read-only views, where taps belong to the viewer (not to hold editing).
-  function fsReadOnly() { return AUTO_FS_VIEWS.has(currentView); }
+  function fsReadOnly() { return AUTO_FS_VIEWS.has(fsView()); }
 
   // The size at which the whole board just fits the screen.
   function fsMeasure() {
@@ -528,7 +570,7 @@
       const w = activeBoardWrap();
       if (fsOpen && w && w !== fsWrap) fsAdopt(w, fsCam);
     });
-    fsObserver.observe(document.getElementById('view-' + currentView), { childList: true, subtree: true });
+    fsObserver.observe(fsHostEl(), { childList: true, subtree: true });
     fsShowHint();
     acquireWakeLock();
     if (!auto && !pinch) requestNativeFs();
@@ -568,6 +610,11 @@
       const n = circuitSeq(currentCircuit).length;
       name.textContent = circuitName(currentCircuit);
       meta.textContent = `${currentCircuit.grade || '—'} · ${n} move${n === 1 ? '' : 's'}`;
+    } else if (fsView() === 'holds') {
+      // Picking holds for the filter: the live count.
+      const picks = FILTER_KINDS[filterKind] ? FILTER_KINDS[filterKind].getHolds() : [];
+      name.textContent = 'Pick holds';
+      meta.textContent = picks.length ? holdPickLine(filterKind) : 'Tap holds to pick them';
     } else if (currentView === 'create') {
       // Building a problem: its name so far and the holds set.
       const typed = (document.getElementById('create-name').value || '').trim();
@@ -614,7 +661,7 @@
     lsSet('pb-fs-hints', String(seen + 1));
     if (seen >= 3) return;
     const hint = document.getElementById('board-fs-hint');
-    hint.textContent = currentView === 'create' ? 'Pinch to zoom · double-tap empty board or pinch out to close'
+    hint.textContent = PICK_FS_VIEWS.has(fsView()) ? 'Pinch to zoom · double-tap empty board or pinch out to close'
       : fsCanPinchClose() ? 'Pinch to zoom · double-tap or pinch out to close'
       : fsReadOnly() ? 'Pinch to zoom · double-tap for the whole board' : 'Pinch to zoom · tap holds to set them';
     hint.classList.add('show');
@@ -709,7 +756,7 @@
       return;
     }
     if (e.type !== 'pointerup') return;
-    if (currentView === 'create') { fsCreateTap(upAt); return; }
+    if (PICK_FS_VIEWS.has(fsView())) { fsCreateTap(upAt); return; }
     if (!fsReadOnly()) return;                             // circuit create: the click sets a hold
     const now = Date.now();
     if (now - fsLastTap < 300) {                           // double-tap
@@ -724,13 +771,13 @@
     clearTimeout(fsTapTimer);
     fsTapTimer = setTimeout(() => document.body.classList.toggle('fs-ui-hidden'), 300);
   }
-  // A tap in problem Create's viewer: the click that follows sets or cycles a
-  // hold, and that's all it does. Two quick taps that both miss every hold close
+  // A tap in problem Create's viewer (or the hold picker's): the click that
+  // follows sets or cycles (picks or drops) a hold, and that's all it does. Two quick taps that both miss every hold close
   // the viewer (and the second tap's click is swallowed, so it can't land on a
   // hold of the board as it settles back on the page).
   let fsCreateEmptyTap = null;  // { t, x, y } of the last tap that missed every hold
   function fsCreateTap(p) {
-    const empty = !nearestHold(p.x, p.y);
+    const empty = !nearestHold(p.x, p.y, fsWrap);
     const now = Date.now(), prev = fsCreateEmptyTap;
     fsCreateEmptyTap = empty ? { t: now, x: p.x, y: p.y } : null;
     if (!empty || !prev || now - prev.t >= 300 || Math.hypot(p.x - prev.x, p.y - prev.y) > 40) return;
@@ -742,7 +789,7 @@
   document.addEventListener('pointerup', fsPointerEnd, true);
   document.addEventListener('pointercancel', fsPointerEnd, true);
   document.addEventListener('click', e => {
-    if (fsSwallowClick && (fsIsBoardTarget(e.target) || (e.target.closest && e.target.closest('#create-board')))) { fsSwallowClick = false; e.stopPropagation(); e.preventDefault(); }
+    if (fsSwallowClick && (fsIsBoardTarget(e.target) || (e.target.closest && e.target.closest('#create-board, #hp-board')))) { fsSwallowClick = false; e.stopPropagation(); e.preventDefault(); }
   }, true);
 
   // A mouse drag on the photo would start the browser's own image drag (which
@@ -764,7 +811,7 @@
 
   // Pinch in and out of the viewer on the detail views and problem Create (not one opened by
   // turning the phone: that one closes by turning back).
-  function fsCanPinchClose() { return PINCH_FS_VIEWS.has(currentView) && !fsAuto; }
+  function fsCanPinchClose() { return PINCH_FS_VIEWS.has(fsView()) && !fsAuto; }
 
   // Glide the board back to its place on the page as the viewer fades, then close.
   function fsPinchClose() {
@@ -781,7 +828,7 @@
   const pagePtrs = new Map();   // pointerId -> { x, y }, touches on the page's board
   let pagePinchD0 = 0;          // the fingers' distance when the second went down
   function fsPageBoardTarget(t) {
-    if (fsOpen || !PINCH_FS_VIEWS.has(currentView) || !t || !t.closest) return false;
+    if (fsOpen || !PINCH_FS_VIEWS.has(fsView()) || !t || !t.closest) return false;
     if (t.closest('button, a, input')) return false;
     const w = activeBoardWrap();
     return !!(w && w.contains(t));

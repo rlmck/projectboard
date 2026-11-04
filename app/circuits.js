@@ -148,11 +148,15 @@
     return (circuitGradeLo === null || r >= sportRank(circuitGradeLo)) && (circuitGradeHi === null || r <= sportRank(circuitGradeHi));
   }
 
-  function visibleCircuits() {
+  // Every filter, unsorted (counts, the hold picker); visibleCircuits() sorts it.
+  // The hold filter: a circuit must use every picked hold somewhere in its sequence.
+  const circuitHolds = c => cachedHoldSet(c, circuitSeq);
+  function filteredCircuits() {
     let arr = allCircuits;
     if (circuitFavesOnly) arr = arr.filter(c => isCircuitFaved(c.id));
     if (circuitLoopOnly) arr = arr.filter(c => c.loops);
     if (circuitGradeNarrowed()) arr = arr.filter(inCircuitGradeRange);
+    if (circuitHoldPicks.length) arr = arr.filter(c => usesAllHolds(circuitHolds(c), circuitHoldPicks));
     const q = searchNorm(circuitSearch);
     if (q) {
       arr = arr.filter(c =>
@@ -161,12 +165,13 @@
         searchNorm(c.grade).includes(q)
       );
     }
-    return sortCircuits(arr);
+    return arr;
   }
+  function visibleCircuits() { return sortCircuits(filteredCircuits()); }
 
-  // The filter icon's badge: the sort, the grade range, each quick filter.
+  // The filter icon's badge: the sort, the grade range, each quick filter, the picked holds (as one).
   const circuitFilterCount = () =>
-    (circuitSort !== 'new') + circuitGradeNarrowed() + circuitFavesOnly + circuitLoopOnly;
+    (circuitSort !== 'new') + circuitGradeNarrowed() + circuitFavesOnly + circuitLoopOnly + (circuitHoldPicks.length > 0);
 
   // Back to the defaults (Reset, Clear filters, the wall going idle). State only.
   function resetCircuitFilters() {
@@ -174,6 +179,7 @@
     circuitSort = 'new';
     circuitRandom = new Map();
     circuitGradeLo = null; circuitGradeHi = null;
+    circuitHoldPicks = [];
   }
 
   // The circuit list's kind for the Filter sheet (problems.js).
@@ -191,7 +197,11 @@
     getRange: () => [circuitGradeLo, circuitGradeHi],
     setRange: (lo, hi) => { circuitGradeLo = lo; circuitGradeHi = hi; },
     toggles: () => (WALL ? ['loop'] : ['cfaves', 'loop']),
-    count: () => visibleCircuits().length,
+    count: () => filteredCircuits().length,
+    getHolds: () => circuitHoldPicks,
+    setHolds: picks => { circuitHoldPicks = picks; },
+    matches: () => filteredCircuits(),
+    holdsOf: c => circuitHolds(c),
     nOn: () => circuitFilterCount(),
     reset: () => resetCircuitFilters(),
     render: () => { renderCircuits(); wallRenderCircuits(); },

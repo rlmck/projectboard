@@ -262,6 +262,32 @@
   <div class="modal list-sheet filter-sheet" id="filter-sheet" role="dialog" aria-modal="true" aria-labelledby="f-title"></div>
 </div>
 
+<!-- The hold picker (phone): a screen over the Filter sheet, opened from its Holds
+     row (problems.js, HOLDS). The whole board fitted to the width; a tap picks or
+     drops a hold; a pinch or the expand button opens the fullscreen viewer, where
+     taps pick too (core.js, the 'holds' view). -->
+<div class="hp-screen" id="hp-screen" role="dialog" aria-modal="true" aria-labelledby="hp-title">
+  <div class="hp-top">
+    <button class="icon-btn" type="button" data-hp="back" aria-label="Back to Filter">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
+    <div class="hp-title" id="hp-title">Holds</div>
+    <button class="hp-text-btn" id="hp-clear" type="button" data-hp="clear">Clear holds</button>
+  </div>
+  <p class="hp-hint" id="hp-hint" aria-live="polite"></p>
+  <div class="hp-stage">
+    <div class="board-wrap" id="hp-board">
+      <img class="board-graphic" alt="The Hangout symmetry board" draggable="false" />
+      <div class="hold-layer" id="hp-layer"></div>
+      <button class="board-expand-btn" type="button" aria-label="Fullscreen board">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+      </button>
+    </div>
+  </div>
+  <div class="hp-picked" id="hp-picked"></div>
+  <div class="hp-foot"><button class="btn-block btn-primary" id="hp-done" type="button" data-hp="done">Show problems</button></div>
+</div>
+
 <!-- Grade picker for the create view (a sheet, like the info sheet) -->
 <div class="modal-overlay" id="create-grade-modal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="create-grade-title">

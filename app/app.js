@@ -136,6 +136,31 @@
   document.getElementById('filter-modal').addEventListener('click', e => {
     if (e.target.id === 'filter-modal') closeFilter();
   });
+  // The hold filter (problems.js, HOLDS): the sheet's Holds row opens the picker
+  // (phone); a chip drops its hold; Clear holds; the picker's back and Show N.
+  document.addEventListener('click', e => {
+    const el = e.target.closest('[data-hp], [data-unpick]');
+    if (!el || !filterKind) return;
+    if (el.dataset.unpick) holdPickToggle(el.dataset.unpick);
+    else if (el.dataset.hp === 'open') openHoldPicker();
+    else if (el.dataset.hp === 'clear') holdPicksSet([]);
+    else if (el.dataset.hp === 'back') closeHoldPicker();
+    else if (el.dataset.hp === 'done') closeFilter();
+  });
+  // A tap on the picker's board picks or drops the nearest hold (in the
+  // fullscreen viewer too: the board is the same element there).
+  const hpBoard = document.getElementById('hp-board');
+  hpBoard.addEventListener('click', e => {
+    if (e.target.closest('.board-expand-btn')) return;
+    const h = nearestHold(e.clientX, e.clientY, hpBoard);
+    if (h) holdPickToggle(h);
+  });
+  // Two fingers on it are the viewer's pinch (core.js), as on the Create board.
+  ['touchstart', 'touchmove'].forEach(type => {
+    hpBoard.addEventListener(type, e => {
+      if (e.touches.length > 1) e.preventDefault();
+    }, { passive: false });
+  });
   // A pill row too wide for a narrow phone scrolls, its ends fading while there's more.
   document.querySelectorAll('.filter-row .filter-pills').forEach(row =>
     row.addEventListener('scroll', () => markFilterRowEdges(row), { passive: true }));
@@ -186,7 +211,8 @@
   });
   document.getElementById('board-fs-map').addEventListener('click', () => fsSetFrame('board'));
   document.addEventListener('keydown', e => {
-    if (fsOpen && e.key === 'Escape') exitBoardFs();
+    // Only the viewer closes: not the sheet or the hold picker under it.
+    if (fsOpen && e.key === 'Escape') { exitBoardFs(); e.stopImmediatePropagation(); }
   });
 
   // Detail actions (live in the header; operate on the current problem)
@@ -540,7 +566,7 @@
   document.getElementById('info-modal').addEventListener('click', e => {
     if (e.target.id === 'info-modal') closeInfo();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closeCircuitCast(); closeNameModal(); closeAccountDelete(); closeUserRename(); closeUserReset(); closeCompare(); closeAttemptDelete(); closeFilter(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closeCircuitCast(); closeNameModal(); closeAccountDelete(); closeUserRename(); closeUserReset(); closeCompare(); closeAttemptDelete(); if (holdPickerOpen) closeHoldPicker(); else closeFilter(); } });
 
   // Auth view (#auth): create an account or sign in, in one form (account.js).
   document.getElementById('auth-form').addEventListener('submit', authSubmit);

@@ -104,6 +104,10 @@
   let circuitGradeLo = null;      // the circuit grade range (sport ladder), as gradeLo / gradeHi
   let circuitGradeHi = null;
   let filterKind = null;          // the open Filter sheet (phone) or panel (wall): 'problems' | 'circuits' | null
+  let holdPicks = [];             // the hold filter (problems): hold ids in the order tapped; a problem must use them all, as set
+  let circuitHoldPicks = [];      // ...and the circuits' (any hold in hold_sequence)
+  let holdPickerOpen = false;     // phone: the hold picker screen (#hp-screen) is open over the Filter sheet
+  let holdsDirty = false;         // picks changed since the list last rendered: it catches up when the picker or panel closes
   let authMode = 'signup'; // the #auth mode: 'signup' (create an account: nickname + PIN twice) | 'signin'
 
   // ── Create-a-problem state ───────────────────────────────────────────────────

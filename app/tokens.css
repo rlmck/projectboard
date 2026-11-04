@@ -187,6 +187,31 @@
   --f-foot-gap: 24px;  /* above Reset and Show N */
   --f-reset-pad-x: 18px;  /* Reset, and the empty list's Clear filters */
   --f-empty-btn-gap: 16px;  /* above Clear filters */
+  --hold-pick-dim: 0.72;  /* the hold picker dims the board a little more than a problem view (0.62) */
+  --hold-pick-line: 3px;  /* a picked hold's white outline */
+  --hold-pick-halo-line: 8px;  /* the dark ring under it, so it reads on the pink, white and black of the board */
+  --hold-pick-halo: rgba(0,0,0,0.7);
+  --hold-pick-fill: var(--accent-a40);  /* the picked hold's wash */
+  --hold-pick-thumb-line: 1.5px;  /* the same on the sheet's thumbnail */
+  --hold-pick-thumb-halo: 3.5px;
+  --hp-thumb-w: 92px;  /* the board thumbnail on the sheet's Holds row */
+  --hp-row-pad: 10px 12px;  /* the Holds row */
+  --hp-row-gap: 14px;
+  --hp-row-title: 16px;
+  --hp-row-sub: 13px;
+  --hp-go: 20px;  /* the row's chevron */
+  --hp-chip-pad: 5px 8px 5px 11px;  /* a picked hold's chip (tap to drop) */
+  --hp-chip-gap: 6px;
+  --hp-chip-size: 13px;
+  --hp-top-pad: 10px 12px;  /* the picker's header: back, Holds, Clear holds */
+  --hp-title-size: 18px;
+  --hp-text-btn-pad: 8px 10px;
+  --hp-text-btn-size: 15px;
+  --hp-hint-min-h: 52px;  /* the live line: room for two lines, so the board doesn't jump */
+  --hp-pad-x: 16px;  /* the picker's sides */
+  --hp-hint-size: 14px;
+  --hp-picked-max-h: 96px;  /* the chips scroll past this */
+  --hp-foot-pad-b: 14px;  /* under Show N (plus the home bar) */
   --range-thumb: 30px;  /* the Grade slider's handles (the wall's below) */
   --range-track-h: 6px;
   --range-hit-h: 52px;  /* the slider's touch area, taller than the track */
@@ -215,6 +240,9 @@
   --wall-f-btn-size: 18px;
   --wall-f-reset-pad-x: 24px;
   --wall-f-empty-size: 18px;  /* the empty list's message on the wall */
+  --wall-hp-chip-pad: 9px 12px 9px 16px;  /* a picked hold's chip in the Filter panel */
+  --wall-hp-chip-size: 17px;
+  --wall-hp-hint-size: 16px;  /* the panel's "Tap holds on the board" */
   --wall-range-thumb: 48px;  /* the Grade slider's handles on the wall */
   --wall-range-hit: 80px;
   --wall-range-tick-h: 44px;

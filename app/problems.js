@@ -50,12 +50,15 @@
     return (gradeLo === null || r >= gradeRank(gradeLo)) && (gradeHi === null || r <= gradeRank(gradeHi));
   }
 
-  function visibleProblems() {
+  // Every filter, in list order unsorted (the counts and the hold picker's
+  // bright holds need no sort); visibleProblems() sorts it for the list.
+  function filteredProblems() {
     let arr = allProblems;
     if (favesOnly) arr = arr.filter(p => isFaved(p.id));
     if (benchOnly) arr = arr.filter(p => p.is_benchmark);
     if (excludeDone) arr = arr.filter(p => !isFullyDone(p.id));
     if (gradeNarrowed()) arr = arr.filter(inGradeRange);
+    if (holdPicks.length) arr = arr.filter(p => usesAllHolds(problemHolds(p), holdPicks));
     const q = searchNorm(searchQuery);
     if (q) {
       arr = arr.filter(p =>
@@ -64,13 +67,14 @@
         searchNorm(p.grade).includes(q)
       );
     }
-    return sortProblems(arr);
+    return arr;
   }
+  function visibleProblems() { return sortProblems(filteredProblems()); }
 
   // How many settings differ from the default (the filter icon's badge): the sort,
-  // the grade range, each quick filter. (Next session: + 1 when holds are picked.)
+  // the grade range, each quick filter, and the picked holds (as one).
   const problemFilterCount = () =>
-    (listSort !== 'new') + gradeNarrowed() + favesOnly + benchOnly + excludeDone;
+    (listSort !== 'new') + gradeNarrowed() + favesOnly + benchOnly + excludeDone + (holdPicks.length > 0);
   const listFiltersAtDefault = () => problemFilterCount() === 0;
 
   // Back to the defaults (Reset, Clear filters, and the wall going idle). State only: the caller renders.
@@ -79,6 +83,7 @@
     listSort = 'new';
     listRandom = new Map();
     gradeLo = null; gradeHi = null;
+    holdPicks = [];
   }
 
   // ── The Filter: one sheet (phone) or panel (wall) for either list ─────────────
@@ -100,7 +105,12 @@
       getRange: () => [gradeLo, gradeHi],
       setRange: (lo, hi) => { gradeLo = lo; gradeHi = hi; },
       toggles: () => (WALL ? ['bench'] : ['bench', 'faves', 'done']),
-      count: () => visibleProblems().length,
+      count: () => filteredProblems().length,
+      // The hold filter: the picks, the items passing every filter, an item's holds as set.
+      getHolds: () => holdPicks,
+      setHolds: picks => { holdPicks = picks; },
+      matches: () => filteredProblems(),
+      holdsOf: p => problemHolds(p),
       nOn: () => problemFilterCount(),
       reset: () => resetListFilters(),
       render: () => renderList(),
@@ -129,6 +139,7 @@
   // A filter or the sort changed: re-render (which updates every control), and
   // start the list from the top.
   function filtersChanged(kind) {
+    holdsDirty = false;                 // the list now shows the picks too
     FILTER_KINDS[kind].render();
     if (!WALL && currentView === (kind === 'problems' ? 'list' : 'circuits')) window.scrollTo(0, 0);
     if (WALL) {
@@ -258,14 +269,153 @@
       </div>`;
   }
 
-  // ═══ HOLDS (next session) ═══════════════════════════════════════════════════
-  // The hold filter's section goes here, the last section before the buttons
-  // (docs/prototypes/filter-prototype.html: a board thumbnail with the picked holds,
-  // what's picked, and a way into the hold picker). When it lands: its state in
-  // state.js, the filter in visibleProblems(), +1 in problemFilterCount(), and
-  // cleared by resetListFilters(). Nothing yet.
+  // ═══ HOLDS: the hold filter ══════════════════════════════════════════════════
+  // Show only the items that use ALL the picked holds, in any role (a problem's
+  // starts, hand holds or finish; any hold of a circuit's hold_sequence), as set:
+  // never mirrored. Client-side: the lists already hold every item's holds. The
+  // picks are the kind's own (holdPicks, circuitHoldPicks in state.js), count as
+  // one on the filter icon, and go with Reset, Clear filters and the wall's idle.
+  // Picking: the phone's hold picker (#hp-screen, over the sheet; its board zooms
+  // in the fullscreen viewer, core.js, as the 'holds' view), or the wall's board
+  // while the Filter panel is open (wall.js). A tap recomputes the counts and the
+  // bright holds only; the list itself re-renders when the picker or the panel
+  // closes (holdsDirty), which is lighter on the wall's Pi.
+  const holdSetCache = new WeakMap();   // item -> Set of its hold ids (a reload brings new objects)
+  function cachedHoldSet(item, holdsFn) {
+    let s = holdSetCache.get(item);
+    if (!s) { s = new Set(holdsFn(item)); holdSetCache.set(item, s); }
+    return s;
+  }
+  const problemHolds = p => cachedHoldSet(p, problemHoldOrder);
+  function usesAllHolds(set, picks) {
+    for (const h of picks) if (!set.has(h)) return false;
+    return true;
+  }
+
+  // Holds still in play: in at least one item that passes every filter and uses
+  // every pick (and the picks themselves). The picker leaves these bright.
+  function holdsInPlay(kind) {
+    const k = FILTER_KINDS[kind];
+    const s = new Set(k.getHolds());
+    k.matches().forEach(it => k.holdsOf(it).forEach(h => s.add(h)));
+    return s;
+  }
+
+  // The live line: "6 problems use both holds", or how to start.
+  function holdPickLine(kind) {
+    const k = FILTER_KINDS[kind];
+    const picks = k.getHolds();
+    if (!picks.length) return `Tap holds to find ${k.noun}s that use all of them, as set. Faded holds aren’t in any of those ${k.noun}s.`;
+    const n = k.count();
+    const which = picks.length === 1 ? 'that hold' : picks.length === 2 ? 'both holds' : `all ${picks.length} holds`;
+    return `${n ? `${n} ${k.noun}${n === 1 ? '' : 's'}` : `No ${k.noun}s`} use${n === 1 ? 's' : ''} ${which}`;
+  }
+  const holdLabel = h => gridName(holdNum(h));
+
+  // The picks as chips (tap one to drop it).
+  function holdChipsHtml(picks) {
+    return `<div class="hp-chips">${picks.map(h =>
+      `<button class="hp-chip" type="button" data-unpick="${escAttr(h)}" aria-label="Drop ${escAttr(holdLabel(h))}">${escHtml(holdLabel(h))}<span aria-hidden="true">✕</span></button>`).join('')}</div>`;
+  }
+
+  // The board's layer for picking: dimmed, the holds in play cut out, the picks ringed.
+  const holdPickLayerFor = kind => holdPickLayerHtml(holdsInPlay(kind), FILTER_KINDS[kind].getHolds());
+
+  // The sheet's Holds section: filled by renderFilterHolds (it changes as holds are picked).
   function filterHoldsHtml(kind) {
-    return '';
+    return `<section class="f-section" id="f-holds"></section>`;
+  }
+
+  const HP_CHEVRON = '<svg class="f-holds-go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>';
+
+  // Phone: a row with a thumbnail of the board (the picks lit), what's picked, and
+  // a way into the picker. Wall: the picks as chips with Clear holds, or a hint
+  // (the board beside the panel is the picker there).
+  function renderFilterHolds() {
+    const box = document.getElementById('f-holds');
+    if (!box || !filterKind) return;
+    const picks = FILTER_KINDS[filterKind].getHolds();
+    const key = picks.join(',') + '|' + BOARD_IMG;
+    if (box.dataset.key === key) return;          // nothing changed (it's called on every render)
+    box.dataset.key = key;
+    if (WALL) {
+      box.innerHTML = `
+        <div class="f-label-row"><div class="f-label">Holds</div>${picks.length ? '<button class="hp-text-btn" type="button" data-hp="clear">Clear holds</button>' : ''}</div>
+        ${picks.length ? holdChipsHtml(picks)
+          : `<p class="wall-holds-hint">Tap holds on the board. You’ll see ${FILTER_KINDS[filterKind].noun}s that use all of them, as set.</p>`}`;
+      return;
+    }
+    const names = picks.map(holdLabel).join(', ');
+    box.innerHTML = `
+      <div class="f-label">Holds</div>
+      <button class="f-holds${picks.length ? ' on' : ''}" type="button" data-hp="open" aria-label="Holds: ${escAttr(picks.length ? names : 'any')}. Pick holds">
+        <span class="f-holds-thumb"><span class="board-wrap"><img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="" draggable="false" /><span class="hold-layer">${picks.length ? holdPickLayerHtml(new Set(picks), picks) : ''}</span></span></span>
+        <span class="f-holds-text">
+          <span class="f-holds-title">${picks.length ? `${picks.length} hold${picks.length === 1 ? '' : 's'}` : 'Any holds'}</span>
+          <span class="f-holds-sub">${picks.length ? escHtml(names) : `Pick holds on the board to find ${FILTER_KINDS[filterKind].noun}s that use them`}</span>
+        </span>
+        ${HP_CHEVRON}
+      </button>`;
+  }
+
+  // A tap on a hold (the phone's picker, its fullscreen viewer, or the wall's
+  // board): pick it, or drop it if it's picked.
+  function holdPickToggle(h) {
+    const k = FILTER_KINDS[filterKind];
+    if (!k || !h) return;
+    const picks = k.getHolds().slice();
+    const i = picks.indexOf(h);
+    if (i === -1) picks.push(h); else picks.splice(i, 1);
+    holdPicksSet(picks);
+  }
+  function holdPicksSet(picks) {
+    const k = FILTER_KINDS[filterKind];
+    if (!k) return;
+    k.setHolds(picks);
+    holdsDirty = true;
+    updateFilterControls();             // the icon's badge, the sheet, the picker (holdPickRefresh)
+  }
+
+  // Whatever is picking right now follows the picks and the other filters: the
+  // phone's picker screen (and its fullscreen bar), or the wall's board and bar.
+  function holdPickRefresh() {
+    if (!filterKind) return;
+    if (WALL) { wallRenderPick(filterKind); return; }
+    if (!holdPickerOpen) return;
+    const k = FILTER_KINDS[filterKind];
+    const picks = k.getHolds();
+    document.getElementById('hp-layer').innerHTML = holdPickLayerFor(filterKind);
+    const line = holdPickLine(filterKind);
+    document.getElementById('hp-hint').innerHTML = picks.length
+      ? `<b>${escHtml(line)}.</b> Tap a hold again to drop it.` : escHtml(line);
+    document.getElementById('hp-picked').innerHTML = picks.length ? holdChipsHtml(picks)
+      : '<p class="hp-picked-empty">No holds picked yet.</p>';
+    document.getElementById('hp-clear').disabled = !picks.length;
+    const n = k.count();
+    const done = document.getElementById('hp-done');
+    done.textContent = n ? `Show ${n} ${k.noun}${n === 1 ? '' : 's'}` : `No ${k.noun}s use all of these`;
+    done.disabled = !n;
+    if (fsOpen) fsUpdateBar();
+  }
+
+  // The phone's hold picker: a screen over the sheet, the whole board fitted to
+  // the width. Pinch it (or its expand button) for the fullscreen viewer.
+  function openHoldPicker() {
+    if (WALL || !filterKind) return;
+    holdPickerOpen = true;
+    const img = document.querySelector('#hp-board .board-graphic');
+    if (img.getAttribute('src') !== BOARD_IMG) img.src = BOARD_IMG;
+    document.getElementById('hp-title').textContent = 'Holds';
+    document.getElementById('hp-screen').classList.add('show');
+    holdPickRefresh();
+  }
+  // Back to the sheet (or, from closeFilter, away with it): the list catches up.
+  function closeHoldPicker() {
+    if (!holdPickerOpen) return;
+    if (fsOpen) exitBoardFs();
+    holdPickerOpen = false;
+    document.getElementById('hp-screen').classList.remove('show');
+    if (holdsDirty && filterKind) filtersChanged(filterKind);
   }
 
   function openFilter(kind) {
@@ -283,19 +433,23 @@
     ['gr-lo', 'gr-hi'].forEach(id => document.getElementById(id).addEventListener('keydown', grKey));
     document.getElementById('gr-ticks').addEventListener('click', grTickTap);
     grInit();
-    updateFilterControls();             // the toggles and the buttons
     if (WALL) document.querySelector(`#wall .wall-page[data-page="${kind}"]`).classList.add('filtering');
     else document.getElementById('filter-modal').classList.add('show');
+    updateFilterControls();             // the toggles, the buttons, the Holds section (and the wall's board: the picker)
+    if (WALL) wallFilterShown(kind);
   }
 
   function closeFilter() {
     if (!filterKind) return;
+    closeHoldPicker();
     const kind = filterKind;
     filterKind = null;
     grDrag = null;
     filterContainer(kind).innerHTML = '';
     if (WALL) document.querySelector(`#wall .wall-page[data-page="${kind}"]`).classList.remove('filtering');
     else document.getElementById('filter-modal').classList.remove('show');
+    if (holdsDirty) filtersChanged(kind);   // the list catches up with the picks
+    if (WALL) wallFilterShown(kind);        // the board back to the chosen problem or circuit
   }
 
   function filterPickSort(key) {
@@ -329,6 +483,8 @@
     done.textContent = n ? `Show ${n} ${k.noun}${n === 1 ? '' : 's'}` : `No ${k.noun}s match`;
     done.disabled = !n;
     box.querySelector('[data-f="reset"]').disabled = k.nOn() === 0;
+    renderFilterHolds();
+    holdPickRefresh();
   }
 
   // ── The Grade section: a two-handle range slider over the kind's steps ──

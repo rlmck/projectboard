@@ -195,7 +195,8 @@
   // The chosen problem's name and details, Mirror and the cast button.
   function wallRenderSel() {
     const p = wallSelected();
-    wallEl('wall-sel').innerHTML = p
+    if (wallPicking('problems')) wallRenderPickBar('problems');
+    else wallEl('wall-sel').innerHTML = p
       ? `<h1 class="wall-name">${escHtml(displayName(p))}</h1>
          <div class="problem-meta wall-meta">${wallMetaHtml(p)}</div>`
       : `<h1 class="wall-name wall-name-empty">Pick a problem</h1>
@@ -218,6 +219,7 @@
 
   function wallRenderStage() {
     if (!WALL) return;
+    if (wallPicking('problems')) { wallRenderPickBoard('problems'); return; }
     const p = wallSelected();
     wallEl('wall-stage').innerHTML = wallBoardHtml(p, wallMirror)
       + (p ? '' : `<div class="wall-stage-hint">Tap a problem on the left</div>`);
@@ -260,7 +262,7 @@
   // waits, replacing any tap already waiting, so only the latest goes next.
   function wallCast() {
     const p = wallSelected();
-    if (!p || wallPage !== 'problems' || wallOffline() || wallIsIdle()) return;
+    if (!p || wallPage !== 'problems' || wallOffline() || wallIsIdle() || wallPicking('problems')) return;
     wallCastNext = { name: p.name, mirror: wallMirror };
     wallCastState = { name: p.name, mirror: wallMirror, state: 'sending' };
     wallRenderLit();
@@ -359,7 +361,8 @@
   function wallRenderCircSel() {
     if (!WALL) return;
     const c = wallCircSelected();
-    wallEl('wall-csel').innerHTML = c
+    if (wallPicking('circuits')) wallRenderPickBar('circuits');
+    else wallEl('wall-csel').innerHTML = c
       ? `<h1 class="wall-name">${escHtml(circuitName(c))}</h1>
          <div class="problem-meta wall-meta">${wallCircMetaHtml(c)}</div>`
       : `<h1 class="wall-name wall-name-empty">Pick a circuit</h1>
@@ -378,6 +381,7 @@
 
   function wallRenderCircStage() {
     if (!WALL) return;
+    if (wallPicking('circuits')) { wallRenderPickBoard('circuits'); return; }
     const c = wallCircSelected();
     wallEl('wall-cstage').innerHTML =
       `<div class="board-wrap wall-board"><img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" />`
@@ -408,7 +412,7 @@
   // it. Not at night, idle or offline. One at a time, the latest tap next, as wallCast.
   function wallCircShow() {
     const c = wallCircSelected();
-    if (!c || wallPage !== 'circuits' || wallOffline() || wallIsIdle()) return;
+    if (!c || wallPage !== 'circuits' || wallOffline() || wallIsIdle() || wallPicking('circuits')) return;
     const name = circuitName(c);
     wallCircCastNext = name;
     wallCircCastState = { name, state: 'sending' };
@@ -458,6 +462,61 @@
     const c = wallCircSelected();
     if (!c || wallOffline() || wallNightOn) return;
     openCircuitCast(c);
+  }
+
+  // ── Picking holds (the hold filter, problems.js HOLDS) ────────────────────────
+  // While a page's Filter panel is open the board beside it is the hold picker:
+  // the bar reads "Pick holds" with the live count, Mirror (or Start circuit) and
+  // the cast status hide (styles.css, .filtering), and a clean tap on the board
+  // picks or drops a hold. Taps there never cast or send show_circuit. Closing
+  // the panel puts the chosen problem or circuit (or the dimmed board) back.
+  const wallPicking = kind => WALL && filterKind === kind;
+  const wallStageId = kind => (kind === 'circuits' ? 'wall-cstage' : 'wall-stage');
+
+  function wallRenderPickBar(kind) {
+    wallEl(kind === 'circuits' ? 'wall-csel' : 'wall-sel').innerHTML =
+      `<h1 class="wall-name">Pick holds</h1><p class="wall-hint">${escHtml(holdPickLine(kind))}</p>`;
+  }
+  // The board is built once when the panel opens; a tap redraws only its layer.
+  function wallRenderPickBoard(kind) {
+    const stage = wallEl(wallStageId(kind));
+    let wrap = stage.querySelector('.wall-pick-board');
+    if (!wrap || wrap.querySelector('.board-graphic').getAttribute('src') !== BOARD_IMG) {
+      stage.innerHTML = `<div class="board-wrap wall-board wall-pick-board"><img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" draggable="false" /><div class="hold-layer"></div></div>`;
+      wrap = stage.querySelector('.wall-pick-board');
+    }
+    wrap.querySelector('.hold-layer').innerHTML = holdPickLayerFor(kind);
+  }
+  function wallRenderPick(kind) {
+    if (!wallPicking(kind)) return;
+    wallRenderPickBar(kind);
+    wallRenderPickBoard(kind);
+  }
+  // The panel opened or closed: the bar and the board follow (problems.js).
+  function wallFilterShown(kind) {
+    if (kind === 'circuits') { wallRenderCircSel(); wallRenderCircStage(); }
+    else { wallRenderSel(); wallRenderStage(); }
+  }
+
+  // A clean tap on the picking board (WALL_TAP_SLOP, as the lists): the hold nearest it.
+  function wallTapBoard(kind) {
+    const stage = wallEl(wallStageId(kind));
+    let press = null;
+    stage.addEventListener('pointerdown', e => { press = { x: e.clientX, y: e.clientY, clean: true }; }, { passive: true });
+    stage.addEventListener('pointermove', e => {
+      if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > WALL_TAP_SLOP) press.clean = false;
+    }, { passive: true });
+    stage.addEventListener('pointercancel', () => { if (press) press.clean = false; }, { passive: true });
+    stage.addEventListener('click', e => {
+      const p = press;
+      press = null;
+      if (!wallPicking(kind) || wallIsIdle()) return;
+      if (!p || !p.clean || Math.hypot(e.clientX - p.x, e.clientY - p.y) > WALL_TAP_SLOP) return;
+      const wrap = e.target.closest('.wall-pick-board');
+      if (!wrap) return;
+      const h = nearestHold(e.clientX, e.clientY, wrap);
+      if (h) holdPickToggle(h);
+    });
   }
 
   // ── Create a problem (db/35) ──────────────────────────────────────────────────
@@ -998,6 +1057,8 @@
     wallEl('wall-mirror').addEventListener('click', wallToggleMirror);
     wallTapList(wallEl('wall-clist'), wallCircPickAndShow);
     wallEl('wall-ccast').addEventListener('click', wallCircStart);
+    wallTapBoard('problems');
+    wallTapBoard('circuits');
     wallEl('wall-c-board').addEventListener('click', wallCreateTap);
     wallEl('wall-c-name').addEventListener('click', wallKbOpen);
     wallEl('wall-c-grades').addEventListener('click', e => {

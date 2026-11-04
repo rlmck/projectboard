@@ -453,6 +453,73 @@
     .f-foot { margin-top: var(--f-foot-gap); }
     .f-foot .btn-block[data-f="reset"] { flex: 0 0 auto; width: auto; padding-left: var(--f-reset-pad-x); padding-right: var(--f-reset-pad-x); }
 
+    /* The Holds section (problems.js, HOLDS). Phone: a row with a thumbnail of the
+       board (the picks lit), what's picked, and a way into the hold picker. */
+    .f-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--f-label-gap); margin-bottom: var(--f-label-gap); }
+    .f-label-row .f-label { margin-bottom: 0; }
+    .f-holds {
+      width: 100%; display: flex; align-items: center; gap: var(--hp-row-gap); padding: var(--hp-row-pad);
+      background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+      color: var(--text); font: inherit; text-align: left; cursor: pointer; touch-action: manipulation;
+    }
+    .f-holds:active { transform: scale(0.99); }
+    .f-holds.on { border-color: var(--accent-a40); }
+    .f-holds-thumb { flex: none; display: block; width: var(--hp-thumb-w); border-radius: var(--radius-xs); overflow: hidden; }
+    .f-holds-thumb .board-wrap { display: block; }
+    .f-holds-thumb .hold-layer { display: block; }
+    .f-holds-thumb .hs.pick { stroke-width: var(--hold-pick-thumb-line); }
+    .f-holds-thumb .hs.pick-halo { stroke-width: var(--hold-pick-thumb-halo); }
+    .f-holds-text { flex: 1; min-width: 0; display: block; }
+    .f-holds-title { display: block; font-size: var(--hp-row-title); font-weight: 700; }
+    .f-holds-sub { display: block; margin-top: 3px; color: var(--text-muted); font-size: var(--hp-row-sub); line-height: 1.35; }
+    .f-holds-go { flex: none; width: var(--hp-go); height: var(--hp-go); color: var(--text-muted); }
+
+    /* Picked holds as chips: the hold's grid name, tap to drop it. */
+    .hp-chips { display: flex; flex-wrap: wrap; gap: var(--hp-chip-gap); }
+    .hp-chip {
+      display: inline-flex; align-items: center; gap: var(--hp-chip-gap); padding: var(--hp-chip-pad);
+      background: var(--accent-a12); border: 1px solid var(--accent-a40); border-radius: var(--radius-pill);
+      color: var(--badge-pink-text); font: inherit; font-size: var(--hp-chip-size); font-weight: 800;
+      cursor: pointer; touch-action: manipulation;
+    }
+    .hp-chip span { color: var(--text-muted); font-weight: 600; }
+    .hp-text-btn {
+      padding: var(--hp-text-btn-pad); background: none; border: none;
+      color: var(--accent-hover); font: inherit; font-size: var(--hp-text-btn-size); font-weight: 700;
+      cursor: pointer; touch-action: manipulation;
+    }
+    .hp-text-btn:disabled { color: var(--text-faint); cursor: default; }
+
+    /* The picker's board: dimmed a little more than a problem view, the holds still
+       in play left bright, each pick a white outline over a dark halo with a pink
+       wash (holdPickLayerHtml, core.js). */
+    .hs-dim .hp-dim { opacity: var(--hold-pick-dim); }
+    .hs.pick { stroke: var(--white); stroke-width: var(--hold-pick-line); fill: var(--hold-pick-fill); }
+    .hs.pick-halo { stroke: var(--hold-pick-halo); stroke-width: var(--hold-pick-halo-line); fill: none; }
+
+    /* The hold picker (phone): a screen of its own over the sheet. */
+    .hp-screen {
+      position: fixed; inset: 0; z-index: 400; display: none; flex-direction: column;
+      background: var(--bg);
+    }
+    .hp-screen.show { display: flex; animation: fade 0.18s ease; }
+    body.wall .hp-screen { display: none; }
+    .hp-top { display: flex; align-items: center; gap: var(--f-opt-gap); padding: var(--hp-top-pad); padding-top: calc(var(--f-label-gap) + env(safe-area-inset-top)); border-bottom: 1px solid var(--border); }
+    .hp-title { flex: 1; font-size: var(--hp-title-size); font-weight: 800; }
+    .hp-hint { min-height: var(--hp-hint-min-h); margin: 0; padding: var(--f-label-gap) var(--hp-pad-x); color: var(--text-muted); font-size: var(--hp-hint-size); line-height: 1.4; }
+    .hp-hint b { color: var(--text); }
+    /* The whole board, fitted to the width (a pinch or the expand button zooms) */
+    .hp-stage {
+      flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+      display: flex; flex-direction: column; justify-content: center;
+      background: var(--board-backdrop);
+    }
+    #hp-board { flex: none; width: 100%; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    .hp-picked { flex: none; max-height: var(--hp-picked-max-h); overflow-y: auto; padding: var(--f-label-gap) var(--hp-pad-x); }
+    .hp-picked-empty { margin: 0; color: var(--text-faint); font-size: var(--hp-hint-size); }
+    .hp-foot { flex: none; padding: var(--f-label-gap) var(--hp-pad-x) calc(var(--hp-foot-pad-b) + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); }
+    .hp-foot .btn-block { margin-top: 0; }
+
     /* The Grade section: a two-handle slider, the grades under it. The track runs
        between the handles' centres at either end, so step i sits at i/(n-1) of its
        width (problems.js). */
@@ -1459,7 +1526,13 @@
 
     /* The board. max-width/margin are !important to beat the detail views'
        ID-specific sizing; width and transform are set inline by JS. */
-    body.board-fs .view.active .board-wrap {
+    /* The hold picker (over the Filter sheet) is the viewer's 'holds' view: its
+       board is lifted the same way, the screen drops to the viewer's level (its
+       bar sits above it) and the sheet behind keeps out of the way. */
+    body.board-fs .hp-screen.show { z-index: 200; animation: none; }
+    body.board-fs #filter-modal { visibility: hidden; }
+    body.board-fs .view.active .board-wrap,
+    body.board-fs .hp-screen.show .board-wrap {
       position: fixed; left: 0; top: 0; z-index: 200;
       max-width: none !important; margin: 0 !important;
       border-radius: 0; overflow: visible;
@@ -1467,13 +1540,17 @@
       touch-action: none; cursor: grab;
       -webkit-tap-highlight-color: transparent;
     }
-    body.board-fs .view.active .board-wrap:active { cursor: grabbing; }
-    body.board-fs .view.active .board-graphic { width: 100%; height: auto; border-radius: 0; }
-    body.board-fs .view.active .board-wrap.fs-anim {
+    body.board-fs .view.active .board-wrap:active,
+    body.board-fs .hp-screen.show .board-wrap:active { cursor: grabbing; }
+    body.board-fs .view.active .board-graphic,
+    body.board-fs .hp-screen.show .board-graphic { width: 100%; height: auto; border-radius: 0; }
+    body.board-fs .view.active .board-wrap.fs-anim,
+    body.board-fs .hp-screen.show .board-wrap.fs-anim {
       transition: width 0.42s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
     /* The board's edge sits on the backdrop with a soft shadow. */
-    body.board-fs .view.active .board-wrap .board-graphic { box-shadow: var(--shadow-fs-board); }
+    body.board-fs .view.active .board-wrap .board-graphic,
+    body.board-fs .hp-screen.show .board-wrap .board-graphic { box-shadow: var(--shadow-fs-board); }
 
     /* Behind the board, in the same stacking context (it's inserted as the
        board-wrap's sibling): the photo again, blurred and darkened, filling the
@@ -2427,6 +2504,14 @@
     .wall-fpanel .f-foot { margin-top: 0; padding: var(--wall-f-pad-y) var(--wall-f-pad-x); border-top: 1px solid var(--border); }
     .wall-fpanel .f-foot .btn-block { padding-top: var(--wall-f-btn-pad-y); padding-bottom: var(--wall-f-btn-pad-y); font-size: var(--wall-f-btn-size); }
     .wall-fpanel .f-foot [data-f="reset"] { padding-left: var(--wall-f-reset-pad-x); padding-right: var(--wall-f-reset-pad-x); }
+    .wall-fpanel .hp-chip { padding: var(--wall-hp-chip-pad); font-size: var(--wall-hp-chip-size); }
+    .wall-fpanel .hp-text-btn { font-size: var(--wall-f-label-size); }
+    .wall-holds-hint { margin: 0; color: var(--text-muted); font-size: var(--wall-hp-hint-size); line-height: 1.4; }
+    /* While the panel is open the board beside it is the hold picker (wall.js):
+       no Mirror, no Start circuit, no cast status; a tap picks a hold. */
+    .wall-page.filtering .wall-bar .wall-btn,
+    .wall-page.filtering .wall-bar .wall-lit { display: none; }
+    .wall-pick-board { cursor: pointer; touch-action: manipulation; }
     body.wall .f-empty { font-size: var(--wall-f-empty-size); }
     body.wall .f-empty .f-empty-btn { min-height: var(--wall-pill-h); font-size: var(--wall-f-btn-size); }
     .wall-rail {
