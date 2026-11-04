@@ -11,6 +11,7 @@
 <script src="/static/more.js" defer></script>
 <script src="/static/dash.js" defer></script>
 <script src="/static/tracks.js" defer></script>
+<script src="/static/activity.js" defer></script>
 </head>
 <body>
 <div class="shell">
@@ -329,9 +330,73 @@
   </section>
 
   <section id="tab-activity" class="tab" hidden>
-    <header class="page-head"><h1>Activity</h1><p>When the board was last used, and every cast: the climb, the wall or a phone, member or guest.</p></header>
-    <label>Days <select id="activity-days"><option>7</option><option selected>14</option><option>30</option><option>60</option></select></label>
-    <div id="activity-out" class="card"></div>
+    <div class="ad" id="ad">
+      <header class="ad-top">
+        <h1>Activity</h1>
+        <div class="ad-seg" id="ad-view" aria-label="View">
+          <button type="button" data-ad="view" data-v="dash">Dashboard</button>
+          <button type="button" data-ad="view" data-v="log">Log</button>
+        </div>
+        <span class="ad-last" id="ad-last"></span>
+        <div class="ad-controls">
+          <div class="ad-seg" id="ad-range" aria-label="Date range">
+            <button type="button" data-ad="range" data-v="7">7 days</button>
+            <button type="button" data-ad="range" data-v="30">30 days</button>
+            <button type="button" data-ad="range" data-v="0">All</button>
+          </div>
+          <div class="ad-seg" id="ad-by" aria-label="Group by">
+            <button type="button" data-ad="by" data-v="day">By day</button>
+            <button type="button" data-ad="by" data-v="week">By week</button>
+          </div>
+          <button type="button" class="btn small" id="ad-reload" title="Read the Pi's journal and the database again">Refresh</button>
+        </div>
+      </header>
+      <div class="ad-dash" id="ad-dash">
+        <div class="ad-chiprow"><div class="ad-chips" id="ad-chips"></div><span class="ad-note" id="ad-note"></span></div>
+        <section class="ad-tiles" id="ad-tiles"></section>
+        <section class="ad-main">
+          <div class="ad-panel">
+            <div class="ad-ph">
+              <h2 id="ad-main-title">Casts</h2><span class="ad-sub" id="ad-main-sub"></span>
+              <span class="ad-legend" id="ad-legend"></span>
+              <div class="ad-seg" id="ad-metric" aria-label="Measure">
+                <button type="button" data-ad="metric" data-v="casts">Casts</button>
+                <button type="button" data-ad="metric" data-v="members">Members</button>
+                <button type="button" data-ad="metric" data-v="ticks">Ticks</button>
+                <button type="button" data-ad="metric" data-v="signups">New accounts</button>
+              </div>
+            </div>
+            <div class="ad-plot" id="ad-plot-main"></div>
+          </div>
+          <div class="ad-panel">
+            <div class="ad-ph"><h2>When it's busy</h2><span class="ad-sub" id="ad-heat-sub"></span></div>
+            <div class="ad-plot" id="ad-plot-heat"></div>
+          </div>
+        </section>
+        <section class="ad-bottom">
+          <div class="ad-panel">
+            <div class="ad-ph"><h2>Who's using it</h2><span class="ad-sub" id="ad-who-sub"></span></div>
+            <div class="ad-list" id="ad-who"></div>
+          </div>
+          <div class="ad-panel">
+            <div class="ad-ph"><h2>What they're climbing</h2></div>
+            <div class="ad-tabs" id="ad-top-tabs">
+              <button type="button" data-ad="tab" data-v="problems">Problems cast</button>
+              <button type="button" data-ad="tab" data-v="circuits">Circuits</button>
+              <button type="button" data-ad="tab" data-v="ticked">Most ticked</button>
+            </div>
+            <div class="ad-list" id="ad-top"></div>
+          </div>
+          <div class="ad-panel">
+            <div class="ad-ph"><h2>How it's cast</h2></div>
+            <div class="ad-list" id="ad-mix"></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="ad-log ad-panel" id="ad-log" hidden></div>
+    </div>
+    <div class="ad-tip" id="ad-tip" hidden></div>
   </section>
 
   <section id="tab-tests" class="tab" hidden>

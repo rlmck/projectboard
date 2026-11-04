@@ -413,7 +413,7 @@ class NewRoutes(ServerBase):
 
     def test_new_routes_need_the_token(self):
         for path in ('/api/config', '/api/drift', '/api/git', '/api/activity', '/api/acceptance', '/api/backups',
-                     '/api/runbook', '/api/problems', '/api/last-night', '/api/ledmap'):
+                     '/api/runbook', '/api/problems', '/api/last-night', '/api/ledmap', '/api/activity-history'):
             self.assertEqual(self.req('GET', path, token=None)[0], 401, path)
         self.assertEqual(self.req('POST', '/api/acceptance-note', {'id': 'kill'}, token=None)[0], 401)
         self.assertEqual(self.req('POST', '/api/ledmap-results', {'results': {}}, origin='http://evil.example')[0], 403)

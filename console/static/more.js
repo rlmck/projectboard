@@ -1,5 +1,5 @@
 // PB Console phases 5-15: Config, Deploy, Release, LED mapping, Test cast,
-// Activity, Acceptance tests, Backups, Power, Runbook. Uses console.js's
+// Acceptance tests, Backups, Power, Runbook. Uses console.js's
 // helpers (window.PB): every call carries the token, every action goes through
 // /api/preview (the confirm) and /api/action.
 'use strict';
@@ -204,91 +204,7 @@
     } catch (e) { $('cast-holds').textContent = e.message; }
   }
 
-  // -- Activity (phase 10) -------------------------------------------------------------------------------
-  function bars(rows, labelFn) {
-    const max = Math.max(1, ...rows.map((r) => r[1]));
-    const w = 18, gap = 4, h = 120, top = 16;
-    const width = rows.length * (w + gap);
-    return '<svg class="bars" viewBox="0 0 ' + width + ' ' + (h + top + 34) + '" role="img">' + rows.map((r, i) => {
-      const bh = Math.round((r[1] / max) * h);
-      return '<g><title>' + esc(labelFn(r[0]) + ': ' + r[1]) + '</title><rect x="' + i * (w + gap) + '" y="' + (top + h - bh) + '" width="' + w +
-        '" height="' + bh + '" rx="3"></rect>' + (r[1] ? '<text x="' + (i * (w + gap) + w / 2) + '" y="' + (top + h - bh - 4) + '" text-anchor="middle">' + r[1] + '</text>' : '') +
-        '<text class="axis" x="' + (i * (w + gap) + w / 2) + '" y="' + (top + h + 14) + '" text-anchor="middle">' + esc(labelFn(r[0], true)) + '</text></g>';
-    }).join('') + '</svg>';
-  }
-
-  const FROM = { wall: 'Wall kiosk', phone: 'Phone', console: 'PB Console (test)' };
-  const WHO = { member: 'Member', guest: 'Guest' };
-  const DAY = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-  const TIME = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-  function when(iso) {
-    const t = new Date(iso);
-    return DAY.format(t) + ', ' + TIME.format(t);
-  }
-
-  function ago(iso) {
-    const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-    if (s < 90) return 'just now';
-    if (s < 5400) return Math.round(s / 60) + ' min ago';
-    if (s < 129600) return Math.round(s / 3600) + ' h ago';
-    return Math.round(s / 86400) + ' days ago';
-  }
-
-  // From the wall or a phone, member or guest: '—' for casts made before the app sent it (29 Oct 2026).
-  // A member's nickname comes from the private cast log (db/34), never from the broadcast.
-  const from = (c) => c.source ? FROM[c.source] || c.source : '—';
-  const who = (c) => c.nickname ? c.nickname : c.who ? WHO[c.who] || c.who : '—';
-
-  // A circuit run: how it ended, the moves made, the speed and loop.
-  function runNote(c) {
-    if (!c.shown) return '<span class="tag bad">ignored: night</span>';
-    return '<span class="tag dim">circuit</span> ' + esc(c.how) + ' after ' + c.moves + ' move' + (c.moves === 1 ? '' : 's') +
-      ' · ' + esc(String(c.interval)) + ' s a move · ' + (c.loop ? 'loop' : 'once');
-  }
-
-  function castRows(rows) {
-    if (!rows.length) return '<p class="muted">No casts in this period.</p>';
-    return '<table class="audit"><tr><th>Date and time</th><th>Climb</th><th>From</th><th>Who</th><th></th></tr>' +
-      rows.map((c) => '<tr><td>' + esc(when(c.at)) + '</td><td><strong>' + esc(c.name) + '</strong></td><td>' + esc(from(c)) +
-        '</td><td>' + (c.nickname ? '<strong>' + esc(who(c)) + '</strong>' : esc(who(c))) + '</td><td>' +
-        (c.kind === 'circuit' ? runNote(c)
-          : c.kind === 'view' ? (c.shown ? '<span class="tag dim">circuit</span> holds lit' : '<span class="tag bad">ignored: night</span>')
-          : (c.mirror ? '<span class="tag dim">mirrored</span> ' : '') + (c.shown ? '' : '<span class="tag bad">ignored: night</span>')) +
-        '</td></tr>').join('') + '</table>';
-  }
-
-  async function loadActivity() {
-    const box = $('activity-out');
-    box.innerHTML = '<p class="muted">Reading the listener\'s journal…</p>';
-    let a;
-    try { a = await get('/api/activity?names=1&days=' + $('activity-days').value); } catch (e) { return fail(box, e); }
-    const last = a.last;
-    const split = (counts, names) => Object.keys(counts || {}).sort((x, y) => counts[y] - counts[x])
-      .map((k) => (names[k] || 'not recorded') + ' ' + counts[k]).join(' · ');
-    box.innerHTML =
-      '<h3>Last used</h3>' + (last
-        ? '<div class="big mid">' + esc(when(last.at)) + ' <span class="muted">(' + esc(ago(last.at)) + ')</span></div>' +
-          '<p><strong>' + esc(last.name) + '</strong>' + (last.kind === 'circuit' || last.kind === 'view' ? ' (circuit)' : '') + (last.mirror ? ' (mirrored)' : '') + ' · ' + esc(from(last)) + ' · ' + esc(who(last)) +
-          (last.shown ? '' : ' · ignored: night mode') + '</p>'
-        : '<p class="muted">No casts in this period.</p>') +
-      (a.names !== 'ok' ? '<p class="note">Members\' names aren\'t shown: ' + esc(a.names) + '.</p>' : '') +
-      '<h3>Latest casts</h3>' + castRows(a.recent || []) +
-      (a.recent && a.recent.length >= 100 ? '<p class="note">The latest 100 shown.</p>' : '') +
-      '<h3>Summary</h3>' +
-      '<p><strong>' + a.total + '</strong> casts shown' + (a.total ? ', ' + a.mirrored + ' mirrored (' + Math.round(100 * a.mirrored / a.total) + '%)' : '') +
-      ', ' + a.ignored_night + ' ignored at night. The journal goes back to ' + esc(a.journal_from || '?') + '.</p>' +
-      (a.total ? '<p>From: ' + esc(split(a.sources, FROM)) + '<br>Who: ' + esc(split(a.who, WHO)) + '</p>' : '') +
-      '<h3>Casts per day</h3>' + bars(a.per_day, (d, short) => short ? d.slice(8) : d) +
-      '<h3>Casts by hour of the day</h3>' + bars(a.per_hour, (h) => String(h).padStart(2, '0')) +
-      '<h3>Most cast</h3><ol>' + a.top.map(([n, c]) => '<li>' + esc(n) + ' <span class="muted">' + c + '</span></li>').join('') + '</ol>' +
-      '<h3>Circuits</h3><p><strong>' + (a.circuit_runs || 0) + '</strong> runs, ' + (a.circuit_moves || 0) + ' moves in all; <strong>' +
-      (a.circuit_views || 0) + '</strong> circuits lit on the board (all their holds, from the wall).</p>' +
-      ((a.top_circuits || []).length ? '<ol>' + a.top_circuits.map(([n, c]) => '<li>' + esc(n) + ' <span class="muted">' + c + '</span></li>').join('') + '</ol>' : '') +
-      '<p class="note">From the Pi\'s journal: each cast says where it was sent from and whether someone was signed in, never who ' +
-      '(<code>docs/cast-contract.md</code> §3); a circuit run is listed when it ends, and "holds lit" is a circuit chosen on the wall (all its holds at once, contract §8.7). Members\' nicknames come from the private cast log ' +
-      '(db/34, read over the database connection), matched to the journal; casts before 30 Oct 2026 have none, and casts before 29 Oct show —.</p>';
-  }
+  // Activity (phase 10) is static/activity.js.
 
   // -- Acceptance tests (phase 11) ---------------------------------------------------------------------
   async function loadTests() {
@@ -358,7 +274,6 @@
   PB.tabHooks.release = loadGit;
   PB.tabHooks.ledmap = loadLedmap;
   PB.tabHooks.cast = loadProblems;
-  PB.tabHooks.activity = loadActivity;
   PB.tabHooks.tests = loadTests;
   PB.tabHooks.backups = loadBackups;
   PB.tabHooks.power = loadPower;
@@ -410,7 +325,6 @@
     const mirror = $('cast-mirror').checked;
     PB.runAction('test-cast', { name, mirror }, 'Test cast ' + name + (mirror ? ' (mirrored)' : ''));
   });
-  $('activity-days').addEventListener('change', loadActivity);
   $('night-check').addEventListener('click', lastNight);
   $('backup-pi').addEventListener('click', () => PB.runAction('backup-pi', {}, 'Back up the Pi'));
   $('backup-sb').addEventListener('click', () => PB.runAction('backup-supabase', {}, 'Export Supabase'));

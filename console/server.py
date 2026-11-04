@@ -59,6 +59,7 @@ STATIC = {
     '/static/more.js': ('static/more.js', 'text/javascript; charset=utf-8'),
     '/static/dash.js': ('static/dash.js', 'text/javascript; charset=utf-8'),
     '/static/tracks.js': ('static/tracks.js', 'text/javascript; charset=utf-8'),
+    '/static/activity.js': ('static/activity.js', 'text/javascript; charset=utf-8'),
     '/board.jpg': ('../app/board-fallback.jpg', 'image/jpeg'),         # the app's board photo (Circuit tracks)
     '/static/icon.svg': ('static/icon.svg', 'image/svg+xml'),
     '/tokens.css': ('../app/tokens.css', 'text/css; charset=utf-8'),   # the app's own design tokens
@@ -248,6 +249,21 @@ def r_activity(app, q):
     return reports.activity(raw, members)
 
 
+def r_activity_history(app, q):
+    """The Activity dashboard and log: the cached cast history (refreshed from the Pi's journal
+    unless refresh=0), with nicknames, ticks and accounts from the database when db/.env is here.
+    days: the range (0 = all; otherwise twice it, for the previous-period comparison)."""
+    import activity_history as ah
+    days = _num(q, 'days', 0, 0, 3660)
+    if q.get('refresh') == '0':
+        cache, pi = ah.load(), {'ok': True, 'added': 0, 'error': None, 'skipped': True}
+    else:
+        cache, pi = ah.refresh(app.remote)
+    out = ah.build(cache, castlog.history(), ah.grade_map(supa, app.env), days=days)
+    out['pi'] = pi
+    return out
+
+
 def r_acceptance(app, q):
     return {'tests': reports.acceptance()}
 
@@ -282,7 +298,7 @@ def r_runbook(app, q):
 
 GET_ROUTES = {'/api/config': r_config, '/api/drift': r_drift, '/api/git': r_git, '/api/git-diff': r_git_diff,
               '/api/live': r_live, '/api/ledmap': r_ledmap, '/api/problems': r_problems, '/api/problem': r_problem,
-              '/api/activity': r_activity, '/api/acceptance': r_acceptance, '/api/last-night': r_last_night,
+              '/api/activity': r_activity, '/api/activity-history': r_activity_history, '/api/acceptance': r_acceptance, '/api/last-night': r_last_night,
               '/api/backups': r_backups, '/api/runbook': r_runbook, '/api/tracks': r_tracks}
 
 

@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PB Console · Activity dashboard (prototype, fake data)</title>
+<style>
+/* Colours are the app's tokens (app/tokens.css), the subset this page uses. */
+:root{
+  --bg:#0a0a0a; --surface:#161616; --surface2:#202020; --border:#2c2c2c;
+  --accent:#ec4899; --accent-hover:#f472b6; --int:#3b82f6; --start:#22c55e; --finish:#ef4444;
+  --feet:#f59e0b; --gold:#fbbf24;
+  --text:#f5f5f5; --text-muted:#9a9a9a; --text-soft:#d4d4d4; --text-faint:#55556a;
+  --success-text:#4ade80; --error-text:#f87171; --int-text:#60a5fa;
+  --badge-pink-text:#f9a8d4; --accent-a12:rgba(236,72,153,0.12); --accent-a19:rgba(236,72,153,0.19);
+  --accent-a40:rgba(236,72,153,0.4); --start-a14:rgba(34,197,94,0.14); --start-a40:rgba(34,197,94,0.4);
+  --white-a12:rgba(255,255,255,0.12); --white-a35:rgba(255,255,255,0.35); --white-a70:rgba(255,255,255,0.7);
+}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-variant-numeric:tabular-nums;overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-align:left}
+:focus-visible{outline:2px solid var(--accent-hover);outline-offset:2px}
+
+.app{height:100vh;min-width:1100px;padding:14px 18px 16px;display:grid;grid-template-rows:auto auto auto minmax(0,1fr) 262px;gap:12px}
+
+/* header */
+.top{display:flex;align-items:center;gap:16px}
+.top h1{font-size:20px;font-weight:650;letter-spacing:-.01em}
+.proto{font-size:12px;color:var(--feet);border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.12);border-radius:6px;padding:2px 8px}
+.last{color:var(--text-muted);font-size:13px;margin-left:6px}
+.last b{color:var(--text-soft);font-weight:500}
+.controls{margin-left:auto;display:flex;gap:10px}
+.seg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface2)}
+.seg button{padding:5px 12px;font-size:13px;color:var(--text-muted);border-right:1px solid var(--border)}
+.seg button:last-child{border-right:0}
+.seg button:hover:not(:disabled){color:var(--text)}
+.seg button.on{background:var(--accent-a19);color:var(--badge-pink-text)}
+.seg button:disabled{opacity:.35;cursor:default}
+
+/* filter chips */
+.chips{display:flex;align-items:center;gap:8px;min-height:28px;flex-wrap:nowrap;overflow:hidden}
+.hint{color:var(--text-faint);font-size:13px}
+.chip{display:inline-flex;align-items:center;gap:7px;padding:3px 6px 3px 11px;border-radius:99px;border:1px solid var(--accent-a40);background:var(--accent-a12);color:var(--badge-pink-text);font-size:13px;white-space:nowrap}
+.chip i{font-style:normal;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;color:var(--text-soft);background:var(--white-a12);font-size:12px}
+.chip:hover i{background:var(--accent-a40);color:#fff}
+.clear{color:var(--text-muted);font-size:13px;padding:3px 6px;text-decoration:underline;text-underline-offset:3px}
+.clear:hover{color:var(--text)}
+
+/* tiles */
+.tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:11px 14px 10px}
+.tl{color:var(--text-muted);font-size:13px}
+.tv{font-size:30px;font-weight:650;line-height:1.15;margin-top:2px;letter-spacing:-.02em}
+.tv small{font-size:15px;font-weight:500;color:var(--text-muted);letter-spacing:0;margin-left:4px}
+.td{font-size:12.5px;color:var(--text-muted);margin-top:1px;min-height:17px}
+.up{color:var(--success-text)} .down{color:var(--error-text)}
+
+/* panels */
+.main{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(0,1fr);gap:12px;min-height:0}
+.bottom{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;min-height:0}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;min-height:0;min-width:0}
+.ph{display:flex;align-items:center;gap:10px;margin-bottom:8px;min-height:28px}
+.ph h2{font-size:14px;font-weight:600}
+.ph .sub{color:var(--text-muted);font-size:12.5px}
+.ph .seg{margin-left:auto}
+.ph .seg button{padding:3px 10px;font-size:12.5px}
+.plot{position:relative;flex:1;min-height:0}
+.plot svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+/* chart bits */
+.grid{stroke:#262626;stroke-width:1}
+.axis{fill:var(--text-muted);font-size:11px}
+.val{fill:var(--text-soft);font-size:11px}
+.b-wall{fill:var(--accent)} .b-phone{fill:var(--int)} .b-console{fill:var(--gold)}
+.b-members{fill:var(--start)} .b-ticks{fill:var(--feet)} .b-signups{fill:var(--white-a70)}
+.bar{transition:opacity .12s}
+.dim .bar,.bar.dim{opacity:.28}
+.hit{fill:transparent;cursor:pointer}
+.hit:hover{fill:rgba(255,255,255,.05)}
+.selbox{fill:none;stroke:var(--white-a35);stroke-width:1.5;rx:4}
+.cell{cursor:pointer}
+.cell:hover{stroke:var(--white-a70);stroke-width:1.5}
+.cell.sel{stroke:#fff;stroke-width:2}
+.cnum{fill:#fff;font-size:10px;pointer-events:none}
+.lab{cursor:pointer;fill:var(--text-muted);font-size:11.5px}
+.lab:hover,.lab.sel{fill:#fff}
+.lab.sel{font-weight:700}
+.legend{display:flex;gap:14px;font-size:12.5px;color:var(--text-muted);margin-left:8px}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
+
+/* list rows */
+.lh{display:grid;gap:8px;color:var(--text-faint);font-size:12px;padding:0 8px 4px}
+.list{display:flex;flex-direction:column;gap:1px;min-height:0;overflow:hidden}
+.row{display:grid;align-items:center;gap:8px;padding:4px 8px;border-radius:7px;width:100%}
+.row:hover{background:var(--surface2)}
+.row.sel{background:var(--accent-a19)}
+.row.dim{opacity:.45}
+.row.sel.dim{opacity:1}
+.rl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-soft)}
+.rl em{font-style:normal;color:var(--text-muted);font-size:12px;margin-left:7px}
+.rb{height:7px;border-radius:4px;background:var(--surface2);overflow:hidden}
+.rb i{display:block;height:100%;border-radius:4px;background:var(--accent)}
+.rb i.blue{background:var(--int)} .rb i.green{background:var(--start)} .rb i.gold{background:var(--gold)} .rb i.grey{background:var(--text-muted)}
+.rv{text-align:right;color:var(--text)}
+.rv.m{color:var(--text-muted)}
+.r4{grid-template-columns:minmax(0,1fr) 64px 32px 32px}
+.r3{grid-template-columns:minmax(0,1fr) 84px 34px}
+.badge{font-size:11px;padding:0 6px;border-radius:99px;margin-left:7px;color:var(--success-text);background:var(--start-a14);border:1px solid var(--start-a40)}
+.tabs{display:flex;gap:2px;margin-bottom:6px}
+.tabs button{padding:3px 10px;border-radius:7px;font-size:12.5px;color:var(--text-muted)}
+.tabs button:hover{color:var(--text)}
+.tabs button.on{background:var(--surface2);color:var(--text)}
+.sec{color:var(--text-muted);font-size:12px;padding:6px 8px 2px}
+.facts{display:grid;gap:4px;padding:8px 8px 0;border-top:1px solid var(--border);margin-top:6px;font-size:13px;color:var(--text-muted)}
+.facts b{color:var(--text);font-weight:600}
+.empty{color:var(--text-faint);padding:18px 8px;font-size:13px}
+
+#tip{position:fixed;z-index:10;pointer-events:none;background:#000;border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12.5px;white-space:pre;line-height:1.45;display:none;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+@media (prefers-reduced-motion:reduce){.bar{transition:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>Activity</h1>
+    <span class="proto">Prototype, fake data</span>
+    <span class="last" id="last"></span>
+    <div class="controls">
+      <div class="seg" id="segRange" aria-label="Date range">
+        <button data-act="range" data-v="7">7 days</button>
+        <button data-act="range" data-v="30">30 days</button>
+        <button data-act="range" data-v="0">All</button>
+      </div>
+      <div class="seg" id="segBy" aria-label="Group by">
+        <button data-act="by" data-v="day">By day</button>
+        <button data-act="by" data-v="week">By week</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="chips" id="chips"></div>
+
+  <section class="tiles" id="tiles"></section>
+
+  <section class="main">
+    <div class="panel">
+      <div class="ph">
+        <h2 id="mainTitle">Casts</h2><span class="sub" id="mainSub"></span>
+        <span class="legend" id="mainLegend"></span>
+        <div class="seg" id="segMetric" aria-label="Measure">
+          <button data-act="metric" data-v="casts">Casts</button>
+          <button data-act="metric" data-v="members">Members</button>
+          <button data-act="metric" data-v="ticks">Ticks</button>
+          <button data-act="metric" data-v="signups">New accounts</button>
+        </div>
+      </div>
+      <div class="plot" id="plotMain"></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>When it's busy</h2><span class="sub" id="heatSub"></span></div>
+      <div class="plot" id="plotHeat"></div>
+    </div>
+  </section>
+
+  <section class="bottom">
+    <div class="panel">
+      <div class="ph"><h2>Who's using it</h2><span class="sub" id="whoSub"></span></div>
+      <div class="list" id="whoList"></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>What they're climbing</h2></div>
+      <div class="tabs" id="topTabs">
+        <button data-act="tab" data-v="problems">Problems cast</button>
+        <button data-act="tab" data-v="circuits">Circuits</button>
+        <button data-act="tab" data-v="ticked">Most ticked</button>
+      </div>
+      <div class="list" id="topList"></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>How it's cast</h2></div>
+      <div class="list" id="mixList"></div>
+    </div>
+  </section>
+</div>
+<div id="tip"></div>
+
+<script>
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const WD = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const WDP = ['Mondays','Tuesdays','Wednesdays','Thursdays','Fridays','Saturdays','Sundays'];
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const dow = d => (d.getDay() + 6) % 7;
+const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const monday = d => addDays(startOfDay(d), -dow(d));
+const fmtD = d => `${WD[dow(d)]} ${d.getDate()} ${MON[d.getMonth()]}`;
+const fmtS = d => `${d.getDate()} ${MON[d.getMonth()]}`;
+const hh = h => String(h).padStart(2, '0') + ':00';
+
+/* ---------- fake data (seeded, so it looks the same every time) ----------
+   Shapes mirror the real sources:
+   EV  = the Pi journal's cast lines (+ nickname from cast_log for members)
+   TK  = ticks, MEM = member accounts (nickname + when they joined)            */
+const NOW = new Date(2026, 10, 4, 14, 20);       // Wed 4 Nov 2026, 14:20
+const START = new Date(2026, 8, 14);             // Mon 14 Sep 2026
+function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const R = rng(20261104);
+const wpick = (arr, w) => { let tot = 0; const ws = arr.map(w); ws.forEach(x => tot += x); let r = R() * tot; for (let i = 0; i < arr.length; i++) { r -= ws[i]; if (r <= 0) return arr[i]; } return arr[arr.length - 1]; };
+
+const MEM = [
+  ['chalkbucket',[8,14],5],['slabqueen',[8,15],4],['crimpy_pete',[8,22],3.5],['dyno_dan',[8,29],3],
+  ['hannah_hang',[9,2],2.5],['tuesday_tom',[9,6],2.5],['mossy',[9,13],2],['sendy',[9,15],2],
+  ['topout_tess',[9,20],1.5],['kneebar_kev',[9,26],1],['moonboard_mo',[9,28],1],
+  ['sloper_sam',[9,30],.8],['footwork_fi',[10,2],.8],['pinch_penny',[10,3],.5]
+].map(([n,[m,d],w]) => ({n, joined:new Date(2026,m,d), w}));
+
+const PROB = [['Good Bug','6A',6],['Slopey Dave','6B',5],['Crimp Wars','6C',4.5],['Monday Blues','5+',4],['Pinch Me','6A+',3.5],
+  ['Sidepull Sally','6B+',3],['Dyno Dan','7A',3],['Mantel Piece','5',2.5],['Heel Hook Harry','6C+',2.5],['Gaston Glory','6B',2],
+  ['Undercling Dreams','6A',2],['Warm Fuzzies','4',2],['Sloper Soup','6C',1.5],['Kneebar Kate','6B',1.5],['Pocket Rocket','7A',1.2],
+  ['Compression Session','6B+',1],['Toe Hook Tuesday','6A',1],['Barn Door','6A+',.8]].map(([n,g,w]) => ({n,g,w}));
+const CIRC = [['Pat Burner',5],['Warm-up ladder',3],['Traverse laps',2],['Pinch circuit',1]].map(([n,w]) => ({n,w}));
+const H_WEEKDAY = [.2,.2,.4,1,1.2,.8,.8,1.5,4,6,7,6,3,1.2,.3,.15];   // hours 08..23
+const H_WEEKEND = [.3,1,3,5,5,5,4,4,3,1.5,.8,.4,.2,.1,.05,.02];
+const DAY_W = [.8,1.5,.9,1.7,.6,.9,.7];
+
+const EV = [], TK = [];
+(function build(){
+  const total = Math.round((startOfDay(NOW) - START) / 864e5) + 1;
+  for (let i = 0; i < total; i++) {
+    const day = addDays(START, i), wd = dow(day), isToday = i === total - 1;
+    const t = i / (total - 1), ramp = .08 + .92 * Math.pow(t, 1.7);
+    let boost = 1; if (day.getMonth() === 10 && day.getDate() === 3) boost = 1.5; if (day.getMonth() === 9 && day.getDate() === 29) boost = 1.3;
+    const hw = wd >= 5 ? H_WEEKEND : H_WEEKDAY;
+    const sampleTime = () => { for (let k = 0; k < 60; k++) { const h = 8 + wpick(hw.map((_, j) => j), j => hw[j]); const d = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, Math.floor(R()*60), Math.floor(R()*60)); if (d <= NOW) return d; } return null; };
+    const eligible = MEM.filter(m => m.joined <= day);
+    let n = Math.round(30 * ramp * DAY_W[wd] * (.75 + .5 * R()) * boost * (isToday ? .3 : 1));
+    for (let k = 0; k < n; k++) {
+      const tt = sampleTime(); if (!tt) continue;
+      const hour = tt.getHours(), ign = hour >= 23;
+      const wallLive = day >= new Date(2026, 9, 27);
+      const r = R(); const src = (wallLive && r < .42) ? 'wall' : (r < .985 ? 'phone' : 'console');
+      const who = (src === 'phone' && eligible.length && R() < .6) ? wpick(eligible, m => m.w).n : null;
+      if (R() < .09) {
+        const c = wpick(CIRC, x => x.w), fin = R() < .55;
+        EV.push({t:tt, kind:'circuit', name:c.n, src, who, ign, out:fin ? 'finished' : 'stopped', moves:fin ? 12 + Math.floor(R()*8) : 2 + Math.floor(R()*10), speed:wpick([5,3,2], s => s === 3 ? 4 : 2)});
+      } else {
+        const p = wpick(PROB, x => x.w);
+        EV.push({t:tt, kind:'problem', name:p.n, grade:p.g, src, who, ign, mirror:R() < .18});
+      }
+    }
+    for (const m of eligible) {
+      if (R() < Math.min(.8, .1 * m.w * DAY_W[wd] * (isToday ? .4 : 1))) {
+        const c = 1 + Math.floor(R() * 3.5);
+        for (let k = 0; k < c; k++) { const tt = sampleTime(); if (!tt || tt.getHours() >= 23) continue; const p = wpick(PROB, x => x.w); TK.push({t:tt, who:m.n, name:p.n, grade:p.g}); }
+      }
+    }
+  }
+  EV.sort((a, b) => a.t - b.t); TK.sort((a, b) => a.t - b.t);
+})();
+
+/* ---------- state ---------- */
+const S = { range:7, by:'day', metric:'casts', tab:'problems',
+  f:{ bucket:null, wd:null, hr:null, who:null, problem:null, source:null } };
+let BK = [];   // the buckets currently drawn on the main chart
+
+const TODAY = startOfDay(NOW);
+const rangeStart = () => S.range === 0 ? START : addDays(TODAY, -(S.range - 1));
+const rangeEnd = () => addDays(TODAY, 1);
+const whoOk = (e, w) => w === 'guest' ? e.who === null : w === 'member' ? e.who !== null : e.who === w;
+
+function ok(e, skip, rg) {
+  const a = rg ? rg[0] : rangeStart(), b = rg ? rg[1] : rangeEnd(), f = S.f;
+  if (e.t < a || e.t >= b) return false;
+  if (skip !== 'bucket' && f.bucket && !(e.t >= f.bucket.a && e.t < f.bucket.b)) return false;
+  if (skip !== 'cell') { if (f.wd !== null && dow(e.t) !== f.wd) return false; if (f.hr !== null && e.t.getHours() !== f.hr) return false; }
+  if (skip !== 'who' && f.who && !whoOk(e, f.who)) return false;
+  if (skip !== 'problem' && f.problem && e.name !== f.problem) return false;
+  if (skip !== 'source' && f.source && e.src && e.src !== f.source) return false;
+  return true;
+}
+const casts = (skip, rg) => EV.filter(e => !e.ign && ok(e, skip, rg));
+const ticks = (skip, rg) => TK.filter(e => ok(e, skip, rg));
+const activeSet = rg => { const s = new Set(); casts(null, rg).forEach(e => e.who && s.add(e.who)); ticks(null, rg).forEach(e => s.add(e.who)); return s; };
+const joinedIn = (a, b) => MEM.filter(m => m.joined >= a && m.joined < b);
+
+/* ---------- interaction ---------- */
+function setF(k, v) { S.f[k] = S.f[k] === v ? null : v; renderAll(); }
+function clearAll() { S.f = { bucket:null, wd:null, hr:null, who:null, problem:null, source:null }; renderAll(); }
+document.addEventListener('click', ev => {
+  const el = ev.target.closest('[data-act]'); if (!el) return;
+  const a = el.dataset.act, v = el.dataset.v;
+  if (a === 'range') { S.range = +v; if (S.range === 7) S.by = 'day'; S.f.bucket = null; renderAll(); }
+  else if (a === 'by') { S.by = v; S.f.bucket = null; renderAll(); }
+  else if (a === 'metric') { S.metric = v; renderAll(); }
+  else if (a === 'tab') { S.tab = v; S.f.problem = null; renderAll(); }
+  else if (a === 'bucket') { const b = BK[+el.dataset.i]; const cur = S.f.bucket; S.f.bucket = (cur && cur.a.getTime() === b.a.getTime()) ? null : b; renderAll(); }
+  else if (a === 'cell') { const wd = +el.dataset.wd, hr = +el.dataset.hr; const same = S.f.wd === wd && S.f.hr === hr; S.f.wd = same ? null : wd; S.f.hr = same ? null : hr; renderAll(); }
+  else if (a === 'wd') { const wd = +v; const same = S.f.wd === wd && S.f.hr === null; S.f.wd = same ? null : wd; S.f.hr = null; renderAll(); }
+  else if (a === 'hr') { const hr = +v; const same = S.f.hr === hr && S.f.wd === null; S.f.hr = same ? null : hr; S.f.wd = null; renderAll(); }
+  else if (a === 'who') setF('who', v);
+  else if (a === 'problem') setF('problem', v);
+  else if (a === 'source') setF('source', v);
+  else if (a === 'unset') { if (v === 'cell') { S.f.wd = null; S.f.hr = null; } else S.f[v] = null; renderAll(); }
+  else if (a === 'clear') clearAll();
+});
+document.addEventListener('keydown', ev => { if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches && ev.target.matches('svg [data-act]')) { ev.preventDefault(); ev.target.dispatchEvent(new MouseEvent('click', {bubbles:true})); } });
+const tip = $('tip');
+document.addEventListener('mousemove', ev => {
+  const el = ev.target.closest && ev.target.closest('[data-tip]');
+  if (!el) { tip.style.display = 'none'; return; }
+  tip.textContent = el.dataset.tip; tip.style.display = 'block';
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.min(ev.clientX + 14, innerWidth - w - 8) + 'px';
+  tip.style.top = Math.min(ev.clientY + 14, innerHeight - h - 8) + 'px';
+});
+
+/* ---------- render ---------- */
+function afterRender(root) { root.querySelectorAll('[data-w]').forEach(e => { e.style.width = e.dataset.w + '%'; }); }
+const nice = v => { for (const st of [1,2,5,10,20,25,50,100,200,250,500]) if (Math.ceil(v / st) <= 5) return {step:st, max:Math.max(st, st * Math.ceil(v / st))}; return {step:1000, max:5000}; };
+
+function renderHeader() {
+  document.querySelectorAll('#segRange button').forEach(b => b.classList.toggle('on', +b.dataset.v === S.range));
+  document.querySelectorAll('#segBy button').forEach(b => { b.classList.toggle('on', b.dataset.v === S.by); b.disabled = (b.dataset.v === 'week' && S.range === 7); });
+  document.querySelectorAll('#segMetric button').forEach(b => b.classList.toggle('on', b.dataset.v === S.metric));
+  const last = [...EV].reverse().find(e => !e.ign && e.t <= NOW);
+  if (last) { const m = Math.round((NOW - last.t) / 6e4); const ago = m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`;
+    $('last').innerHTML = `Last cast <b>${ago} ago</b>: ${esc(last.name)} (${last.src})`; }
+}
+
+function renderChips() {
+  const f = S.f, out = [];
+  const chip = (txt, k) => `<button class="chip" data-act="unset" data-v="${k}" title="Remove this filter">${esc(txt)}<i>×</i></button>`;
+  if (f.bucket) out.push(chip(f.bucket.kind === 'day' ? fmtD(f.bucket.a) : `Week of ${fmtS(f.bucket.a)}`, 'bucket'));
+  if (f.wd !== null || f.hr !== null) out.push(chip([f.wd !== null ? WDP[f.wd] : 'Any day', f.hr !== null ? `${hh(f.hr)}–${hh(f.hr + 1)}` : null].filter(Boolean).join(' · '), 'cell'));
+  if (f.who) out.push(chip(f.who === 'guest' ? 'Guests (wall and signed-out phones)' : f.who === 'member' ? 'Members' : f.who, 'who'));
+  if (f.problem) out.push(chip(f.problem, 'problem'));
+  if (f.source) out.push(chip(`From the ${f.source}`, 'source'));
+  $('chips').innerHTML = out.length ? out.join('') + `<button class="clear" data-act="clear">Clear all</button>`
+    : `<span class="hint">Click a bar, a heatmap square, a member, a problem or a source to filter everything on the page.</span>`;
+}
+
+function renderTiles() {
+  const f = S.f, a = rangeStart(), b = rangeEnd();
+  const showPrev = !f.bucket && S.range > 0;
+  const pr = showPrev ? [addDays(a, -S.range), a] : null;
+  const prevLbl = `before (${S.range} days)`;
+  const delta = (cur, prev) => {
+    if (!showPrev) return `<span class="td">${S.range === 0 ? 'since ' + fmtS(START) : ''}</span>`;
+    const pct = prev === 0 ? null : Math.round((cur - prev) / prev * 100);
+    const arrow = pct === null ? '' : pct === 0 ? '' : pct > 0 ? `<span class="up">▲ ${pct}%</span> ` : `<span class="down">▼ ${Math.abs(pct)}%</span> `;
+    return `<span class="td">${arrow}<span>vs ${prev} ${prevLbl}</span></span>`;
+  };
+  const cNow = casts().length, cPrev = showPrev ? casts(null, pr).length : 0;
+  const mNow = activeSet().size, mPrev = showPrev ? activeSet(pr).size : 0;
+  const jr = f.bucket ? [new Date(Math.max(+f.bucket.a, +a)), f.bucket.b] : [a, b];
+  const sNow = joinedIn(jr[0], jr[1]), sPrev = showPrev ? joinedIn(pr[0], pr[1]).length : 0;
+  const tNow = ticks().length, tPrev = showPrev ? ticks(null, pr).length : 0;
+  const byDay = {}; casts('bucket').forEach(e => { const k = +startOfDay(e.t); byDay[k] = (byDay[k] || 0) + 1; });
+  const top = Object.entries(byDay).sort((x, y) => y[1] - x[1])[0];
+  const tile = (l, v, d) => `<div class="tile"><div class="tl">${l}</div><div class="tv">${v}</div>${d}</div>`;
+  $('tiles').innerHTML =
+    tile('Casts', cNow, delta(cNow, cPrev)) +
+    tile('Active members', mNow, delta(mNow, mPrev)) +
+    tile('New accounts', sNow.length, f.bucket || S.range === 0 ? `<span class="td">${sNow.slice(0, 3).map(m => esc(m.n)).join(', ')}${sNow.length > 3 ? '…' : ''}</span>` : delta(sNow.length, sPrev)) +
+    tile('Ticks', tNow, delta(tNow, tPrev)) +
+    tile('Busiest day', top ? fmtD(new Date(+top[0])) : '–', `<span class="td">${top ? top[1] + ' casts' : ''}</span>`);
+}
+
+function metricInfo() {
+  return { casts:['Casts','b-wall'], members:['Active members','b-members'], ticks:['Ticks','b-ticks'], signups:['New accounts','b-signups'] }[S.metric];
+}
+
+function renderMain() {
+  BK = [];
+  const a = rangeStart(), end = TODAY;
+  if (S.by === 'day') for (let d = a; d <= end; d = addDays(d, 1)) BK.push({a:d, b:addDays(d, 1), kind:'day'});
+  else for (let d = monday(a); d <= end; d = addDays(d, 7)) BK.push({a:d, b:addDays(d, 7), kind:'week'});
+  const cs = casts('bucket'), ts = ticks('bucket');
+  const vals = BK.map(bk => {
+    const inB = e => e.t >= bk.a && e.t < bk.b;
+    if (S.metric === 'casts') { const x = cs.filter(inB), r = {wall:0, phone:0, console:0}; x.forEach(e => r[e.src]++); return {total:x.length, ...r}; }
+    if (S.metric === 'members') { const s = new Set(); cs.filter(inB).forEach(e => e.who && s.add(e.who)); ts.filter(inB).forEach(e => s.add(e.who)); return {total:s.size, names:[...s]}; }
+    if (S.metric === 'ticks') return {total:ts.filter(inB).length};
+    const j = joinedIn(new Date(Math.max(+bk.a, +a)), bk.b); return {total:j.length, names:j.map(m => m.n)};
+  });
+  const [title, cls] = metricInfo();
+  $('mainTitle').textContent = title + (S.by === 'week' ? ' per week' : ' per day');
+  $('mainSub').textContent = `${fmtS(a)} – ${fmtS(TODAY)}`;
+  $('mainLegend').innerHTML = S.metric === 'casts'
+    ? `<span><i class="b-wall" style="background:var(--accent)"></i>Wall</span><span><i style="background:var(--int)"></i>Phone</span><span><i style="background:var(--gold)"></i>Console</span>` : '';
+
+  const el = $('plotMain'), W = el.clientWidth || 760, H = el.clientHeight || 300;
+  const m = {l:34, r:6, t:16, b:26}, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const mx = Math.max(1, ...vals.map(v => v.total)), sc = nice(mx);
+  const band = pw / BK.length, bw = Math.min(band * .72, 64);
+  const sel = S.f.bucket ? S.f.bucket.a.getTime() : null;
+  let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(title)} chart">`;
+  for (let v = 0; v <= sc.max; v += sc.step) { const y = m.t + ph - v / sc.max * ph; s += `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${y}" y2="${y}"/><text class="axis" x="${m.l - 6}" y="${y + 4}" text-anchor="end">${v}</text>`; }
+  BK.forEach((bk, i) => {
+    const x = m.l + i * band + (band - bw) / 2, v = vals[i], dim = sel !== null && sel !== bk.a.getTime();
+    let y = m.t + ph;
+    const seg = (n, c) => { if (!n) return; const h = n / sc.max * ph; y -= h; s += `<rect class="bar ${c}${dim ? ' dim' : ''}" x="${x}" y="${y}" width="${bw}" height="${Math.max(h, 1)}" rx="2"/>`; };
+    if (S.metric === 'casts') { seg(v.wall, 'b-wall'); seg(v.phone, 'b-phone'); seg(v.console, 'b-console'); } else seg(v.total, cls);
+    if (BK.length <= 16 && v.total) s += `<text class="val" x="${x + bw / 2}" y="${m.t + ph - v.total / sc.max * ph - 5}" text-anchor="middle">${v.total}</text>`;
+    const showLab = S.by === 'week' || BK.length <= 14 || dow(bk.a) === 0;
+    if (showLab) s += `<text class="axis" x="${x + bw / 2}" y="${H - 8}" text-anchor="middle">${S.by === 'week' ? 'w/c ' + fmtS(bk.a) : BK.length <= 14 ? WD[dow(bk.a)] + ' ' + bk.a.getDate() : fmtS(bk.a)}</text>`;
+    let t = (bk.kind === 'day' ? fmtD(bk.a) : `Week of ${WD[0]} ${fmtS(bk.a)}`) + `\n${v.total} ${title.toLowerCase()}`;
+    if (S.metric === 'casts') t += `\nWall ${v.wall} · Phone ${v.phone} · Console ${v.console}`;
+    if (v.names && v.names.length) t += `\n${v.names.slice(0, 6).join(', ')}${v.names.length > 6 ? '…' : ''}`;
+    s += `<rect class="hit" data-act="bucket" data-i="${i}" data-tip="${esc(t)}" tabindex="0" role="button" aria-label="${esc(t.replace(/\n/g, ', '))}" x="${m.l + i * band}" y="${m.t}" width="${band}" height="${ph + m.b - 6}"/>`;
+    if (sel === bk.a.getTime()) s += `<rect class="selbox" x="${m.l + i * band + 1}" y="${m.t - 2}" width="${band - 2}" height="${ph + 2}"/>`;
+  });
+  el.innerHTML = s + '</svg>';
+}
+
+function renderHeat() {
+  const cs = casts('cell'), grid = Array.from({length:7}, () => Array(15).fill(0));
+  cs.forEach(e => { const h = e.t.getHours(); if (h >= 8 && h <= 22) grid[dow(e.t)][h - 8]++; });
+  const mx = Math.max(1, ...grid.flat());
+  const el = $('plotHeat'), W = el.clientWidth || 420, H = el.clientHeight || 300;
+  const lx = 34, ty = 18, cw = (W - lx - 2) / 15, ch = (H - ty - 2) / 7;
+  let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Casts by weekday and hour">`;
+  for (let h = 0; h < 15; h++) { const hr = h + 8; s += `<text class="lab${S.f.hr === hr && S.f.wd === null ? ' sel' : ''}" data-act="hr" data-v="${hr}" tabindex="0" role="button" x="${lx + h * cw + cw / 2}" y="12" text-anchor="middle">${String(hr).padStart(2, '0')}</text>`; }
+  for (let d = 0; d < 7; d++) {
+    s += `<text class="lab${S.f.wd === d && S.f.hr === null ? ' sel' : ''}" data-act="wd" data-v="${d}" tabindex="0" role="button" x="${lx - 8}" y="${ty + d * ch + ch / 2 + 4}" text-anchor="end">${WD[d]}</text>`;
+    for (let h = 0; h < 15; h++) {
+      const v = grid[d][h], hr = h + 8, on = S.f.wd === d && S.f.hr === hr;
+      const fill = v ? `rgba(236,72,153,${(.14 + .86 * Math.sqrt(v / mx)).toFixed(3)})` : '#1b1b1b';
+      const t = `${WDP[d]} ${hh(hr)}–${hh(hr + 1)}\n${v} cast${v === 1 ? '' : 's'}`;
+      s += `<rect class="cell${on ? ' sel' : ''}" data-act="cell" data-wd="${d}" data-hr="${hr}" data-tip="${esc(t)}" tabindex="0" role="button" aria-label="${esc(t.replace(/\n/g, ', '))}" x="${lx + h * cw + 1.5}" y="${ty + d * ch + 1.5}" width="${cw - 3}" height="${ch - 3}" rx="4" fill="${fill}"/>`;
+      if (v && cw > 26 && ch > 22) s += `<text class="cnum" x="${lx + h * cw + cw / 2}" y="${ty + d * ch + ch / 2 + 3.5}" text-anchor="middle">${v}</text>`;
+    }
+  }
+  el.innerHTML = s + '</svg>';
+  const peak = grid.flat().indexOf(mx), pd = Math.floor(peak / 15), ph2 = peak % 15 + 8;
+  $('heatSub').textContent = cs.length ? `Busiest: ${WDP[pd]} at ${hh(ph2)}` : '';
+}
+
+function listRow(cls, act, v, label, bar, nums, sel, dim) {
+  return `<button class="row ${cls}${sel ? ' sel' : ''}${dim ? ' dim' : ''}" data-act="${act}" data-v="${esc(v)}"><span class="rl">${label}</span><span class="rb"><i class="${bar[0]}" data-w="${bar[1]}"></i></span>${nums}</button>`;
+}
+
+function renderWho() {
+  const cs = casts('who'), tk = ticks('who'), cnt = {}, tkc = {};
+  cs.forEach(e => { if (e.who) cnt[e.who] = (cnt[e.who] || 0) + 1; });
+  tk.forEach(e => { tkc[e.who] = (tkc[e.who] || 0) + 1; });
+  const guests = cs.filter(e => e.who === null).length;
+  const names = new Set([...Object.keys(cnt), ...Object.keys(tkc)]);
+  const f = S.f.who;
+  if (f && f !== 'guest' && f !== 'member') names.add(f);
+  const rows = [...names].map(n => ({n, c:cnt[n] || 0, t:tkc[n] || 0})).sort((a, b) => (b.c + b.t) - (a.c + a.t) || a.n.localeCompare(b.n));
+  const shown = rows.slice(0, 6);
+  if (f && f !== 'guest' && f !== 'member' && !shown.find(r => r.n === f)) shown[5] = rows.find(r => r.n === f);
+  const mxc = Math.max(1, guests, ...shown.map(r => r.c));
+  const newCut = addDays(TODAY, -6);
+  $('whoSub').textContent = `${names.size} active member${names.size === 1 ? '' : 's'}`;
+  let h = `<div class="lh r4"><span>Member</span><span></span><span style="text-align:right">casts</span><span style="text-align:right">ticks</span></div>`;
+  h += shown.map(r => { const mem = MEM.find(x => x.n === r.n), isNew = mem && mem.joined >= newCut;
+    return listRow('r4', 'who', r.n, esc(r.n) + (isNew ? '<span class="badge">new</span>' : ''), ['', r.c / mxc * 100], `<span class="rv">${r.c}</span><span class="rv m">${r.t}</span>`, f === r.n, f && f !== r.n); }).join('');
+  h += listRow('r4', 'who', 'guest', 'Guests <em>wall and signed-out</em>', ['grey', guests / mxc * 100], `<span class="rv">${guests}</span><span class="rv m"></span>`, f === 'guest', f && f !== 'guest');
+  if (!cs.length && !tk.length) h = `<div class="empty">Nothing matches the current filters.</div>`;
+  $('whoList').innerHTML = h; afterRender($('whoList'));
+}
+
+function renderTop() {
+  document.querySelectorAll('#topTabs button').forEach(b => b.classList.toggle('on', b.dataset.v === S.tab));
+  const cnt = {}, grade = {};
+  if (S.tab === 'ticked') ticks('problem').forEach(e => { cnt[e.name] = (cnt[e.name] || 0) + 1; grade[e.name] = e.grade; });
+  else casts('problem').filter(e => e.kind === (S.tab === 'circuits' ? 'circuit' : 'problem')).forEach(e => { cnt[e.name] = (cnt[e.name] || 0) + 1; if (e.grade) grade[e.name] = e.grade; });
+  const f = S.f.problem; if (f && !(f in cnt)) cnt[f] = 0;
+  const rows = Object.entries(cnt).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 8);
+  const mx = Math.max(1, ...rows.map(r => r[1]));
+  $('topList').innerHTML = rows.length ? rows.map(([n, c]) => listRow('r3', 'problem', n, esc(n) + (grade[n] ? `<em>${grade[n]}</em>` : ''),
+    [S.tab === 'circuits' ? 'gold' : S.tab === 'ticked' ? 'green' : '', c / mx * 100], `<span class="rv">${c}</span>`, f === n, f && f !== n)).join('')
+    : `<div class="empty">Nothing matches the current filters.</div>`;
+  afterRender($('topList'));
+}
+
+function renderMix() {
+  const bySrc = {wall:0, phone:0, console:0}; casts('source').forEach(e => bySrc[e.src]++);
+  const mem = casts('who').filter(e => e.who !== null).length, gst = casts('who').filter(e => e.who === null).length;
+  const all = casts();
+  const probs = all.filter(e => e.kind === 'problem'), runs = all.filter(e => e.kind === 'circuit');
+  const mir = probs.length ? Math.round(probs.filter(e => e.mirror).length / probs.length * 100) : 0;
+  const fin = runs.filter(e => e.out === 'finished').length, avg = runs.length ? Math.round(runs.reduce((s, e) => s + e.moves, 0) / runs.length) : 0;
+  const night = EV.filter(e => e.ign && ok(e, 'cell')).length;
+  const f = S.f, ms = Math.max(1, ...Object.values(bySrc)), mw = Math.max(1, mem, gst);
+  const r = (cls, act, v, label, bar, n, sel, dim) => listRow('r3 ' + cls, act, v, label, bar, `<span class="rv">${n}</span>`, sel, dim);
+  let h = `<div class="sec">Where from</div>`;
+  h += [['wall', 'Wall screen', ''], ['phone', 'Phone', 'blue'], ['console', 'Console tests', 'gold']].map(([k, l, c]) =>
+    r('', 'source', k, l, [c, bySrc[k] / ms * 100], bySrc[k], f.source === k, f.source && f.source !== k)).join('');
+  h += `<div class="sec">Who</div>`;
+  h += r('', 'who', 'member', 'Signed-in members', ['green', mem / mw * 100], mem, f.who === 'member', f.who && f.who !== 'member');
+  h += r('', 'who', 'guest', 'Guests', ['grey', gst / mw * 100], gst, f.who === 'guest', f.who && f.who !== 'guest');
+  h += `<div class="facts">
+    <span><b>${mir}%</b> of problem casts were mirrored</span>
+    <span><b>${runs.length}</b> circuit runs, <b>${runs.length ? Math.round(fin / runs.length * 100) : 0}%</b> reached the top${runs.length ? `, ${avg} moves on average` : ''}</span>
+    <span><b>${night}</b> casts tried after 23:00 and ignored by night mode</span></div>`;
+  $('mixList').innerHTML = h; afterRender($('mixList'));
+}
+
+function renderAll() { renderHeader(); renderChips(); renderTiles(); renderMain(); renderHeat(); renderWho(); renderTop(); renderMix(); }
+renderAll();
+if (window.ResizeObserver) { let q; new ResizeObserver(() => { cancelAnimationFrame(q); q = requestAnimationFrame(() => { renderMain(); renderHeat(); }); }).observe(document.body); }
+</script>
+</body>
+</html>

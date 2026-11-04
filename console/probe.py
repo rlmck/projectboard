@@ -7,6 +7,7 @@ changes anything.
 
     python3 - < probe.py          everything the overview shows
     python3 - busy < probe.py     only the casts in the last 5 minutes (the busy guard)
+    python3 - history 0 < probe.py   the activity lines since a Unix time (0: all), for Activity
 """
 import json
 import os
@@ -215,14 +216,14 @@ def everything():
     }
 
 
-def activity(days):
-    """Casts from the listener's journal over the last `days` days (phase 10):
-    casts [at, name, mirror, shown, source, who] (source/who None before the app sent them), and
-    circuit runs [at (when it ended), name, how, moves, seconds, s a move, loop, run, source, who]
-    (how 'night mode' and moves None: ignored at night), and circuit views [at, name, shown, source, who]
-    (show_circuit, contract 8.7)."""
-    out = sh('journalctl', '-u', 'pb-listener', '--since', '-%dd' % days, '-o', 'short-iso', '--no-pager', '-q',
-             '--grep', r'cast received|ignored: night mode|circuit ended|circuit view received', timeout=60)
+ACTIVITY_GREP = r'cast received|ignored: night mode|circuit ended|circuit view received'
+
+
+def parse_activity(out):
+    """The listener's activity lines -> casts [at, name, mirror, shown, source, who] (source/who None
+    before the app sent them), circuit runs [at (when it ended), name, how, moves, seconds, s a move,
+    loop, run, source, who] (how 'night mode' and moves None: ignored at night), and circuit views
+    [at, name, shown, source, who] (show_circuit, contract 8.7)."""
     casts, circuits, views = [], [], []
     for line in out.splitlines():
         m = VIEW_LINE.match(line)
@@ -241,10 +242,32 @@ def activity(days):
         m = CIRCUIT_NIGHT.match(line)
         if m:
             circuits.append([m.group(1), m.group(3), 'night mode', None, None, None, None, None, m.group(4), m.group(5)])
+    return casts, circuits, views
+
+
+def journal_from():
     boots = [l for l in sh('journalctl', '--list-boots', '--no-pager', '-q').splitlines() if l.strip()]
     first = boots[0].split() if boots else []
     # the oldest boot line: IDX BOOT-ID Day YYYY-MM-DD HH:MM:SS ZONE ...: the journal starts there
-    return {'casts': casts, 'circuits': circuits, 'views': views, 'days': days, 'journal_from': ' '.join(first[3:5]) if len(first) > 4 else None}
+    return ' '.join(first[3:5]) if len(first) > 4 else None
+
+
+def activity(days):
+    """Casts from the listener's journal over the last `days` days (phase 10): parse_activity's lists."""
+    out = sh('journalctl', '-u', 'pb-listener', '--since', '-%dd' % days, '-o', 'short-iso', '--no-pager', '-q',
+             '--grep', ACTIVITY_GREP, timeout=60)
+    casts, circuits, views = parse_activity(out)
+    return {'casts': casts, 'circuits': circuits, 'views': views, 'days': days, 'journal_from': journal_from()}
+
+
+def history(since):
+    """The same lines since a Unix time (0: the whole journal), with microsecond timestamps, for
+    the console's own activity history (console/activity_history.py), which outlives the journal."""
+    args = ['journalctl', '-u', 'pb-listener', '-o', 'short-iso-precise', '--no-pager', '-q', '--grep', ACTIVITY_GREP]
+    if since > 0:
+        args[3:3] = ['--since', '@%d' % since]
+    casts, circuits, views = parse_activity(sh(*args, timeout=60))
+    return {'casts': casts, 'circuits': circuits, 'views': views, 'since': since, 'journal_from': journal_from()}
 
 
 def last_night(date):
@@ -290,6 +313,8 @@ def main(argv):
         out = busy()
     elif argv[:1] == ['activity']:
         out = activity(max(1, min(60, int(argv[1]) if len(argv) > 1 and argv[1].isdigit() else 14)))
+    elif argv[:1] == ['history']:
+        out = history(int(argv[1]) if len(argv) > 1 and argv[1].isdigit() else 0)
     elif argv[:1] == ['night'] and len(argv) > 1 and re.match(r'^\d{4}-\d{2}-\d{2}$', argv[1]):
         out = last_night(argv[1])
     elif argv[:1] == ['config']:

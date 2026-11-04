@@ -34,10 +34,9 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 
 ## PB Console
 16. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
-17. **Richer visuals on the Activity section.**
 
 ## Bugs
-18. **Known bugs to triage:** `docs/codebase-overview.md` §13.
+17. **Known bugs to triage:** `docs/codebase-overview.md` §13.
 
 ## Not now
 Don't build yet: Circuits Phase 3 (PBs, leaderboards), mirrored circuits, a Done filter for circuits ("done" = done both sides, problems only), tags, session/logbook tracking beyond ticks, the Flutter migration.

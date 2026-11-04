@@ -68,11 +68,12 @@ Edit the Pi's `config.env` in a form.
 
 ## Phase 10: Activity
 
-**Built 28 Oct 2026, Pi side only** (casts per day and hour, mirrored, ignored at night, top problems). The Supabase counts wait for phase 13's admin path.
+**Built 28 Oct 2026 (Pi side), the dashboard 4 Nov 2026** (TODO 17): the prototype `tools/activity-dashboard-prototype.html` on real data. What it shows and the definitions: `console/README.md` → Activity.
 
-- **From the Pi's journal** (the persistent journal holds weeks; 200 MB cap): `cast received` lines → casts per day and per hour of day, mirrored share, casts ignored at night, the top problems by name (problem names aren't personal).
-- **From Supabase:** ticks per day and distinct users per day, as **counts only** (no nicknames, no ids). With the anon key the `leaderboard()` RPC is public; ticks are own-row only under RLS, so counts need either an admin path (see phase 13: direct Postgres with `db/.env`, read-only) or a new aggregate RPC (a schema change: Ross's call, CLAUDE.md rule 6).
-- Cache the results in `console/data/` (gitignored). Charts as inline SVG (no libraries; the CSP allows nothing else).
+- **From the Pi's journal:** `cast received`, `circuit ended`, `circuit view received` and the night-mode `ignored` lines (time, name, wall/phone/console, signed in or not, mirrored; a run's end, moves and speed). The journal keeps a month (100 MB cap), so the console keeps its own history in `console/data/activity-history.json` (gitignored), merged on each refresh with no repeats (keyed on the line's microsecond time, kind and name).
+- **From Postgres (`db/.env`, read-only):** members' nicknames from the private cast log (db/34), ticks (time, nickname, problem, grade; a mirrored tick is its own row) and accounts (nickname, created). Read live, never cached. This replaces the earlier "counts only" plan: Ross's approved prototype names members, which is fine because it runs only on the laptop and nothing of it is written into the repo.
+- Grades from the public `problems` and `circuits` tables (anon key).
+- UK time (GMT/BST) is worked out on the laptop; the browser does the counting and cross-filtering; charts are inline SVG (no libraries; the CSP allows nothing else).
 - **Never write any of it into the repo.**
 
 ## Phase 11: Acceptance tests (plan R8)

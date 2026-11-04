@@ -387,10 +387,6 @@ summary { cursor: pointer; color: var(--text-soft); }
 .check-row { display: flex; align-items: center; gap: 8px; color: var(--text-soft); }
 .check-row code { color: var(--text-muted); }
 .ledmap-frame { width: 100%; height: 72vh; border: 1px solid var(--border); border-radius: var(--radius); background: var(--board-backdrop); }
-.bars { width: 100%; max-height: 190px; }
-.bars rect { fill: var(--accent); }
-.bars text { fill: var(--text-soft); font-size: 10px; }
-.bars text.axis { fill: var(--text-muted); font-size: 9px; }
 .tests { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; }
 .test.pass { border-color: var(--lvl-ok); }
 .test.fail { border-color: var(--lvl-bad); }
@@ -447,3 +443,152 @@ summary { cursor: pointer; color: var(--text-soft); }
 .trk-leg.trk-dirty { border-style: dashed; }
 .warn-text { color: var(--error-text); }
 #trk-circuit { flex: 1; min-width: 0; }
+
+/* Activity (phase 10): the dashboard, ported from tools/activity-dashboard-prototype.html.
+   Every class starts ad- (the console already has .tiles, .chips, .seg, .tag). The page fits
+   the window (activity.js sets #ad's height); the log scrolls inside its panel. */
+main:has(#tab-activity:not([hidden])) { padding-bottom: 16px; }
+.ad {
+  display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; gap: 12px; min-height: 0;
+  line-height: 1.35; font-variant-numeric: tabular-nums;
+}
+.ad:has(.ad-log:not([hidden])) { grid-template-rows: auto minmax(0, 1fr); }
+.ad-dash { display: contents; }
+.ad button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; text-align: left; }
+.ad button:disabled { cursor: default; }
+.ad :focus-visible { outline: 2px solid var(--accent-hover); outline-offset: 2px; }
+.ad h2 { margin: 0; font-size: 14px; font-weight: 600; }
+
+.ad-top { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.ad-top h1 { font-size: 20px; font-weight: 650; }
+.ad-last { color: var(--text-muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ad-last b { color: var(--text-soft); font-weight: 500; }
+.ad-controls { margin-left: auto; display: flex; align-items: center; gap: 10px; flex: none; }
+.ad-seg { display: flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface2); flex: none; }
+.ad .ad-seg button { padding: 5px 12px; font-size: 13px; color: var(--text-muted); border-right: 1px solid var(--border); }
+.ad .ad-seg button:last-child { border-right: 0; }
+.ad .ad-seg button:hover:not(:disabled) { color: var(--text); }
+.ad .ad-seg button.on { background: var(--accent-a19); color: var(--badge-pink-text); }
+.ad .ad-seg button:disabled { opacity: 0.35; }
+
+.ad-chiprow { display: flex; align-items: center; gap: 12px; min-height: 28px; min-width: 0; }
+.ad-chips { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; overflow: hidden; min-width: 0; }
+.ad-note { margin-left: auto; color: var(--feet); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 60%; }
+.ad-hint { color: var(--text-faint); font-size: 13px; white-space: nowrap; }
+.ad .ad-chip {
+  display: inline-flex; align-items: center; gap: 7px; padding: 3px 6px 3px 11px; border-radius: var(--radius-pill);
+  border: 1px solid var(--accent-a40); background: var(--accent-a12); color: var(--badge-pink-text); font-size: 13px; white-space: nowrap;
+}
+.ad-chip i {
+  font-style: normal; width: 18px; height: 18px; border-radius: var(--radius-pill); display: grid; place-items: center;
+  color: var(--text-soft); background: var(--white-a12); font-size: 12px;
+}
+.ad-chip:hover i { background: var(--accent-a40); color: var(--white); }
+.ad .ad-clear { color: var(--text-muted); font-size: 13px; padding: 3px 6px; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.ad .ad-clear:hover { color: var(--text); }
+
+.ad-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.ad-tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 10px 14px 9px; min-width: 0; }
+.ad-tl { color: var(--text-muted); font-size: 13px; }
+.ad-tv { font-size: 28px; font-weight: 650; line-height: 1.15; margin-top: 2px; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ad-td { display: block; font-size: 12.5px; color: var(--text-muted); margin-top: 1px; min-height: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ad-up { color: var(--success-text); }
+.ad-down { color: var(--error-text); }
+
+.ad-main { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); gap: 12px; min-height: 0; }
+.ad-bottom { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; min-height: 0; }
+.ad-panel {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 11px 14px;
+  display: flex; flex-direction: column; min-height: 0; min-width: 0;
+}
+.ad-ph { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; min-height: 28px; min-width: 0; }
+.ad-sub { color: var(--text-muted); font-size: 12.5px; white-space: nowrap; }
+.ad-ph .ad-seg { margin-left: auto; }
+.ad .ad-ph .ad-seg button { padding: 3px 10px; font-size: 12.5px; }
+.ad-plot { position: relative; flex: 1; min-height: 120px; }
+.ad-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.ad-grid { stroke: var(--border); stroke-width: 1; }
+.ad-axis { fill: var(--text-muted); font-size: 11px; }
+.ad-val { fill: var(--text-soft); font-size: 11px; }
+.ad-b-wall { fill: var(--accent); }
+.ad-b-phone { fill: var(--int); }
+.ad-b-console { fill: var(--gold); }
+.ad-b-unknown { fill: var(--text-faint); }
+.ad-b-members { fill: var(--start); }
+.ad-b-ticks { fill: var(--feet); }
+.ad-b-signups { fill: var(--white-a70); }
+.ad-bar { transition: opacity 0.12s; }
+.ad-bar.ad-dim { opacity: 0.28; }
+.ad-hit { fill: transparent; cursor: pointer; }
+.ad-hit:hover { fill: var(--white-a075); }
+.ad-hit:focus-visible { outline: none; stroke: var(--accent-hover); stroke-width: 2; }
+.ad-selbox { fill: none; stroke: var(--white-a35); stroke-width: 1.5; pointer-events: none; }
+.ad-cell { cursor: pointer; }
+.ad-cell-on { fill: var(--accent); }
+.ad-cell-0 { fill: var(--surface2); }
+.ad-cell:hover { stroke: var(--white-a70); stroke-width: 1.5; }
+.ad-cell.ad-sel { stroke: var(--white); stroke-width: 2; }
+.ad-cell:focus-visible { outline: none; stroke: var(--accent-hover); stroke-width: 2.5; }
+.ad-cnum { fill: var(--white); font-size: 10px; pointer-events: none; }
+.ad-lab { cursor: pointer; fill: var(--text-muted); font-size: 11.5px; }
+.ad-lab:hover, .ad-lab.ad-sel { fill: var(--white); }
+.ad-lab.ad-sel { font-weight: 700; }
+.ad-lab:focus-visible { outline: none; fill: var(--accent-hover); text-decoration: underline; }
+.ad-legend { display: flex; gap: 14px; font-size: 12.5px; color: var(--text-muted); margin-left: 8px; white-space: nowrap; }
+.ad-legend i { display: inline-block; width: 9px; height: 9px; border-radius: var(--radius-2xs); margin-right: 5px; }
+.ad-k-wall { background: var(--accent); }
+.ad-k-phone { background: var(--int); }
+.ad-k-console { background: var(--gold); }
+.ad-k-unknown { background: var(--text-faint); }
+
+.ad-lh { display: grid; gap: 8px; color: var(--text-faint); font-size: 12px; padding: 0 8px 3px; }
+.ad-num { text-align: right; }
+.ad-list { display: flex; flex-direction: column; gap: 1px; min-height: 0; overflow: hidden; }
+.ad .ad-row { display: grid; align-items: center; gap: 8px; padding: 3px 8px; border-radius: var(--radius-sm); width: 100%; }
+.ad .ad-row:hover { background: var(--surface2); }
+.ad .ad-row.ad-sel { background: var(--accent-a19); }
+.ad-row.ad-dim { opacity: 0.45; }
+.ad-rl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-soft); }
+.ad-rl em { font-style: normal; color: var(--text-muted); font-size: 12px; margin-left: 7px; }
+.ad-rb { height: 7px; border-radius: var(--radius-pill); background: var(--surface2); overflow: hidden; }
+.ad-rb i { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--accent); }
+.ad-rb i.ad-blue { background: var(--int); }
+.ad-rb i.ad-green { background: var(--start); }
+.ad-rb i.ad-gold { background: var(--gold); }
+.ad-rb i.ad-grey { background: var(--text-muted); }
+.ad-rv { text-align: right; color: var(--text); }
+.ad-rv.ad-m { color: var(--text-muted); }
+.ad-r4 { grid-template-columns: minmax(0, 1fr) 64px 32px 32px; }
+.ad-r3 { grid-template-columns: minmax(0, 1fr) 84px 34px; }
+.ad-badge {
+  font-size: 11px; padding: 0 6px; border-radius: var(--radius-pill); margin-left: 7px;
+  color: var(--success-text); background: var(--start-a14); border: 1px solid var(--start-a40);
+}
+.ad-tabs { display: flex; gap: 2px; margin-bottom: 4px; }
+.ad .ad-tabs button { padding: 3px 10px; border-radius: var(--radius-sm); font-size: 12.5px; color: var(--text-muted); }
+.ad .ad-tabs button:hover:not(:disabled) { color: var(--text); }
+.ad .ad-tabs button.on { background: var(--surface2); color: var(--text); }
+.ad .ad-tabs button:disabled { opacity: 0.35; }
+.ad-sec { color: var(--text-muted); font-size: 12px; padding: 4px 8px 1px; }
+.ad-facts { display: grid; gap: 3px; padding: 6px 8px 0; border-top: 1px solid var(--border); margin-top: 5px; font-size: 13px; color: var(--text-muted); }
+.ad-facts b { color: var(--text); font-weight: 600; }
+.ad-empty { color: var(--text-faint); padding: 18px 8px; font-size: 13px; }
+
+.ad-log { overflow: auto; }
+.ad-logsum { margin: 0 0 8px; color: var(--text-muted); }
+.ad-tip {
+  position: fixed; z-index: 10; pointer-events: none; background: var(--black); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12.5px; white-space: pre; line-height: 1.45; box-shadow: var(--shadow-menu);
+}
+@media (prefers-reduced-motion: reduce) { .ad-bar { transition: none; } }
+/* A short window (a 1366 x 768 laptop; activity.js adds ad-compact): tighter tiles and lists,
+   so the charts keep their room. */
+.ad.ad-compact { gap: 10px; }
+.ad-compact .ad-tile { padding: 7px 12px 6px; }
+.ad-compact .ad-tv { font-size: 24px; }
+.ad-compact .ad-panel { padding: 9px 12px; }
+.ad-compact .ad-ph { margin-bottom: 3px; }
+.ad.ad-compact .ad-row { padding: 2px 8px; }
+.ad-compact .ad-sec { padding: 2px 8px 0; }
+.ad-compact .ad-facts { gap: 1px; padding-top: 4px; margin-top: 3px; font-size: 12.5px; }

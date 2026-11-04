@@ -14,7 +14,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **The wall kiosk** (`kiosk.service`: cage + Chromium on `HDMI-A-2`, opening `/?wall` with the wall key in the URL fragment) runs on the 1280×720 touchscreen; it picks up a deploy within the hour, at its next idle. **No picture on the touchscreen (4 Nov 2026; touch works): hardware, confirmed.** Path: screen HDMI → big adapter (VGA to HDMI? unconfirmed) → female-to-male coupler → HDMI to micro-HDMI adapter → Pi. Proposal: one HDMI cable from the screen straight into the micro-HDMI adapter (TODO 3). Not yet tried by hand on the touchscreen.
 - **Create on the wall, live LEDs while setting (30 Oct 2026):** the wall's Create saves as The Hangout (db/35, the wall key); taps on Create/Edit light the board (contract §9). Not yet tried on the wall.
 - **Hardware:** temporary wiring. The Pi is in the junction box (31 Oct); the rest goes in next. Power enters the strip at six points (5.5 V under load, white at the far end). Two YU0510 5 V 10 A supplies (both needed to start the strip). No relays or level shifter fitted (3.3 V data direct works); the 2-channel relay module and the 74AHCT125 (a bare chip) have arrived. Wiring: `pi/README.md` → "Wiring". A USB webcam streams the back of the board to Tailscale devices only.
-- **PB Console** (`console/`, `bash console/start.sh`): health dashboard, services, board controls, logs, config, Pi deploy with a drift check, release (Ship / Staging / Rollback since 29 Oct), LED map, test cast, **circuit tracks** (1 Nov, its first database write: direct Postgres), activity, the R8 checklist, backups, runbook. The Pi-side helper is deployed. Anything that needs a look can be **dismissed** until it changes, and Recent actions cleared (1 Nov). Phase 13 (Data) isn't built; phase 14 (Power) waits for the relays.
+- **PB Console** (`console/`, `bash console/start.sh`): health dashboard, services, board controls, logs, config, Pi deploy with a drift check, release (Ship / Staging / Rollback since 29 Oct), LED map, test cast, **circuit tracks** (1 Nov, its first database write: direct Postgres), the Activity dashboard (4 Nov), the R8 checklist, backups, runbook. The Pi-side helper is deployed. Anything that needs a look can be **dismissed** until it changes, and Recent actions cleared (1 Nov). Phase 13 (Data) isn't built; phase 14 (Power) waits for the relays.
 
 ## Decisions
 - **End to end (30 Oct 2026):** Claude finishes the whole job, including applying migrations (`db/apply.py`, dry run first) and Pi deploys (busy check, passwordless). Still gated: deleting user data, force pushes, secrets.
@@ -57,6 +57,11 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-04, Claude Code (PB Console: the Activity dashboard, TODO 17).**
+  - **Changed:** Activity = the approved prototype (`tools/activity-dashboard-prototype.html`, kept as reference) on real data, cross-filtered, with a Log view; old charts gone. The console keeps its own cast history (`console/data/`, gitignored) as the journal expires; nicknames, ticks and accounts live from Postgres. UK time. `console/README.md` → Activity.
+  - **Tested:** console tests (13 new); Chrome: filters, toggles, keyboard, no CSP errors, Log agrees, no-`db/.env` view.
+  - **Left:** Ross: a look. Cast history starts 1 Nov (the new card).
+
 - **2026-11-04, chat.** Touchscreen shows no picture (touch works): confirmed hardware. Proposal: drop the adapter and coupler, one HDMI cable from the screen into the micro-HDMI adapter. Left: Ross tries it (TODO 3).
 
 - **2026-11-02, Claude Code (wall: the Create tab, the tab order, the dimmed Problems board).**
@@ -77,9 +82,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Tested:** build, Pi 153 (1 transient error in 4 runs), console 93; Chrome, broadcast stubbed: open (nothing sent), tap, re-tap, rapid taps (latest only), drag, Start circuit.
   - **Live:** `d109237`; Pi deployed 13:30 (joined, `wave`).
   - **Left:** Ross: the wall checks (session report).
-
-- **2026-11-02, Claude Code (wall auto-cast and a 15-minute idle: TODO 8).**
-  - **Found:** the wall's touch idle (`WALL_IDLE_MS`, 20 min) is its own timer, not the LED idle: left at 20.
-  - **Changed:** wall Problems: a clean tap (not a scroll, a drag over 10 px, or the touch that stops a fling) picks and casts; re-tap re-casts; Mirror flips and casts; the benchmark slide (Ross's choice) and a Create save cast too. Light it up removed; a status line instead. One cast in flight, the latest tap next; `stillShowing` kept; phones unchanged. Pi: `IDLE_AFTER_S` 1200 → 900 (+ a test); deployed 12:38 (joined, `wave`). Contract, overview §4.7a, `pi/README.md`.
-  - **Tested:** build, Pi 142, console 91; in Chrome with the broadcast stubbed: tap, Mirror both ways, drag, rapid taps (only the latest sent), fling, re-tap, offline, the benchmark slide.
-  - **Left:** Ross: the touchscreen checks (session report), incl. the first mirrored cast.
