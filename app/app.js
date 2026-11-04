@@ -422,6 +422,16 @@
     if (h) cycleHold(h);
   });
 
+  // Two fingers on the Create board belong to the viewer's pinch (core.js), not
+  // to the browser's scrolling, which would cancel the pointers. One finger still
+  // scrolls the page (the board's touch-action stays manipulation), and a single
+  // touch is never cancelled here, so taps still make clicks.
+  ['touchstart', 'touchmove'].forEach(type => {
+    document.getElementById('create-board').addEventListener(type, e => {
+      if (e.touches.length > 1) e.preventDefault();
+    }, { passive: false });
+  });
+
   document.getElementById('create-undo').addEventListener('click', undoCreate);
 
   // The name is typed in place as the title; Enter just closes the keyboard.

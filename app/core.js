@@ -348,12 +348,16 @@
   // read-only detail views (the same pinch carries on zooming in the viewer), and
   // turning a touch device to landscape on those views (fsAuto; turning back
   // closes it). On the detail views, pinching all the way back out closes it again.
-  // On create views taps still set holds: there's no tap-to-hide or double-tap,
-  // and a drag or pinch never counts as a tap.
+  // Problem Create (and Edit) pinches in and out the same way (PINCH_FS_VIEWS),
+  // but never opens by turning the phone. On create views taps still set holds:
+  // there's no tap-to-hide, a drag or pinch never counts as a tap, and on problem
+  // Create a double-tap closes the viewer only when both taps miss every hold
+  // (nearestHold), so double-tapping a hold still cycles it twice.
   // Zoom resizes the board-wrap itself (its overlays are %-positioned and scale
   // with it, while outlines, dots and move tags keep their pixel sizes) and pan is
   // a translate, so boardPct needs nothing special.
-  const AUTO_FS_VIEWS = new Set(['detail', 'circuit-detail']);
+  const AUTO_FS_VIEWS = new Set(['detail', 'circuit-detail']);           // landscape opens the viewer
+  const PINCH_FS_VIEWS = new Set(['detail', 'circuit-detail', 'create']); // a pinch opens and closes it
   const FS_MAX_ZOOM = 5;        // relative to the whole board fitting the screen
   const FS_PINCH_GAIN = 1;      // pinch sensitivity: zoom = (finger spread ratio)^gain; 1 = the board stays under the fingers
   const FS_PINCH_ENTER = 1.06;  // fingers spreading this much on a detail board open the viewer
@@ -610,7 +614,8 @@
     lsSet('pb-fs-hints', String(seen + 1));
     if (seen >= 3) return;
     const hint = document.getElementById('board-fs-hint');
-    hint.textContent = fsCanPinchClose() ? 'Pinch to zoom · double-tap or pinch out to close'
+    hint.textContent = currentView === 'create' ? 'Pinch to zoom · double-tap empty board or pinch out to close'
+      : fsCanPinchClose() ? 'Pinch to zoom · double-tap or pinch out to close'
       : fsReadOnly() ? 'Pinch to zoom · double-tap for the whole board' : 'Pinch to zoom · tap holds to set them';
     hint.classList.add('show');
     clearTimeout(fsHintTimer);
@@ -703,7 +708,9 @@
           && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.4) fsStep(dx < 0 ? 1 : -1);
       return;
     }
-    if (!fsReadOnly() || e.type !== 'pointerup') return;   // create: the click sets a hold
+    if (e.type !== 'pointerup') return;
+    if (currentView === 'create') { fsCreateTap(upAt); return; }
+    if (!fsReadOnly()) return;                             // circuit create: the click sets a hold
     const now = Date.now();
     if (now - fsLastTap < 300) {                           // double-tap
       fsLastTap = 0;
@@ -717,10 +724,25 @@
     clearTimeout(fsTapTimer);
     fsTapTimer = setTimeout(() => document.body.classList.toggle('fs-ui-hidden'), 300);
   }
+  // A tap in problem Create's viewer: the click that follows sets or cycles a
+  // hold, and that's all it does. Two quick taps that both miss every hold close
+  // the viewer (and the second tap's click is swallowed, so it can't land on a
+  // hold of the board as it settles back on the page).
+  let fsCreateEmptyTap = null;  // { t, x, y } of the last tap that missed every hold
+  function fsCreateTap(p) {
+    const empty = !nearestHold(p.x, p.y);
+    const now = Date.now(), prev = fsCreateEmptyTap;
+    fsCreateEmptyTap = empty ? { t: now, x: p.x, y: p.y } : null;
+    if (!empty || !prev || now - prev.t >= 300 || Math.hypot(p.x - prev.x, p.y - prev.y) > 40) return;
+    fsCreateEmptyTap = null;
+    fsSwallowClick = true;
+    setTimeout(() => { fsSwallowClick = false; }, 400);
+    fsPinchClose();
+  }
   document.addEventListener('pointerup', fsPointerEnd, true);
   document.addEventListener('pointercancel', fsPointerEnd, true);
   document.addEventListener('click', e => {
-    if (fsSwallowClick && fsIsBoardTarget(e.target)) { fsSwallowClick = false; e.stopPropagation(); e.preventDefault(); }
+    if (fsSwallowClick && (fsIsBoardTarget(e.target) || (e.target.closest && e.target.closest('#create-board')))) { fsSwallowClick = false; e.stopPropagation(); e.preventDefault(); }
   }, true);
 
   // A mouse drag on the photo would start the browser's own image drag (which
@@ -740,9 +762,9 @@
     fsUpdateBar();
   }, { passive: false });
 
-  // Pinch in and out of the viewer on the read-only views (not one opened by
+  // Pinch in and out of the viewer on the detail views and problem Create (not one opened by
   // turning the phone: that one closes by turning back).
-  function fsCanPinchClose() { return fsReadOnly() && !fsAuto; }
+  function fsCanPinchClose() { return PINCH_FS_VIEWS.has(currentView) && !fsAuto; }
 
   // Glide the board back to its place on the page as the viewer fades, then close.
   function fsPinchClose() {
@@ -754,12 +776,12 @@
     setTimeout(() => { if (fsClosing) exitBoardFs(); }, 380);
   }
 
-  // Two fingers spreading on a detail view's board open the viewer, which then
+  // Two fingers spreading on a detail view's board (or problem Create's) open the viewer, which then
   // takes over the same two fingers, so the one pinch zooms straight on in.
   const pagePtrs = new Map();   // pointerId -> { x, y }, touches on the page's board
   let pagePinchD0 = 0;          // the fingers' distance when the second went down
   function fsPageBoardTarget(t) {
-    if (fsOpen || !AUTO_FS_VIEWS.has(currentView) || !t || !t.closest) return false;
+    if (fsOpen || !PINCH_FS_VIEWS.has(currentView) || !t || !t.closest) return false;
     if (t.closest('button, a, input')) return false;
     const w = activeBoardWrap();
     return !!(w && w.contains(t));

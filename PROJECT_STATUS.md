@@ -57,6 +57,11 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-04, Claude Code (Create: pinch in and out of the viewer, staging only).**
+  - **Changed:** problem Create/Edit pinches like detail: a spread opens the viewer, pinching to fit closes it (also after the expand button), a double-tap closes only when both taps miss every hold; on a hold it still cycles twice; taps never hide the bar; no landscape auto-open. New hint. Circuit create shares the viewer, not the gestures: unchanged. Overview §4.8.
+  - **Tested:** build; Chrome, synthetic touch pointers: holds, name, grade, Undo and bar counts survive; detail as before. Real fingers not yet.
+  - **Left:** Ross: try on staging, then ship. The hint shows only the first 3 viewer opens ever.
+
 - **2026-11-04, Claude Code (PB Console: the Activity dashboard, TODO 17).**
   - **Changed:** Activity = the approved prototype (`tools/activity-dashboard-prototype.html`, kept as reference) on real data, cross-filtered, with a Log view; old charts gone. The console keeps its own cast history (`console/data/`, gitignored) as the journal expires; nicknames, ticks and accounts live from Postgres. UK time. `console/README.md` → Activity.
   - **Tested:** console tests (13 new); Chrome: filters, toggles, keyboard, no CSP errors, Log agrees, no-`db/.env` view.
@@ -76,9 +81,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Tested:** build; Chrome, local: phone and wall Create, no marker (nothing sent).
   - **Live:** `61d9ff0`, CACHE `pb-055cbd292e`.
   - **New questions:** the hints still say "finish-zone hold": reword?
-
-- **2026-11-02, Claude Code (the wall's Circuits page: a tap lights the circuit).**
-  - **Changed:** Circuits page: board dimmed with nothing chosen; opening it lights nothing; a tap lights every hold (new event `show_circuit`: starts green, last red, rest blue, finish beats start), shown as a problem cast (latest wins, idle after 15 min); "Light it up" → **Start circuit**. PB Console Activity ("holds lit"). Contract §8.7. `CACHE` `pb-538aea9b5d`.
-  - **Tested:** build, Pi 153 (1 transient error in 4 runs), console 93; Chrome, broadcast stubbed: open (nothing sent), tap, re-tap, rapid taps (latest only), drag, Start circuit.
-  - **Live:** `d109237`; Pi deployed 13:30 (joined, `wave`).
-  - **Left:** Ross: the wall checks (session report).
