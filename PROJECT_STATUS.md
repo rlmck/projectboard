@@ -61,7 +61,8 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
 - **2026-11-05, Claude Code (the circuit LED look "map and next hold", and `laps`; replaces TODO 6).**
   - **Changed:** `circuit.py` rewritten to Ross's look (§8.3): trace, ghost, track, amber, red let-go and green run-up gone; `check_track()`/`led_track` kept. `cast_circuit` gains `laps` (bad → ignored; absent → from `loop`, then `loops`; `loops` false → 1 lap); `trace_s` ignored. Config: `CIRCUIT_MAP_LEVEL`/`CIRCUIT_FINISH_LEVEL` in, the track keys out. Simulator rewritten as a port. PB Console sends `laps`; Activity reads the new line. The app drops `trace_s` and its 3 s trace wait (it would lag the Pi by 3 s).
   - **Tested:** pi/console tests, build check; the simulator matches `circuit.py` (6000 frames), runs in Chrome.
-  - **Left:** Ross: watch it on the webcam (Waiting on). Next: laps on the phone and wall (TODO 6).
+  - **Live:** `fe8b40e`, CACHE `pb-1be624474b`; Pi deployed 09:00 5 Nov (listener joined).
+  - **Left:** Ross: watch it on the webcam (Waiting on). Next: laps on the phone and wall (TODO 6). The Pi's night window is 23:00–15:00 (`NIGHT_END=15:00` in config.env since 4 Nov): casts ignored before 15:00.
 
 - **2026-11-04, Claude Code (wall search and the Clear pill, phone and wall).**
   - **Changed:** wall rows get the phone's search (same state and matching) on Create's keyboard, now shared (`wallKbOpen(target)`), docked over the board for a search. A tap outside closes it and never casts; panel, page change, Clear, idle close it. `✕ Clear` pinned right on all four rows (the phone had none since the Filter sheet) = `clearFilters`, now clearing the wall's search. Overview §4.2a/§4.7a.
