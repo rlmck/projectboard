@@ -281,7 +281,7 @@
   </section>
 
   <section id="tab-tracks" class="tab" hidden>
-    <header class="page-head"><h1>Circuit tracks</h1><p>The LEDs between a circuit's holds, move by move: lit in the route trace before a run, and dim pink under the run (contract 8.6).</p></header>
+    <header class="page-head"><h1>Circuit tracks</h1><p>The LEDs between a circuit's holds, move by move (contract 8.6). Kept and checked, but the Pi doesn't light them in a run any more (5 Nov 2026: the map and next hold look, §8.3).</p></header>
     <div class="trk-grid">
       <div class="trk-stage card">
         <canvas id="trk-board" class="trk-board" width="1386" height="1135" aria-label="The board: tap LEDs to add or remove them from the move"></canvas>
@@ -318,7 +318,7 @@
         </div>
         <div class="card">
           <h2>Test cast</h2>
-          <p class="note">Casts the saved track to the real board: a 3 s route trace, then the countdown, 3 s a move.</p>
+          <p class="note">Casts the circuit to the real board: the countdown, then 3 s a move; 1 lap, or endless with Loop.</p>
           <div class="slider-row">
             <label class="check"><input type="checkbox" id="trk-loop"> Loop</label>
             <button class="btn" id="trk-cast">Test cast</button>

@@ -284,8 +284,13 @@ def r_tracks(app, q):
     c = tracks.circuit_mod()
     return {'circuits': tracks.list_circuits(), 'cells': tracks.cells(),
             'limits': {'moves': c.TRACK_MAX_MOVES, 'cells': c.TRACK_MAX_CELLS, 'bytes': c.TRACK_MAX_BYTES},
-            'trace': {'lap': c.TRACE_LAP, 'step_min': c.TRACE_STEP_MIN, 'step_max': c.TRACE_STEP_MAX,
-                      'fade': c.TRACE_FADE, 'dim': c.TRACE_DIM}}
+            'trace': TRACE_PREVIEW}
+
+
+# The route trace's timing, for the Circuit tracks tab's preview only: the Pi drew this trace
+# before a run until 5 Nov 2026 (circuit.py, contract 8.6); now the preview is just a way to
+# see a track run along its path.
+TRACE_PREVIEW = {'lap': 2.8, 'step_min': 0.034, 'step_max': 0.15, 'fade': 0.3, 'dim': 0.12}
 
 
 def r_backups(app, q):

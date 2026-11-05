@@ -53,10 +53,10 @@ CAST_LINE = re.compile(r"^(\S+) \S+ \S+: cast (?:received: )?(['\"])(.*)\2( mirr
                        r"( ignored: night mode)?(?: \[(\w+), (\w+)\])?$")
 
 
-# "circuit ended: 'Name' stopped after 23 moves (74 s), 3 s a move, loop, run 9f2c… [phone, member]"
-# (pi/listener/circuit.py ended_line), and "circuit 'Name' ignored: night mode [wall, guest]".
+# "circuit ended: 'Name' stopped after 23 moves (74 s), 3 s a move, endless, run 9f2c… [phone, member]"
+# (pi/listener/circuit.py ended_line: endless or "N laps" since 5 Nov 2026, loop or once before), and "circuit 'Name' ignored: night mode [wall, guest]".
 CIRCUIT_LINE = re.compile(r"^(\S+) \S+ \S+: circuit ended: (['\"])(.*)\2 ([a-z][a-z ]*?) after (\d+) moves "
-                          r"\((\d+) s\), ([\d.]+) s a move, (loop|once), run (\S+)(?: \[(\w+), (\w+)\])?$")
+                          r"\((\d+) s\), ([\d.]+) s a move, (loop|once|endless|\d+ laps?), run (\S+)(?: \[(\w+), (\w+)\])?$")
 CIRCUIT_NIGHT = re.compile(r"^(\S+) \S+ \S+: circuit (['\"])(.*)\2 ignored: night mode(?: \[(\w+), (\w+)\])?$")
 # A circuit's static view (show_circuit, contract 8.7: every hold lit at once, from the wall's
 # Circuits page): "circuit view received: 'Name' [wall, guest]" and
@@ -237,7 +237,7 @@ def parse_activity(out):
         m = CIRCUIT_LINE.match(line)
         if m:
             circuits.append([m.group(1), m.group(3), m.group(4), int(m.group(5)), int(m.group(6)), float(m.group(7)),
-                             m.group(8) == 'loop', None if m.group(9) == '-' else m.group(9), m.group(10), m.group(11)])
+                             m.group(8) in ('loop', 'endless'), None if m.group(9) == '-' else m.group(9), m.group(10), m.group(11)])
             continue
         m = CIRCUIT_NIGHT.match(line)
         if m:

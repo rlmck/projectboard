@@ -146,7 +146,7 @@ class Renderer(unittest.TestCase):
         clock, strip, logs = Clock(), Strip(), []
         r = renderer.Renderer(strip, CFG, False, logs.append, logs.append, logs.append, clock=clock, seed=3)
         r.step(clock.t)
-        r.circuit(circuit.Run('Test', SEQ, 2, 3, True, 'r1'))
+        r.circuit(circuit.Run('Test', SEQ, 2, 3, 0, 'r1'))
         r.step(clock.t)
         self.assertEqual(r.state, renderer.RUN)
         frame, _, _ = board.scale(circuit.static_frame(SEQ, 2)[0], 0.5, 8000, 20)

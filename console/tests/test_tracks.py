@@ -151,28 +151,45 @@ class Actions(unittest.TestCase):
 
     def test_circuit_receipt(self):
         sent = 1000.0
-        lines = [{'MESSAGE': "circuit received: 'Pat Burner', 3 s a move, once, trace 3 s [console, unknown]",
+        lines = [{'MESSAGE': "circuit received: 'Pat Burner', 3 s a move, 1 lap [console, unknown]",
                   '__REALTIME_TIMESTAMP': '1000200000'},
-                 {'MESSAGE': "circuit 'Pat Burner': track moves skipped: move 3: stale", '__REALTIME_TIMESTAMP': '1000300000'},
-                 {'MESSAGE': "circuit started 'Pat Burner': 12 holds, 10 moves, 3 s a move, once, trace 3 s, track 11 moves, "
+                 {'MESSAGE': "circuit started 'Pat Burner': 12 holds, 10 moves, 3 s a move, 1 lap, "
                              "run ab, in 300 ms", '__REALTIME_TIMESTAMP': '1000400000'}]
         got = actions._circuit_receipt('\n'.join(json.dumps(l) for l in lines), 'Pat Burner', sent)
         self.assertIn('+200 ms', got['received'])
-        self.assertIn('track 11 moves', got['started'])
-        self.assertIn('stale', got['skipped'])
+        self.assertIn('10 moves', got['started'])
+        self.assertIn('1 lap', got['started'])
+        self.assertNotIn('skipped', got)
+
+    def test_cast_circuit_sends_laps_not_trace(self):
+        import supabase_api as supa
+        sent = []
+
+        def fake_req(endpoint, key, method, payload, timeout=10):
+            sent.append(payload)
+            return 202, b''
+        with mock.patch.object(supa, 'supabase_settings', return_value=('https://x.supabase.co', 'k')), \
+                mock.patch.object(supa, '_req', side_effect=fake_req):
+            supa.cast_circuit('Pat Burner', 3, True)
+            supa.cast_circuit('Pat Burner', 3, False)
+        self.assertEqual([p['laps'] for p in sent], [0, 1])
+        self.assertTrue(all('trace_s' not in p for p in sent))
+        self.assertEqual(sent[0]['source'], 'console')
 
     def test_helper_has_the_circuit_keys(self):
         h = actions.helper()
-        for k, v in (('CIRCUIT_GHOST', '0'), ('CIRCUIT_GHOST', '0.3'), ('CIRCUIT_TRACK_RUN', 'all'),
-                     ('CIRCUIT_TRACK_LEVEL', '0.5'), ('CIRCUIT_MAX_S', '1800')):
+        for k, v in (('CIRCUIT_MAP_LEVEL', '0.05'), ('CIRCUIT_MAP_LEVEL', '0.6'), ('CIRCUIT_FINISH_LEVEL', '0.1'),
+                     ('CIRCUIT_FINISH_LEVEL', '1.0'), ('CIRCUIT_MAX_S', '1800')):
             h.check_value(k, v)
-        for k, v in (('CIRCUIT_GHOST', '0.31'), ('CIRCUIT_TRACK_RUN', 'some'), ('CIRCUIT_TRACK_LEVEL', '-1'),
-                     ('CIRCUIT_MAX_S', '5')):
+        for k, v in (('CIRCUIT_MAP_LEVEL', '0.04'), ('CIRCUIT_MAP_LEVEL', '0.61'), ('CIRCUIT_FINISH_LEVEL', '0.09'),
+                     ('CIRCUIT_FINISH_LEVEL', '1.1'), ('CIRCUIT_MAX_S', '5'), ('CIRCUIT_GHOST', '0.12'),
+                     ('CIRCUIT_TRACK_RUN', 'move'), ('CIRCUIT_TRACK_LEVEL', '0.2')):
             with self.assertRaises(h.Refused):
                 h.check_value(k, v)
-        self.assertTrue(h.needs_restart('CIRCUIT_GHOST'))
+        self.assertTrue(h.needs_restart('CIRCUIT_MAP_LEVEL'))
         keys = [r['key'] for r in actions.config_keys()]
-        self.assertIn('CIRCUIT_TRACK_RUN', keys)
+        self.assertIn('CIRCUIT_FINISH_LEVEL', keys)
+        self.assertNotIn('CIRCUIT_GHOST', keys)
 
 
 class Server(ServerBase):

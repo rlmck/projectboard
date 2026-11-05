@@ -2,15 +2,19 @@
 
     python -m unittest discover -s pi/tests      (from the repo root)
 
-The look (direction 4, "Pulse and fade") at each phase: the countdown, the
-moving holds, a match, a later lap, the finish; then the renderer: a run
-animates, a stop with the wrong run token is ignored, the right one, the finish
-and the time limit go idle, a problem cast cuts in, and night wins. Then circuit
-tracks (contract 8.6): check_track (stale and bad moves skipped), the trace's
-path with and without a track, its timing and step clamp, no LED twice a lap,
-the ghost and track layers under Pulse and fade, trace_s absent changing
-nothing, the config options and the listener's cast parsing.
+The "map and next hold" look (5 Nov 2026, contract 8.3): the countdown blink's
+values, the blue map and the red finish (on the final lap of a set number of
+laps only, never endless), the hold to go to (green, solid), a match's two
+blinks, laps (the move count for 1, 3 and endless, the wrap from lap 2), the
+top (three red blinks, the map fading out), mirroring and ids off the grid;
+the config options; then the renderer: a run animates and finishes into idle,
+stop tokens, a problem cast cutting in, the time limit, night. Then the
+listener's cast_circuit parsing (laps, every backward-compatibility case,
+trace_s ignored) and the laps the run gets from the circuit's loops. Circuit
+tracks: check_track still checks (PB Console saves through it), though the Pi
+no longer draws them.
 """
+import asyncio
 import json
 import os
 import sys
@@ -22,7 +26,7 @@ sys.dont_write_bytecode = True
 import board  # noqa: E402
 import circuit  # noqa: E402
 import renderer  # noqa: E402
-from circuit import AMBER, BLUE, COUNTDOWN, GREEN, RED  # noqa: E402
+from circuit import BLUE, COUNTDOWN, GREEN, RED  # noqa: E402
 
 # Like the live Pat Burner: two starts, a match at positions 5-6, twelve holds.
 SEQ = ['hold3', 'hold1', 'hold80', 'hold120', 'hold160', 'hold200', 'hold200', 'hold180', 'hold140',
@@ -30,112 +34,266 @@ SEQ = ['hold3', 'hold1', 'hold80', 'hold120', 'hold160', 'hold200', 'hold200', '
 CFG = {'IDLE_AFTER_S': '60', 'IDLE_ANIMATION': 'on', 'IDLE_FPS': '30', 'IDLE_MAX_AMPS': '2.0',
        'IDLE_BRIGHTNESS': '1.0', 'MA_PER_CHANNEL': '20', 'BRIGHTNESS': '0.5', 'POWER_BUDGET_MA': '8000'}
 
+MAP = tuple(v * 0.2 for v in BLUE)          # the default map level
+FIN = tuple(v * 0.6 for v in RED)           # the default finish level
+OFF = (0.0, 0.0, 0.0)
+
 
 def at(run, move, into=0.5):
     """t for `into` seconds into move `move` (0 = the first move after the countdown)."""
     return COUNTDOWN + move * run.interval + into
 
 
+def close(a, b):
+    return all(abs(x - y) < 1e-6 for x, y in zip(a, b))
+
+
+def greens(holds):
+    return sorted(h for h, rgb in holds.items() if rgb[1] > 0)
+
+
+class Blink(unittest.TestCase):
+    def test_blink_values(self):
+        self.assertEqual(circuit.blink(0.0), 1.0)
+        self.assertEqual(circuit.blink(0.079), 1.0)                 # full for 0.08 s
+        self.assertAlmostEqual(circuit.blink(0.08), 1.0)
+        self.assertAlmostEqual(circuit.blink(0.48), 0.5)            # half-way through the 0.8 s fade
+        self.assertAlmostEqual(circuit.blink(0.88), 0.0)            # off from 0.88 s
+        self.assertEqual(circuit.blink(0.95), 0.0)
+        self.assertEqual(circuit.blink(1.02), 1.0)                  # once a second
+        self.assertAlmostEqual(circuit.blink(3.28), 0.75)
+
+    def test_match_blink_windows(self):
+        for x, on in ((0.0, 0), (0.14, 0), (0.15, 1), (0.29, 1), (0.30, 0), (0.44, 0), (0.45, 1), (2.9, 1)):
+            self.assertEqual(circuit.match_on(x), on, x)
+
+
 class Look(unittest.TestCase):
     def setUp(self):
-        self.run = circuit.Run('Test', SEQ, 2, 3, False, 'r1')
+        self.run = circuit.Run('Test', SEQ, 2, 3, 1, 'r1')         # one lap
 
-    def test_countdown_flashes(self):
-        on, _ = self.run.holds_at(1.2)
-        self.assertEqual(on['hold3'], (RED, 1))
-        self.assertEqual(on['hold1'], (RED, 1))
-        self.assertEqual(on['hold80'], (BLUE, 1))
-        self.assertEqual(on['hold120'], (BLUE, 1))
-        self.assertEqual(len(on), 4)
-        off, _ = self.run.holds_at(1.7)
-        self.assertEqual(off, {})
-
-    def test_first_move(self):
-        h, done = self.run.holds_at(at(self.run, 0, 0.4))
+    def test_countdown_blinks_the_starts_over_the_map(self):
+        h, done = self.run.layers(0.02)
         self.assertFalse(done)
-        self.assertEqual(h['hold3'], (GREEN, 1))           # on the starts
-        self.assertEqual(h['hold1'], (GREEN, 1))
-        self.assertEqual(h['hold80'], (BLUE, 1))           # the hold to go to: solid
-        self.assertEqual(h['hold120'][0], AMBER)           # the hold after: amber
-        self.assertEqual(len(h), 4)                        # nothing let go of yet
-
-    def test_amber_swells_and_red_fades(self):
-        early = self.run.holds_at(at(self.run, 2, 0.5))[0]
-        late = self.run.holds_at(at(self.run, 2, 2.5))[0]
-        # move 2: on hold120/hold80, let go of hold1, after next is hold200
-        self.assertEqual(early['hold1'][0], RED)
-        self.assertGreater(early['hold1'][1], late['hold1'][1])            # the red fades over the move
-        self.assertGreater(late['hold200'][1], early['hold200'][1])        # each swell peaks brighter
-        self.assertLess(self.run.holds_at(at(self.run, 2, 0.0))[0].get('hold1', (RED, 0))[1], 0.01)  # soft start
-
-    def test_a_match_stays_solid(self):
-        # move 4: on hold200 (position 5), going to hold200 again (position 6)
-        for into in (0.0, 0.2, 0.4, 0.6, 1.0, 2.9):
-            h, _ = self.run.holds_at(at(self.run, 4, into))
-            self.assertEqual(h['hold200'], (BLUE, 1), into)
-
-    def test_finish_then_done(self):
-        t_top = COUNTDOWN + self.run.moves * self.run.interval
-        h, done = self.run.holds_at(t_top + 0.5)
-        self.assertFalse(done)
-        self.assertEqual(h['hold40'], (RED, 1))
-        self.assertTrue(self.run.holds_at(t_top + self.run.finish_length() + 0.01)[1])
-        # the hold to go to on the last move is the red finish
-        self.assertEqual(self.run.holds_at(t_top - 1)[0]['hold40'], (RED, 1))
-
-    def test_loop_has_no_finish_and_starts_go_blue(self):
-        run = circuit.Run('Test', SEQ, 2, 2, True)
-        t = at(run, len(SEQ) + 3, 0.3)              # well into lap 2
-        h, done = run.holds_at(t)
-        self.assertFalse(done)
-        self.assertNotIn(GREEN, [rgb for rgb, _ in h.values()])
-        self.assertFalse(run.holds_at(at(run, 500))[1])
-        self.assertNotIn(RED, [rgb for rgb, a in run.holds_at(at(run, 9, 0.5))[0].values() if a == 1])
+        self.assertEqual(h['hold3'], GREEN)                         # full
+        self.assertEqual(h['hold1'], GREEN)
+        self.assertTrue(close(h['hold80'], MAP))                    # the map, steady
+        self.assertTrue(close(h['hold40'], FIN))                    # a 1-lap run: the finish from the countdown on
+        self.assertEqual(len(h), len(set(SEQ)))
+        half = self.run.layers(2.48)[0]['hold3']                    # half-way through a fade: green over blue
+        self.assertTrue(close(half, (0, 127.5, 25.5)))
+        self.assertTrue(close(self.run.layers(1.9)[0]['hold3'], MAP))     # off: the map underneath
+        self.assertTrue(close(self.run.layers(4.9)[0]['hold1'], MAP))
+        for t in (0.5, 1.5, 3.95):
+            self.assertTrue(close(self.run.layers(t)[0]['hold80'], MAP), t)   # the map never blinks
+            self.assertTrue(close(self.run.layers(t)[0]['hold40'], FIN), t)
+        self.assertEqual(self.run.phase(4.99), 'count')
 
     def test_one_start(self):
-        run = circuit.Run('Test', SEQ, 1, 3, False)
-        h, _ = run.holds_at(at(run, 0, 0.4))
-        self.assertEqual(h['hold3'], (GREEN, 1))
-        self.assertEqual(h['hold1'], (BLUE, 1))     # the hold to go to
+        run = circuit.Run('Test', SEQ, 1, 3, 1)
+        h = run.layers(0.0)[0]
+        self.assertEqual(greens(h), ['hold3'])
         self.assertEqual(run.moves, len(SEQ) - 1)
+        self.assertEqual(greens(run.layers(at(run, 0))[0]), ['hold1'])     # the first move is to position 1
+        self.assertFalse(run.is_match(0))                          # no c-1 before the start
 
-    def test_moves_at(self):
-        self.assertEqual(self.run.moves_at(3), 0)
-        self.assertEqual(self.run.moves_at(at(self.run, 4)), 4)
-        self.assertEqual(self.run.moves_at(10_000), self.run.moves)
-        loop = circuit.Run('Test', SEQ, 2, 2, True)
-        self.assertEqual(loop.moves_at(at(loop, 30)), 30)
+    def test_the_run_lights_only_the_hold_to_go_to(self):
+        for move, target in ((0, 'hold80'), (1, 'hold120'), (2, 'hold160'), (3, 'hold200'), (5, 'hold180')):
+            for into in (0.0, 1.0, 2.99):
+                h, _ = self.run.layers(at(self.run, move, into))
+                self.assertEqual(greens(h), [target], (move, into))
+                self.assertEqual(h[target], GREEN)                  # full and solid
+                self.assertTrue(close(h['hold3'], MAP))             # starts are blue in the run
+                self.assertTrue(close(h['hold1'], MAP))
+                self.assertTrue(close(h['hold40'], FIN))            # the one lap is the final lap
+        self.assertEqual(self.run.phase(at(self.run, 0)), 'run')
 
+    def test_a_match_blinks_twice(self):
+        # move 4: on hold200 (position 5), going to hold200 again (position 6)
+        self.assertTrue(self.run.is_match(4))
+        self.assertFalse(self.run.is_match(3))
+        self.assertFalse(self.run.is_match(5))
+        for into, on in ((0.05, False), (0.2, True), (0.35, False), (0.5, True), (1.5, True), (2.99, True)):
+            h, _ = self.run.layers(at(self.run, 4, into))
+            self.assertEqual(h['hold200'], GREEN if on else MAP, into)
+            self.assertEqual(greens(h), ['hold200'] if on else [], into)    # the next hold waits for its beat
+        self.assertEqual(greens(self.run.layers(at(self.run, 5, 0.05))[0]), ['hold180'])
+        # a move that isn't a match is solid from the start of its beat
+        self.assertEqual(self.run.layers(at(self.run, 3, 0.05))[0]['hold200'], GREEN)
+
+    def test_a_match_on_c_minus_1(self):
+        seq = ['hold3', 'hold1', 'hold80', 'hold1', 'hold120']         # back to the other hand's hold
+        run = circuit.Run('Test', seq, 2, 3, 1)
+        self.assertEqual([run.is_match(k) for k in range(run.moves)], [False, True, False])
+        self.assertEqual(run.layers(at(run, 1, 0.05))[0]['hold1'], MAP)
+        self.assertEqual(run.layers(at(run, 1, 0.2))[0]['hold1'], GREEN)
+
+    def test_the_top(self):
+        top = COUNTDOWN + self.run.moves * self.run.interval
+        self.assertEqual(greens(self.run.layers(top - 0.01)[0]), ['hold40'])   # the last move: to the finish, green
+        for n in range(3):                                              # three red blinks, one a second
+            h, done = self.run.layers(top + n + 0.02)
+            self.assertFalse(done)
+            self.assertEqual(self.run.phase(top + n + 0.02), 'top')
+            self.assertEqual(h['hold40'], RED)
+            self.assertTrue(close(h['hold80'], MAP))
+            self.assertEqual(greens(h), [])
+            self.assertTrue(close(self.run.layers(top + n + 0.48)[0]['hold40'], (127.5, 0, 0)))
+            self.assertEqual(self.run.layers(top + n + 0.95)[0]['hold40'], OFF)
+        leds, _ = self.run.frame(top + 0.95)
+        self.assertNotIn(board.led_index(40), leds)                     # off between blinks
+        h, _ = self.run.layers(top + 3.5)                               # then the map fades out over 1 s
+        self.assertTrue(close(h['hold80'], tuple(v * 0.5 for v in MAP)))
+        self.assertEqual(h['hold40'], OFF)
+        self.assertEqual(self.run.layers(top + 3.99)[1], False)
+        self.assertEqual(self.run.layers(top + 4.0), ({}, True))
+        self.assertEqual(self.run.phase(top + 4.0), 'done')
+        self.assertEqual(self.run.top_length(), 4.0)
+
+
+class Laps(unittest.TestCase):
+    def test_move_counts(self):
+        L, s = len(SEQ), 2
+        self.assertEqual(circuit.Run('T', SEQ, 2, 3, 1).moves, L - s)                    # 10
+        self.assertEqual(circuit.Run('T', SEQ, 2, 3, 3).moves, (L - s) + 2 * L)          # 34
+        self.assertEqual(circuit.Run('T', SEQ, 1, 3, 3).moves, (L - 1) + 2 * L)          # 35
+        endless = circuit.Run('T', SEQ, 2, 2, 0)
+        self.assertIsNone(endless.moves)
+        self.assertTrue(endless.endless)
+        self.assertEqual(endless.phase(at(endless, 5000)), 'run')
+        self.assertFalse(endless.layers(at(endless, 5000))[1])
+        self.assertEqual(endless.moves_at(at(endless, 30)), 30)
+
+    def test_three_laps_end_on_the_last_hold(self):
+        run = circuit.Run('T', SEQ, 2, 3, 3)
+        last = run.moves - 1
+        self.assertEqual(run.target(last) % run.L, run.L - 1)
+        self.assertEqual(run.lap_of(last), 3)
+        self.assertEqual(greens(run.layers(at(run, last))[0]), ['hold40'])
+        self.assertEqual(run.phase(at(run, last, 2.99)), 'run')
+        self.assertEqual(run.phase(at(run, run.moves, 0.01)), 'top')
+        self.assertEqual(run.moves_at(10_000), 34)
+
+    def test_wrap_from_lap_2(self):
+        run = circuit.Run('T', SEQ, 2, 3, 2)
+        k = run.L - run.s                                   # the first move of lap 2: the wrap move
+        self.assertEqual((run.lap_of(k - 1), run.lap_of(k)), (1, 2))
+        self.assertEqual(greens(run.layers(at(run, k - 1))[0]), ['hold40'])   # the end of lap 1
+        h = run.layers(at(run, k))[0]
+        self.assertEqual(greens(h), ['hold3'])              # all the way round: position 0
+        self.assertEqual(greens(run.layers(at(run, k + 1))[0]), ['hold1'])    # then position 1
+        self.assertTrue(close(h['hold1'], MAP))              # a start is blue in the run
+        self.assertEqual(run.moves, 10 + 12)
+
+    def test_finish_only_on_the_final_lap(self):
+        run = circuit.Run('T', SEQ, 2, 3, 3)
+        self.assertTrue(close(run.layers(1.0)[0]['hold40'], MAP))          # not in the countdown of 3 laps
+        for k in (0, 5, 8, 10, 15, 20):                                     # laps 1 and 2 (not their last moves: to the finish, green)
+            self.assertTrue(close(run.layers(at(run, k))[0]['hold40'], MAP), k)
+        for k in (22, 25, 32):                                              # lap 3, from its wrap move on
+            self.assertTrue(close(run.layers(at(run, k))[0]['hold40'], FIN), k)
+        self.assertEqual(run.layers(at(run, 33))[0]['hold40'], GREEN)       # the last move: to the finish
+
+    def test_endless_never_shows_red(self):
+        run = circuit.Run('T', SEQ, 2, 2, 0)
+        t = 0.0
+        while t < COUNTDOWN + 60 * run.interval:
+            h, done = run.layers(t)
+            self.assertFalse(done)
+            self.assertFalse(any(rgb[0] > 0 for rgb in h.values()), t)
+            t += 0.37
+
+    def test_resolve_laps(self):
+        r = circuit.resolve_laps
+        self.assertEqual(r(3, None, True), 3)
+        self.assertEqual(r(0, None, True), 0)
+        self.assertEqual(r(None, True, True), 0)             # old apps: loop true = endless
+        self.assertEqual(r(None, False, True), 1)            # loop false = 1 lap
+        self.assertEqual(r(None, None, True), 0)             # loop absent: the circuit's loops
+        self.assertEqual(r(None, None, False), 1)
+        for laps, loop in ((0, None), (5, None), (None, True), (None, False), (None, None), (0, True)):
+            self.assertEqual(r(laps, loop, False), 1, (laps, loop))   # loops false: always 1 lap
+        self.assertEqual(circuit.laps_text(0), 'endless')
+        self.assertEqual(circuit.laps_text(1), '1 lap')
+        self.assertEqual(circuit.laps_text(4), '4 laps')
+
+    def test_bad_laps_and_sequence(self):
+        for bad in (-1, 11, True, 2.0, None, '3'):
+            with self.assertRaises(ValueError):
+                circuit.Run('T', SEQ, 2, 3, bad)
+        with self.assertRaises(ValueError):
+            circuit.Run('Test', [], 2, 3, 1)
+        with self.assertRaises(ValueError):
+            circuit.Run('Test', None, 2, 3, 1)
+
+
+class Leds(unittest.TestCase):
     def test_frame_leds_and_mirror(self):
-        leds, _ = self.run.frame(at(self.run, 0, 0.4))
-        self.assertEqual(set(leds), {board.led_index(n) for n in (3, 1, 80, 120)})
+        run = circuit.Run('Test', SEQ, 2, 3, 1)
+        leds, _ = run.frame(at(run, 0, 0.4))
+        self.assertEqual(set(leds), {board.led_index(board.hold_number(h)) for h in SEQ})
+        self.assertEqual(leds[board.led_index(80)], GREEN)
         mm = {'hold3': 'hold17', 'hold17': 'hold3'}
-        mirrored = circuit.Run('Test', SEQ, 2, 3, False, mirror_map=mm)
-        leds, _ = mirrored.frame(at(mirrored, 0, 0.4))
-        self.assertIn(board.led_index(17), leds)
+        mirrored = circuit.Run('Test', SEQ, 2, 3, 1, mirror_map=mm)
+        leds, _ = mirrored.frame(0.0)
+        self.assertEqual(leds[board.led_index(17)], GREEN)            # the mirrored start blinks
         self.assertNotIn(board.led_index(3), leds)
 
     def test_off_grid_and_feet_ids_light_nothing(self):
-        run = circuit.Run('Test', ['hold3', 'hold999', 'hold21', 'hold80', 'hold120'], 2, 3, False)
+        run = circuit.Run('Test', ['hold3', 'hold999', 'hold21', 'hold80', 'hold120'], 2, 3, 1)
         self.assertEqual(sorted(run.dropped), ['hold21', 'hold999'])
-        for t in (1.0, at(run, 0, 0.4), at(run, 1, 0.4)):
+        self.assertEqual(run.moves, 3)                                  # they keep their place in the timing
+        for t in (0.0, at(run, 0, 0.4), at(run, 1, 0.4)):
             leds, _ = run.frame(t)
             self.assertTrue(all(1 <= i <= board.MAX_HOLD for i in leds))
             self.assertNotIn(board.led_index(21), leds)
 
-    def test_ended_line(self):
-        run = circuit.Run("Pat's", SEQ, 2, 3, True, 'abc', tag=' [phone, member]')
-        self.assertEqual(run.ended_line('stopped', COUNTDOWN + 3 * 7 + 1),
-                         "circuit ended: \"Pat's\" stopped after 7 moves (27 s), 3 s a move, loop, run abc [phone, member]")
-        once = circuit.Run('Test', SEQ, 2, 2.5, False)
-        self.assertEqual(once.ended_line('finished', 100), 'circuit ended: \'Test\' finished after 10 moves (100 s), '
-                                                            '2.5 s a move, once, run -')
+    def test_levels(self):
+        run = circuit.Run('Test', SEQ, 2, 3, 1, map_level=0.05, finish_level=1.0)
+        h = run.layers(at(run, 0))[0]
+        self.assertTrue(close(h['hold120'], (0, 0, 12.75)))
+        self.assertEqual(h['hold40'], RED)
 
-    def test_bad_sequence(self):
-        with self.assertRaises(ValueError):
-            circuit.Run('Test', [], 2, 3, False)
-        with self.assertRaises(ValueError):
-            circuit.Run('Test', None, 2, 3, False)
+    def test_ended_line(self):
+        run = circuit.Run("Pat's", SEQ, 2, 3, 0, 'abc', tag=' [phone, member]')
+        self.assertEqual(run.ended_line('stopped', COUNTDOWN + 3 * 7 + 1),
+                         "circuit ended: \"Pat's\" stopped after 7 moves (27 s), 3 s a move, endless, run abc [phone, member]")
+        once = circuit.Run('Test', SEQ, 2, 2.5, 1)
+        self.assertEqual(once.ended_line('finished', 100), "circuit ended: 'Test' finished after 10 moves (100 s), "
+                                                           "2.5 s a move, 1 lap, run -")
+        three = circuit.Run('Test', SEQ, 2, 2, 3)
+        self.assertIn('after 34 moves', three.ended_line('finished', 1000))
+        self.assertIn(', 3 laps, ', three.ended_line('finished', 1000))
+
+
+class Options(unittest.TestCase):
+    def test_options(self):
+        warned = []
+        self.assertEqual(circuit.options({}), {'map_level': 0.2, 'finish_level': 0.6})
+        self.assertEqual(circuit.options({'CIRCUIT_MAP_LEVEL': '0.05', 'CIRCUIT_FINISH_LEVEL': '1.0'}),
+                         {'map_level': 0.05, 'finish_level': 1.0})
+        self.assertEqual(circuit.options({'CIRCUIT_MAP_LEVEL': '0.6', 'CIRCUIT_FINISH_LEVEL': '0.1'}),
+                         {'map_level': 0.6, 'finish_level': 0.1})
+        for cfg in ({'CIRCUIT_MAP_LEVEL': '0.04'}, {'CIRCUIT_MAP_LEVEL': '0.61'}, {'CIRCUIT_MAP_LEVEL': 'x'},
+                    {'CIRCUIT_FINISH_LEVEL': '0.09'}, {'CIRCUIT_FINISH_LEVEL': '1.1'}):
+            self.assertEqual(circuit.options(cfg, warned.append), circuit.OPTION_DEFAULTS, cfg)
+        self.assertEqual(len(warned), 5)
+        # the old keys mean nothing now
+        self.assertEqual(circuit.options({'CIRCUIT_GHOST': '0.12', 'CIRCUIT_TRACK_RUN': 'move'}, warned.append),
+                         circuit.OPTION_DEFAULTS)
+        self.assertEqual(len(warned), 5)
+
+    def test_mode_defaults(self):
+        import mode
+        self.assertEqual(mode.DEFAULTS['CIRCUIT_MAP_LEVEL'], '0.2')
+        self.assertEqual(mode.DEFAULTS['CIRCUIT_FINISH_LEVEL'], '0.6')
+        for k in ('CIRCUIT_GHOST', 'CIRCUIT_TRACK_RUN', 'CIRCUIT_TRACK_LEVEL'):
+            self.assertNotIn(k, mode.DEFAULTS)
+        with open(os.path.join(ROOT, 'pi', 'config.env.example'), encoding='utf-8') as f:
+            example = f.read()
+        self.assertIn('CIRCUIT_MAP_LEVEL=0.2', example)
+        self.assertIn('CIRCUIT_FINISH_LEVEL=0.6', example)
+        self.assertNotIn('CIRCUIT_GHOST', example)
 
 
 class Clock:
@@ -171,7 +329,7 @@ class Renderer(unittest.TestCase):
 
     def test_runs_then_finishes_into_idle(self):
         r = self.make()
-        run = circuit.Run('Test', SEQ, 2, 2, False, 'r1')
+        run = circuit.Run('Test', SEQ, 2, 2, 1, 'r1')
         r.circuit(run)
         r.step(self.clock.t)
         self.assertEqual(r.state, renderer.RUN)
@@ -179,14 +337,16 @@ class Renderer(unittest.TestCase):
         self.go(COUNTDOWN + 1)
         self.assertEqual(r.state, renderer.RUN)
         self.assertEqual(self.strip.writes[-1][1], renderer.BOARD_PIXELS)
-        self.assertLessEqual(max(max(rgb) for rgb in self.strip.writes[-1][0].values()), 128)   # cast brightness 0.5
-        self.go(run.moves * run.interval + run.finish_length())
+        frame = self.strip.writes[-1][0]
+        self.assertEqual(max(max(rgb) for rgb in frame.values()), 128)      # the green, at cast brightness 0.5
+        self.assertEqual(len(frame), len(set(SEQ)))                        # the whole map
+        self.go(run.moves * run.interval + run.top_length())
         self.assertEqual(r.state, renderer.IDLE)
         self.assertTrue(any(m.startswith("circuit ended: 'Test' finished after 10 moves") for m in self.logs))
 
     def test_stop_needs_the_right_token(self):
         r = self.make()
-        r.circuit(circuit.Run('Test', SEQ, 2, 3, True, 'r1'))
+        r.circuit(circuit.Run('Test', SEQ, 2, 3, 0, 'r1'))
         self.go(7)
         r.stop_circuit('other')
         self.go(0.1)
@@ -200,7 +360,7 @@ class Renderer(unittest.TestCase):
         r.stop_circuit(None)
         self.go(0.1)
         self.assertEqual(r.state, renderer.IDLE)
-        r.circuit(circuit.Run('Test', SEQ, 2, 3, True, 'r1'))
+        r.circuit(circuit.Run('Test', SEQ, 2, 3, 0, 'r1'))
         self.go(2)
         r.stop_circuit(None)
         self.go(0.1)
@@ -208,7 +368,7 @@ class Renderer(unittest.TestCase):
 
     def test_a_problem_cast_cuts_in(self):
         r = self.make()
-        r.circuit(circuit.Run('Test', SEQ, 2, 3, True, 'r1'))
+        r.circuit(circuit.Run('Test', SEQ, 2, 3, 0, 'r1'))
         self.go(8)
         r.cast({54: (0, 127, 0)})
         self.go(0.1)
@@ -221,18 +381,18 @@ class Renderer(unittest.TestCase):
 
     def test_time_limit(self):
         r = self.make(CIRCUIT_MAX_S='30')
-        r.circuit(circuit.Run('Test', SEQ, 2, 2, True, 'r1'))
+        r.circuit(circuit.Run('Test', SEQ, 2, 2, 0, 'r1'))
         self.go(31, dt=0.25)
         self.assertEqual(r.state, renderer.IDLE)
         self.assertTrue(any('the limit' in m for m in self.logs))
 
     def test_night_wins(self):
         r = self.make(night=True)
-        r.circuit(circuit.Run('Test', SEQ, 2, 3, True, 'r1'))
+        r.circuit(circuit.Run('Test', SEQ, 2, 3, 0, 'r1'))
         self.go(0.1)
         self.assertEqual(r.state, renderer.NIGHT)
         r = self.make()
-        r.circuit(circuit.Run('Test', SEQ, 2, 3, True, 'r1'))
+        r.circuit(circuit.Run('Test', SEQ, 2, 3, 0, 'r1'))
         self.go(6)
         r.set_night(True)
         self.go(4)
@@ -240,7 +400,7 @@ class Renderer(unittest.TestCase):
         self.assertEqual(self.strip.writes[-1][0], {})
 
 
-# -- circuit tracks (contract 8.6) ---------------------------------------------------------
+# -- circuit tracks (contract 8.6): checked, not drawn -------------------------------------
 
 # The live Pat Burner (a loop, a match at positions 5-6) and its track as Ross edited it.
 PB_SEQ = ['hold47', 'hold24', 'hold98', 'hold119', 'hold213', 'hold235', 'hold235', 'hold206', 'hold148',
@@ -251,13 +411,6 @@ def pb_track():
     with open(os.path.join(ROOT, 'tools', 'circuit-tracks-pat-burner.json'), encoding='utf-8') as f:
         moves = json.load(f)['circuits']['Pat Burner']['moves']
     return {'version': 1, 'moves': [{k: m[k] for k in ('move', 'from', 'to', 'cells')} for m in moves]}
-
-
-def led(h):
-    return board.led_index(board.hold_number(h))
-
-
-OPTS = dict(ghost=0.12, track_run='move', track_level=0.2)
 
 
 class Tracks(unittest.TestCase):
@@ -298,201 +451,107 @@ class Tracks(unittest.TestCase):
             self.assertEqual(len(problems), 1, junk)
         self.assertEqual(circuit.check_track(json.dumps(pb_track()), PB_SEQ)[1], [])     # a JSON string is fine
         self.assertEqual(circuit.check_track(None, PB_SEQ), ({}, []))
-        run = circuit.Run('PB', PB_SEQ, 2, 3, True, track='{oops', trace_s=3, **OPTS)
-        self.assertEqual(run.track_problems, ['led_track is not JSON'])
-        self.assertEqual(run.path, [led(h) for h in dict.fromkeys(PB_SEQ)])
 
-    def test_path_without_a_track_is_the_holds(self):
-        run = circuit.Run('PB', PB_SEQ, 2, 3, True, trace_s=3)
-        self.assertEqual(run.path, [led(h) for h in dict.fromkeys(PB_SEQ)])      # hold235 once
-        once = circuit.Run('T', SEQ, 2, 3, False, trace_s=3)
-        self.assertEqual(once.path, [led(h) for h in dict.fromkeys(SEQ)])
 
-    def test_path_with_a_track(self):
-        run = circuit.Run('PB', PB_SEQ, 2, 3, True, trace_s=3, track=pb_track(), **OPTS)
-        want = []
-        for h in ('hold47', 'hold24', 'hold43', 'hold61', 'hold98', 'hold117', 'hold119', 'hold176', 'hold195',
-                  'hold213', 'hold214', 'hold177', 'hold178', 'hold235', 'hold203', 'hold185', 'hold206',
-                  'hold205', 'hold186', 'hold148', 'hold131', 'hold112', 'hold93', 'hold72', 'hold53', 'hold49'):
-            want.append(led(h))
-        self.assertEqual(run.path, want)
-        self.assertEqual(len(run.path), len(set(run.path)))              # every LED once a lap
-        self.assertNotIn(led('hold2'), run.path)
-        self.assertNotIn(led('hold21'), run.path)
-        # A run done once doesn't use the wrap move (none here: move 12's cells are empty), and ends on the last hold.
-        once = circuit.Run('PB', PB_SEQ, 2, 3, False, trace_s=3, track=pb_track(), **OPTS)
-        self.assertEqual(once.path[-1], led('hold49'))
-        self.assertNotIn(12, once.move_leds)
-
-    def test_track_cells_never_on_a_circuit_hold(self):
-        t = pb_track()
-        t['moves'][1]['cells'] = ['hold43', 'hold98', 'hold61']     # hold98 is in the circuit
-        run = circuit.Run('PB', PB_SEQ, 2, 3, True, trace_s=3, track=t, **OPTS)
-        self.assertEqual(run.track_problems, [])
-        self.assertEqual(run.move_leds[2], [led('hold43'), led('hold61')])
-        self.assertEqual(len(run.path), len(set(run.path)))
-
-    def test_trace_step_clamp_and_timing(self):
-        run = circuit.Run('PB', PB_SEQ, 2, 3, True, trace_s=3, track=pb_track(), **OPTS)
-        self.assertAlmostEqual(run.step, 2.8 / 26)
-        short = circuit.Run('T', ['hold3', 'hold80', 'hold120'], 1, 3, False, trace_s=3)
-        self.assertEqual(short.step, circuit.TRACE_STEP_MAX)                 # 3 LEDs: 0.93 s clamped to 0.15
-        long_seq = ['hold%d' % n for n in range(22, 230, 1) if n not in (21, 2)][:150]
-        long = circuit.Run('T', long_seq, 2, 3, False, trace_s=3)
-        self.assertEqual(long.step, circuit.TRACE_STEP_MIN)                  # 150 LEDs: 0.019 s clamped to 0.034
-        self.assertGreaterEqual(circuit.TRACE_STEP_MIN, 1 / 30)              # at least one frame at 30 fps
-        # The countdown starts after trace_s: the start holds flash red at trace_s + 0.2, not before.
-        self.assertEqual(run.phase(2.9), 'trace')
-        self.assertEqual(run.phase(3.2), 'count')
-        self.assertEqual(run.phase(3 + COUNTDOWN + 0.1), 'run')
-        leds, _ = run.frame(3.2)
-        self.assertEqual(leds[led('hold47')], RED)
-        self.assertEqual(run.moves_at(3 + COUNTDOWN + 3 * 4 + 0.5), 4)
-        self.assertEqual(run.move_at(3 + COUNTDOWN + 0.1), 2)               # on the starts, going to hold98
-        once = circuit.Run('T', SEQ, 2, 2, False, trace_s=3)
-        top = 3 + COUNTDOWN + once.moves * 2
-        self.assertFalse(once.frame(top + once.finish_length() - 0.01)[1])
-        self.assertTrue(once.frame(top + once.finish_length() + 0.01)[1])
-
-    def test_trace_frame(self):
-        run = circuit.Run('PB', PB_SEQ, 2, 3, True, trace_s=3, track=pb_track(), **OPTS)
-        f0 = run.trace_frame(0.0)
-        self.assertEqual(f0[run.path[0]], circuit.WHITE)                    # the spot's head at the start
-        self.assertEqual(sum(1 for v in f0.values() if v == (0.0, 0.0, 0.0)), len(f0) - 1)   # the rest faded out
-        f = run.trace_frame(1.0)
-        k = int(1.0 // run.step)
-        n = len(run.path)
-        self.assertEqual(f[run.path[k % n]], circuit.WHITE)
-        self.assertEqual(f[run.path[(k - 1) % n]], tuple(v * 0.45 for v in circuit.WHITE))
-        self.assertEqual(f[run.path[(k - 2) % n]], tuple(v * 0.15 for v in circuit.WHITE))
-        dim_hold = [i for i in run.hold_leds if i not in [run.path[(k - b) % n] for b in range(3)]][0]
-        self.assertEqual(f[dim_hold], tuple(v * 0.12 for v in circuit.WHITE))
-        dim_track = [i for i in run.track_leds if i not in [run.path[(k - b) % n] for b in range(3)]][0]
-        self.assertEqual(f[dim_track], tuple(v * 0.2 for v in circuit.PINK))
-        self.assertEqual(set(f), run.hold_leds | set(run.track_leds))
-
-    def test_no_led_lights_twice_in_a_lap(self):
-        """Frame by frame at 30 fps through one lap: each LED is the head in one unbroken stretch."""
-        run = circuit.Run('PB', PB_SEQ, 2, 3, True, trace_s=3, track=pb_track(), **OPTS)
-        lap = run.step * len(run.path)
-        heads, t = [], 0.0
-        while t < lap - 1e-9:
-            f = run.trace_frame(t)
-            heads.append([i for i, v in f.items() if v == circuit.WHITE][0])
-            t += 1 / 30
-        runs = [h for j, h in enumerate(heads) if j == 0 or heads[j - 1] != h]
-        self.assertEqual(len(runs), len(set(runs)))
-        self.assertEqual(set(runs), set(run.path))                          # and none is skipped at 30 fps
-
-    def test_ghost_and_track_under_pulse_and_fade(self):
-        plain = circuit.Run('PB', PB_SEQ, 2, 3, True)
-        run = circuit.Run('PB', PB_SEQ, 2, 3, True, track=pb_track(), **OPTS)
-        ghost = tuple(v * 0.12 for v in circuit.WHITE)
-        pink = tuple(v * 0.2 for v in circuit.PINK)
-        for t in [x / 10 for x in range(0, 600, 3)]:
-            base, _ = plain.frame(t)
-            leds, _ = run.frame(t)
-            for i, rgb in base.items():                                     # Pulse and fade unchanged where it lights
-                self.assertEqual(leds[i], rgb, t)
-            for i, rgb in leds.items():
-                if i not in base:
-                    self.assertIn(rgb, (ghost, pink), t)
-                    self.assertEqual(rgb == ghost, i in run.hold_leds, t)   # ghost only on holds, track never
-        # The countdown: the ghost, but no track.
-        leds, _ = run.frame(1.7)                                            # the flash's off half
-        self.assertEqual({leds[i] for i in run.hold_leds}, {ghost})
-        self.assertFalse(set(leds) & set(run.track_leds))
-        # In the run, move mode: only the current move's cells. Move 2 (hold24 -> hold98): hold43, hold61.
-        leds, _ = run.frame(COUNTDOWN + 0.5)
-        self.assertEqual({i for i, v in leds.items() if v == pink}, {led('hold43'), led('hold61')})
-        # The match (move 6, hold235 -> hold235) has no cells.
-        leds, _ = run.frame(COUNTDOWN + 4 * 3 + 0.5)
-        self.assertEqual(run.move_at(COUNTDOWN + 4 * 3 + 0.5), 6)
-        self.assertNotIn(pink, leds.values())
-        allrun = circuit.Run('PB', PB_SEQ, 2, 3, True, track=pb_track(), ghost=0.12, track_run='all', track_level=0.2)
-        leds, _ = allrun.frame(COUNTDOWN + 0.5)
-        self.assertEqual({i for i, v in leds.items() if v == pink}, set(allrun.track_leds))
-        off = circuit.Run('PB', PB_SEQ, 2, 3, True, track=pb_track(), ghost=0, track_run='off')
-        self.assertEqual(off.frame(COUNTDOWN + 0.5)[0], plain.frame(COUNTDOWN + 0.5)[0])
-
-    def test_no_ghost_at_the_finish(self):
-        run = circuit.Run('T', SEQ, 2, 2, False, ghost=0.12, track_run='all')
-        plain = circuit.Run('T', SEQ, 2, 2, False)
-        top = COUNTDOWN + run.moves * 2
-        for dt in (0.5, 1.3, 2.0):
-            self.assertEqual(run.frame(top + dt)[0], plain.frame(top + dt)[0])
-
-    def test_no_trace_changes_nothing(self):
-        plain = circuit.Run('T', SEQ, 2, 3, False)
-        zero = circuit.Run('T', SEQ, 2, 3, False, trace_s=0, track=None)
-        for t in [x / 7 for x in range(0, 400)]:
-            self.assertEqual(plain.holds_at(t), zero.holds_at(t))
-            self.assertEqual(plain.frame(t), zero.frame(t))
-            self.assertEqual(plain.moves_at(t), zero.moves_at(t))
-        late = circuit.Run('T', SEQ, 2, 3, False, trace_s=3)
-        for t in [x / 8 for x in range(0, 300)]:          # eighths: t + 3 is exact, so no rounding differs
-            self.assertEqual(late.holds_at(t + 3), plain.holds_at(t))       # the same run, 3 s later
-            self.assertEqual(late.moves_at(t + 3), plain.moves_at(t))
-
-    def test_mirrored_runs_have_no_track(self):
-        run = circuit.Run('PB', PB_SEQ, 2, 3, True, mirror_map={'hold47': 'hold49'}, track=pb_track(), trace_s=3, **OPTS)
-        self.assertEqual(run.move_leds, {})
-        self.assertEqual(run.track_problems, ['mirrored: the track is not used'])
-
-    def test_options(self):
-        warned = []
-        self.assertEqual(circuit.options({}), circuit.OPTION_DEFAULTS)
-        self.assertEqual(circuit.options({'CIRCUIT_GHOST': '0', 'CIRCUIT_TRACK_RUN': 'ALL', 'CIRCUIT_TRACK_LEVEL': '0.5'}),
-                         {'ghost': 0.0, 'track_run': 'all', 'track_level': 0.5})
-        self.assertEqual(circuit.options({'CIRCUIT_GHOST': '0.9', 'CIRCUIT_TRACK_RUN': 'some', 'CIRCUIT_TRACK_LEVEL': 'x'},
-                                         warned.append), circuit.OPTION_DEFAULTS)
-        self.assertEqual(len(warned), 3)
-
-    def test_renderer_runs_a_trace_at_cast_brightness(self):
-        clock, logs, strip = Clock(), [], Strip()
-        r = renderer.Renderer(strip, dict(CFG), False, logs.append, logs.append, logs.append, clock=clock, seed=3)
-        r.step(clock.t)
-        run = circuit.Run('PB', PB_SEQ, 2, 3, False, 'r1', trace_s=3, track=pb_track(), **OPTS)
-        r.circuit(run)
-        end = clock.t + 1.5
-        while clock.t < end:
-            r.step(clock.t)
-            clock.t += 1 / 30
-        self.assertEqual(r.state, renderer.RUN)
-        frame = strip.writes[-1][0]
-        self.assertEqual(max(max(rgb) for rgb in frame.values()), 128)     # the spot, at BRIGHTNESS 0.5
-        self.assertTrue(set(frame) <= run.hold_leds | set(run.track_leds))
-
+# -- the listener: cast_circuit (contract 8.1) ---------------------------------------------
 
 class ListenerCast(unittest.TestCase):
-    """pb_listener.on_circuit: trace_s parsed (absent = 0, 0-5, else the cast is ignored)."""
+    """pb_listener.on_circuit and show_circuit: laps, the backward-compatible loop, trace_s ignored."""
 
     def setUp(self):
         try:
             import pb_listener
-        except ImportError as e:
+        except ImportError as e:                 # websockets isn't installed on this machine
             self.skipTest('pb_listener not importable: %s' % e)
+        self.pb = pb_listener
         self.L = pb_listener.Listener.__new__(pb_listener.Listener)
-        self.L.mode, self.L.status, self.L.pending = 'day', {}, None
+        self.L.cfg = {'BRIGHTNESS': '0.5', 'POWER_BUDGET_MA': '8000', 'MA_PER_CHANNEL': '20'}
+        self.L.mode, self.L.status, self.L.pending, self.L.status_path = 'day', {'circuits_shown': 0}, None, None
+        self.L.mirror_map = None
+        self.L.circuit_opts = circuit.options({})
+        self.runs = []
 
         class Ready:
             def set(_):
                 pass
-        self.L.cast_ready = Ready()
 
-    def cast(self, **extra):
+        class LedThread:
+            def circuit(_, run):
+                self.runs.append(run)
+        self.L.cast_ready, self.L.leds = Ready(), LedThread()
+        self.warned, self.logged = [], []
+        self._warn, self._log = pb_listener.warn, pb_listener.log
+        pb_listener.warn = self.warned.append
+        pb_listener.log = lambda msg, level=6: self.logged.append(msg)
+
+    def tearDown(self):
+        self.pb.warn, self.pb.log = self._warn, self._log
+
+    def cast(self, **fields):
         self.L.pending = None
-        self.L.on_circuit(dict({'circuit_name': 'Pat Burner', 'interval': 3, 'loop': True, 'run': 'ab'}, **extra))
+        body = dict({'circuit_name': 'Pat Burner', 'interval': 3, 'run': 'ab'}, **fields)
+        self.L.on_circuit({k: v for k, v in body.items() if v is not ...})
         return self.L.pending
 
-    def test_trace_s(self):
-        self.assertEqual(self.cast()[7], 0.0)                     # absent: no trace, timing as before
-        self.assertEqual(self.cast(trace_s=3)[7], 3.0)
-        self.assertEqual(self.cast(trace_s=0)[7], 0.0)
-        self.assertEqual(self.cast(trace_s=5)[7], 5.0)
-        self.assertEqual(self.cast(trace_s=2.5)[5], 'ab')         # the run token keeps its place (stop reads it)
-        for bad in (-1, 5.1, '3', True, None):
-            self.assertIsNone(self.cast(trace_s=bad), bad)
+    def test_laps(self):
+        p = self.cast(laps=3)
+        self.assertEqual((p[0], p[1], p[3]), ('circuit', 'Pat Burner', 3))
+        self.assertEqual(p[6], 'ab')                              # the run token (on_stop reads pending[6])
+        self.assertEqual(self.cast(laps=0)[3], 0)
+        self.assertEqual(self.cast(laps=10)[3], 10)
+        self.assertEqual(self.cast(laps=1, loop=True)[3], 1)      # laps wins over loop
+        self.assertIn("circuit received: 'Pat Burner', 3 s a move, 3 laps", self.logged[0])
+        self.assertTrue(any(', endless' in m for m in self.logged))
+
+    def test_bad_laps_ignore_the_cast(self):
+        for bad in (-1, 11, 2.5, 3.0, '3', True, False, [1]):
+            self.warned.clear()
+            self.assertIsNone(self.cast(laps=bad), bad)
+            self.assertEqual(len(self.warned), 1, bad)
+            self.assertIn('bad laps', self.warned[0])
+
+    def test_backward_compatible(self):
+        self.assertEqual(self.cast(loop=True)[3], 0)              # no laps: loop true = endless
+        self.assertEqual(self.cast(loop=False)[3], 1)             # loop false = 1 lap
+        self.assertIsNone(self.cast()[3])                         # no loop either: the circuit's loops, later
+        self.assertTrue(any("the circuit's loop setting" in m for m in self.logged))
+        self.warned.clear()
+        for trace in (3, 0, 9, 'junk', None):                     # trace_s: ignored, never warned about
+            self.assertIsNotNone(self.cast(loop=True, trace_s=trace), trace)
+        self.assertEqual(self.warned, [])
+
+    def start(self, row, **fields):
+        """on_circuit, then show_circuit with the circuit row the fetch returns -> the Run started."""
+        self.runs.clear()
+        p = self.cast(**fields)
+        self.assertIsNotNone(p)
+        self.L.pending = None
+        old = self.pb.supa.fetch_circuit
+        self.pb.supa.fetch_circuit = lambda cfg, name: row
+        try:
+            asyncio.run(self.L.show_circuit(*p[1:]))
+        finally:
+            self.pb.supa.fetch_circuit = old
+        return self.runs[-1] if self.runs else None
+
+    def test_the_run_gets_its_laps_from_the_circuit(self):
+        looping = {'name': 'Pat Burner', 'hold_sequence': SEQ, 'start_count': 2, 'loops': True}
+        once = dict(looping, loops=False)
+        cases = [  # (row, fields, laps)
+            (looping, dict(laps=3), 3), (looping, dict(laps=0), 0), (looping, dict(loop=True), 0),
+            (looping, dict(loop=False), 1), (looping, dict(), 0),
+            (once, dict(laps=0), 1), (once, dict(laps=5), 1), (once, dict(loop=True), 1),
+            (once, dict(loop=False), 1), (once, dict(), 1)]
+        for row, fields, laps in cases:
+            run = self.start(row, **fields)
+            self.assertEqual(run.laps, laps, (row['loops'], fields))
+        self.assertTrue(any("circuit started 'Pat Burner': 12 holds, 10 moves, 3 s a move, 1 lap, run ab" in m
+                            for m in self.logged))
+        self.assertTrue(any('moves until stopped, 3 s a move, endless' in m for m in self.logged))
+
+    def test_unknown_circuit_leaves_the_board(self):
+        self.assertIsNone(self.start(None, laps=1))
+        self.assertTrue(any('unknown circuit' in m for m in self.warned))
 
 
 if __name__ == '__main__':

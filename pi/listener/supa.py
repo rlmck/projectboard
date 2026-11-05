@@ -57,9 +57,9 @@ def fetch_benchmarks(cfg):
 
 
 def fetch_circuit(cfg, name):
-    """The circuit row by exact name (contract 8), with its led_track (8.6, db/37), or None."""
+    """The circuit row by exact name (contract 8), or None. (led_track, 8.6, isn't drawn any more.)"""
     rows = _retry_once(lambda: _get(cfg, 'circuits', {
-        'select': 'name,hold_sequence,start_count,loops,led_track',
+        'select': 'name,hold_sequence,start_count,loops',
         'name': 'eq.' + name}))
     if not isinstance(rows, list):
         raise ValueError('circuits lookup returned %s' % type(rows).__name__)

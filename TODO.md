@@ -19,7 +19,7 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 5. **Docs: the touchscreen's HDMI port.** Since the rebuild the screen's video is on the Pi's **`HDMI-A-1`** (the micro-HDMI port nearest the USB-C power), not `HDMI-A-2`: seen 2 Nov 2026 in `/sys/class/drm` (`card0-HDMI-A-1` connected and enabled, `HDMI-A-2` disconnected). `cage` uses whichever output is connected, so nothing is broken; fix the text in `pi/README.md` ("Touchscreen" under Wiring) and the wall kiosk line in `PROJECT_STATUS.md`, and check nothing else names `HDMI-A-2`.
 
 ## Pi and infrastructure
-6. **Circuit LED match rule:** when the hold to go to is a match, light the next different hold at once, full blue, at the start of the match beat (today it's only a dim amber pulse and the beat feels stale). The match beat stays a full interval, so the climber has the match beat plus the next move's time to see it. Change `pi/listener/circuit.py` and `tools/circuit-led-simulator.html` together; update contract §8.3 and `pi/tests/test_circuit.py`.
+6. **Circuit run screen: laps on the phone and wall (session 2).** The Pi already takes `laps` (0 = endless, 1–10) since 5 Nov 2026; the Cast sheet still sends only `loop` (contract §8.1, §8.4).
 7. **Pull the Pi-only files into `pi/`** (PB Console → Deploy): `pb-netwatch.sh` v2 and its unit, the `pb-rescue` profile (secrets stripped), the newer `pb-netlog` unit; then add their `install.sh` lines. Look at the kernel errors seen on 28 Oct (about 3,460 in 24 h, nearly all kernel) in Logs once the gym is closed.
 8. **A heartbeat from the Pi to Supabase** so the app can show "board online".
 9. **A mock listener on the laptop** that turns a cast into LED indices (lower priority now the webcam shows the real board).

@@ -4,12 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Circuit LED simulator · Project Board</title>
+<!--
+  The circuit LED look on the board, simulated: "map and next hold" (Ross, 5 Nov 2026;
+  it replaced direction 4, "Pulse and fade", and the circuit-track lighting).
+  A PORT OF pi/listener/circuit.py, kept in step with it: runFrame() here is Run.layers()
+  there (blink(), matchOn(), the laps, the top). Change both together; contract 8.3
+  (docs/cast-contract.md). Open it from the repo (tools/circuit-led-simulator.html) so the
+  board photo loads from ../app/; the circuits are read live with the public anon key.
+-->
 <style>
   :root {
     color-scheme: dark;
     --bg: #0a0a0a; --surface: #161616; --surface2: #202020; --border: #2c2c2c;
     --accent: #be185d; --accent-hover: #db2777;
-    --start: #22c55e; --int: #3b82f6; --finish: #ef4444; --amber: #f59e0b; --yellow: #facc15; --orange: #f97316;
+    --start: #22c55e; --int: #3b82f6; --finish: #ef4444;
     --text: #f5f5f5; --muted: #9a9a9a; --faint: #55556a;
     --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -17,7 +25,7 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--font); }
-  main { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 20px; padding: 16px 20px; max-width: 1560px; margin: 0 auto; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; padding: 16px 20px; max-width: 1560px; margin: 0 auto; }
   @media (max-width: 960px) { main { grid-template-columns: 1fr; padding: 16px; } }
 
   .stage { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
@@ -25,23 +33,21 @@
   canvas { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(100vh - 190px); margin: 0 auto; }
   @media (max-width: 960px) { canvas { max-height: none; width: 100%; } }
   .big-count { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
-    font-size: clamp(60px, 14vw, 180px); font-weight: 800; color: rgba(255,255,255,0.0); transition: color .15s; }
+    font-size: clamp(60px, 14vw, 180px); font-weight: 800; color: transparent; }
 
   .readout { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 16px;
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 12px 16px; }
   .phase { font-size: 26px; font-weight: 700; min-width: 7ch; }
   .sub { color: var(--muted); font-size: 14px; }
   .beatbar { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; margin-top: 6px; }
-  .beatbar i { display: block; height: 100%; width: 0; background: var(--int); }
+  .beatbar i { display: block; height: 100%; width: 0; background: var(--start); }
   .now { font-size: 14px; display: grid; gap: 2px; text-align: right; }
   .now b { font-weight: 600; }
 
   .seq { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { font: 12px/1 var(--mono); padding: 6px 7px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); color: var(--faint); }
+  .chip { font: 12px/1 var(--mono); padding: 6px 7px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); color: var(--muted); }
   .chip.done { color: #444; border-color: #1c1c1c; }
-  .chip.held { color: #fff; border-color: #fff; }
-  .chip.target { color: #fff; background: var(--int); border-color: var(--int); }
-  .chip.next { color: #bcd4ff; border-color: var(--int); }
+  .chip.target { color: #000; background: var(--start); border-color: var(--start); }
   .chip.start { box-shadow: inset 0 -3px 0 var(--start); }
   .chip.finish { box-shadow: inset 0 -3px 0 var(--finish); }
 
@@ -50,33 +56,31 @@
   .panel h2 { margin: 0; font-size: 15px; font-weight: 650; }
   .panel p { margin: 0; color: var(--muted); font-size: 13px; }
   label.field { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+  label.field output { color: var(--text); font-family: var(--mono); }
   select { width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
   .seg { display: flex; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 3px; }
   .seg button { flex: 1; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px; padding: 6px 4px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
   .seg button[aria-pressed="true"] { background: #333; color: var(--text); }
   .row { display: flex; gap: 8px; align-items: center; }
-  .opts { display: grid; grid-template-columns: 3fr 2fr; gap: 8px; }
+  .laps { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .check { display: flex; gap: 8px; align-items: center; font-size: 14px; cursor: pointer; }
+  .check input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .stepper { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); }
+  .stepper button { border: 0; background: transparent; color: var(--text); font: inherit; font-size: 18px; width: 36px; height: 34px; cursor: pointer; }
+  .stepper output { min-width: 5.5ch; text-align: center; font-variant-numeric: tabular-nums; }
+  .stepper.off { opacity: .35; }
+  .stepper.off button { cursor: default; }
   .btn { border: 1px solid var(--border); background: var(--surface2); color: var(--text); font: inherit; font-weight: 600; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
   .btn:hover { background: #2a2a2a; }
   .btn.primary { background: var(--accent); border-color: var(--accent); flex: 1; font-size: 16px; }
   .btn.primary:hover { background: var(--accent-hover); }
   .btn.icon { padding: 10px 12px; min-width: 44px; }
   .btn:disabled { opacity: .35; cursor: default; }
-  button:focus-visible, select:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
   .opt { display: grid; gap: 5px; }
   .opt > span { font-size: 13px; color: var(--muted); }
   .note { font-size: 12px; color: var(--faint); }
-
-  .dirs { display: grid; gap: 2px; }
-  .dir { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; text-align: left; width: 100%;
-    border: 1px solid transparent; background: transparent; color: var(--text); font: inherit; padding: 5px 8px; border-radius: 8px; cursor: pointer; }
-  .dir:hover { background: var(--surface2); }
-  .dir[aria-pressed="true"] { background: var(--surface2); border-color: var(--accent); }
-  .dir .n { font: 600 12px/20px var(--mono); color: var(--muted); text-align: center; border: 1px solid var(--border); border-radius: 5px; }
-  .dir[aria-pressed="true"] .n { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .dir b { display: block; font-size: 14px; font-weight: 600; line-height: 20px; }
-  .dir small { display: block; font-size: 12px; line-height: 1.35; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dir > span:last-child { min-width: 0; }
 
   .legend { display: grid; gap: 6px; font-size: 13px; }
   .legend div { display: flex; gap: 8px; align-items: baseline; }
@@ -111,15 +115,21 @@
         <select id="circuit"></select>
       </label>
       <p id="srcNote"></p>
-      <div class="opts">
-        <div class="opt"><span>Speed (per move)</span>
-          <div class="seg" data-opt="speed">
-            <button data-v="5">Slow 5 s</button><button data-v="3">Med 3 s</button><button data-v="2">Fast 2 s</button>
+      <div class="opt"><span>Speed (a move)</span>
+        <div class="seg" data-opt="speed">
+          <button data-v="5">Slow 5 s</button><button data-v="3">Med 3 s</button><button data-v="2">Fast 2 s</button>
+        </div>
+      </div>
+      <div class="opt"><span>Laps</span>
+        <div class="laps">
+          <label class="check"><input type="checkbox" id="loop"> Loop</label>
+          <div class="stepper" id="stepper">
+            <button id="lapsDown" aria-label="One lap fewer">−</button>
+            <output id="lapsOut" aria-live="polite">1 lap</output>
+            <button id="lapsUp" aria-label="One lap more">+</button>
           </div>
         </div>
-        <div class="opt"><span>Loop</span>
-          <div class="seg" data-opt="loop"><button data-v="0">Once</button><button data-v="1">Loop</button></div>
-        </div>
+        <p class="note" id="lapsNote"></p>
       </div>
       <div class="row">
         <button class="btn primary" id="startBtn">Start</button>
@@ -128,28 +138,16 @@
         <button class="btn icon" id="fwdBtn" disabled title="Forward one move (→)">▶</button>
       </div>
       <button class="btn" id="matchBtn" hidden>Jump to the match</button>
-      <p class="note"><kbd>Space</kbd> start or pause, <kbd>←</kbd> <kbd>→</kbd> step a move while paused, <kbd>Esc</kbd> stop, <kbd>1</kbd>–<kbd>8</kbd> direction.</p>
+      <p class="note"><kbd>Space</kbd> start or pause, <kbd>←</kbd> <kbd>→</kbd> step a move, <kbd>Esc</kbd> stop.</p>
     </div>
 
     <div class="panel">
-      <h2>Direction</h2>
-      <div class="dirs" id="dirs"></div>
-    </div>
-
-    <div class="panel" id="trackPanel">
-      <h2>Trace, ghost and track</h2>
-      <p>Under Pulse and fade (direction 4) only, as <code>pi/listener/circuit.py</code> does (contract 8.6). The track is the circuit's <code>led_track</code>, read with it.</p>
-      <div class="opts">
-        <div class="opt"><span>Route trace first</span>
-          <div class="seg" data-opt="trace"><button data-v="0">Off</button><button data-v="3">3 s</button></div>
-        </div>
-        <div class="opt"><span>Track in the run</span>
-          <div class="seg" data-opt="trackRun"><button data-v="0">Off</button><button data-v="1">Move</button><button data-v="2">All</button></div>
-        </div>
-      </div>
-      <label class="field">Ghost <output id="ghostOut"></output><input type="range" id="ghost" min="0" max="0.3" step="0.01"></label>
-      <label class="field">Track level <output id="trackOut"></output><input type="range" id="trackLevel" min="0" max="0.5" step="0.01"></label>
-      <p class="note" id="trackNote"></p>
+      <h2>Levels</h2>
+      <p>As the Pi's config keys (before its cast <code>BRIGHTNESS</code>).</p>
+      <label class="field">Map, <code>CIRCUIT_MAP_LEVEL</code> <output id="mapOut"></output>
+        <input type="range" id="mapLevel" min="0.05" max="0.6" step="0.01"></label>
+      <label class="field">Finish, <code>CIRCUIT_FINISH_LEVEL</code> <output id="finOut"></output>
+        <input type="range" id="finishLevel" min="0.1" max="1" step="0.01"></label>
     </div>
 
     <div class="panel">
@@ -165,40 +163,96 @@ const BOARD_IMG = '../app/board-fallback.jpg'; // the app's board image, so this
 const SUPA_URL = 'https://uqirowyfqwiceyjznosl.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA';
 
+// ── The look: a port of pi/listener/circuit.py (keep the two in step) ───────
+const COUNTDOWN = 5;
+const MAX_LAPS = 10;
+const GREEN = [0, 255, 0], BLUE = [0, 0, 255], RED = [255, 0, 0], OFF = [0, 0, 0];
+const BLINK_FULL = 0.08, BLINK_FADE = 0.8;          // full, then a linear fade to off, once a second
+const MATCH_OFF = [[0, 0.15], [0.30, 0.45]];        // s into a match beat when its green is off
+const TOP_BLINKS = 3, TOP_FADE = 1;                 // three red blinks, then the map fades out
+
+function blink(x) {
+  x = ((x % 1) + 1) % 1;
+  if (x < BLINK_FULL) return 1;
+  if (x < BLINK_FULL + BLINK_FADE) return Math.max(0, 1 - (x - BLINK_FULL) / BLINK_FADE);
+  return 0;
+}
+const matchOn = x => MATCH_OFF.some(([a, b]) => a <= x && x < b) ? 0 : 1;
+const over = (top, a, under) => top.map((v, i) => v * a + under[i] * (1 - a));
+const scale = (rgb, k) => rgb.map(v => v * k);
+
+// circuit.resolve_laps: loops false always runs 1 lap; Loop = 0 (endless), else the stepper.
+const resolveLaps = (loop, laps, loops) => !loops ? 1 : loop ? 0 : laps;
+const lapsText = n => n === 0 ? 'endless' : n === 1 ? '1 lap' : `${n} laps`;
+
+// circuit.Run
+function makeRun(c, interval, laps, mapLevel, finishLevel) {
+  const seq = c.hold_sequence, L = seq.length, s = Math.max(1, Math.min(c.start_count || 1, 2, L));
+  const R = { seq, L, s, interval, laps, endless: laps === 0, mapLevel, finishLevel, finish: seq[L - 1] };
+  R.moves = R.endless ? null : (L - s) + (laps - 1) * L;
+  R.hold = i => seq[((i % L) + L) % L];
+  R.target = k => s + k;
+  R.lapOf = k => Math.floor(R.target(k) / L) + 1;
+  R.isMatch = k => { const i = R.target(k); return [i - 1, i - 2].some(j => j >= 0 && R.hold(j) === R.hold(i)); };
+  return R;
+}
+const topLength = () => TOP_BLINKS + TOP_FADE;
+function phaseOf(R, t) {
+  if (t < COUNTDOWN) return 'count';
+  if (R.endless) return 'run';
+  const after = t - COUNTDOWN - R.moves * R.interval;
+  return after < 0 ? 'run' : after < topLength() ? 'top' : 'done';
+}
+// Run.layers(): {holds: Map(hold id -> [r, g, b] 0-255), done}
+function runFrame(R, t) {
+  const ph = phaseOf(R, t);
+  if (ph === 'done') return { holds: new Map(), done: true };
+  const blue = scale(BLUE, R.mapLevel);
+  const out = new Map(R.seq.map(h => [h, blue]));
+  if (ph === 'top') {
+    const after = t - COUNTDOWN - R.moves * R.interval;
+    out.set(R.finish, OFF);
+    if (after < TOP_BLINKS) out.set(R.finish, over(RED, blink(after), OFF));
+    else { const fade = Math.max(0, 1 - (after - TOP_BLINKS) / TOP_FADE); out.forEach((rgb, h) => out.set(h, scale(rgb, fade))); }
+    return { holds: out, done: false };
+  }
+  let k = 0, final;
+  if (ph === 'count') final = R.laps === 1;
+  else { k = Math.floor((t - COUNTDOWN) / R.interval); final = !R.endless && R.lapOf(k) === R.laps; }
+  if (final) out.set(R.finish, scale(RED, R.finishLevel));
+  if (ph === 'count') {
+    const a = blink(t);
+    for (let i = 0; i < R.s; i++) { const h = R.hold(i); out.set(h, over(GREEN, a, out.get(h) || OFF)); }
+    return { holds: out, done: false };
+  }
+  const x = (t - COUNTDOWN) - k * R.interval;
+  const a = R.isMatch(k) ? matchOn(x) : 1;
+  const h = R.hold(R.target(k));
+  out.set(h, over(GREEN, a, out.get(h) || OFF));
+  return { holds: out, done: false };
+}
+
 // ── Settings ─────────────────────────────────────────────────────────────────
-const COUNTDOWN = 5;          // seconds
-const opts = { speed: 3, loop: 0, dir: 1, trace: 3, trackRun: 1, ghost: 0.12, trackLevel: 0.2 };   // the Pi's defaults (mode.py)
-const LED = { green: [40, 235, 95], blue: [50, 120, 255], red: [255, 45, 45], amber: [255, 165, 20],
-              yellow: [255, 215, 40], orange: [255, 110, 20], white: [235, 240, 255], pink: [236, 72, 153] };
-const STORE = 'pb-ledsim';    // remembers the direction and speed in this browser
+const opts = { speed: 3, loop: false, laps: 1, mapLevel: 0.2, finishLevel: 0.6 };   // the Pi's defaults (mode.py)
+const STORE = 'pb-ledsim2';
 function loadPrefs() {
   try {
     const p = JSON.parse(localStorage.getItem(STORE) || '{}');
     if ([2, 3, 5].includes(p.speed)) opts.speed = p.speed;
-    if (DIRECTIONS.some(d => d.n === p.dir)) opts.dir = p.dir;
+    if (typeof p.loop === 'boolean') opts.loop = p.loop;
+    if (Number.isInteger(p.laps) && p.laps >= 1 && p.laps <= MAX_LAPS) opts.laps = p.laps;
+    if (p.mapLevel >= 0.05 && p.mapLevel <= 0.6) opts.mapLevel = p.mapLevel;
+    if (p.finishLevel >= 0.1 && p.finishLevel <= 1) opts.finishLevel = p.finishLevel;
   } catch (e) { /* private window or blocked storage: keep the defaults */ }
 }
 function savePrefs() {
-  try { localStorage.setItem(STORE, JSON.stringify({ speed: opts.speed, dir: opts.dir })); } catch (e) { /* ignore */ }
+  try { localStorage.setItem(STORE, JSON.stringify(opts)); } catch (e) { /* ignore */ }
 }
 
-// ── Holds ────────────────────────────────────────────────────────────────────
+// ── Circuits ─────────────────────────────────────────────────────────────────
 const COLS = 'ABCDEFGHIJKLMNOPQRS';
-// Empty cells (track LEDs with no hold) placed as the circuit trace demo does: the mean x of
-// the column's holds and the mean y of the row's.
-const CELL_POS = (() => {
-  const cx = {}, ry = {};
-  Object.entries(HOLDS).forEach(([h, p]) => { const n = +h.slice(4); (cx[(n - 1) % 19] = cx[(n - 1) % 19] || []).push(p.x);
-    (ry[Math.floor((n - 1) / 19)] = ry[Math.floor((n - 1) / 19)] || []).push(p.y); });
-  const mean = a => a.reduce((x, y) => x + y, 0) / a.length, out = {};
-  for (let n = 1; n <= 247; n++) {
-    const h = 'hold' + n;
-    if (HOLDS[h]) out[h] = HOLDS[h];
-    else if (cx[(n - 1) % 19] && ry[Math.floor((n - 1) / 19)]) out[h] = { x: mean(cx[(n - 1) % 19]), y: mean(ry[Math.floor((n - 1) / 19)]) };
-  }
-  return out;
-})();
 const holdLabel = h => { const n = parseInt(String(h).slice(4), 10); return COLS[(n - 1) % 19] + (Math.floor((n - 1) / 19) + 1); };
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
 // A made-up circuit from real hold positions, used when the live list can't load.
 function demoCircuit() {
@@ -209,28 +263,25 @@ function demoCircuit() {
   const dist = (a, b) => { const [ax, ay] = px(a), [bx, by] = px(b); return Math.hypot(ax - bx, ay - by); };
   const low = ids.filter(h => HOLDS[h].y > 70 && HOLDS[h].x > 30 && HOLDS[h].x < 70).sort((a, b) => HOLDS[a].x - HOLDS[b].x);
   const seq = [low[Math.floor(low.length / 2) - 1], low[Math.floor(low.length / 2) + 1]];
-  while (seq.length < 22) {
+  while (seq.length < 16) {
     const cur = seq[seq.length - 1], prev = seq[seq.length - 2];
     const cands = ids.filter(h => !seq.includes(h) && dist(h, cur) > 90 && dist(h, cur) < 210 && dist(h, prev) < 300
       && HOLDS[h].y < HOLDS[cur].y + 2 && HOLDS[h].y > HOLDS[cur].y - 9);
     if (!cands.length) break;
-    const pick = cands[Math.floor(rnd() * cands.length)];
-    seq.push(pick);
-    if (HOLDS[pick].y < 14) break;
+    seq.push(cands[Math.floor(rnd() * cands.length)]);
+    if (HOLDS[seq[seq.length - 1]].y < 14) break;
   }
-  // one match, so the double-blink can be seen
-  seq.splice(6, 0, seq[5]);
-  return { name: 'Demo circuit (made up)', grade: '', hold_sequence: seq, start_count: 2, loops: false };
+  seq.splice(6, 0, seq[5]);     // one match, so its two blinks can be seen
+  return { name: 'Demo circuit (made up)', grade: '', hold_sequence: seq, start_count: 2, loops: true };
 }
 
-let circuits = [];
-let circ = null;
+let circuits = [], circ = null;
 
 async function loadCircuits() {
   const sel = document.getElementById('circuit'), note = document.getElementById('srcNote');
   const demo = demoCircuit();
   try {
-    const r = await fetch(`${SUPA_URL}/rest/v1/circuits?select=name,grade,hold_sequence,start_count,loops,led_track&order=name`,
+    const r = await fetch(`${SUPA_URL}/rest/v1/circuits?select=name,grade,hold_sequence,start_count,loops&order=name`,
       { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const rows = (await r.json()).filter(c => Array.isArray(c.hold_sequence) && c.hold_sequence.length >= 3);
@@ -246,373 +297,64 @@ async function loadCircuits() {
   sel.value = String(pb);
   pickCircuit(pb);
 }
-const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
 function pickCircuit(i) {
   stop();
   circ = circuits[i];
-  tracksFor = null;
-  setOpt('loop', circ.loops ? 1 : 0);
-  document.getElementById('matchBtn').hidden = firstMatch() < 0;
+  syncLaps();
   render();
 }
-// Position of the first hold that repeats the one before it (a match), or -1.
-function firstMatch() {
-  const seq = circ.hold_sequence, s = Math.min(circ.start_count || 1, 2, seq.length);
-  for (let p = Math.max(1, s); p < seq.length; p++) if (seq[p] === seq[p - 1]) return p;
+const lapsNow = () => resolveLaps(opts.loop, opts.laps, !!circ.loops);
+const currentRun = () => makeRun(circ, opts.speed, lapsNow(), opts.mapLevel, opts.finishLevel);
+
+// The first move that's a match, or -1.
+function firstMatch(R) {
+  const n = R.endless ? R.L : R.moves;
+  for (let k = 0; k < n; k++) if (R.isMatch(k)) return k;
   return -1;
 }
-// Run from two moves before the match, so you see it coming and then the blink.
+// Run from two moves before the match, so you see it coming and then the two blinks.
 function jumpToMatch() {
-  const p = firstMatch(); if (p < 0) return;
-  const s = Math.min(circ.start_count || 1, 2, circ.hold_sequence.length);
-  const b = Math.max(0, p - s - 2);
+  const R = currentRun(), k = firstMatch(R); if (k < 0) return;
   if (!running) start();
-  paused = false; t = traceOffset() + COUNTDOWN + b * opts.speed + 0.01; last = performance.now(); syncButtons();
+  paused = false; t = COUNTDOWN + Math.max(0, k - 2) * opts.speed + 0.01; last = performance.now(); syncButtons();
 }
 
-// ── The shared timeline: where the climber is at time t ─────────────────────
-// Everything is a pure function of t (seconds since Start), so it ports to the
-// Pi listener as is. Positions are indexes into an unrolled sequence: i = 0, 1,
-// 2 … and the hold at i is seq[i % L] when looping. c is the last position the
-// climber has reached; the hold to go to (the target) is c + 1.
-function timeline(t, circuit, speed, loop) {
-  const seq = circuit.hold_sequence, L = seq.length;
-  const s = Math.max(1, Math.min(circuit.start_count || 1, 2, L));
-  const hold = i => seq[((i % L) + L) % L];
-  const exists = i => i >= 0 && (loop || i < L);
-  // Start holds are green on the first lap only; the last hold is red when it's a finish.
-  const colourOf = i => {
-    const p = ((i % L) + L) % L;
-    if (p < s && i < L) return LED.green;
-    if (!loop && p === L - 1) return LED.red;
-    return LED.blue;
-  };
-  const T = { t, L, s, loop, speed, hold, exists, colourOf, moves: L - s };
-  if (t < COUNTDOWN) { T.phase = 'count'; T.sec = Math.floor(t); T.ph = t - T.sec; return T; }
-  const tb = t - COUNTDOWN, b = Math.floor(tb / speed);
-  T.tb = tb; T.b = b; T.inBeat = tb - b * speed; T.f = T.inBeat / speed;
-  T.c = s - 1 + b;
-  if (!loop && T.c >= L - 1) { T.phase = 'finish'; T.after = tb - T.moves * speed; return T; }
-  T.phase = 'run';
-  T.held = T.c >= 1 ? [T.c, T.c - 1] : [T.c];     // just one hold at the very start with a single start
-  T.target = T.c + 1;
-  T.isMatch = T.held.some(i => hold(i) === hold(T.target));
-  T.lap = Math.floor(T.c / L) + 1;
-  return T;
-}
-
-// A frame under construction: hold → {rgb, brightness}; a higher priority wins a shared hold.
-// Brightness 0 still claims the hold (off, so a lower-priority look can't show through).
-function newFrame() {
-  const pri = new Map(), out = new Map();
-  return {
-    out,
-    put(h, rgb, brightness, p = 0) {
-      const o = pri.get(h);
-      if (o === undefined || p > o) { pri.set(h, p); out.set(h, { rgb, brightness: Math.min(1, brightness) }); }
-    },
-  };
-}
-
-// The countdown and the finish, the same in every direction.
-const FIN_HOLD = 1.0, FIN_STEP = 0.07, FIN_FADE = 1.2;
-function sharedPhase(T) {
-  const F = newFrame(), { hold, exists, s, L } = T;
-  if (T.phase === 'count') {
-    // Once a second: the start holds flash red, the first two moves blue with them.
-    if (T.ph < 0.5) {
-      for (let i = 0; i < s; i++) F.put(hold(i), LED.red, 1, 5);
-      for (let i = s; i < s + 2; i++) if (exists(i)) F.put(hold(i), LED.blue, 1, 4);
-    }
-    return F.out;
-  }
-  // Finish (Once): a beat on the top, then the route runs up in green and fades out.
-  const a = T.after;
-  if (a < FIN_HOLD) {
-    F.put(hold(L - 1), LED.red, 1, 5);
-    if (L > 1) F.put(hold(L - 2), T.colourOf(L - 2), 1, 4);
-  } else if (a < FIN_HOLD + FIN_STEP * L + FIN_FADE) {
-    const k = (a - FIN_HOLD) / FIN_STEP;
-    const fade = a > FIN_HOLD + FIN_STEP * L ? 1 - (a - FIN_HOLD - FIN_STEP * L) / FIN_FADE : 1;
-    for (let i = 0; i < L && i <= k; i++) F.put(hold(i), i === L - 1 ? LED.red : LED.green, fade, 1);
-  }
-  return F.out;
-}
-
-// A match (the hold to go to is one you're already on): it stays solid at full
-// brightness, never flashing, whatever the direction drew; the hold after it
-// flashes in its own beat. Applied last, so it wins over anything else on that hold.
-function matchSolid(F, T) {
-  if (T.isMatch) F.out.set(T.hold(T.target), { rgb: T.colourOf(T.target), brightness: 1 });
-  return F.out;
-}
-
-// ── The directions ───────────────────────────────────────────────────────────
-// Each run(t, circuit, speed, loop) returns a Map of hold → {rgb, brightness 0–1}.
-// They share only timeline(), newFrame(), sharedPhase(), matchSolid() and the
-// small helpers below, which a port to the Pi takes along with the chosen one.
-const lerp = (a, b, k) => a + (b - a) * k;
-const mix = (p, q, k) => p.map((v, j) => Math.round(lerp(v, q[j], k)));
-const wave = x => 0.5 + 0.5 * Math.cos(2 * Math.PI * x);   // 1 at x = 0, 1, 2 …
-// On/off flashing locked to the beat: perSec flashes a second, "on" first. The
-// speeds are whole seconds, so a once-a-second flash starts fresh on every beat.
-const flashOn = (inBeat, perSec = 1, duty = 0.5) => (inBeat * perSec) % 1 < duty;
-
-const DIRECTIONS = [
-  { n: 1, name: "Window (today's look)",
-    desc: 'Next two solid blue, one breathing; red flashes behind.',
-    legend: [['#fff', "Holds you're on: full brightness"], ['var(--int)', 'Solid blue: the hold to go to, and the one after'],
-             ['#3b5a96', 'Breathing slowly: coming up'], ['var(--finish)', 'Flashing red all beat: the hold you should have let go of (catch up!)']],
-    run(t, circuit, speed, loop) {
-      const T = timeline(t, circuit, speed, loop);
-      if (T.phase !== 'run') return sharedPhase(T);
-      const F = newFrame(), { c, hold, exists, colourOf, inBeat } = T;
-      if (c - 2 >= 0 && flashOn(inBeat, 2)) F.put(hold(c - 2), LED.red, 1, 1);
-      T.held.forEach(i => F.put(hold(i), colourOf(i), 1, 6));
-      F.put(hold(c + 1), colourOf(c + 1), 1, 7);
-      if (exists(c + 2)) F.put(hold(c + 2), colourOf(c + 2), 1, 5);
-      if (exists(c + 3)) F.put(hold(c + 3), colourOf(c + 3), 0.12 + 0.55 * (1 - wave(t / 1.6)), 3);
-      return matchSolid(F, T);
-    } },
-
-  { n: 2, name: 'Comet tail',
-    desc: 'Ahead warms up to blue; behind cools down to red, then off.',
-    legend: [['var(--int)', 'Ahead: faint, then half, then full blue for the hold to go to'], ['#fff', "Holds you're on: bright"],
-             ['var(--yellow)', 'Behind you: the tail cools blue → yellow → orange → red → off over about 3 moves']],
-    run(t, circuit, speed, loop) {
-      const T = timeline(t, circuit, speed, loop);
-      if (T.phase !== 'run') return sharedPhase(T);
-      const F = newFrame(), { c, s, hold, exists, colourOf, tb } = T;
-      const TAIL = [[0, LED.blue, 0.75], [0.75, LED.yellow, 0.6], [1.5, LED.orange, 0.45], [2.25, LED.red, 0.3], [3, LED.red, 0]];
-      for (let i = c - 2; i >= 0 && i >= c - 5; i--) {
-        const age = (tb - (i + 3 - s) * speed) / speed;          // moves since it was let go
-        for (let k = 0; k < TAIL.length - 1; k++) {
-          const [a0, c0, b0] = TAIL[k], [a1, c1, b1] = TAIL[k + 1];
-          if (age >= a0 && age < a1) { const q = (age - a0) / (a1 - a0); F.put(hold(i), mix(c0, c1, q), lerp(b0, b1, q), 1); break; }
-        }
-      }
-      T.held.forEach(i => F.put(hold(i), colourOf(i), 0.85, 6));
-      F.put(hold(c + 1), colourOf(c + 1), 1, 7);
-      if (exists(c + 2)) F.put(hold(c + 2), colourOf(c + 2), 0.4, 5);
-      if (exists(c + 3)) F.put(hold(c + 3), colourOf(c + 3), 0.15, 4);
-      return matchSolid(F, T);
-    } },
-
-  { n: 3, name: 'Next move only',
-    desc: "Only your holds (dimmed) and the one to go to.",
-    legend: [['#888', "Holds you're on: dimmed"], ['var(--int)', 'Full blue: the hold to go to. Nothing else is lit']],
-    run(t, circuit, speed, loop) {
-      const T = timeline(t, circuit, speed, loop);
-      if (T.phase !== 'run') return sharedPhase(T);
-      const F = newFrame(), { c, hold, colourOf } = T;
-      T.held.forEach(i => F.put(hold(i), colourOf(i), 0.4, 6));
-      F.put(hold(c + 1), colourOf(c + 1), 1, 7);
-      return matchSolid(F, T);
-    } },
-
-  // Ross's choice (30 Oct 2026), live on the Pi as pi/listener/circuit.py: change both together.
-  { n: 4, name: 'Pulse and fade',
-    desc: 'Solid blue to go to; amber swells next; red fades behind.',
-    legend: [['var(--int)', "Solid blue: the hold to go to (it stays blue once you're on it)"],
-             ['var(--amber)', 'Amber, swelling up once a second and a little brighter each time: the hold after'],
-             ['var(--finish)', 'Soft red pulses, fading out over the move: the hold you should have let go of (catch up!)']],
-    run(t, circuit, speed, loop) {
-      const T = timeline(t, circuit, speed, loop);
-      if (T.phase !== 'run') return sharedPhase(T);
-      const F = newFrame(), { c, hold, exists, colourOf, inBeat, f } = T;
-      const smooth = x => x * x * (3 - 2 * x);
-      // Red: a soft pulse once a second (from dark, so no hard edge), fading to nothing by the end of the move.
-      if (c - 2 >= 0) F.put(hold(c - 2), LED.red, (1 - wave(inBeat)) * Math.pow(1 - f, 1.5), 1);
-      T.held.forEach(i => F.put(hold(i), colourOf(i), 1, 6));
-      F.put(hold(c + 1), colourOf(c + 1), 1, 7);
-      // Amber: once a second it swells up slowly (0.75 s), then drops back (0.25 s);
-      // each swell peaks a little brighter as the move goes on.
-      if (exists(c + 2)) {
-        const x = inBeat % 1, swell = x < 0.75 ? smooth(x / 0.75) : 1 - smooth((x - 0.75) / 0.25);
-        F.put(hold(c + 2), LED.amber, 0.1 + (0.45 + 0.4 * f - 0.1) * swell, 5);
-      }
-      return matchSolid(F, T);
-    } },
-
-  { n: 5, name: 'Get ready / go',
-    desc: 'Amber: get ready. A white flash on the beat: go.',
-    legend: [['var(--amber)', 'Amber: get ready, it\'s the hold after next'], ['#fff', 'White flash on the beat: go'],
-             ['var(--int)', 'Blue: the hold to go to'], ['#ccc', "Holds you're on: steady"]],
-    run(t, circuit, speed, loop) {
-      const T = timeline(t, circuit, speed, loop);
-      if (T.phase !== 'run') return sharedPhase(T);
-      const F = newFrame(), { c, hold, exists, colourOf, inBeat } = T;
-      T.held.forEach(i => F.put(hold(i), colourOf(i), 0.7, 6));
-      F.put(hold(c + 1), inBeat < 0.3 ? LED.white : colourOf(c + 1), 1, 7);
-      if (exists(c + 2)) F.put(hold(c + 2), LED.amber, 0.7, 5);
-      return matchSolid(F, T);
-    } },
-
-  { n: 6, name: 'Hurry up',
-    desc: 'The blue flash speeds up as the time runs out.',
-    legend: [['var(--int)', 'Flashing blue: the hold to go to. Once a second at first, four a second by the end'],
-             ['var(--amber)', 'Amber: the hold after'], ['var(--finish)', 'A quick red flicker for a second and a half: let go of this one']],
-    run(t, circuit, speed, loop) {
-      const T = timeline(t, circuit, speed, loop);
-      if (T.phase !== 'run') return sharedPhase(T);
-      const F = newFrame(), { c, hold, exists, colourOf, inBeat, f } = T;
-      // The flash rate climbs from 1 to 4 a second through the beat; its phase is
-      // the integral of that rate, a whole number at the beat so each move starts "on".
-      const phase = inBeat + speed * f * f * f;
-      if (c - 2 >= 0 && inBeat < 1.5 && flashOn(inBeat, 3)) F.put(hold(c - 2), LED.red, 1, 1);
-      T.held.forEach(i => F.put(hold(i), colourOf(i), 1, 6));
-      F.put(hold(c + 1), colourOf(c + 1), phase % 1 < 0.5 ? 1 : 0.12, 7);
-      if (exists(c + 2)) F.put(hold(c + 2), LED.amber, 0.5, 5);
-      return matchSolid(F, T);
-    } },
-
-  { n: 7, name: 'Traffic lights',
-    desc: 'White: on it. Blue flashing: go. Amber: next. Red: off.',
-    legend: [['#fff', "White: the holds you're on (the starts stay green)"], ['var(--int)', 'Flashing blue: the hold to go to, the only blue on the wall'],
-             ['var(--amber)', 'Amber: the hold after; faint amber, the one after that'], ['var(--finish)', 'Two red flashes: the hold you just let go of']],
-    run(t, circuit, speed, loop) {
-      const T = timeline(t, circuit, speed, loop);
-      if (T.phase !== 'run') return sharedPhase(T);
-      const F = newFrame(), { c, hold, exists, colourOf, inBeat } = T;
-      const onColour = i => colourOf(i) === LED.green ? LED.green : LED.white;
-      if (c - 2 >= 0 && inBeat < 0.8 && flashOn(inBeat, 2.5)) F.put(hold(c - 2), LED.red, 1, 1);
-      T.held.forEach(i => F.put(hold(i), onColour(i), 0.45, 6));
-      F.put(hold(c + 1), colourOf(c + 1), flashOn(inBeat) ? 1 : 0, 7);   // fully off between flashes
-      if (exists(c + 2)) F.put(hold(c + 2), LED.amber, 0.7, 5);
-      if (exists(c + 3)) F.put(hold(c + 3), LED.amber, 0.2, 4);
-      return matchSolid(F, T);
-    } },
-
-  { n: 8, name: 'Red chaser',
-    desc: "Your lower hold flashes red when it's time to move.",
-    legend: [['var(--int)', "Flashing blue, once a second: the hold to go to. Solid once you're on it"],
-             ['var(--finish)', "Late in each beat, the hold you'll let go of next flashes red: move!"],
-             ['var(--amber)', 'Amber: the hold after']],
-    run(t, circuit, speed, loop) {
-      const T = timeline(t, circuit, speed, loop);
-      if (T.phase !== 'run') return sharedPhase(T);
-      const F = newFrame(), { c, hold, exists, colourOf, inBeat, f } = T;
-      const low = c - 1;   // the hold you'll let go of on the next beat
-      const warn = low >= 0 && f > 0.6 && hold(low) !== hold(c) && hold(low) !== hold(c + 1);
-      T.held.forEach(i => F.put(hold(i), i === low && warn && flashOn(inBeat, 3) ? LED.red : colourOf(i), 1, 6));
-      F.put(hold(c + 1), colourOf(c + 1), flashOn(inBeat) ? 1 : 0.12, 7);
-      if (exists(c + 2)) F.put(hold(c + 2), LED.amber, 0.6, 5);
-      return matchSolid(F, T);
-    } },
-];
-const direction = () => DIRECTIONS.find(d => d.n === opts.dir) || DIRECTIONS[0];
-
-// ── Circuit tracks (contract 8.6): a port of circuit.py check_track(), _path(), trace_frame()
-// and the ghost/track layers of frame(). Only under direction 4, as on the Pi. ─────────────
-const TRACE_FADE = 0.3, TRACE_LAP = 2.8, TRACE_STEP_MIN = 0.034, TRACE_STEP_MAX = 0.15, TRACE_DIM = 0.12, TRACK_MAX_CELLS = 40;
-const isCell = c => typeof c === 'string' && /^hold[0-9]{1,3}$/.test(c) && +c.slice(4) >= 1 && +c.slice(4) <= 247;
-function checkTrack(t, seq) {
-  if (t == null) return { moves: {}, problems: [] };
-  if (typeof t === 'string') { try { t = JSON.parse(t); } catch (e) { return { moves: {}, problems: ['led_track is not JSON'] }; } }
-  if (!t || typeof t !== 'object' || t.version !== 1 || !Array.isArray(t.moves)) return { moves: {}, problems: ['led_track is not {"version": 1, "moves": [...]}'] };
-  if (t.moves.length > 200) return { moves: {}, problems: ['too many moves'] };
-  const L = seq.length, moves = {}, problems = [];
-  t.moves.forEach((m, k) => {
-    if (!m || typeof m !== 'object') return problems.push(`entry ${k + 1}: not an object`);
-    const n = m.move;
-    if (!Number.isInteger(n) || n < 1 || n > L) return problems.push(`entry ${k + 1}: move ${n} is not 1-${L}`);
-    if (moves[n]) return problems.push(`move ${n}: listed twice`);
-    const a = seq[n - 1], b = seq[n % L];
-    if (m.from !== a || m.to !== b) return problems.push(`move ${n}: stale`);
-    if (a === b) return problems.push(`move ${n}: a match has no track`);
-    if (!Array.isArray(m.cells) || m.cells.length > TRACK_MAX_CELLS) return problems.push(`move ${n}: bad cells`);
-    if (m.cells.some(c => !isCell(c) || c === 'hold2' || c === 'hold21')) return problems.push(`move ${n}: not track LEDs`);
-    if (new Set(m.cells).size !== m.cells.length) return problems.push(`move ${n}: an LED twice`);
-    moves[n] = m.cells.slice();
-  });
-  return { moves, problems };
-}
-let tracksFor = null;     // {key, moveCells, trackAll, holds, path, step, problems} for circ + loop
-function tracks() {
-  const key = circ.name + '|' + opts.loop;
-  if (tracksFor && tracksFor.key === key) return tracksFor;
-  const seq = circ.hold_sequence, L = seq.length, loop = !!opts.loop;
-  const { moves, problems } = checkTrack(circ.led_track, seq);
-  const holds = new Set(seq.filter(h => isCell(h) && h !== 'hold2' && h !== 'hold21'));
-  const moveCells = {}, trackAll = [];
-  Object.keys(moves).forEach(k => { const n = +k; if (n <= (loop ? L : L - 1)) {
-    moveCells[n] = [...new Set(moves[n].filter(c => !holds.has(c)))];
-  } });
-  Object.keys(moveCells).map(Number).sort((a, b) => a - b).forEach(n => moveCells[n].forEach(c => { if (!trackAll.includes(c)) trackAll.push(c); }));
-  let path = [];
-  const legs = [...Array(L - 1).keys()].concat(loop && L > 1 ? [L - 1] : []);
-  legs.forEach(i => { const a = seq[i], b = seq[(i + 1) % L]; if (a === b) return; path.push(a); path.push(...(moveCells[i + 1] || [])); });
-  if (!loop || !path.length) path.push(seq[L - 1]);
-  path = [...new Set(path)].filter(h => holds.has(h) || trackAll.includes(h));
-  const step = Math.min(TRACE_STEP_MAX, Math.max(TRACE_STEP_MIN, TRACE_LAP / Math.max(1, path.length)));
-  return (tracksFor = { key, moveCells, trackAll, holds, path, step, problems });
-}
-const traceOn = () => opts.dir === 4 && opts.trace > 0;
-const traceOffset = () => (traceOn() ? opts.trace : 0);
-function traceFrame(t) {
-  const tr = tracks(), lit = new Map(), fade = Math.min(1, Math.max(0, t / TRACE_FADE)), f = fade * fade * (3 - 2 * fade);
-  tr.holds.forEach(h => lit.set(h, { rgb: LED.white, brightness: Math.max(opts.ghost, TRACE_DIM) * f }));
-  tr.trackAll.forEach(h => lit.set(h, { rgb: LED.pink, brightness: Math.max(opts.trackLevel, TRACE_DIM) * f }));
-  const n = tr.path.length, k = Math.floor(t / tr.step);
-  [[2, 0.15], [1, 0.45], [0, 1]].forEach(([back, a]) => { if (n && k - back >= 0) lit.set(tr.path[(k - back) % n], { rgb: LED.white, brightness: a }); });
-  return lit;
-}
-// Under Pulse and fade: the track (the run only), then the ghost (countdown and run), each only
-// where nothing above it is lit.
-function addLayers(lit, T) {
-  if (opts.dir !== 4) return lit;
-  const tr = tracks(), shown = h => lit.has(h) && lit.get(h).brightness > 0;
-  if (T.phase === 'run' && opts.trackRun && opts.trackLevel > 0) {
-    const cells = opts.trackRun === 1 ? (tr.moveCells[(T.c % T.L) + 1] || []) : tr.trackAll;
-    cells.forEach(h => { if (!shown(h)) lit.set(h, { rgb: LED.pink, brightness: opts.trackLevel }); });
-  }
-  if ((T.phase === 'count' || T.phase === 'run') && opts.ghost > 0) {
-    tr.holds.forEach(h => { if (!shown(h)) lit.set(h, { rgb: LED.white, brightness: opts.ghost }); });
-  }
-  return lit;
-}
-
-// ── The readout (the same for every direction) ──────────────────────────────
-function readout(T) {
-  const { L, s, hold, exists } = T;
-  const roles = {};       // position -> role, for the strip
-  const info = { phase: '', sub: '', beatFrac: 0, big: '', done: false, now: [] };
-  if (T.phase === 'count') {
-    for (let i = 0; i < s; i++) roles[i] = 'held';
-    for (let i = s; i < s + 2; i++) if (exists(i)) roles[i] = 'next';
-    info.phase = info.big = String(COUNTDOWN - T.sec);
-    info.sub = 'Get on the start holds';
-    info.beatFrac = T.ph;
-    info.now = [['Start', range(0, s).map(hold)], ['First moves', range(s, s + 2).filter(exists).map(hold)]];
-  } else if (T.phase === 'finish') {
-    for (let i = 0; i < L; i++) roles[i] = 'done';
-    info.phase = 'Top!'; info.sub = `${T.moves} moves done`; info.beatFrac = 1;
-    info.done = T.after >= FIN_HOLD + FIN_STEP * L + FIN_FADE;
+// ── Readout ──────────────────────────────────────────────────────────────────
+function readout(R, t) {
+  const ph = phaseOf(R, t), info = { phase: '', sub: '', beatFrac: 0, big: '', now: [] };
+  let roles = {};
+  if (ph === 'count') {
+    for (let i = 0; i < R.s; i++) roles[i] = 'target';
+    info.phase = info.big = String(Math.max(1, Math.ceil(COUNTDOWN - t)));
+    info.sub = `Get on the start holds · ${lapsText(R.laps)}`;
+    info.beatFrac = t - Math.floor(t);
+    info.now = [['Start', Array.from({ length: R.s }, (_, i) => R.hold(i))]];
+  } else if (ph === 'top' || ph === 'done') {
+    R.seq.forEach((_, p) => { roles[p] = 'done'; });
+    info.phase = 'Top!';
+    info.sub = `${R.moves} moves, ${lapsText(R.laps)}`;
+    info.beatFrac = Math.min(1, (t - COUNTDOWN - R.moves * R.interval) / topLength());
   } else {
-    const { c, target } = T;
-    for (let i = Math.floor(c / L) * L; i < c - 1; i++) roles[i] = 'done';
-    T.held.forEach(i => { roles[i] = 'held'; });
-    if (exists(c + 2)) roles[c + 2] = 'next';
-    roles[target] = 'target';
-    const moveNo = T.b + 1;
-    info.phase = T.loop ? `Move ${((moveNo - 1) % L) + 1}` : `Move ${moveNo}`;
-    info.sub = T.loop ? `of ${L} · lap ${T.lap}` : `of ${T.moves}`;
-    if (T.isMatch) info.sub += ' · match';
-    info.beatFrac = T.f;
-    info.now = [['On', [...new Set(T.held.map(hold))]], ['Go to', [hold(target)]],
-                ['Then', exists(c + 2) ? [hold(c + 2) === hold(target) ? hold(c + 2) + ' (match)' : hold(c + 2)] : []]];
+    const k = Math.floor((t - COUNTDOWN) / R.interval), i = R.target(k), p = ((i % R.L) + R.L) % R.L, lap = R.lapOf(k);
+    for (let q = (lap === 1 ? R.s : 0); q < p; q++) roles[q] = 'done';
+    roles[p] = 'target';
+    info.phase = `Move ${k + 1}`;
+    info.sub = (R.endless ? `lap ${lap} · until stopped` : `of ${R.moves} · lap ${lap} of ${R.laps}`) + (R.isMatch(k) ? ' · match' : '');
+    info.beatFrac = ((t - COUNTDOWN) - k * R.interval) / R.interval;
+    info.now = [['Go to', [R.hold(i) + (R.isMatch(k) ? ' (match)' : '')]]];
   }
   return { roles, info };
 }
-const range = (a, b) => Array.from({ length: Math.max(0, b - a) }, (_, i) => a + i);
 
 // ── Drawing ──────────────────────────────────────────────────────────────────
 const cv = document.getElementById('board'), ctx = cv.getContext('2d');
 const img = new Image(); img.src = BOARD_IMG; img.onload = () => render();
-const W = cv.width, H = cv.height, R = W * 0.034;
+const W = cv.width, H = cv.height, RAD = W * 0.034;
 
-function draw(lit) {
+// A screen shows a dim LED dimmer than the eye sees it on the wall, so the glow's alpha is
+// lifted at low levels (display only: the colours are the Pi's, before its BRIGHTNESS).
+function draw(holds) {
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
   if (img.complete && img.naturalWidth) {
@@ -620,50 +362,41 @@ function draw(lit) {
     ctx.fillStyle = 'rgba(0,0,0,0.82)'; ctx.fillRect(0, 0, W, H);
   }
   ctx.globalCompositeOperation = 'lighter';
-  for (const [h, o] of lit) {
-    const p = CELL_POS[h]; if (!p || o.brightness <= 0.005) continue;
-    const x = p.x / 100 * W, y = p.y / 100 * H, [r, g, b] = o.rgb, a = Math.min(1, o.brightness);
-    const gr = ctx.createRadialGradient(x, y, 0, x, y, R);
+  for (const [h, rgb] of holds) {
+    const p = HOLDS[h], m = Math.max(...rgb);
+    if (!p || m <= 1) continue;
+    const [r, g, b] = rgb.map(v => Math.round(v / m * 255)), a = Math.pow(m / 255, 0.6);
+    const x = p.x / 100 * W, y = p.y / 100 * H;
+    const gr = ctx.createRadialGradient(x, y, 0, x, y, RAD);
     gr.addColorStop(0, `rgba(${r},${g},${b},${0.95 * a})`);
     gr.addColorStop(0.25, `rgba(${r},${g},${b},${0.55 * a})`);
     gr.addColorStop(1, `rgba(${r},${g},${b},0)`);
-    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, R, 0, 7); ctx.fill();
-    ctx.fillStyle = `rgba(255,255,255,${0.75 * a})`;
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, RAD, 0, 7); ctx.fill();
+    ctx.fillStyle = `rgba(255,255,255,${0.7 * a})`;
     ctx.beginPath(); ctx.arc(x, y, W * 0.0045, 0, 7); ctx.fill();
   }
 }
 
-function drawSeq(roles) {
-  const seq = circ.hold_sequence, L = seq.length, s = Math.min(circ.start_count || 1, 2, L);
-  // In a loop, show this lap's roles (positions folded onto the sequence).
-  const rank = { target: 6, held: 5, next: 4, done: 1 };
-  const folded = {};
-  for (const k in roles) { const p = ((+k % L) + L) % L; const r = roles[k];
-    if (!folded[p] || rank[r] > rank[folded[p]]) folded[p] = r; }
-  document.getElementById('seq').innerHTML = seq.map((h, p) => {
-    const cls = ['chip', folded[p] || '', p < s ? 'start' : '', !opts.loop && p === L - 1 ? 'finish' : ''].join(' ');
-    return `<span class="${cls}" title="Move ${p + 1}">${p + 1}·${holdLabel(h)}</span>`;
+function drawSeq(R, roles) {
+  const final = R.laps !== 0;
+  document.getElementById('seq').innerHTML = R.seq.map((h, p) => {
+    const cls = ['chip', roles[p] || '', p < R.s ? 'start' : '', final && p === R.L - 1 ? 'finish' : ''].join(' ');
+    return `<span class="${cls}" title="Position ${p}">${p + 1}·${holdLabel(h)}</span>`;
   }).join('');
 }
 
-function drawDirections() {
-  document.getElementById('dirs').innerHTML = DIRECTIONS.map(d =>
-    `<button class="dir" data-n="${d.n}" aria-pressed="${d.n === opts.dir}" title="${esc(d.desc)} (key ${d.n})"><span class="n">${d.n}</span>` +
-    `<span><b>${esc(d.name)}</b><small>${esc(d.desc)}</small></span></button>`).join('');
-}
-
 function drawLegend() {
+  const n = circ ? lapsNow() : 1;
   const rows = [
-    ['var(--finish)', 'Countdown: the start holds flash red 5 times; the first two moves flash blue with them'],
-    ['var(--start)', opts.loop ? 'Go: the start holds turn green (first lap only)' : 'Go: the start holds turn green'],
-    ...direction().legend,
-    ['var(--int)', 'A match (the same hold twice): it stays solid; the next hold flashes on the next move'],
+    ['var(--int)', `The map: every hold of the circuit blue at ${Math.round(opts.mapLevel * 100)}%, all through the countdown and the run`],
+    ['var(--start)', 'Countdown, 5 s: the start holds blink green once a second (full, then a fade to off)'],
+    ['var(--start)', 'The run: only the hold to go to, green, full and solid; the start holds are blue'],
+    ['var(--start)', 'A match (going to a hold you\'re on): the green blinks twice at the start of its beat'],
   ];
-  if (!opts.loop) rows.push(['var(--finish)', 'The last hold is red; at the top the route runs up in green']);
-  if (opts.dir === 4) {
-    if (opts.trace) rows.unshift(['#fff', `First, ${opts.trace} s of route trace: the holds dim white, the track dim pink, a white spot running round`]);
-    if (opts.ghost) rows.push(['#888', 'Ghost: every hold of the circuit dim white under everything (not at the top)']);
-    if (opts.trackRun) rows.push(['#ec4899', opts.trackRun === 1 ? 'Dim pink: the track LEDs of the move being made' : 'Dim pink: every track LED']);
+  if (n === 0) rows.push(['#555', 'Endless: no red finish; it runs until Stop']);
+  else {
+    rows.push(['var(--finish)', `The finish: red at ${Math.round(opts.finishLevel * 100)}%, on the final lap only` + (n === 1 ? ' (here from the countdown on)' : '')]);
+    rows.push(['var(--finish)', 'The top: the finish blinks red three times, then the map fades out over 1 s']);
   }
   document.getElementById('legend').innerHTML = rows.map(([c, t]) => `<div><span class="dot" style="background:${c}"></span><span>${t}</span></div>`).join('');
 }
@@ -674,47 +407,29 @@ function frame(now) {
   if (!running) return;
   if (!paused) t += Math.min(0.1, (now - last) / 1000);
   last = now;
-  const m = render();
-  if (m.info.done) { stop(); return; }
+  if (render().done) { stop(); return; }
   requestAnimationFrame(frame);
 }
 function render() {
-  if (!circ) return null;
-  let m;
-  if (running) {
-    const loop = !!opts.loop, tt = t - traceOffset();
-    if (tt < 0) {
-      m = { roles: {}, lit: traceFrame(t), info: { phase: 'Route', sub: `Watch the route · countdown in ${Math.ceil(-tt)} s`,
-        beatFrac: t / traceOffset(), big: '', done: false, now: [] } };
-    } else {
-      const T = timeline(tt, circ, opts.speed, loop);
-      m = readout(T);
-      m.lit = addLayers(direction().run(tt, circ, opts.speed, loop), T);
-    }
-  } else m = idleModel();
-  draw(m.lit); drawSeq(m.roles);
+  if (!circ) return { done: false };
+  const R = currentRun();
+  const tt = running ? t : 0;                 // not running: the cast's first frame, as the board shows it
+  const f = runFrame(R, tt), m = readout(R, tt);
+  if (!running) {
+    m.info = { phase: 'Ready', sub: `${R.L} holds, ${R.s} to start${circ.loops ? ', loops' : ', runs once'} · ${lapsText(R.laps)}` +
+      (R.endless ? '' : `, ${R.moves} moves`) + '. Press Start.', beatFrac: 0, big: '', now: [] };
+    m.roles = {};
+  }
+  draw(f.holds); drawSeq(R, m.roles);
   document.getElementById('phase').textContent = m.info.phase;
   document.getElementById('sub').textContent = m.info.sub;
-  document.getElementById('beat').style.width = (m.info.beatFrac * 100).toFixed(1) + '%';
+  document.getElementById('beat').style.width = (Math.max(0, Math.min(1, m.info.beatFrac)) * 100).toFixed(1) + '%';
   const big = document.getElementById('bigCount'); big.textContent = m.info.big || '';
   big.style.color = m.info.big ? 'rgba(255,255,255,0.12)' : 'transparent';
   document.getElementById('now').innerHTML = (m.info.now || []).filter(([, hs]) => hs.length)
-    .map(([k, hs]) => `<div><span class="sub">${k}</span> <b>${hs.map(h => h.replace(/hold\d+/, m => holdLabel(m))).join(', ')}</b></div>`).join('');
-  return m;
-}
-// Not running: show the whole circuit faintly so you can see its shape.
-function trackNote() {
-  const tr = tracks(), n = Object.keys(tr.moveCells).length;
-  document.getElementById('trackNote').textContent = !circ.led_track ? 'This circuit has no track: the trace runs over its holds only.'
-    : `Track: ${n} moves, ${tr.trackAll.length} LEDs; trace ${tr.path.length} LEDs a lap, ${tr.step.toFixed(3)} s a step.` +
-      (tr.problems.length ? ` Skipped: ${tr.problems.join('; ')}.` : '');
-}
-function idleModel() {
-  trackNote();
-  const seq = circ.hold_sequence, L = seq.length, s = Math.min(circ.start_count || 1, 2, L);
-  const lit = new Map();
-  seq.forEach((h, i) => lit.set(h, { rgb: i < s ? LED.green : (!opts.loop && i === L - 1 ? LED.red : LED.blue), brightness: 0.35 }));
-  return { lit, roles: {}, info: { phase: 'Ready', sub: `${L} holds, ${circ.start_count || 1} to start${circ.loops ? ', loops' : ''}. Press Start.`, beatFrac: 0, now: [] } };
+    .map(([k, hs]) => `<div><span class="sub">${k}</span> <b>${hs.map(h => h.replace(/hold\d+/, x => holdLabel(x))).join(', ')}</b></div>`).join('');
+  document.getElementById('matchBtn').hidden = firstMatch(R) < 0;
+  return f;
 }
 
 function start() { t = 0; running = true; paused = false; last = performance.now(); syncButtons(); requestAnimationFrame(frame); }
@@ -723,11 +438,10 @@ function togglePause() { if (!running) return start(); paused = !paused; last = 
 function step(dir) {
   if (!running) return;
   paused = true;
-  const off = traceOffset(), tt = t - off;
-  if (tt < COUNTDOWN) { t = dir > 0 ? off + COUNTDOWN + 0.2 : 0; }
+  if (t < COUNTDOWN) t = dir > 0 ? COUNTDOWN + 0.5 : 0;
   else {
-    const b = Math.floor((tt - COUNTDOWN) / opts.speed) + dir;
-    t = off + (b < 0 ? COUNTDOWN - 1 : COUNTDOWN + b * opts.speed + 0.2);
+    const b = Math.floor((t - COUNTDOWN) / opts.speed) + dir;
+    t = b < 0 ? COUNTDOWN - 1 : COUNTDOWN + b * opts.speed + 0.5;
   }
   syncButtons(); render();
 }
@@ -740,45 +454,47 @@ function syncButtons() {
 }
 
 // ── Controls ─────────────────────────────────────────────────────────────────
-function setOpt(name, v) {
-  const off = traceOffset();
-  if (name === 'speed' && running && t > off + COUNTDOWN) {   // keep the same move and point in it
-    const tb = t - off - COUNTDOWN; t = off + COUNTDOWN + tb / opts.speed * v;
-  }
-  opts[name] = v;
-  document.querySelectorAll(`.seg[data-opt="${name}"] button`).forEach(b => b.setAttribute('aria-pressed', String(String(v) === b.dataset.v)));
-  if (name === 'speed') savePrefs();
-  if (name === 'loop') tracksFor = null;
-  drawLegend();
-  if (!running) render();
+function setSpeed(v) {
+  if (running && t > COUNTDOWN) t = COUNTDOWN + (t - COUNTDOWN) / opts.speed * v;    // the same move, the same point in it
+  opts.speed = v;
+  document.querySelectorAll('.seg[data-opt="speed"] button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.v === v)));
+  savePrefs();
+  if (!running || paused) render();
 }
-// Switch the direction live: t is untouched, so the run carries on where it is.
-function setDirection(n) {
-  if (!DIRECTIONS.some(d => d.n === n)) return;
-  opts.dir = n;
-  document.querySelectorAll('.dir').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.n === n)));
-  savePrefs(); drawLegend(); render();
+function syncLaps() {
+  const loops = !circ || !!circ.loops;
+  const box = document.getElementById('loop');
+  box.checked = opts.loop && loops; box.disabled = !loops;
+  const off = opts.loop || !loops;
+  document.getElementById('stepper').classList.toggle('off', off);
+  document.getElementById('lapsDown').disabled = off || opts.laps <= 1;
+  document.getElementById('lapsUp').disabled = off || opts.laps >= MAX_LAPS;
+  document.getElementById('lapsOut').textContent = lapsText(loops ? opts.laps : 1);
+  document.getElementById('lapsNote').textContent = !loops
+    ? 'This circuit doesn\'t loop, so it always runs 1 lap (the Pi ignores Loop and laps for it).'
+    : opts.loop ? 'Endless: until Stop (or the Pi\'s CIRCUIT_MAX_S).' : '';
+  drawLegend();
+}
+function setLaps(loop, laps) {
+  if (running) stop();
+  opts.loop = loop; opts.laps = Math.max(1, Math.min(MAX_LAPS, laps));
+  savePrefs(); syncLaps(); render();
 }
 
 loadPrefs();
-drawDirections();
-[['ghost', 'ghostOut', 'ghost'], ['trackLevel', 'trackOut', 'trackLevel']].forEach(([id, out, key]) => {
-  const e = document.getElementById(id), o = document.getElementById(out);
-  const show = () => { o.textContent = Math.round(opts[key] * 100) + '%'; };
+[['mapLevel', 'mapOut'], ['finishLevel', 'finOut']].forEach(([key, out]) => {
+  const e = document.getElementById(key), o = document.getElementById(out);
+  const show = () => { o.textContent = opts[key].toFixed(2); };
   e.value = opts[key]; show();
-  e.addEventListener('input', () => { opts[key] = Number(e.value); show(); drawLegend(); if (!running || paused) render(); });
+  e.addEventListener('input', () => { opts[key] = Number(e.value); show(); savePrefs(); drawLegend(); if (!running || paused) render(); });
 });
-document.querySelectorAll('.seg').forEach(seg => {
-  const name = seg.dataset.opt;
-  seg.addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    setOpt(name, Number(b.dataset.v));
-  });
-  setOpt(name, opts[name]);
+document.querySelector('.seg[data-opt="speed"]').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (b) setSpeed(+b.dataset.v);
 });
-document.getElementById('dirs').addEventListener('click', e => {
-  const b = e.target.closest('.dir'); if (b) setDirection(+b.dataset.n);
-});
+setSpeed(opts.speed);
+document.getElementById('loop').addEventListener('change', e => setLaps(e.target.checked, opts.laps));
+document.getElementById('lapsDown').addEventListener('click', () => setLaps(false, opts.laps - 1));
+document.getElementById('lapsUp').addEventListener('click', () => setLaps(false, opts.laps + 1));
 document.getElementById('circuit').addEventListener('change', e => pickCircuit(+e.target.value));
 document.getElementById('startBtn').addEventListener('click', () => running ? stop() : start());
 document.getElementById('pauseBtn').addEventListener('click', togglePause);
@@ -786,12 +502,11 @@ document.getElementById('backBtn').addEventListener('click', () => step(-1));
 document.getElementById('fwdBtn').addEventListener('click', () => step(1));
 document.getElementById('matchBtn').addEventListener('click', jumpToMatch);
 document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'SELECT' || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT' || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === 'Space') { e.preventDefault(); togglePause(); }
   else if (e.key === 'ArrowRight') step(1);
   else if (e.key === 'ArrowLeft') step(-1);
   else if (e.key === 'Escape') stop();
-  else if (/^[1-8]$/.test(e.key)) setDirection(+e.key);
 });
 
 loadCircuits();

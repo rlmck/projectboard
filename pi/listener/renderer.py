@@ -4,7 +4,7 @@ Five states (night always wins):
 - cast:  a problem is lit (a cast cuts straight in, no fade);
 - circuit: a circuit run is animating (circuit.py: countdown, the moving holds,
          the finish), from a cast_circuit; a stop with its run token (or none),
-         its finish, or CIRCUIT_MAX_S (a forgotten loop) crossfades into idle
+         its top, or CIRCUIT_MAX_S (a forgotten endless run) crossfades into idle
          (or back to a preview still going). A problem cast or another circuit
          cuts straight in;
 - preview: the holds someone is setting on Create/Edit, from preview_holds

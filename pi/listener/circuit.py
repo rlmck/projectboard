@@ -1,39 +1,35 @@
 """A circuit run: from (the circuit, seconds since the cast) to LED colours. Pure, no I/O.
 
-The look is direction 4, "Pulse and fade", chosen by Ross on 30 Oct 2026 in
-tools/circuit-led-simulator.html (this is a port of its timeline(),
-sharedPhase(), matchSolid() and direction 4; keep the two in step). Contract
-section 8 (docs/cast-contract.md). Tested by pi/tests/test_circuit.py.
+The look is the "map and next hold" look Ross agreed on 5 Nov 2026 (it replaced
+direction 4, "Pulse and fade", and the circuit-track lighting). It is ported to
+tools/circuit-led-simulator.html (its runFrame() is this file's Run.layers());
+keep the two in step. Contract section 8.3 (docs/cast-contract.md). Tested by
+pi/tests/test_circuit.py.
 
-- Countdown (5 s): the start holds flash red once a second, the first two moves
-  flash blue with them.
-- Then one move every `interval` seconds. Positions run 0, 1, 2 ... through the
-  sequence (wrapping when it loops); c is the last one reached, so the climber
-  is on c and c-1 and is going to c+1:
-    the holds you're on    their colour (start green on the first lap only, else blue), full
-    the hold to go to      solid, its colour (blue, or red for the finish of a circuit run once)
-    the hold after that    amber, swelling up once a second, each swell brighter through the move
-    the hold let go of     soft red pulses fading out over the move ("catch up")
-  A match (the hold to go to is one you're on) stays solid at full brightness.
-- Once: at the top, a beat on the finish, the route runs up in green and fades;
-  then the run is done. A loop runs until stopped (or the listener's time limit).
+- The map: every hold of the circuit blue at CIRCUIT_MAP_LEVEL (0.20) for the
+  whole countdown and run. The finish (the last hold of the sequence) is red at
+  CIRCUIT_FINISH_LEVEL (0.60), but only on the final lap of a run with a set
+  number of laps (a 1-lap run: from the countdown on). An endless run never
+  shows red.
+- Countdown (5 s): the start holds (start_count, 1 or 2) green, blinking once a
+  second: full for 0.08 s, fading linearly to off over the next 0.8 s, then off.
+- Run: one move every `interval` s. Only the hold to go to is lit, green, full
+  and solid, over the map. Start holds are blue in the run, on every lap.
+- A match (the hold to go to is the one the climber is on, c or c-1): the green
+  blinks twice at the start of its beat (off 0-0.15 s, on 0.15-0.30 s, off
+  0.30-0.45 s, then on). The beat is still one interval.
+- Laps: lap 1 begins on the start holds, so its moves go to positions
+  s .. L-1; every later lap goes all the way round, 0 (the wrap move) .. L-1. A
+  run of N laps is (L - s) + (N - 1) * L moves and ends on position L-1.
+- The top (a set number of laps): the finish blinks red three times (the
+  countdown's blink, one a second), then the map fades to off over 1 s: done.
+  Endless runs until stop (or the listener's CIRCUIT_MAX_S).
+- A green or red blink is drawn over what's under it (the map): the colour is
+  a crossfade, overlay * a + under * (1 - a), so the map stays steady beneath.
 
-Circuit tracks (1 Nov 2026, contract 8.6), all below everything above, so Pulse
-and fade is unchanged wherever it lights an LED:
-- TRACE, `trace_s` seconds (0-5, the cast's trace_s) before the countdown: the
-  circuit's holds dim white and its track LEDs dim pink fade in over 0.3 s, and
-  a white spot with a two-LED tail (100% / 45% / 15%) runs along the path (each
-  move's from-hold, then its track cells; every LED once a lap).
-- The ghost: every distinct circuit hold dim white (CIRCUIT_GHOST) in the
-  countdown and the run (not the finish), the lowest layer.
-- The track in the run (CIRCUIT_TRACK_RUN): off, move (the current move's cells,
-  from the hold you're on to the one to go to) or all, dim pink at
-  CIRCUIT_TRACK_LEVEL, just above the ghost; never on a circuit hold's LED.
-The track is circuits.led_track (db/37): {"version": 1, "moves": [{"move", "from",
-"to", "cells"}]}, checked move by move against the circuit's hold_sequence by
-check_track() (PB Console saves through the same function); a move that fails
-is skipped. A mirrored run has no track (the track is drawn for the unmirrored
-holds).
+Circuit tracks (circuits.led_track, db/37, contract 8.6) are no longer drawn by
+the Pi (5 Nov 2026). check_track() stays: PB Console still checks and saves
+tracks through it.
 
 The static view (show_circuit, 2 Nov 2026, contract 8.7) is static_frame(): every
 hold of the circuit lit at once in a problem's colours (start green, the last
@@ -41,35 +37,31 @@ hold red, the rest blue), as the wall screen draws it (circuitHoldRoles in
 app/circuits.js). No animation: the listener shows it like a problem cast.
 """
 import json
-import math
 
 import board
 
 COUNTDOWN = 5.0
 MIN_INTERVAL, MAX_INTERVAL = 1.0, 10.0      # seconds a move the listener accepts (the app sends 2, 3 or 5)
-GREEN, BLUE, RED, AMBER = (0, 255, 0), (0, 0, 255), (255, 0, 0), (255, 110, 0)
-FIN_HOLD, FIN_STEP, FIN_FADE = 1.0, 0.07, 1.2
+MAX_LAPS = 10                               # cast_circuit laps: 0 (endless) or 1-10
+GREEN, BLUE, RED = (0, 255, 0), (0, 0, 255), (255, 0, 0)
+BLINK_FULL, BLINK_FADE = 0.08, 0.8          # s: a blink is full, then fades linearly to off, once a second
+MATCH_OFF = ((0.0, 0.15), (0.30, 0.45))     # s into a match beat when its green is off
+TOP_BLINKS, TOP_FADE = 3, 1.0               # the top: three red blinks (one a second), then the map fades out
 
-# Circuit tracks (contract 8.6)
-WHITE, PINK = (255, 255, 255), (236, 72, 153)
-TRACE_MAX = 5.0                     # s, the most trace_s the listener takes
-TRACE_FADE = 0.3                    # s, the dim route fading in
-TRACE_LAP = 2.8                     # s, a lap of the spot (before the clamp below)
-TRACE_STEP_MIN, TRACE_STEP_MAX = 0.034, 0.15     # s a step: 0.034 is at least one frame at 30 fps
-TRACE_DIM = 0.12                    # the trace's dim route is never dimmer than this
-TAIL = ((2, 0.15), (1, 0.45), (0, 1.0))         # steps behind the head, brightness (the head drawn last)
-TRACK_RUN_MODES = ('off', 'move', 'all')
-TRACK_MAX_MOVES = 200               # size limits (PB Console refuses bigger; the Pi skips the track)
+# Circuit tracks (contract 8.6): only checked now (PB Console saves through check_track)
+TRACK_MAX_MOVES = 200               # size limits (PB Console refuses bigger)
 TRACK_MAX_CELLS = 40                # LEDs in one move
 TRACK_MAX_BYTES = 32768             # the JSON, as PB Console saves it
-OPTION_DEFAULTS = {'ghost': 0.12, 'track_run': 'move', 'track_level': 0.2}
+
+OPTION_DEFAULTS = {'map_level': 0.2, 'finish_level': 0.6}
+OPTION_KEYS = (('CIRCUIT_MAP_LEVEL', 'map_level', 0.05, 0.6), ('CIRCUIT_FINISH_LEVEL', 'finish_level', 0.1, 1.0))
 
 
 def options(cfg, warn=None):
-    """The circuit-track keys from config.env (mode.py DEFAULTS), checked: a bad value is
-    warned about and the default used. -> {'ghost', 'track_run', 'track_level'}."""
+    """The circuit keys from config.env (mode.py DEFAULTS), checked: a bad value is
+    warned about and the default used. -> {'map_level', 'finish_level'}."""
     out = dict(OPTION_DEFAULTS)
-    for key, name, lo, hi in (('CIRCUIT_GHOST', 'ghost', 0.0, 0.3), ('CIRCUIT_TRACK_LEVEL', 'track_level', 0.0, 0.5)):
+    for key, name, lo, hi in OPTION_KEYS:
         raw = (cfg.get(key) or '').strip()
         if not raw:
             continue
@@ -81,12 +73,40 @@ def options(cfg, warn=None):
         except ValueError:
             if warn:
                 warn('%s=%r is not %g-%g: using %g' % (key, raw, lo, hi, out[name]))
-    raw = (cfg.get('CIRCUIT_TRACK_RUN') or '').strip().lower()
-    if raw in TRACK_RUN_MODES:
-        out['track_run'] = raw
-    elif raw and warn:
-        warn('CIRCUIT_TRACK_RUN=%r is not off, move or all: using %s' % (raw, out['track_run']))
     return out
+
+
+def resolve_laps(laps, loop, loops):
+    """The laps a run makes (0 = endless) from the cast's laps and loop and the circuit's loops
+    (contract 8.1): a circuit whose loops is false always runs 1 lap; laps absent (None) means
+    loop true -> 0, loop false -> 1, loop absent -> the circuit's loops (true -> 0)."""
+    if not loops:
+        return 1
+    if laps is not None:
+        return int(laps)
+    if loop is None:
+        return 0
+    return 0 if loop else 1
+
+
+def laps_text(laps):
+    return 'endless' if laps == 0 else '1 lap' if laps == 1 else '%d laps' % laps
+
+
+def blink(x):
+    """A blink's level x seconds into its second: full for BLINK_FULL, a linear fade to off over
+    BLINK_FADE, then off until the next second."""
+    x = x % 1.0
+    if x < BLINK_FULL:
+        return 1.0
+    if x < BLINK_FULL + BLINK_FADE:
+        return max(0.0, 1.0 - (x - BLINK_FULL) / BLINK_FADE)
+    return 0.0
+
+
+def match_on(x):
+    """A match beat's green, x seconds into the beat: two blinks, then on."""
+    return 0.0 if any(a <= x < b for a, b in MATCH_OFF) else 1.0
 
 
 def check_track(led_track, seq):
@@ -190,235 +210,127 @@ def static_frame(seq, start_count):
     return leds, dropped
 
 
-class Run:
-    """One cast circuit. `seq` is the hold sequence in climbing order (contract 8: not inverted)."""
+def _over(top, a, under):
+    """`top` drawn at level a over `under` (crossfade); both (r, g, b) floats."""
+    return tuple(t * a + u * (1 - a) for t, u in zip(top, under))
 
-    def __init__(self, name, seq, start_count, interval, loop, token=None, mirror_map=None, tag='',
-                 trace_s=0, track=None, ghost=0.0, track_run='off', track_level=0.2):
-        """The defaults add nothing to Pulse and fade (no trace, ghost or track); the listener
-        passes the cast's trace_s, the circuit's led_track and options(cfg)."""
+
+class Run:
+    """One cast circuit. `seq` is the hold sequence in climbing order (contract 8: not inverted).
+    `laps` is 0 (endless) or 1-10 (resolve_laps() works it out from the cast and the circuit)."""
+
+    def __init__(self, name, seq, start_count, interval, laps, token=None, mirror_map=None, tag='',
+                 map_level=0.2, finish_level=0.6):
         if not seq or not all(isinstance(h, str) for h in seq):
             raise ValueError('hold_sequence is empty or not hold ids')
+        if isinstance(laps, bool) or not isinstance(laps, int) or not 0 <= laps <= MAX_LAPS:
+            raise ValueError('laps is not 0-%d' % MAX_LAPS)
         self.name, self.token = name, token
         self.tag = tag              # ' [phone, member]' (board.origin), for the line logged when it ends
         self.seq = [mirror_map.get(h, h) for h in seq] if mirror_map is not None else list(seq)
         self.L = len(self.seq)
         self.s = max(1, min(int(start_count or 1), 2, self.L))
         self.interval = float(interval)
-        self.loop = bool(loop)
-        self.moves = self.L - self.s
+        self.laps = laps
+        self.endless = laps == 0
+        # Moves in the whole run (None: endless). Lap 1 starts on the start holds.
+        self.moves = None if self.endless else (self.L - self.s) + (laps - 1) * self.L
+        self.map_level = max(0.0, min(1.0, float(map_level)))
+        self.finish_level = max(0.0, min(1.0, float(finish_level)))
         # Hold id -> LED index, once; ids off the grid light nothing (the timing is unchanged).
         self.led = {}
         self.dropped = []
-        for h in set(self.seq):
+        for h in dict.fromkeys(self.seq):
             n = board.hold_number(h)
             if n is None or h in board.FEET_HOLDS:
                 self.dropped.append(h)
             else:
                 self.led[h] = board.led_index(n)
-        # Circuit tracks (contract 8.6).
-        self.trace = max(0.0, min(TRACE_MAX, float(trace_s or 0)))
-        self.ghost = max(0.0, min(1.0, float(ghost or 0)))
-        self.track_run = track_run if track_run in TRACK_RUN_MODES else 'off'
-        self.track_level = max(0.0, min(1.0, float(track_level or 0)))
-        if mirror_map is not None:
-            self.track, self.track_problems = {}, (['mirrored: the track is not used'] if track else [])
-        else:
-            self.track, self.track_problems = check_track(track, seq)
-        self.hold_leds = set(self.led.values())
-        # Each move this run can make -> its LEDs in order, never a circuit hold's LED.
-        # The wrap move (the last hold back to the first) only when it loops.
-        last = self.L if self.loop else self.L - 1
-        self.move_leds = {}
-        for n, cells in self.track.items():
-            if n <= last:
-                out = []
-                for c in cells:
-                    i = board.led_index(board.hold_number(c))
-                    if i not in self.hold_leds and i not in out:
-                        out.append(i)
-                self.move_leds[n] = out
-        self.track_leds = []
-        for n in sorted(self.move_leds):
-            self.track_leds += [i for i in self.move_leds[n] if i not in self.track_leds]
-        self.path = self._path()
-        self.step = max(TRACE_STEP_MIN, min(TRACE_STEP_MAX, TRACE_LAP / max(1, len(self.path))))
-
-    def _path(self):
-        """The trace's path: each move's from-hold then its track LEDs, in climbing order
-        (matches skipped), then the last hold unless it loops; every LED once (a lap
-        never lights one twice). With no track it's just the holds."""
-        L, path = self.L, []
-        legs = list(range(L - 1)) + ([L - 1] if self.loop and L > 1 else [])
-        for i in legs:
-            a, b = self.seq[i], self.seq[(i + 1) % L]
-            if a == b:
-                continue
-            path.append(self.led.get(a))
-            path += self.move_leds.get(i + 1, [])
-        if not self.loop or not path:
-            path.append(self.led.get(self.seq[-1]))
-        out = []
-        for i in path:
-            if i is not None and i not in out:
-                out.append(i)
-        return out
-
-    def phase(self, t):
-        """'trace', 'count', 'run', 'finish' or 'done' at t seconds after the cast."""
-        t -= self.trace
-        if t < 0:
-            return 'trace'
-        if t < COUNTDOWN:
-            return 'count'
-        c = self.s - 1 + int((t - COUNTDOWN) // self.interval)
-        if not self.loop and c >= self.L - 1:
-            return 'done' if t - COUNTDOWN - self.moves * self.interval >= self.finish_length() else 'finish'
-        return 'run'
-
-    def move_at(self, t):
-        """The move being made in the run (1-based: from seq[move-1] to the next hold)."""
-        c = self.s - 1 + int((t - self.trace - COUNTDOWN) // self.interval)
-        return c % self.L + 1
-
-    def trace_frame(self, t):
-        """{led: (r, g, b) floats} in the trace: the dim route, then the spot over it."""
-        fade = _smooth(t / TRACE_FADE)
-        leds = {}
-        dim = max(self.ghost, TRACE_DIM) * fade
-        for i in self.hold_leds:
-            leds[i] = tuple(v * dim for v in WHITE)
-        dim = max(self.track_level, TRACE_DIM) * fade
-        for i in self.track_leds:
-            leds[i] = tuple(v * dim for v in PINK)
-        n = len(self.path)
-        if n:
-            k = int(t // self.step)
-            for back, a in TAIL:
-                if k - back >= 0:
-                    leds[self.path[(k - back) % n]] = tuple(v * a for v in WHITE)
-        return leds
+        self.finish = self.seq[-1]
 
     def hold(self, i):
         return self.seq[i % self.L]
 
-    def exists(self, i):
-        return i >= 0 and (self.loop or i < self.L)
+    def target(self, k):
+        """The absolute index (s + k) the climber goes to on move k (0-based); its hold is hold(i)."""
+        return self.s + k
 
-    def colour(self, i):
-        p = i % self.L
-        if p < self.s and i < self.L:
-            return GREEN
-        if not self.loop and p == self.L - 1:
-            return RED
-        return BLUE
+    def lap_of(self, k):
+        return self.target(k) // self.L + 1
 
-    def finish_length(self):
-        return FIN_HOLD + FIN_STEP * self.L + FIN_FADE
+    def is_match(self, k):
+        """Move k goes to a hold the climber is already on: hold c or c-1 (c = the index reached)."""
+        i = self.target(k)
+        return any(j >= 0 and self.hold(j) == self.hold(i) for j in (i - 1, i - 2))
 
-    def holds_at(self, t):
-        """({hold id: ((r, g, b), brightness 0-1)}, done) at t seconds after the cast."""
-        out, pri = {}, {}
+    def top_length(self):
+        return TOP_BLINKS + TOP_FADE
 
-        def put(h, rgb, a, p):
-            if h not in pri or p > pri[h]:
-                pri[h] = p
-                out[h] = (rgb, max(0.0, min(1.0, a)))
-
-        t -= self.trace                 # the trace comes first (trace_frame draws it)
-        if t < 0:
-            return {}, False
-        s, L, iv = self.s, self.L, self.interval
+    def phase(self, t):
+        """'count', 'run', 'top' or 'done' at t seconds after the cast."""
         if t < COUNTDOWN:
-            if t - math.floor(t) < 0.5:
-                for i in range(s):
-                    put(self.hold(i), RED, 1, 5)
-                for i in range(s, s + 2):
-                    if self.exists(i):
-                        put(self.hold(i), BLUE, 1, 4)
-            return out, False
+            return 'count'
+        if self.endless:
+            return 'run'
+        after = t - COUNTDOWN - self.moves * self.interval
+        if after < 0:
+            return 'run'
+        return 'top' if after < self.top_length() else 'done'
 
-        tb = t - COUNTDOWN
-        b = int(tb // iv)
-        in_beat = tb - b * iv
-        f = in_beat / iv
-        c = s - 1 + b
-
-        if not self.loop and c >= L - 1:
-            after = tb - self.moves * iv
-            if after < FIN_HOLD:
-                put(self.hold(L - 1), RED, 1, 5)
-                if L > 1:
-                    put(self.hold(L - 2), self.colour(L - 2), 1, 4)
-            elif after < self.finish_length():
-                k = (after - FIN_HOLD) / FIN_STEP
-                run_end = FIN_HOLD + FIN_STEP * L
-                fade = 1 - (after - run_end) / FIN_FADE if after > run_end else 1
-                for i in range(L):
-                    if i > k:
-                        break
-                    put(self.hold(i), RED if i == L - 1 else GREEN, fade, 1)
+    def layers(self, t):
+        """({hold id: (r, g, b) floats 0-255}, done) at t seconds after the cast."""
+        ph = self.phase(t)
+        if ph == 'done':
+            return {}, True
+        blue = tuple(v * self.map_level for v in BLUE)
+        out = {h: blue for h in self.led}
+        if ph == 'top':
+            after = t - COUNTDOWN - self.moves * self.interval
+            out[self.finish] = (0.0, 0.0, 0.0)
+            if after < TOP_BLINKS:
+                out[self.finish] = _over(RED, blink(after), out[self.finish])
             else:
-                return out, True
+                fade = max(0.0, 1.0 - (after - TOP_BLINKS) / TOP_FADE)
+                out = {h: tuple(v * fade for v in rgb) for h, rgb in out.items()}
             return out, False
-
-        held = [c, c - 1] if c >= 1 else [c]
-        target = c + 1
-        if c - 2 >= 0:      # let go of: a soft pulse once a second, fading out over the move
-            pulse = 0.5 - 0.5 * math.cos(2 * math.pi * in_beat)
-            put(self.hold(c - 2), RED, pulse * (1 - f) ** 1.5, 1)
-        for i in held:
-            put(self.hold(i), self.colour(i), 1, 6)
-        put(self.hold(target), self.colour(target), 1, 7)
-        if self.exists(c + 2):   # amber: swells up for 0.75 s, drops back in 0.25 s; brighter through the move
-            x = in_beat % 1.0
-            swell = _smooth(x / 0.75) if x < 0.75 else 1 - _smooth((x - 0.75) / 0.25)
-            put(self.hold(c + 2), AMBER, 0.1 + (0.35 + 0.4 * f) * swell, 5)
-        if any(self.hold(i) == self.hold(target) for i in held):     # a match: solid
-            out[self.hold(target)] = (self.colour(target), 1.0)
+        if ph == 'count':
+            final = self.laps == 1
+        else:
+            k = int((t - COUNTDOWN) // self.interval)
+            final = not self.endless and self.lap_of(k) == self.laps
+        if final:
+            out[self.finish] = tuple(v * self.finish_level for v in RED)
+        if ph == 'count':
+            a = blink(t)
+            for i in range(self.s):
+                h = self.hold(i)
+                out[h] = _over(GREEN, a, out.get(h, (0.0, 0.0, 0.0)))
+            return out, False
+        x = (t - COUNTDOWN) - k * self.interval
+        a = match_on(x) if self.is_match(k) else 1.0
+        h = self.hold(self.target(k))
+        out[h] = _over(GREEN, a, out.get(h, (0.0, 0.0, 0.0)))
         return out, False
 
     def frame(self, t):
-        """({led: (r, g, b) floats, before the cast brightness}, done).
-
-        Layers, top first: Pulse and fade (holds_at, unchanged), the track (the run
-        only), the ghost (the countdown and the run). A lower layer only fills LEDs
-        nothing above it lit."""
-        if t < self.trace:
-            return self.trace_frame(t), False
-        holds, done = self.holds_at(t)
+        """({led: (r, g, b) floats, before the cast brightness}, done)."""
+        holds, done = self.layers(t)
         leds = {}
-        for h, (rgb, a) in holds.items():
+        for h, rgb in holds.items():
             i = self.led.get(h)
-            if i is not None and a > 0:
-                leds[i] = tuple(v * a for v in rgb)
-        ph = self.phase(t)
-        if ph == 'run' and self.track_run != 'off' and self.track_level > 0:
-            cells = self.move_leds.get(self.move_at(t), []) if self.track_run == 'move' else self.track_leds
-            pink = tuple(v * self.track_level for v in PINK)
-            for i in cells:
-                leds.setdefault(i, pink)
-        if ph in ('count', 'run') and self.ghost > 0:
-            white = tuple(v * self.ghost for v in WHITE)
-            for i in self.hold_leds:
-                leds.setdefault(i, white)
+            if i is not None and max(rgb) > 0:
+                leds[i] = rgb
         return leds, done
 
     def ended_line(self, how, t):
         """The journal line PB Console's Activity reads (console/probe.py CIRCUIT_LINE)."""
         return 'circuit ended: %r %s after %d moves (%d s), %g s a move, %s, run %s%s' % (
-            self.name, how, self.moves_at(t), max(0, t), self.interval, 'loop' if self.loop else 'once',
+            self.name, how, self.moves_at(t), max(0, t), self.interval, laps_text(self.laps),
             self.token or '-', self.tag)
 
     def moves_at(self, t):
         """Moves made by t (one per LED advance, counting across laps): what the app logs."""
-        t -= self.trace
         if t < COUNTDOWN:
             return 0
         b = int((t - COUNTDOWN) // self.interval)
-        return b if self.loop else min(b, self.moves)
-
-
-def _smooth(x):
-    x = max(0.0, min(1.0, x))
-    return x * x * (3 - 2 * x)
+        return b if self.endless else min(b, self.moves)

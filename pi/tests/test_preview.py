@@ -140,7 +140,7 @@ class Renderer(unittest.TestCase):
         r = self.make()
         r.preview('s1', A)
         self.go(0.1)
-        r.circuit(circuit.Run('Test', SEQ, 2, 3, True, 'r1'))
+        r.circuit(circuit.Run('Test', SEQ, 2, 3, 0, 'r1'))
         self.go(1)
         self.assertEqual(r.state, renderer.RUN)
         r.preview('s1', B)                                    # a tap during the run: kept, not shown
@@ -155,7 +155,7 @@ class Renderer(unittest.TestCase):
         r = self.make(PREVIEW_TIMEOUT_S='5')
         r.preview('s1', A)
         self.go(0.1)
-        r.circuit(circuit.Run('Test', SEQ, 2, 3, True, 'r1'))
+        r.circuit(circuit.Run('Test', SEQ, 2, 3, 0, 'r1'))
         self.go(10, dt=0.25)
         r.stop_circuit('r1')
         self.go(0.1)

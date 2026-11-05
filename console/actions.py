@@ -561,7 +561,7 @@ def build(kind, args):
 
         def remove(app, out):
             tracks.write(name, None, seq, out)
-            out('removed: %r has no track now (its trace runs over the holds only)' % name)
+            out('removed: %r has no track now' % name)
             return 0
         return func_action('circuit track remove %s' % name, remove,
                            'Remove the track of %r from the live database (an undo record is kept in '
@@ -571,9 +571,9 @@ def build(kind, args):
 
         def cast(app, out):
             import supabase_api as supa
-            status, ms, sent, body, token = supa.cast_circuit(name, 3, loop, 3, app.env)
-            out('sent cast_circuit %r (3 s a move, %s, trace 3 s, run %s) at %s: HTTP %s in %d ms %s' % (
-                name, 'loop' if loop else 'once', token, time.strftime('%H:%M:%S', time.localtime(sent)),
+            status, ms, sent, body, token = supa.cast_circuit(name, 3, loop, app.env)
+            out('sent cast_circuit %r (3 s a move, %s, run %s) at %s: HTTP %s in %d ms %s' % (
+                name, 'endless' if loop else '1 lap', token, time.strftime('%H:%M:%S', time.localtime(sent)),
                 status, ms, '' if status == 202 else body))
             if status != 202:
                 return 1
@@ -587,7 +587,7 @@ def build(kind, args):
                 got = _circuit_receipt(text, name, sent)
                 if got.get('started') or got.get('ignored') or got.get('unknown'):
                     break
-            for k in ('received', 'started', 'skipped', 'ignored', 'unknown'):
+            for k in ('received', 'started', 'ignored', 'unknown'):
                 if got.get(k):
                     out('%-9s %s' % (k, got[k]))
             if not got.get('received'):
@@ -595,8 +595,8 @@ def build(kind, args):
                 return 1
             return 0
         return func_action('test cast circuit %s' % name, cast,
-                           'Cast the circuit %r to the real board with a 3 s route trace, 3 s a move, %s. '
-                           'Whoever is climbing sees it.%s' % (name, 'looping until stopped' if loop else 'once to the top',
+                           'Cast the circuit %r to the real board, 3 s a move, %s. '
+                           'Whoever is climbing sees it.%s' % (name, 'endless until stopped' if loop else '1 lap to the top',
                                                                ' Stop ends it.' if loop else ''),
                            confirm=True, busy=True, timeout=60)
     if kind == 'circuit-test-stop':
@@ -617,8 +617,8 @@ LAST_TEST_RUN = {}       # the run token of this console's last circuit test cas
 
 
 def _circuit_receipt(json_lines, name, sent):
-    """From the listener's journal after a circuit test cast: received, started (with its ms), skipped
-    track moves, ignored at night, or unknown."""
+    """From the listener's journal after a circuit test cast: received, started (with its ms),
+    ignored at night, or unknown."""
     got = {}
     q = repr(name)
     for line in json_lines.splitlines():
@@ -633,8 +633,6 @@ def _circuit_receipt(json_lines, name, sent):
             got['received'] = lag
         elif msg.startswith('circuit started ' + q) and 'started' not in got:
             got['started'] = '%s; %s' % (lag, msg)
-        elif msg.startswith('circuit %s: track moves skipped' % q):
-            got['skipped'] = msg
         elif msg.startswith('circuit ' + q) and 'ignored' in msg:
             got['ignored'] = '%s; %s' % (lag, msg)
         elif msg.startswith('unknown circuit ' + q):

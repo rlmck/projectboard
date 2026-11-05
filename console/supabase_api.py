@@ -107,15 +107,16 @@ def _run_token():
     return secrets.token_hex(8)
 
 
-def cast_circuit(name, interval=3, loop=False, trace_s=3, env=None):
-    """A circuit cast as the app sends it (contract 8.1, 8.6): {circuit_name, interval, loop, run,
-    trace_s, source 'console'}. Returns (http status, ms, sent at, body, run token)."""
+def cast_circuit(name, interval=3, loop=False, env=None):
+    """A circuit cast (contract 8.1): {circuit_name, interval, laps (0 = until stopped for the
+    loop option, else 1), loop, run, source 'console'}; no trace_s (the Pi ignores it since 5 Nov
+    2026). Returns (http status, ms, sent at, body, run token)."""
     if not isinstance(name, str) or not 1 <= len(name) <= 60:
         raise ValueError('circuit_name: 1-60 characters')
     url, key = supabase_settings(env)
     token = _run_token()
-    payload = {'circuit_name': name, 'interval': interval, 'loop': bool(loop), 'run': token,
-               'trace_s': trace_s, 'source': 'console'}
+    payload = {'circuit_name': name, 'interval': interval, 'laps': 0 if loop else 1, 'loop': bool(loop),
+               'run': token, 'source': 'console'}
     endpoint = '%s/realtime/v1/api/broadcast/%s/events/cast_circuit' % (url, urllib.parse.quote(TOPIC, safe=''))
     t0 = time.time()
     status, body = _req(endpoint, key, 'POST', payload, timeout=10)

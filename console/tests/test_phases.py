@@ -359,6 +359,22 @@ class Reports(unittest.TestCase):
         self.assertIsNone(probe.CIRCUIT_NIGHT.match(line.replace('view received: ', '')
                                                     .replace("' [", "' ignored: night mode [").replace('circuit ', 'circuit view ')))
 
+    def test_probe_reads_circuit_ended_lines_old_and_new(self):
+        m = probe.CIRCUIT_LINE.match
+        pre = "2026-11-05T19:42:05+00:00 projectboard python3[812]: circuit ended: 'Pat Burner' "
+        for how, looped in (('loop', True), ('once', False), ('endless', True), ('1 lap', False), ('3 laps', False),
+                            ('10 laps', False)):
+            r = m(pre + 'stopped after 23 moves (74 s), 3 s a move, %s, run ab [phone, member]' % how)
+            self.assertIsNotNone(r, how)
+            self.assertEqual((r.group(3), r.group(4), r.group(8)), ('Pat Burner', 'stopped', how))
+            self.assertEqual(r.group(8) in ('loop', 'endless'), looped)
+        # the Pi's own line (pi/listener/circuit.py ended_line) matches
+        sys.path.insert(0, os.path.join(REPO, 'pi', 'listener'))
+        import circuit
+        run = circuit.Run('Pat Burner', ['hold3', 'hold1', 'hold80', 'hold120'], 2, 3, 3, 'ab', tag=' [phone, member]')
+        r = m('2026-11-05T19:42:05+00:00 projectboard python3[812]: ' + run.ended_line('finished', 40))
+        self.assertEqual((r.group(5), r.group(8), r.group(9)), ('10', '3 laps', 'ab'))
+
     def test_probe_reads_every_cast_line(self):
         m = probe.CAST_LINE.match
         r = m("2026-10-29T19:42:05+00:00 projectboard python3[812]: cast received: 'Good Bug' mirrored [wall, guest]")

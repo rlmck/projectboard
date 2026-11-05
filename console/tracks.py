@@ -1,9 +1,9 @@
 """Circuit tracks (cast contract 8.6, db/37): read, check and write circuits.led_track.
 
 A track is, for each move of a circuit, the ordered LEDs between one hold and the
-next. The Pi lights them in the route trace before a run and (dim pink) under
-Pulse and fade. The console's Circuit tracks tab edits them; this module is its
-server side:
+next. Since 5 Nov 2026 the Pi doesn't light them in a run (contract 8.3, the map
+and next hold look), but they're kept and checked. The console's Circuit tracks
+tab edits them; this module is its server side:
 
 - the check is the Pi's own: pi/listener/circuit.py check_track() (loaded from
   the repo), plus what a save needs on top: no problems at all, every move of
