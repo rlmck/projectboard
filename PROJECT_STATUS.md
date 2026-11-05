@@ -38,7 +38,7 @@ The ordered to-do list (next steps, backlog, and what not to build yet) lives in
 - **Ross, for the new card** (in and working since 1 Nov): Tailscale → disable key expiry for the new `projectboard`; a backup image of the working card; the wall tests below again on the new card.
 - **Ross: try wall Create on the touchscreen** (the tab should show; tabs Problems · Circuits · Ranks · Create · Get the app since 2 Nov), and a phone with live LEDs (live 30 Oct): the wall's Create tab (keyboard, Save, it lights on save), a phone's Create and an admin Edit at the gym, a cast while setting (Show on board).
 - **Ross: watch the new circuit look** (live 5 Nov): PB Console → Circuit tracks → Pat Burner → Test cast (1 lap; tick Loop for endless) on the webcam: the countdown blink, the green hold to go to, the match on moves 5–6 blinking twice, the red finish and the top; whether the map (0.2) and red (0.6) read on the strip (PB Console → Config).
-- **Ross: try a circuit cast on the wall before opening** (live 30 Oct), from a phone and from the wall screen's Circuits page: the countdown, each speed, Stop, a loop, the top of a run done once.
+- **Ross: try a circuit cast from a phone and the wall's Circuits page** (live 30 Oct): each speed, Stop, a loop, the top.
 - **Ross: try the wall's tap-to-cast on the touchscreen** (live 2 Nov): tap, scroll and fling, fast taps, Mirror (the first mirrored-cast check), a phone cast then a wall tap, the 15-minute LED idle; on Circuits, a tap lights the holds (colours as the screen), Start circuit replaces it.
 - **Ross: test the feet rule on the wall** (the listener is deployed, 30 Oct): Orange-only lights B2 only, Black-only B1 only, Any neither; the same mirrored.
 - **Ross: try search and Clear on the touchscreen** (live 4 Nov, once it has a picture): typing, a tap on the list closes the keyboard without lighting anything, Done, ×, Clear; Clear on a phone.
@@ -59,10 +59,10 @@ Details in `docs/cast-contract.md` → "Open questions".
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
 - **2026-11-05, Claude Code (the circuit LED look "map and next hold", and `laps`; replaces TODO 6).**
-  - **Changed:** `circuit.py` rewritten to Ross's look (§8.3): trace, ghost, track, amber, red let-go and green run-up gone; `check_track()`/`led_track` kept. `cast_circuit` gains `laps` (bad → ignored; absent → from `loop`, then `loops`; `loops` false → 1 lap); `trace_s` ignored. Config: `CIRCUIT_MAP_LEVEL`/`CIRCUIT_FINISH_LEVEL` in, the track keys out. Simulator rewritten as a port. PB Console sends `laps`; Activity reads the new line. The app drops `trace_s` and its 3 s trace wait (it would lag the Pi by 3 s).
+  - **Changed:** `circuit.py` rewritten to Ross's look (§8.3): trace, ghost, track, amber, red let-go and green run-up gone; `check_track()`/`led_track` kept. `cast_circuit` gains `laps` (bad → ignored; absent → from `loop`, then `loops`; `loops` false → 1 lap); `trace_s` ignored. Config: `CIRCUIT_MAP_LEVEL`/`CIRCUIT_FINISH_LEVEL` in, the track keys out. Simulator rewritten as a port. PB Console sends `laps`; Activity reads the new line. The app drops `trace_s` and its 3 s wait (else 3 s behind the Pi).
   - **Tested:** pi/console tests, build check; the simulator matches `circuit.py` (6000 frames), runs in Chrome.
-  - **Live:** `fe8b40e`, CACHE `pb-1be624474b`; Pi deployed 09:00 5 Nov (listener joined).
-  - **Left:** Ross: watch it on the webcam (Waiting on). Next: laps on the phone and wall (TODO 6). The Pi's night window is 23:00–15:00 (`NIGHT_END=15:00` in config.env since 4 Nov): casts ignored before 15:00.
+  - **Live:** `fe8b40e`, CACHE `pb-1be624474b`; Pi deployed 09:00.
+  - **Left:** Ross: watch it on the webcam (Waiting on). Next: laps on the phone and wall (TODO 6). Night is 23:00–15:00 on the Pi (`NIGHT_END=15:00`, since 4 Nov).
 
 - **2026-11-04, Claude Code (wall search and the Clear pill, phone and wall).**
   - **Changed:** wall rows get the phone's search (same state and matching) on Create's keyboard, now shared (`wallKbOpen(target)`), docked over the board for a search. A tap outside closes it and never casts; panel, page change, Clear, idle close it. `✕ Clear` pinned right on all four rows (the phone had none since the Filter sheet) = `clearFilters`, now clearing the wall's search. Overview §4.2a/§4.7a.
