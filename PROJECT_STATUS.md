@@ -21,6 +21,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **Deploy policy (29 Oct 2026):** ship to `main` once checks pass; "staging first" = `dev` only; rollback = `git revert` + push. `CACHE` is stamped from the shipped files' blob ids, so docs-only pushes don't re-download the app. Details: CLAUDE.md, working rule 2.
 - **Accounts (2 Nov 2026):** nickname + 4-digit PIN for new accounts; accounts made before keep their 4-word passphrase (no switch offered) and sign in through the same field. No lockout, rate limit or weak-PIN blocking, by design. No personal data, under-18s welcome, Ranks opt-in (`profiles.is_public`); a forgotten PIN or passphrase is reset by an admin (activity check, logged), giving a new PIN or new words to match. Google sign-in removed. The gym is the data controller.
 - Points only for benchmark climbs (db/27).
+- **Board sets, Specific feet (7 Nov 2026, planned):** a new set per rearrange, the old archived (ticks kept); hands only on wooden holds; Specific feet never lit. `docs/board-setup-plan.md`.
 - **Feet rule (30 Oct 2026):** every problem is Any feet (default), Orange feet only or Black feet only (`problems.feet_mode`, db/33). Any lights no sign; Orange lights B2 (LED 25), Black lights B1 (LED 26), never mirrored; `hold2`/`hold21` are never in a hold list. Migrated: both signs or none → Any, one sign → that rule. Cast contract §6.5.
 - **Circuits (30 Oct 2026):** no mirrored circuits and no circuits Done filter for now (future releases); "done" means done both sides and is for problems only. No Play preview.
 - **Who cast (30 Oct 2026):** never in the public broadcast. Members' casts go to a private, insert-only `cast_log` (db/34) that only PB Console reads (direct Postgres), for nicknames on Activity. `privacy.html` says so.
@@ -58,6 +59,8 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-07, chat (plan: board setup flow, board sets, Specific feet).** Planned in `docs/board-setup-plan.md` (new; TODO 16): decisions, phases, a dry run on the current board. A quick auto-trace test matched 166 of the 188 hand-traced outlines closely. Nothing built. **Left:** Ross: a full-board photo, footholds included.
+
 - **2026-11-05, Claude Code (the circuit LED look "map and next hold", and `laps`; replaces TODO 6).**
   - **Changed:** `circuit.py` rewritten to Ross's look (§8.3): trace, ghost, track, amber, red let-go and green run-up gone; `check_track()`/`led_track` kept. `cast_circuit` gains `laps` (bad → ignored; absent → from `loop`, then `loops`; `loops` false → 1 lap); `trace_s` ignored. Config: `CIRCUIT_MAP_LEVEL`/`CIRCUIT_FINISH_LEVEL` in, the track keys out. Simulator rewritten as a port. PB Console sends `laps`; Activity reads the new line. The app drops `trace_s` and its 3 s wait (else 3 s behind the Pi).
   - **Tested:** pi/console tests, build check; the simulator matches `circuit.py` (6000 frames), runs in Chrome.
@@ -81,9 +84,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Tested:** build; Chrome 390×844, 1280×720 `?wall`, no casts: sorts, slider, toggles, badge, Reset, empty, circuits.
   - **Live:** `3ac8028`, CACHE `pb-8733480f5d`.
   - **Left:** Ross: try it on a phone and the touchscreen. Next: the hold filter.
-
-- **2026-11-04, Claude Code (Create: pinch in and out of the viewer).**
-  - **Changed:** problem Create/Edit pinches like detail: a spread opens the viewer, pinching to fit closes it (also after the expand button), a double-tap closes only when both taps miss every hold; on a hold it still cycles twice; taps never hide the bar; no landscape auto-open. New hint. Circuit create shares the viewer, not the gestures: unchanged. Overview §4.8.
-  - **Tested:** build; Chrome, synthetic touch pointers: holds, name, grade, Undo and bar counts survive; detail as before. Real fingers not yet.
-  - **Live:** `cc4c74a`, CACHE `pb-a39886ca6c`.
-  - **Left:** Ross: try it with real fingers. The hint shows only the first 3 viewer opens ever.
