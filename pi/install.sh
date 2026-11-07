@@ -249,6 +249,8 @@ done
 for t in pb-health.timer pb-mode.timer pb-weekly-reboot.timer; do
     if [ "$(systemctl is-enabled "$t" 2>/dev/null)" != enabled ] || [ "$(systemctl is-active "$t")" != active ]; then
         run systemctl enable --now "$t"
+    elif changed "/etc/systemd/system/$t"; then
+        run systemctl restart "$t"      # a new schedule (pb-mode.timer runs on the minute since 7 Nov 2026)
     fi
 done
 if [ "$(systemctl is-enabled pb-netwatch 2>/dev/null)" != enabled ] || [ "$(systemctl is-active pb-netwatch 2>/dev/null)" != active ]; then

@@ -117,15 +117,17 @@ function renderServices() {
 
 function renderBoard() {
   const b = (overview && overview.board) || {};
-  const cfg = b.config || {};
+  const cfg = b.config || {}, sc = b.schedule || {};
   const rows = [
     ['LEDs', b.leds || '?'],
     ['Pattern', b.pattern || '-'],
     ['Idle plan', b.plan || '-'],
-    ['Override', b.override || 'none'],
+    ['Idle override', b.override || 'none'],
     ['Brightness', b.scale != null && b.scale < 1 ? 'x' + b.scale + ' (pb-idle)' : 'as configured (' + (cfg.BRIGHTNESS || '?') + ' cast, ' + (cfg.IDLE_BRIGHTNESS || '?') + ' idle)'],
     ['Mode', b.mode || '?'],
-    ['Night', (cfg.NIGHT_START || '?') + '–' + (cfg.NIGHT_END || '?') + (cfg.NIGHT_FORCE ? ', forced ' + cfg.NIGHT_FORCE : ', by the clock')],
+    ['Next switch', sc.next_change ? (sc.next_mode === 'night' ? 'dark at ' : 'lights at ') + sc.next_change.replace('T', ' ') : '-'],
+    ['Override', sc.stay_on_until ? 'staying on until ' + sc.stay_on_until.replace('T', ' ') : cfg.NIGHT_FORCE ? 'forced ' + cfg.NIGHT_FORCE + ' (NIGHT_FORCE)' : 'none: the opening hours'],
+    ['Hours', sc.hours && !sc.hours.error ? Object.keys(sc.hours).map((d) => d[0] + d.slice(1, 3).toLowerCase() + ' ' + sc.hours[d]).join(' · ') : (sc.hours && sc.hours.error) || '?'],
     ['Screen', b.screen_off ? 'off by hand' : 'normal'],
     ['Casts (5 min)', (overview && overview.casts_5min ? overview.casts_5min.length : 0) + ''],
   ];
@@ -133,8 +135,7 @@ function renderBoard() {
   document.querySelectorAll('#patterns .btn').forEach((el) => el.classList.toggle('on', b.leds === el.dataset.cmd || (b.override || '') === el.dataset.cmd));
   const force = cfg.NIGHT_FORCE || 'auto';
   document.querySelectorAll('#night-seg .btn').forEach((el) => el.classList.toggle('on', el.dataset.mode === force));
-  if (cfg.NIGHT_START && document.activeElement !== $('night-start')) $('night-start').value = cfg.NIGHT_START;
-  if (cfg.NIGHT_END && document.activeElement !== $('night-end')) $('night-end').value = cfg.NIGHT_END;
+  $('stay-end').disabled = !sc.stay_on_until;
   if (!$('brightness').matches(':active') && b.scale != null) {
     $('brightness').value = Math.round(b.scale * 100);
     $('brightness-out').textContent = Math.round(b.scale * 100) + '%';
@@ -265,6 +266,7 @@ function actionFromButton(el) {
     case 'reboot': return ['reboot', {}, 'Reboot the Pi'];
     case 'idle': return ['idle', { cmd: d.cmd }, 'pb-idle ' + d.cmd];
     case 'night': return ['night', { mode: d.mode }, 'Night mode: ' + d.mode];
+    case 'stay-on': return ['stay-on', { until: d.until }, d.until === 'end' ? 'End the stay-on override' : 'Stay on until ' + d.until];
     case 'screen': return ['screen', { state: d.state }, 'Screen ' + d.state];
     default: return null;
   }
@@ -333,9 +335,10 @@ async function boot() {
     const v = Number($('brightness').value) / 100;
     runAction('brightness', { value: v }, 'Brightness ' + Math.round(v * 100) + '%');
   });
-  $('night-hours').addEventListener('click', () => {
-    const s = $('night-start').value, e = $('night-end').value;
-    runAction('night-hours', { start: s, end: e }, 'Night hours ' + s + '–' + e);
+  $('stay-go').addEventListener('click', () => {
+    const t = $('stay-until').value;
+    if (!/^\d{2}:\d{2}$/.test(t)) { toast('Choose a time'); return; }
+    runAction('stay-on', { until: t }, 'Stay on until ' + t);
   });
   $('log-form').addEventListener('submit', showLogs);
   $('log-stop').addEventListener('click', () => { if (logAbort) logAbort.abort(); });

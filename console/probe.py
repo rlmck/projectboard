@@ -174,6 +174,14 @@ def hardware():
             'load': os.getloadavg(), 'uptime_s': up, 'boot_at': time.time() - up}
 
 
+def mode_info():
+    """mode.py --json: the mode, the next change, the stay-on override, the opening hours."""
+    try:
+        return json.loads(sh('python3', '/opt/projectboard/listener/mode.py', '--json') or 'null')
+    except ValueError:
+        return None
+
+
 def everything():
     t0 = time.time()
     services = {}
@@ -204,6 +212,7 @@ def everything():
         'hardware': hardware(), 'wifi': wifi(), 'tailscale': ts,
         'services': services, 'timers': timers, 'listener': listener,
         'mode': sh('python3', '/opt/projectboard/listener/mode.py'),
+        'mode_info': mode_info(),
         'mode_applied': (read(RUN + '/mode') or '').strip() or None,
         'screen_off_flag': os.path.exists(RUN + '/screen-off'),
         'boot_line': (sh('journalctl', '-b', '-t', 'pb-boot', '-o', 'cat', '--no-pager', '-q').splitlines() or [None])[-1],
@@ -271,18 +280,17 @@ def history(since):
 
 
 def last_night(date):
-    """What happened around NIGHT_START and NIGHT_END for the night starting on `date` (YYYY-MM-DD)."""
-    cfg = {}
-    for line in (read('/etc/projectboard/config.env') or '').splitlines():
-        if '=' in line and not line.lstrip().startswith('#'):
-            k, v = line.split('=', 1)
-            cfg[k.strip()] = v.strip()
-    start, end = cfg.get('NIGHT_START') or '23:00', cfg.get('NIGHT_END') or '08:00'
+    """What happened around the closing and the next opening for the night that began
+    on `date` (YYYY-MM-DD) or covers it (mode.py --night: the opening hours)."""
     import datetime
-    d = datetime.date.fromisoformat(date)
-    s_at = datetime.datetime.combine(d, datetime.time.fromisoformat(start))
-    e_day = d + datetime.timedelta(days=1) if end <= start else d
-    e_at = datetime.datetime.combine(e_day, datetime.time.fromisoformat(end))
+    try:
+        span = json.loads(sh('python3', '/opt/projectboard/listener/mode.py', '--night', date) or '{}')
+    except ValueError:
+        span = {}
+    if not span.get('start'):
+        return {'error': span.get('error') or 'mode.py --night gave nothing'}
+    s_at = datetime.datetime.fromisoformat(span['start'])
+    e_at = datetime.datetime.fromisoformat(span['end'])
 
     def around(t):
         a, b = (t - datetime.timedelta(minutes=3)).strftime('%Y-%m-%d %H:%M:%S'), (t + datetime.timedelta(minutes=5)).strftime('%Y-%m-%d %H:%M:%S')

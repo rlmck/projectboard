@@ -6,7 +6,7 @@ with /etc/sudoers.d/pb-console allowing pi to run it (and nothing else) as root:
     sudo pb-console-helper unit start|stop|restart <unit>
     sudo pb-console-helper reboot
     sudo pb-console-helper night auto|day|night     NIGHT_FORCE in config.env
-    sudo pb-console-helper night-hours HH:MM HH:MM  NIGHT_START, NIGHT_END
+    sudo pb-console-helper stay-on HH:MM|end        the "stay on until" override (today only, ends itself)
     sudo pb-console-helper screen on|off            the day-time screen-off flag
     sudo pb-console-helper backups                  the config.env backups, newest first
     sudo pb-console-helper config-set KEY=VALUE...  known keys, each value checked
@@ -25,8 +25,13 @@ one syslog line tagged pb-console.
 config.env writes accept only known keys with checked values (KEYS), keep
 comments and order, copy the old file to /var/lib/projectboard/config-backups
 first (the newest 30 kept), and replace it in one rename. Then: the listener
-restarts if a key it reads at start changed; the night keys are re-read by
-the listener and pb-mode by themselves (this also runs pb-mode once).
+restarts if a key it reads at start changed; the opening hours and the night
+keys are re-read by the listener and pb-mode by themselves (this also runs
+pb-mode once). The opening hours are HOURS_MON..HOURS_SUN (mode.py).
+
+The stay-on override is not in config.env: it's one line in
+/var/lib/projectboard/stay-on-until (London time), so it survives a reboot that
+day, and mode.py ignores it (pb-mode deletes it) once that time has passed.
 
 Nothing secret leaves the Pi through here: nm-export and backup drop every
 psk/password/secret/key line from NetworkManager profiles, and never include
@@ -53,9 +58,12 @@ CONFIG = '/etc/projectboard/config.env'
 BACKUPS = '/var/lib/projectboard/config-backups'
 KEEP = 30
 SCREEN_OFF = '/run/projectboard/screen-off'
+STAY_ON = '/var/lib/projectboard/stay-on-until'     # mode.py's STAY_ON
 UNITS = ('pb-listener', 'kiosk', 'board-cam', 'pb-netwatch', 'pb-health.timer', 'pb-mode.timer')
 VERBS = ('start', 'stop', 'restart')
 HHMM = re.compile(r'^([01][0-9]|2[0-3]):[0-5][0-9]$')
+HOURS = re.compile(r'^(closed|([01][0-9]|2[0-3]):[0-5][0-9]-(([01][0-9]|2[0-3]):[0-5][0-9]|24:00))$')   # mode.py's HOURS_RX
+DAYS = ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN')
 NIGHT = {'auto': '', 'day': 'day', 'night': 'night'}
 PATTERNS = ('glisten', 'chase', 'lava', 'breathe', 'aurora', 'rain', 'ripples', 'fireflies', 'teaser', 'wave')
 NM_DIR = '/etc/NetworkManager/system-connections'
@@ -97,6 +105,13 @@ def _names(v):
     return all(n in PATTERNS for n in v.replace(',', ' ').split())
 
 
+def _hours(v):
+    """closed, or HH:MM-HH:MM (24:00 = midnight; an end before the start runs past midnight)."""
+    if not HOURS.match(v):
+        return False
+    return v == 'closed' or v.split('-')[0] != v.split('-')[1]
+
+
 def _pins(v):
     return all(p.isdigit() and 2 <= int(p) <= 27 for p in v.replace(',', ' ').split())
 
@@ -121,16 +136,16 @@ KEYS = {
     'CIRCUIT_MAX_S': (_num(60, 7200, True), 'Circuits', 'seconds before a forgotten loop goes idle'),
     'CIRCUIT_MAP_LEVEL': (_num(0.05, 0.6), 'Circuits', 'the blue map of the circuit in a run, 0.05-0.6'),
     'CIRCUIT_FINISH_LEVEL': (_num(0.1, 1), 'Circuits', 'the red finish on the final lap, 0.1-1.0'),
-    'NIGHT_MODE': (_choice('on', 'off'), 'Night', 'on or off'),
-    'NIGHT_START': (lambda v: bool(HHMM.match(v)), 'Night', 'HH:MM'),
-    'NIGHT_END': (lambda v: bool(HHMM.match(v)), 'Night', 'HH:MM'),
-    'NIGHT_FORCE': (_choice('', 'day', 'night'), 'Night', 'empty (the clock), day or night'),
+    **{'HOURS_' + d: (_hours, 'Opening hours', '%s: HH:MM-HH:MM or closed (London time)' % d.capitalize())
+       for d in DAYS},
+    'NIGHT_MODE': (_choice('on', 'off'), 'Night', 'on (dark outside the hours) or off (never dark)'),
+    'NIGHT_FORCE': (_choice('', 'day', 'night'), 'Night', 'empty (the hours), day or night'),
     'WIFI_CONNECTION': (_match(r'^[A-Za-z0-9_.-]{1,64}$'), 'Network', 'the NetworkManager connection pb-health brings up'),
     'WIFI_IFACE': (_match(r'^[a-z0-9]{1,15}$'), 'Network', 'the Wi-Fi interface'),
     'RELAY_PINS': (_pins, 'Relays', 'BCM pins, comma separated (empty: not built)'),
     'RELAY_ACTIVE_LOW': (_choice('yes', 'no'), 'Relays', 'yes or no'),
 }
-REREAD = ('NIGHT_', 'WIFI_', 'RELAY_')      # read again by the listener / pb-health / pb-mode each time
+REREAD = ('HOURS_', 'NIGHT_', 'WIFI_', 'RELAY_')      # read again by the listener / pb-health / pb-mode each time
 
 
 def needs_restart(key):
@@ -324,11 +339,44 @@ def cmd_night(args):
     return 0
 
 
-def cmd_night_hours(args):
-    if len(args) != 2 or not all(HHMM.match(a) for a in args) or args[0] == args[1]:
-        raise Refused('night-hours HH:MM HH:MM (24-hour, two different times)')
-    write_config({'NIGHT_START': args[0], 'NIGHT_END': args[1]})
+def london_now():
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.datetime.now(ZoneInfo('Europe/London')).replace(tzinfo=None, second=0, microsecond=0)
+    except Exception:
+        return datetime.datetime.now().replace(second=0, microsecond=0)
+
+
+def stay_on_until(hhmm, now):
+    """The next HH:MM after now (later today, or after midnight), as mode.py reads it."""
+    h, m = (int(x) for x in hhmm.split(':'))
+    until = now.replace(hour=h, minute=m)
+    if until <= now:
+        until += datetime.timedelta(days=1)
+    return until
+
+
+def cmd_stay_on(args):
+    if len(args) != 1 or not (args[0] == 'end' or HHMM.match(args[0])):
+        raise Refused('stay-on HH:MM|end')
+    if args[0] == 'end':
+        if os.path.exists(STAY_ON):
+            os.remove(STAY_ON)
+            log('stay-on override ended by hand: back to the opening hours')
+        else:
+            print('no stay-on override was set')
+    else:
+        until = stay_on_until(args[0], london_now())
+        os.makedirs(os.path.dirname(STAY_ON), mode=0o755, exist_ok=True)
+        tmp = STAY_ON + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.write(until.strftime('%Y-%m-%dT%H:%M') + '\n')
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, STAY_ON)
+        log('stay-on override: day (LEDs and screen) until %s' % until.strftime('%a %d %b %H:%M'))
     apply_mode()
+    code, mode = run('python3', '/opt/projectboard/listener/mode.py')
+    print('mode now: %s' % mode)
     return 0
 
 
@@ -596,7 +644,7 @@ def cmd_test(args):
     return 0 if code == 0 else 1
 
 
-COMMANDS = {'unit': cmd_unit, 'reboot': cmd_reboot, 'night': cmd_night, 'night-hours': cmd_night_hours,
+COMMANDS = {'unit': cmd_unit, 'reboot': cmd_reboot, 'night': cmd_night, 'stay-on': cmd_stay_on,
             'screen': cmd_screen, 'backups': cmd_backups, 'config-set': cmd_config_set,
             'config-restore': cmd_config_restore, 'config-put': cmd_config_put, 'ledmap': cmd_ledmap,
             'hashes': cmd_hashes, 'nm-export': cmd_nm_export, 'backup': cmd_backup, 'test': cmd_test}

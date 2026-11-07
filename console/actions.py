@@ -198,18 +198,24 @@ def build(kind, args):
         mode = args.get('mode')
         if mode not in ('auto', 'day', 'night'):
             raise Invalid('night: auto, day or night')
-        what = {'auto': 'Night mode by the clock (NIGHT_FORCE empty)',
-                'day': 'Force day (NIGHT_FORCE=day): LEDs and screen stay on through the night until set back to auto',
+        what = {'auto': 'Day and night by the opening hours (NIGHT_FORCE empty)',
+                'day': 'Force day (NIGHT_FORCE=day): LEDs and screen stay on through the night until set back to auto '
+                       '(for one evening, Stay on until is better: it ends itself)',
                 'night': 'Force night (NIGHT_FORCE=night): LEDs off, casts ignored, screen off, until set back to auto'}[mode]
         return remote_action('night %s' % mode, helper_cmd('night', mode),
                              what + '. Writes config.env on the Pi and pi/config.env here.', confirm=True, config='keep')
-    if kind == 'night-hours':
-        start, end = args.get('start'), args.get('end')
-        if not (isinstance(start, str) and isinstance(end, str) and HHMM.match(start) and HHMM.match(end)) or start == end:
-            raise Invalid('night-hours: two different HH:MM times')
-        return remote_action('night-hours %s %s' % (start, end), helper_cmd('night-hours', start, end),
-                             'Night from %s to %s. Writes config.env on the Pi and pi/config.env here.' % (start, end),
-                             confirm=True, config='keep')
+    if kind == 'stay-on':
+        until = args.get('until')
+        if until == 'end':
+            return remote_action('stay-on end', helper_cmd('stay-on', 'end'),
+                                 'End the stay-on override: back to the opening hours now (if they say night, '
+                                 'the LEDs fade out and the wall screen goes off)', confirm=True)
+        if not (isinstance(until, str) and HHMM.match(until)):
+            raise Invalid('stay-on: HH:MM, or end')
+        return remote_action('stay-on %s' % until, helper_cmd('stay-on', until),
+                             'Stay on until %s: day mode (LEDs, casts, the wall screen) whatever the opening hours say, '
+                             'until the next %s (tonight, or after midnight if that has passed today). It ends by itself '
+                             'and shows on the overview until it does. Not in config.env.' % (until, until), confirm=True)
     if kind == 'screen':
         state = args.get('state')
         if state not in ('on', 'off'):

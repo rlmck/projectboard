@@ -18,6 +18,9 @@ StartLimitIntervalSec=0
 # /run/kiosk-cache (RuntimeDirectory, emptied when the kiosk stops), capped at
 # 64 MB. The profile itself stays on the card, so the service worker's offline
 # copy of the app and its saved lists survive a restart.
+# Outside the opening hours (mode.py, 7 Nov 2026) it doesn't start: ExecCondition
+# skips it (not a failure, so no restart loop), so a boot at night keeps the
+# screen dark; pb-mode stops it at closing and starts it at opening.
 [Service]
 Type=simple
 User=kiosk
@@ -34,6 +37,7 @@ StandardError=journal
 TimeoutStartSec=150
 RuntimeDirectory=kiosk-cache
 RuntimeDirectoryMode=0700
+ExecCondition=/usr/bin/python3 /opt/projectboard/listener/mode.py --is-day
 ExecStartPre=-/usr/bin/timeout 120 /bin/sh -c 'until getent hosts symmetryboard.co.uk >/dev/null; do sleep 2; done'
 ExecStart=/bin/sh -c 'exec /usr/bin/cage -d -- /usr/bin/chromium --ozone-platform=wayland --kiosk --noerrdialogs --no-first-run --disable-infobars --disable-session-crashed-bubble --disable-features=Translate --password-store=basic --overscroll-history-navigation=0 --check-for-update-interval=31536000 --deny-permission-prompts --disk-cache-dir=/run/kiosk-cache --disk-cache-size=67108864 --disable-breakpad "https://symmetryboard.co.uk/?wall#k=$$(cat /etc/projectboard/wall-key 2>/dev/null)"'
 Restart=always

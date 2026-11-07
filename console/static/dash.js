@@ -26,6 +26,7 @@
     site: { title: 'Live site and Supabase', ids: ['site', 'supabase'], tab: 'release', go: 'Release' },
     health: { title: 'Self-healing', ids: ['health'], tab: 'logs', go: 'Logs' },
     errors: { title: 'Journal errors', ids: ['errors'], tab: 'logs', go: 'Logs' },
+    schedule: { title: 'Opening hours and timers', ids: ['schedule', 'timers'], tab: 'board', go: 'Board' },
   };
 
   let data = null;
@@ -186,17 +187,28 @@
     return '<div class="stat"><b>' + esc(v == null ? '-' : v) + '</b><span>' + esc(label) + '</span></div>';
   }
 
-  // Night: from the config the overview already carries. [isNight, label of the next switch, minutes to it]
-  function night(cfg) {
-    const toMin = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; };
-    const s = toMin(cfg.NIGHT_START), e = toMin(cfg.NIGHT_END);
-    if ((cfg.NIGHT_MODE || 'on') === 'off') return { forced: 'off' };
-    if (cfg.NIGHT_FORCE) return { forced: cfg.NIGHT_FORCE, isNight: cfg.NIGHT_FORCE === 'night' };
-    if (s == null || e == null) return {};
-    const d = new Date(), now = d.getHours() * 60 + d.getMinutes();
-    const isNight = s > e ? now >= s || now < e : now >= s && now < e;
-    const next = isNight ? e : s;
-    return { isNight, inMin: (next - now + 1440) % 1440, at: isNight ? cfg.NIGHT_END : cfg.NIGHT_START };
+  // Day or night: from the Pi's mode.py --json (the opening hours, the stay-on override,
+  // NIGHT_FORCE), which the overview carries as board.schedule. Times are London time,
+  // as the laptop's. { isNight, forced, stay, at, inMin, today }
+  const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  function night(b) {
+    const s = (b && b.schedule) || null;
+    if (!s) return {};
+    const out = { isNight: s.mode === 'night', today: (s.hours || {})[DAYS[new Date().getDay()]] };
+    if (s.force) out.forced = s.force;
+    else if (!/^(on|yes|1|true)$/.test(s.night_mode || 'on')) out.forced = 'off';
+    if (s.stay_on_until) out.stay = s.stay_on_until.slice(11, 16);
+    if (s.next_change) {
+      out.at = hhmm(s.next_change);
+      out.inMin = Math.max(0, Math.round((new Date(s.next_change) - Date.now()) / 60000));
+    }
+    return out;
+  }
+
+  function modeLabel(nt) {
+    if (nt.forced) return nt.forced === 'off' ? 'No night mode' : 'Forced ' + nt.forced;
+    if (nt.stay) return 'Staying on until ' + nt.stay;
+    return nt.isNight === undefined ? '?' : nt.isNight ? 'Night' : 'Day';
   }
 
   // -- the tiles -------------------------------------------------------------------------------
@@ -216,13 +228,13 @@
       '</button><button class="chip-x" data-dismiss="' + esc(t.id) + '" title="Dismiss until it changes" aria-label="Dismiss ' + esc(t.title) + '">×</button></span>').join('') +
       (n > 1 ? '<button class="t-more" data-dismiss="*">Dismiss all</button>' : '') +
       (nd ? '<button class="t-more" data-undismiss="*">' + nd + ' dismissed · show again</button>' : '');
-    const l = m.listener || {}, cfg = (data.board && data.board.config) || {}, nt = night(cfg);
+    const l = m.listener || {}, nt = night(data.board);
     const kpis = [
       ['Pi up', m.pi ? span(m.pi.uptime_s) : 'offline'],
       ['Live app', (m.site && m.site.cache) || '?'],
       ['Casts 24 h', l.casts_24h != null ? l.casts_24h : '-'],
       ['Last cast', l.last_cast_at ? ago(l.last_cast_at) : '-'],
-      ['Mode', nt.forced ? (nt.forced === 'off' ? 'No night mode' : 'Forced ' + nt.forced) : nt.isNight ? 'Night' : 'Day'],
+      ['Mode', modeLabel(nt)],
     ];
     $('hero-kpis').innerHTML = kpis.map(([k, v]) => '<div><dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd></div>').join('');
   }
@@ -235,9 +247,9 @@
     c.textContent = LABEL[level];
     $('ov-leds').textContent = b.leds === 'cast' ? 'Showing ' + (l.last_cast_name || 'a cast') :
       b.leds === 'night' ? 'LEDs dark: night' : b.leds === 'off' ? 'LEDs off (by hand)' : b.leds ? 'Idle: ' + (b.pattern || b.override || b.leds) : '';
-    const nt = night(cfg);
-    $('ov-mode').textContent = nt.forced ? (nt.forced === 'off' ? 'No night mode' : 'Forced ' + nt.forced) : nt.isNight === undefined ? '' :
-      (nt.isNight ? 'Night' : 'Day') + ' · ' + (nt.isNight ? 'lights at ' : 'dark at ') + nt.at;
+    const nt = night(b);
+    $('ov-mode').textContent = nt.isNight === undefined ? '' : modeLabel(nt) +
+      (nt.forced || !nt.at ? '' : ' · ' + (nt.isNight ? 'lights at ' : 'dark at ') + nt.at);
     const sel = $('ov-pattern');
     if (!sel.options.length) {
       sel.innerHTML = (PB.state().patterns || []).map(([n, about]) => '<option value="' + esc(n) + '" title="' + esc(about) + '">' + esc(n) + '</option>').join('') +
@@ -396,16 +408,19 @@
   }
 
   function renderSchedule(m) {
-    const cfg = (data.board && data.board.config) || {}, nt = night(cfg), timers = m.timers || {};
-    const big = nt.forced ? (nt.forced === 'off' ? 'Night mode off' : 'Forced ' + nt.forced) :
+    const nt = night(data.board), timers = m.timers || {}, level = lvl(['schedule']);
+    const big = nt.forced || nt.stay ? modeLabel(nt) :
       nt.inMin == null ? '?' : (nt.isNight ? 'Lights on in ' : 'Night in ') + span(nt.inMin * 60);
-    const names = { 'pb-health': 'Health check', 'pb-mode': 'Night switch', 'pb-weekly-reboot': 'Weekly reboot', 'pb-bootcheck': 'Boot check' };
+    const sub = (nt.today ? 'today ' + (nt.today === 'closed' ? 'closed' : nt.today.replace('-', '–')) : 'hours ?') +
+      (nt.at ? ' · next switch ' + nt.at : '');
+    const names = { 'pb-health': 'Health check', 'pb-mode': 'Day/night switch', 'pb-weekly-reboot': 'Weekly reboot', 'pb-bootcheck': 'Boot check' };
     const nextOf = (s) => { const x = /(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})/.exec(s || ''); return x ? hhmm(x[1] + 'T' + x[2]) : '-'; };
-    setTile('t-schedule', head('Night & timers', null, goBtn('tests', 'Check a night')) +
-      '<div><div class="big mid">' + esc(big) + '</div><div class="sub">dark ' + esc(cfg.NIGHT_START || '?') + ' → lights ' + esc(cfg.NIGHT_END || '?') + '</div></div>' +
+    setTile('t-schedule', head('Opening hours & timers', level, goBtn('tests', 'Check a night')) +
+      '<div><div class="big mid">' + esc(big) + '</div><div class="sub">' + esc(sub) + '</div></div>' +
+      (nt.stay ? '<div class="btn-row"><button class="btn small" data-act="stay-on" data-until="end">End override</button></div>' : '') +
       '<ul class="list">' + Object.keys(timers).map((t) => '<li class="' + (timers[t].state === 'active' ? 'ok' : 'bad') + '"><span class="dot"></span><span class="grow">' +
         esc(names[t] || t) + '</span><span class="when">' + esc(timers[t].next ? 'next ' + nextOf(timers[t].next) : 'last ' + nextOf(timers[t].last)) +
-        '</span></li>').join('') + '</ul>');
+        '</span></li>').join('') + '</ul>', level, 'schedule');
   }
 
   function renderAudit(rows) {
@@ -538,7 +553,8 @@
     a('LEDs back to the default', 'idle', { cmd: 'default' });
     (PB.state().patterns || []).forEach(([n]) => a('Idle pattern: ' + n, 'idle', { cmd: n }));
     a('Idle pattern: tour', 'idle', { cmd: 'tour' });
-    a('Night mode: auto (clock)', 'night', { mode: 'auto' });
+    a('Night mode: auto (the opening hours)', 'night', { mode: 'auto' });
+    a('End the stay-on override', 'stay-on', { until: 'end' });
     a('Night mode: force night', 'night', { mode: 'night' });
     a('Night mode: force day', 'night', { mode: 'day' });
     a('Wall screen on', 'screen', { state: 'on' });

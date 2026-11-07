@@ -167,41 +167,104 @@ class Cap(unittest.TestCase):
 
 
 class DayNight(unittest.TestCase):
+    """The opening hours (7 Nov 2026). 9 Nov 2026 is a Monday."""
     cfg = dict(mode.DEFAULTS)
 
-    def at(self, hh, mm, synced=True, **over):
+    def at(self, d, hh, mm, synced=True, stay=None, **over):
         cfg = dict(self.cfg, **over)
-        return mode.current_mode(datetime.datetime(2026, 10, 26, hh, mm), synced, cfg)[0]
+        return mode.current_mode(datetime.datetime(2026, 11, d, hh, mm), synced, cfg, stay)[0]
 
-    def test_window_wraps_midnight(self):
-        self.assertEqual(self.at(22, 59), 'day')
-        self.assertEqual(self.at(23, 0), 'night')
-        self.assertEqual(self.at(2, 0), 'night')
-        self.assertEqual(self.at(7, 59), 'night')
-        self.assertEqual(self.at(8, 0), 'day')
-        self.assertEqual(self.at(12, 0), 'day')
+    def test_default_week(self):
+        self.assertEqual(self.at(9, 15, 29), 'night')       # Mon
+        self.assertEqual(self.at(9, 15, 30), 'day')
+        self.assertEqual(self.at(12, 21, 59), 'day')        # Thu
+        self.assertEqual(self.at(12, 22, 0), 'night')
+        self.assertEqual(self.at(13, 16, 0), 'night')       # Fri: closed
+        self.assertEqual(self.at(14, 9, 29), 'night')       # Sat
+        self.assertEqual(self.at(14, 9, 30), 'day')
+        self.assertEqual(self.at(15, 14, 59), 'day')        # Sun
+        self.assertEqual(self.at(15, 15, 0), 'night')
+        self.assertEqual(self.at(15, 2, 0), 'night')
 
-    def test_window_same_day(self):
-        self.assertEqual(self.at(1, 0, NIGHT_START='00:30', NIGHT_END='06:00'), 'night')
-        self.assertEqual(self.at(6, 0, NIGHT_START='00:30', NIGHT_END='06:00'), 'day')
-        self.assertEqual(self.at(23, 30, NIGHT_START='00:30', NIGHT_END='06:00'), 'day')
+    def test_past_midnight_and_24(self):
+        self.assertEqual(self.at(14, 23, 0, HOURS_SAT='20:00-02:00'), 'day')
+        self.assertEqual(self.at(15, 1, 59, HOURS_SAT='20:00-02:00'), 'day')     # Sun morning, Sat's hours
+        self.assertEqual(self.at(15, 2, 0, HOURS_SAT='20:00-02:00'), 'night')
+        self.assertEqual(self.at(13, 23, 59, HOURS_FRI='08:00-24:00'), 'day')
+        self.assertEqual(self.at(14, 0, 0, HOURS_FRI='08:00-24:00'), 'night')
+
+    def test_parse(self):
+        self.assertIsNone(mode.parse_hours('closed'))
+        self.assertEqual(mode.parse_hours('15:30-22:00'), (930, 1320))
+        self.assertEqual(mode.parse_hours('08:00-24:00'), (480, 1440))
+        for bad in ('', '9:30-15:00', '15:00-15:00', '25:00-01:00', '10:00-24:30', 'open', '10:00'):
+            with self.assertRaises(ValueError):
+                mode.parse_hours(bad)
 
     def test_fail_open(self):
-        self.assertEqual(self.at(2, 0, synced=False), 'day')
-        self.assertEqual(self.at(2, 0, NIGHT_START='25:00'), 'day')
-        self.assertEqual(self.at(2, 0, NIGHT_START='nope'), 'day')
-        self.assertEqual(self.at(2, 0, NIGHT_START='08:00'), 'day')     # empty window
-        self.assertEqual(self.at(2, 0, NIGHT_MODE='off'), 'day')
+        self.assertEqual(self.at(13, 2, 0, synced=False), 'day')
+        self.assertEqual(self.at(13, 2, 0, HOURS_FRI='nope'), 'day')
+        self.assertEqual(self.at(13, 2, 0, HOURS_MON='25:00-26:00'), 'day')   # any bad day: day all week
+        self.assertEqual(self.at(13, 2, 0, NIGHT_MODE='off'), 'day')
 
     def test_force(self):
-        self.assertEqual(self.at(12, 0, NIGHT_FORCE='night'), 'night')
-        self.assertEqual(self.at(2, 0, NIGHT_FORCE='day', synced=False), 'day')
-        self.assertEqual(self.at(12, 0, NIGHT_FORCE='night', synced=False), 'night')
+        self.assertEqual(self.at(9, 17, 0, NIGHT_FORCE='night'), 'night')
+        self.assertEqual(self.at(13, 2, 0, NIGHT_FORCE='day', synced=False), 'day')
+        self.assertEqual(self.at(9, 17, 0, NIGHT_FORCE='night', synced=False), 'night')
+        stay = datetime.datetime(2026, 11, 9, 23, 30)
+        self.assertEqual(self.at(9, 22, 30, NIGHT_FORCE='night', stay=stay), 'night')   # force beats the override
+
+    def test_stay_on(self):
+        stay = datetime.datetime(2026, 11, 9, 23, 30)
+        self.assertEqual(self.at(9, 22, 0, stay=stay), 'day')
+        self.assertEqual(self.at(9, 23, 29, stay=stay), 'day')
+        self.assertEqual(self.at(9, 23, 30, stay=stay), 'night')
+        now = datetime.datetime(2026, 11, 9, 22, 30)
+        self.assertEqual(mode.next_change(now, self.cfg, stay), (stay, 'night'))
+
+    def test_stay_on_file(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            cfg = dict(self.cfg, STAY_ON_FILE=os.path.join(d, 'stay'))
+            now = datetime.datetime(2026, 11, 9, 22, 30)
+            self.assertIsNone(mode.read_stay_on(cfg, now))
+            for text, want in (('2026-11-09T23:30' + chr(10), datetime.datetime(2026, 11, 9, 23, 30)),
+                               ('2026-11-09T22:30', None),          # over
+                               ('2026-11-11T09:00', None),          # more than 24 h ahead: ignored
+                               ('rubbish', None)):
+                with open(cfg['STAY_ON_FILE'], 'w') as f:
+                    f.write(text)
+                self.assertEqual(mode.read_stay_on(cfg, now), want, text)
+
+    def test_next_change(self):
+        nc = lambda d, h, m: mode.next_change(datetime.datetime(2026, 11, d, h, m), self.cfg)
+        self.assertEqual(nc(9, 12, 0), (datetime.datetime(2026, 11, 9, 15, 30), 'day'))
+        self.assertEqual(nc(9, 16, 0), (datetime.datetime(2026, 11, 9, 22, 0), 'night'))
+        self.assertEqual(nc(12, 22, 0), (datetime.datetime(2026, 11, 14, 9, 30), 'day'))   # Thu night, over Fri
+        self.assertEqual(mode.next_change(datetime.datetime(2026, 11, 9, 12, 0),
+                                          dict(self.cfg, **{'HOURS_' + d: 'closed' for d in mode.DAYS})), (None, None))
+
+    def test_night_on(self):
+        n = lambda d: mode.night_on(datetime.date(2026, 11, d), self.cfg)
+        self.assertEqual(n(9), {'start': '2026-11-09T22:00', 'end': '2026-11-10T15:30'})
+        self.assertEqual(n(12), {'start': '2026-11-12T22:00', 'end': '2026-11-14T09:30'})
+        self.assertEqual(n(13), n(12))                       # Fri is closed: Thursday's night covers it
+        self.assertEqual(n(15), {'start': '2026-11-15T15:00', 'end': '2026-11-16T15:30'})
+
+    def test_dst(self):
+        # 29 Mar 2026 (Sun) the clocks go forward at 01:00 GMT: the hours stay London wall time.
+        self.assertEqual(mode.current_mode(datetime.datetime(2026, 3, 29, 9, 30), True, self.cfg)[0], 'day')
+        self.assertEqual(mode.current_mode(datetime.datetime(2026, 10, 25, 9, 29), True, self.cfg)[0], 'night')
+        if mode.TZ is not None:
+            utc = datetime.datetime(2026, 7, 1, 14, 30, tzinfo=datetime.timezone.utc)      # BST: 15:30 in London
+            self.assertEqual(utc.astimezone(mode.TZ).hour, 15)
 
     def test_config_file(self):
         p = os.path.join(ROOT, 'pi', 'config.env.example')
         cfg = mode.load_config(p)
-        self.assertEqual(cfg['NIGHT_START'], '23:00')
+        self.assertEqual([cfg['HOURS_' + d] for d in mode.DAYS],
+                         ['15:30-22:00'] * 4 + ['closed'] + ['09:30-15:00'] * 2)
+        self.assertNotIn('NIGHT_START', cfg)
         self.assertEqual(cfg['SUPABASE_URL'], '')
         self.assertEqual(cfg['BOARD_WALL'], 'HangoutPortland')
 

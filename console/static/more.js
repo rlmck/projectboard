@@ -35,7 +35,7 @@
     } catch (e) { return fail(box, e); }
     const groups = {};
     cfg.keys.forEach((k) => { (groups[k.group] = groups[k.group] || []).push(k); });
-    box.innerHTML = Object.keys(groups).map((g) => '<fieldset class="card"><h3>' + esc(g) + '</h3>' +
+    box.innerHTML = Object.keys(groups).map((g) => g === 'Opening hours' ? hoursTable(groups[g]) : '<fieldset class="card"><h3>' + esc(g) + '</h3>' +
       groups[g].map((k) => {
         const v = cfg.values[k.key] == null ? '' : cfg.values[k.key];
         const field = k.choices
@@ -51,8 +51,44 @@
       pre(b.diff || '(the same as now)') + '</details>').join('') : '<p class="muted">No backups yet: the first change makes one.</p>';
   }
 
+  // The opening hours (HOURS_MON..HOURS_SUN, London time): one row a day, from / to or Closed.
+  // A "to" of 00:00 is midnight (24:00); a "to" before the "from" runs past midnight.
+  const DAY_NAME = { MON: 'Monday', TUE: 'Tuesday', WED: 'Wednesday', THU: 'Thursday', FRI: 'Friday', SAT: 'Saturday', SUN: 'Sunday' };
+
+  function hoursTable(keys) {
+    return '<fieldset class="card cfg-hours"><h3>Opening hours</h3>' +
+      '<p class="muted">Day mode inside these, night outside: LEDs dark, casts ignored, the wall screen off. London time. ' +
+      'Re-read within 10 s, no restart. For one evening, use Board → Stay on until instead.</p>' +
+      '<table class="audit"><tr><th>Day</th><th>From</th><th>To</th><th>Closed</th></tr>' +
+      keys.map((k) => {
+        const v = String(cfg.values[k.key] == null ? '' : cfg.values[k.key]).trim().toLowerCase();
+        const m = /^(\d{2}:\d{2})-(\d{2}:\d{2})$/.exec(v);
+        const closed = v === 'closed';
+        const from = m ? m[1] : '', to = m ? (m[2] === '24:00' ? '00:00' : m[2]) : '';
+        return '<tr data-hours="' + esc(k.key) + '"><td>' + esc(DAY_NAME[k.key.slice(6)] || k.key) + '</td>' +
+          '<td><input type="time" step="60" data-part="from" value="' + esc(from) + '"' + (closed ? ' disabled' : '') + '></td>' +
+          '<td><input type="time" step="60" data-part="to" value="' + esc(to) + '"' + (closed ? ' disabled' : '') + '></td>' +
+          '<td><input type="checkbox" data-part="closed"' + (closed ? ' checked' : '') + ' aria-label="Closed all day"></td></tr>' +
+          (m || closed ? '' : '<tr><td></td><td colspan="3" class="muted">Now ' + esc(v || '(empty: the default)') + '</td></tr>');
+      }).join('') + '</table></fieldset>';
+  }
+
+  function hoursValue(row) {
+    if (row.querySelector('[data-part="closed"]').checked) return 'closed';
+    const from = row.querySelector('[data-part="from"]').value, to = row.querySelector('[data-part="to"]').value;
+    if (!from || !to) return null;
+    return from + '-' + (to === '00:00' ? '24:00' : to);
+  }
+
   function changedValues() {
     const out = {};
+    document.querySelectorAll('#cfg-form [data-hours]').forEach((row) => {
+      const k = row.dataset.hours, v = hoursValue(row);
+      const was = String(cfg.values[k] == null ? '' : cfg.values[k]).trim().toLowerCase();
+      if (v === null) throw new Error(DAY_NAME[k.slice(6)] + ': set both times, or tick Closed');
+      if (v === row.querySelector('[data-part="from"]').value + '-' + row.querySelector('[data-part="from"]').value) throw new Error(DAY_NAME[k.slice(6)] + ': from and to are the same');
+      if (v !== was) out[k] = v;
+    });
     document.querySelectorAll('#cfg-form [data-key]').forEach((el) => {
       const k = el.dataset.key;
       const was = cfg.values[k] == null ? '' : cfg.values[k];
@@ -62,7 +98,8 @@
   }
 
   async function applyConfig() {
-    const values = changedValues();
+    let values;
+    try { values = changedValues(); } catch (e) { PB.toast(e.message); return; }
     if (!Object.keys(values).length) { PB.toast('Nothing changed'); return; }
     if (await PB.runAction('config-set', { values }, 'Config: ' + Object.keys(values).join(', '))) loadConfig();
   }
@@ -298,6 +335,10 @@
     if (t.dataset.result !== undefined && t.dataset.id) saveResult(t.dataset.id, t.dataset.result);
   });
   $('cfg-apply').addEventListener('click', applyConfig);
+  $('cfg-form').addEventListener('change', (ev) => {
+    if (ev.target.dataset.part !== 'closed') return;
+    ev.target.closest('tr').querySelectorAll('input[type="time"]').forEach((el) => { el.disabled = ev.target.checked; });
+  });
   $('cfg-reload').addEventListener('click', loadConfig);
   $('cfg-push').addEventListener('click', () => PB.runAction('config-push', {}, "Pi's config.env ← laptop's"));
   $('cfg-pull').addEventListener('click', () => PB.runAction('config-pull', {}, "laptop's pi/config.env ← Pi's"));

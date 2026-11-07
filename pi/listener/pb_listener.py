@@ -13,8 +13,9 @@ docs/pi4-listener-kiosk-plan.md, section R1:
 - Reconnect backoff 1 s doubling to 60 s with jitter; Phoenix heartbeat every
   25 s; no heartbeat reply for 60 s = dead socket.
 - Every cast is checked; a bad one is logged and skipped. Latest cast wins.
-- Night mode (mode.py): the strip fades out and casts are ignored, but the
-  socket stays joined.
+- Night mode (mode.py: outside the opening hours, HOURS_MON..HOURS_SUN, unless
+  PB Console's stay-on override is going): the strip fades out and casts are
+  ignored, but the socket stays joined.
 - The strip belongs to the LED thread (renderer.py): a cast is lit at once,
   IDLE_AFTER_S after the last cast the idle pattern (patterns/, IDLE_PATTERN)
   fades in, and at night the strip fades to black. SIGUSR1 = idle now.
@@ -51,7 +52,7 @@ JOIN_TIMEOUT = 15
 BACKOFF_MAX = 60
 STABLE_AFTER = 60          # a connection joined this long resets the backoff
 TICK = 10                  # watchdog ping and status write
-MODE_EVERY = 30
+MODE_EVERY = 10             # day/night (mode.py): the opening hours switch within 10 s
 MIRROR_EVERY = 600
 BENCHMARKS_EVERY = 1800    # the teaser's problems: one small read
 IDLE_FILE = 'idle-pattern'  # pb-idle writes it next to the status file, then sends SIGUSR2
@@ -208,7 +209,7 @@ class Listener:
 
     async def check_mode(self):
         try:
-            self.cfg = modelib.load_config(self.cfg_path)   # night times can change without a restart
+            self.cfg = modelib.load_config(self.cfg_path)   # the hours can change without a restart
         except OSError as e:
             warn('config unreadable, keeping the last one: %s' % e)
         mode, reason = modelib.mode_now(self.cfg)

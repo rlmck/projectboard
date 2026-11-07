@@ -35,7 +35,7 @@ import probe  # noqa: E402  (the script the console runs on the Pi)
 from test_console import ServerBase  # noqa: E402
 
 GOOD = ('SUPABASE_URL=https://uqirowyfqwiceyjznosl.supabase.co\nSUPABASE_ANON_KEY=eyJa.eyJb.c_d-e\n'
-        '# a comment\nBRIGHTNESS=0.5\nIDLE_PATTERN=wave\nNIGHT_START=23:00\nNIGHT_END=08:00\nNIGHT_FORCE=\n')
+        '# a comment\nBRIGHTNESS=0.5\nIDLE_PATTERN=wave\nHOURS_MON=15:30-22:00\nHOURS_FRI=closed\nNIGHT_FORCE=\n')
 
 
 class HelperConfig(unittest.TestCase):
@@ -47,7 +47,7 @@ class HelperConfig(unittest.TestCase):
                      ('RELAY_PINS', '23,24'), ('IDLE_FPS', '30'), ('SUPABASE_URL', 'https://abc.supabase.co')):
             self.h.check_value(k, v)
         for k, v in (('BRIGHTNESS', '2'), ('BRIGHTNESS', 'x'), ('IDLE_PATTERN', 'disco'), ('IDLE_CYCLE', 'lava strobe'),
-                     ('NIGHT_START', '25:00'), ('RELAY_PINS', '40'), ('EVIL', '1'), ('IDLE_FPS', '30; reboot'),
+                     ('HOURS_MON', '25:00-26:00'), ('NIGHT_START', '23:00'), ('RELAY_PINS', '40'), ('EVIL', '1'), ('IDLE_FPS', '30; reboot'),
                      ('SUPABASE_URL', 'https://evil.example')):
             with self.assertRaises(self.h.Refused, msg='%s=%s' % (k, v)):
                 self.h.check_value(k, v)
@@ -61,7 +61,7 @@ class HelperConfig(unittest.TestCase):
 
     def test_restart_only_for_start_keys(self):
         self.assertTrue(self.h.needs_restart('IDLE_PATTERN'))
-        self.assertFalse(self.h.needs_restart('NIGHT_START'))
+        self.assertFalse(self.h.needs_restart('HOURS_MON'))
         self.assertFalse(self.h.needs_restart('WIFI_IFACE'))
 
     def test_secrets_stripped(self):
@@ -236,15 +236,15 @@ class NewActions(unittest.TestCase):
         self.assertNotIn('s3cret', b.name + b.shown + b.describe + json.dumps(b.preview))
 
     def test_test_steps_whitelisted(self):
-        a = actions.build('test-step', {'args': ['clock', '22:59:30']})
-        self.assertEqual(a.shown, 'sudo -n /usr/local/sbin/pb-console-helper test clock 22:59:30')
+        a = actions.build('test-step', {'args': ['clock', '21:59:30']})
+        self.assertEqual(a.shown, 'sudo -n /usr/local/sbin/pb-console-helper test clock 21:59:30')
         self.assertTrue(a.confirm and a.busy)
         for bad in (['clock', '12:00:00'], ['reboot'], 'kill-listener', ['kill-listener', 'x']):
             with self.assertRaises(actions.Invalid):
                 actions.build('test-step', {'args': bad})
 
     def test_config_set(self):
-        a = actions.build('config-set', {'values': {'NIGHT_START': '22:30'}})
+        a = actions.build('config-set', {'values': {'HOURS_FRI': '10:00-12:00'}})
         self.assertFalse(a.busy)
         self.assertEqual(a.config, 'keep')
         self.assertTrue(actions.build('config-set', {'values': {'IDLE_PATTERN': 'lava'}}).busy)

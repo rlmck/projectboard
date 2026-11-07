@@ -2398,8 +2398,8 @@
        view, the nav and the install surfaces (!important: setView sets the nav's
        display inline) and shows #wall: a header with the page tabs, then the
        page. Problems = the grade rail, the list, the chosen problem over the board; Ranks = the boards side by
-       side; Get the app = the QR. #wall-idle covers it all for the idle slides
-       and, dimmed, at night. */
+       side; Get the app = the QR. #wall-idle covers it all for the idle slides.
+       Outside the opening hours the Pi turns the screen off (pb-mode). */
     #wall { display: none; }
     body.wall { overflow: hidden; --nav-h: 0px; }
     body.wall .view,
@@ -2760,7 +2760,7 @@
     }
     .wall-url { margin-top: 26px; color: var(--accent-hover); font-size: 22px; font-weight: 700; }
 
-    /* Idle slides and the night screen */
+    /* Idle slides */
     .wall-idle {
       position: fixed; inset: 0; z-index: 300;
       display: flex; flex-direction: column; align-items: center;
@@ -2785,13 +2785,3 @@
     .wall-slide-sub { max-width: 440px; margin-top: 18px; color: var(--text-soft); font-size: 20px; line-height: 1.5; }
     .wall-slide-bench { height: 100%; display: flex; align-items: center; gap: 44px; }
     .wall-slide-board { height: 100%; flex: none; }
-    .wall-idle.night { background: var(--black); cursor: default; }
-    .wall-idle.night .wall-touch { display: none; }
-    .wall-idle.night .wall-slide > * { animation: none; }   /* the fade would end at full brightness */
-    .wall-slide-night {
-      display: flex; flex-direction: column; align-items: center; gap: 22px;
-      opacity: var(--wall-night-dim); text-align: center;
-    }
-    .wall-slide-night .wall-qr-svg { width: var(--wall-qr-night); height: var(--wall-qr-night); }
-    .wall-slide-night h1 { font-size: 28px; font-weight: 700; }
-    .wall-slide-night p { color: var(--text-muted); font-size: 18px; }

@@ -25,14 +25,14 @@
 //     no animation), with the same tap rules and one-at-a-time sending as Problems.
 //     Start circuit opens the phone's Cast sheet (circuits.js): speed and loop,
 //     then the countdown, the move count and Stop. The wall doesn't go idle while
-//     a run is going; night closes the sheet (the Pi ends the run).
+//     a run is going.
 //   - Create (db/35), when the wall key works: anyone at the wall sets a problem
 //     with no sign-in: the board to tap holds on (the phone's rules, cycleHold),
 //     the name on an on-screen keyboard, grade, feet rule, Undo, Clear, Cancel,
 //     Save. Every tap lights the board (authoring.js, contract §9). Saved through
 //     wall_create_problem() with the wall key, as The Hangout; then the new
 //     problem is chosen on Problems and lit on the board. No idle slides while it's
-//     open; 5 minutes untouched asks, then discards it; night closes it.
+//     open; 5 minutes untouched asks, then discards it.
 //   - Ranks, read-only: Points and each challenge's board side by side.
 //   - Get the app: the /scan QR, in place of Profile. No sign-in anywhere.
 // After WALL_IDLE_MS without a touch it goes back to the list (the filters, the
@@ -40,10 +40,10 @@
 // cleared, the list at the top) and plays
 // slides: the QR and the benchmark of the day. A touch ends them (on the
 // benchmark slide it picks that problem and lights it); a reload while they're up
-// (an app update) comes back to them, not to 20 minutes of the list. At
-// night (the Pi's 23:00–08:00) it shows only a dimmed QR, and casting is off: the
-// Pi ignores casts then anyway. With no connection the saved list stays up with a
-// note, casting is off, and it keeps trying.
+// (an app update) comes back to them, not to 20 minutes of the list. There's no
+// night screen here: outside the opening hours the Pi stops the kiosk and powers
+// the screen down (pi/ops/pb-mode, since 7 Nov 2026). With no connection the
+// saved list stays up with a note, casting is off, and it keeps trying.
 //
 // The phone views stay underneath, hidden (body.wall): the loaders and the router
 // run as usual, and the few hooks into them (renderList, refreshBoardViews,
@@ -51,8 +51,6 @@
 
   const WALL_IDLE_MS = 20 * 60 * 1000;  // no touch for this long: back to the list, then the slides
   const WALL_SLIDE_MS = 12 * 1000;       // each idle slide
-  const WALL_NIGHT_FROM = 23 * 60;       // minutes past midnight; the Pi's NIGHT_START / NIGHT_END
-  const WALL_NIGHT_TO = 8 * 60;          // (pi/config.env.example), so the screen and the LEDs agree
   const WALL_POLL_MS = 5 * 60 * 1000;    // fresh problems, names and challenges while online
   const WALL_RETRY_MS = 30 * 1000;       // ...and how often to try while the connection is down
   const WALL_BOARD_ROWS = 10;            // rows on each Ranks board
@@ -64,7 +62,6 @@
   let wallMirror = false;        // the chosen problem is shown (and cast) mirrored
   let wallLastTouch = Date.now();
   let wallIdleOn = false;        // the idle slides are showing
-  let wallNightOn = false;       // the night screen is showing
   let wallSlide = 0;             // index into wallSlides()
   let wallSlideAt = 0;           // when the current slide went up
   let wallNetDown = false;       // the last fetch of the problems failed
@@ -217,7 +214,7 @@
     mirror.setAttribute('aria-pressed', p && wallMirror ? 'true' : 'false');
     wallRenderLit();
     wallRenderOffline();
-    wallRenderCircSel();                 // its Start circuit and status follow the connection and the night too
+    wallRenderCircSel();                 // its Start circuit and status follow the connection too
   }
 
   function wallBoardHtml(p, mirror) {
@@ -268,7 +265,7 @@
 
   // Lights what's on screen: the chosen problem, the way round it's shown. The
   // wall's pick always takes over the board (the Pi shows the latest cast). Not
-  // at night, idle or offline. One cast at a time: a tap while one is being sent
+  // idle or offline. One cast at a time: a tap while one is being sent
   // waits, replacing any tap already waiting, so only the latest goes next.
   function wallCast() {
     const p = wallSelected();
@@ -292,7 +289,7 @@
     try {
       ok = await castByName(name, document.createElement('button'), mirror, () => {
         const q = wallSelected();
-        return wallPage === 'problems' && !wallIdleOn && !wallNightOn && !!q && q.name === name && wallMirror === mirror;
+        return wallPage === 'problems' && !wallIdleOn && !!q && q.name === name && wallMirror === mirror;
       }, { quiet: true });
     } finally {
       wallCastBusy = false;
@@ -377,7 +374,7 @@
          <div class="problem-meta wall-meta">${wallCircMetaHtml(c)}</div>`
       : `<h1 class="wall-name wall-name-empty">Pick a circuit</h1>
          <p class="wall-hint">Tap one to light its holds. Start circuit runs it a move at a time.</p>`;
-    wallEl('wall-ccast').disabled = !c || wallOffline() || wallNightOn;
+    wallEl('wall-ccast').disabled = !c || wallOffline();
     wallRenderCircLit();
   }
 
@@ -419,7 +416,7 @@
 
   // Lights the chosen circuit's holds, all at once (show_circuit): the board shows
   // the latest cast, so this replaces a problem or a run, and a later cast replaces
-  // it. Not at night, idle or offline. One at a time, the latest tap next, as wallCast.
+  // it. Not idle or offline. One at a time, the latest tap next, as wallCast.
   function wallCircShow() {
     const c = wallCircSelected();
     if (!c || wallPage !== 'circuits' || wallOffline() || wallIsIdle() || wallPicking('circuits') || wallKbSearching()) return;
@@ -439,7 +436,7 @@
     try {
       ok = await showCircuitByName(name, () => {
         const c = wallCircSelected();
-        return wallPage === 'circuits' && !wallIdleOn && !wallNightOn && !!c && circuitName(c) === name;
+        return wallPage === 'circuits' && !wallIdleOn && !!c && circuitName(c) === name;
       });
     } finally {
       wallCircCastBusy = false;
@@ -470,7 +467,7 @@
   // Start circuit: the Cast sheet (speed, loop, the countdown and Stop).
   function wallCircStart() {
     const c = wallCircSelected();
-    if (!c || wallOffline() || wallNightOn) return;
+    if (!c || wallOffline()) return;
     openCircuitCast(c);
   }
 
@@ -595,7 +592,7 @@
     wallCreateRender();
   }
 
-  // Save, Cancel, a discard, idle or night: the live LEDs end, the state is cleared.
+  // Save, Cancel, a discard or idle: the live LEDs end, the state is cleared.
   function wallCreateClose() {
     if (!wallCreateOn) return;
     wallCreateOn = false;
@@ -810,7 +807,7 @@
     }
     allProblems.push(data);
     renderList();                      // -> wallRenderList
-    if (!wallCreateOn) return;         // night or idle closed it while it saved: it's saved anyway
+    if (!wallCreateOn) return;         // idle closed it while it saved: it's saved anyway
     wallSetPage('problems', true);     // closes Create (and its LEDs)
     wallSelect(data.id);
     const card = document.querySelector(`#wall-list .wall-card[data-id="${CSS.escape(String(data.id))}"]`);
@@ -909,7 +906,7 @@
 
   // ── Pages ─────────────────────────────────────────────────────────────────────
   // Leaving Create with something set asks first, unless `discard` (Save, a
-  // confirmed Cancel, idle, night).
+  // confirmed Cancel, idle).
   function wallSetPage(page, discard = false) {
     if (wallCreateOn && page !== 'create') {
       if (!discard && wallCreateDirty()) { wallAskDiscard('leave', () => wallSetPage(page, true)); return; }
@@ -925,15 +922,8 @@
     if (page === 'create' && !wallCreateOn) wallCreateOpen();
   }
 
-  // ── Idle slides and night ─────────────────────────────────────────────────────
-  function wallIsNight() {
-    const d = new Date();
-    const m = d.getHours() * 60 + d.getMinutes();
-    return WALL_NIGHT_FROM > WALL_NIGHT_TO
-      ? (m >= WALL_NIGHT_FROM || m < WALL_NIGHT_TO)
-      : (m >= WALL_NIGHT_FROM && m < WALL_NIGHT_TO);
-  }
-  const wallIsIdle = () => wallIdleOn || wallNightOn;
+  // ── Idle slides ───────────────────────────────────────────────────────────────
+  const wallIsIdle = () => wallIdleOn;
 
   // The benchmark of the day: the same one all day, the next one tomorrow.
   function wallFeatured() {
@@ -986,15 +976,6 @@
       </div>`;
   }
 
-  function wallNightHtml() {
-    return `
-      <div class="wall-slide-night">
-        ${WALL_QR_SLOT}
-        <h1>The board’s asleep until 08:00</h1>
-        <p>Scan to get the app</p>
-      </div>`;
-  }
-
   function wallFillQr(root) {
     const tpl = wallEl('wall-qr-tpl');
     root.querySelectorAll('.wall-qr:empty').forEach(slot => slot.appendChild(tpl.content.cloneNode(true)));
@@ -1002,17 +983,15 @@
 
   function wallRenderIdle() {
     const box = wallEl('wall-idle');
-    box.hidden = !wallIsIdle();
-    box.classList.toggle('night', wallNightOn);
+    box.hidden = !wallIdleOn;
     if (box.hidden) return;
     const slides = wallSlides();
     if (wallSlide >= slides.length) wallSlide = 0;
     const kind = slides[wallSlide];
-    wallEl('wall-slide').innerHTML = wallNightOn ? wallNightHtml() : wallSlideHtml(kind);
-    wallEl('wall-slide').dataset.kind = wallNightOn ? 'night' : kind;
+    wallEl('wall-slide').innerHTML = wallSlideHtml(kind);
+    wallEl('wall-slide').dataset.kind = kind;
     wallFillQr(box);
-    wallEl('wall-dots').innerHTML = wallNightOn ? ''
-      : slides.map((_, i) => `<i class="${i === wallSlide ? 'on' : ''}"></i>`).join('');
+    wallEl('wall-dots').innerHTML = slides.map((_, i) => `<i class="${i === wallSlide ? 'on' : ''}"></i>`).join('');
   }
 
   // Back to the start: the Problems page, both lists' filters, searches and sorts
@@ -1044,9 +1023,8 @@
   }
 
   // A touch on the slides ends them (the touch does nothing else). On the
-  // benchmark slide it picks that problem and lights it. At night it stays put.
+  // benchmark slide it picks that problem and lights it.
   function wallWake() {
-    if (wallNightOn) return;
     const kind = wallSlides()[wallSlide];
     wallIdleOn = false;
     wallLastTouch = Date.now();
@@ -1065,30 +1043,21 @@
 
   function wallTick() {
     const now = Date.now();
-    const night = wallIsNight();
-    if (night !== wallNightOn) {
-      wallNightOn = night;
-      if (night) wallGoIdle();             // casting off, the choice cleared
-      wallRenderIdle();
-      wallRenderSel();
-    }
-    if (!wallNightOn) {
-      // Not while a circuit runs: the climber is on the wall, not touching the screen.
-      if (circuitRunGoing()) wallLastTouch = now;
-      if (wallCreateOn) {
-        // No slides while someone's setting: 5 minutes untouched asks, then discards.
-        if (!wallAsk && now - wallLastTouch > WALL_CREATE_IDLE_MS) {
-          wallAskDiscard('idle', () => wallSetPage('problems', true));
-        }
-        if (wallAsk) wallAskTick(Date.now());
-      } else if (!wallIdleOn && now - wallLastTouch > WALL_IDLE_MS) wallGoIdle();
-      else if (wallIdleOn && now - wallSlideAt > WALL_SLIDE_MS) {
-        wallSlide = (wallSlide + 1) % wallSlides().length;
-        wallSlideAt = now;
-        wallRenderIdle();
+    // Not while a circuit runs: the climber is on the wall, not touching the screen.
+    if (circuitRunGoing()) wallLastTouch = now;
+    if (wallCreateOn) {
+      // No slides while someone's setting: 5 minutes untouched asks, then discards.
+      if (!wallAsk && now - wallLastTouch > WALL_CREATE_IDLE_MS) {
+        wallAskDiscard('idle', () => wallSetPage('problems', true));
       }
-      if (now - wallLastPoll > (wallOffline() ? WALL_RETRY_MS : WALL_POLL_MS)) wallPoll();
+      if (wallAsk) wallAskTick(Date.now());
+    } else if (!wallIdleOn && now - wallLastTouch > WALL_IDLE_MS) wallGoIdle();
+    else if (wallIdleOn && now - wallSlideAt > WALL_SLIDE_MS) {
+      wallSlide = (wallSlide + 1) % wallSlides().length;
+      wallSlideAt = now;
+      wallRenderIdle();
     }
+    if (now - wallLastPoll > (wallOffline() ? WALL_RETRY_MS : WALL_POLL_MS)) wallPoll();
   }
 
   // Called by refreshBoardViews when the board image, map or outlines change.
@@ -1206,8 +1175,7 @@
     wallRenderStage();
     wallRenderCircuits();
     wallRenderSearch();
-    wallNightOn = wallIsNight();
-    if (wallNightOn || ssGet(WALL_IDLE_KEY)) wallGoIdle();
+    if (ssGet(WALL_IDLE_KEY)) wallGoIdle();
     wallCheckKey();
     setInterval(wallTick, 1000);
   }

@@ -457,7 +457,7 @@
       '<span><b>' + mir + '%</b> of problem casts were mirrored</span>' +
       '<span><b>' + runs.length + '</b> circuit run' + (runs.length === 1 ? '' : 's') + ', <b>' + (runs.length ? Math.round(fin / runs.length * 100) : 0) + '%</b> reached the top' +
         (runs.length ? ', ' + avg + ' moves on average' : '') + '</span>' +
-      '<span><b>' + night + '</b> cast' + (night === 1 ? '' : 's') + ' tried after 23:00 and ignored by night mode</span>' +
+      '<span><b>' + night + '</b> cast' + (night === 1 ? '' : 's') + ' tried outside the opening hours and ignored</span>' +
       (unknown ? '<span><b>' + unknown + '</b> from before the app said where from</span>' : '') + '</div>';
     $('ad-mix').innerHTML = h;
     widths($('ad-mix'));

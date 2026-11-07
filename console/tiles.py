@@ -17,7 +17,7 @@ THROTTLE_BITS = [
 ]
 SERVICE_TITLES = {'pb-listener': 'Listener service', 'kiosk': 'Kiosk (wall screen)', 'pb-netwatch': 'Wi-Fi watchdog',
                   'board-cam': 'Webcam'}
-TIMER_TITLES = {'pb-health': 'Health check', 'pb-mode': 'Night mode', 'pb-weekly-reboot': 'Weekly reboot',
+TIMER_TITLES = {'pb-health': 'Health check', 'pb-mode': 'Day/night switch', 'pb-weekly-reboot': 'Weekly reboot',
                 'pb-bootcheck': 'Boot check'}
 
 
@@ -146,10 +146,50 @@ def pi_tiles(p, now=None, err_warn=50, err_bad=500):
                                       ', last run %s' % tm['service_result'] if tm.get('service_result') not in (None, '', 'success') else ''))
     out.append(tile('timers', 'Timers', worst(*tlevels), '%d of %d active' % (tlevels.count(OK) + tlevels.count(WARN), len(tlevels)), tlines))
 
+    out.append(schedule_tile(p.get('mode_info'), p.get('mode')))
     out.append(listener_tile(p.get('listener'), now, ledmap, p))
     out.append(health_tile(p.get('health') or {}, services))
     out.append(errors_tile(p.get('errors') or {}, err_warn, err_bad))
     return out
+
+
+def _hhmm(iso, now_iso=None):
+    """'22:00', or 'Sat 09:30' when it isn't today."""
+    try:
+        t = datetime.datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return '?'
+    try:
+        same = now_iso and datetime.datetime.fromisoformat(now_iso).date() == t.date()
+    except ValueError:
+        same = False
+    return t.strftime('%H:%M') if same else t.strftime('%a %H:%M')
+
+
+def schedule_tile(info, mode_line=None):
+    """Day/night from the opening hours (mode.py --json). Amber while anything overrides the
+    hours (the stay-on override, NIGHT_FORCE, night mode off), so it's never forgotten."""
+    if not info:
+        return tile('schedule', 'Opening hours', UNKNOWN, (mode_line or '?').split(' ')[0] or '?',
+                    ['mode.py --json gave nothing (an older Pi?)', mode_line])
+    now = info.get('now')
+    nxt = ('%s at %s' % ('night' if info.get('next_mode') == 'night' else 'day', _hhmm(info['next_change'], now))
+           if info.get('next_change') else None)
+    hours = info.get('hours') or {}
+    lines = [info.get('reason'), 'next: %s' % nxt if nxt else None,
+             'hours: ' + ', '.join('%s %s' % (d.capitalize(), hours[d]) for d in hours) if hours and 'error' not in hours
+             else hours.get('error')]
+    if info.get('stay_on_until'):
+        return tile('schedule', 'Opening hours', WARN, 'staying on until %s (override)' % _hhmm(info['stay_on_until'], now),
+                    lines + ['End it on the Board page (End override), or let it run out'])
+    if info.get('force') in ('day', 'night'):
+        return tile('schedule', 'Opening hours', WARN, 'forced %s (NIGHT_FORCE)' % info['force'],
+                    lines + ['Back to the hours: Night → Auto'])
+    if (info.get('night_mode') or 'on') not in ('on', 'yes', '1', 'true'):
+        return tile('schedule', 'Opening hours', WARN, 'night mode off (never dark)', lines)
+    level = WARN if 'error' in hours or str(info.get('reason', '')).startswith('bad ') else OK
+    return tile('schedule', 'Opening hours', level, '%s%s' % (info.get('mode'), ', %s' % nxt if nxt else ''), lines,
+                sig='%s|%s' % (level, info.get('mode')))
 
 
 def listener_tile(s, now, ledmap=False, p=None):

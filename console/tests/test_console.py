@@ -237,7 +237,8 @@ class ServerTests(ServerBase):
         for body in ({'action': 'idle', 'args': {'cmd': 'wave; reboot'}},
                      {'action': 'service', 'args': {'unit': 'sshd', 'verb': 'stop', }, 'confirm': True},
                      {'action': 'brightness', 'args': {'value': 2}},
-                     {'action': 'night-hours', 'args': {'start': '25:00', 'end': '08:00'}, 'confirm': True},
+                     {'action': 'stay-on', 'args': {'until': '25:00'}, 'confirm': True},
+                     {'action': 'stay-on', 'args': {'until': '23:00; reboot'}, 'confirm': True},
                      {'action': 'shell', 'args': {'cmd': 'ls'}}):
             self.assertEqual(self.req('POST', '/api/action', body)[0], 400, body)
         self.assertEqual(self.remote.cmds, [])
@@ -323,9 +324,12 @@ class ActionTableTests(unittest.TestCase):
     def test_commands_are_fixed(self):
         self.assertEqual(actions.build('idle', {'cmd': 'tour'}).shown, 'pb-idle tour')
         self.assertEqual(actions.build('brightness', {'value': 0.5}).shown, 'pb-idle brightness 0.5')
-        a = actions.build('night-hours', {'start': '22:30', 'end': '07:00'})
-        self.assertEqual(a.shown, 'sudo -n /usr/local/sbin/pb-console-helper night-hours 22:30 07:00')
-        self.assertTrue(a.confirm and a.config and not a.busy)
+        a = actions.build('stay-on', {'until': '23:30'})
+        self.assertEqual(a.shown, 'sudo -n /usr/local/sbin/pb-console-helper stay-on 23:30')
+        self.assertTrue(a.confirm and not a.config and not a.busy)
+        self.assertEqual(actions.build('stay-on', {'until': 'end'}).shown, 'sudo -n /usr/local/sbin/pb-console-helper stay-on end')
+        n = actions.build('night', {'mode': 'day'})
+        self.assertTrue(n.confirm and n.config == 'keep')
         r = actions.build('reboot', {})
         self.assertTrue(r.confirm and r.busy)
         self.assertFalse(actions.build('service', {'unit': 'kiosk', 'verb': 'start'}).busy)
@@ -346,9 +350,9 @@ class HelperTests(unittest.TestCase):
         self.h = load_helper()
 
     def test_set_keys(self):
-        text = '# comment\nNIGHT_START=23:00\nNIGHT_END=08:00\nNIGHT_FORCE=\n'
-        self.assertEqual(self.h.set_keys(text, {'NIGHT_FORCE': 'night'}),
-                         '# comment\nNIGHT_START=23:00\nNIGHT_END=08:00\nNIGHT_FORCE=night\n')
+        text = '# comment\nHOURS_MON=15:30-22:00\nHOURS_FRI=closed\nNIGHT_FORCE=\n'
+        self.assertEqual(self.h.set_keys(text, {'NIGHT_FORCE': 'night', 'HOURS_FRI': '10:00-12:00'}),
+                         '# comment\nHOURS_MON=15:30-22:00\nHOURS_FRI=10:00-12:00\nNIGHT_FORCE=night\n')
         self.assertEqual(self.h.set_keys('A=1\n', {'NIGHT_FORCE': ''}), 'A=1\nNIGHT_FORCE=\n')
         with self.assertRaises(self.h.Refused):
             self.h.set_keys(text, {'NIGHT_FORCE': 'x\nEVIL=1'})
@@ -374,11 +378,44 @@ class HelperTests(unittest.TestCase):
         self.h.run = lambda *a, **k: ran.append(a) or (0, '')
         self.h.write_config = lambda *a, **k: ran.append(a)
         for cmd, args in (('unit', ['restart', 'ssh']), ('unit', ['kill', 'kiosk']), ('unit', ['stop']),
-                          ('reboot', ['now']), ('night', ['dusk']), ('night-hours', ['23:00', '23:00']),
-                          ('night-hours', ['9:00', '08:00']), ('screen', ['dim'])):
+                          ('reboot', ['now']), ('night', ['dusk']), ('stay-on', ['9:00']), ('stay-on', []),
+                          ('stay-on', ['24:00']), ('stay-on', ['23:00', 'x']), ('screen', ['dim'])):
             with self.assertRaises(self.h.Refused, msg='%s %s' % (cmd, args)):
                 self.h.COMMANDS[cmd](args)
         self.assertEqual(ran, [])
+
+
+class HoursKeyTests(unittest.TestCase):
+    def setUp(self):
+        self.h = load_helper()
+
+    def test_hours_values(self):
+        for v in ('15:30-22:00', 'closed', '08:00-24:00', '20:00-02:00', '00:00-24:00'):
+            self.h.check_value('HOURS_MON', v)
+        for v in ('', 'Closed', '9:30-15:00', '15:00-15:00', '15:00', '25:00-26:00', '10:00-24:30', 'open'):
+            with self.assertRaises(self.h.Refused, msg=v):
+                self.h.check_value('HOURS_SAT', v)
+        with self.assertRaises(self.h.Refused):
+            self.h.check_value('NIGHT_START', '23:00')        # retired 7 Nov 2026
+        self.assertFalse(self.h.needs_restart('HOURS_TUE'))
+
+    def test_helper_agrees_with_mode_py(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('pb_mode', os.path.join(REPO, 'pi', 'listener', 'mode.py'))
+        mode = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mode)
+        self.assertEqual(self.h.HOURS.pattern, mode.HOURS_RX.pattern)
+        self.assertEqual(tuple(self.h.DAYS), mode.DAYS)
+        for d in mode.DAYS:
+            self.h.check_value('HOURS_' + d, mode.DEFAULTS['HOURS_' + d])
+        self.assertEqual(self.h.STAY_ON, mode.STAY_ON)
+
+    def test_stay_on_until(self):
+        import datetime
+        now = datetime.datetime(2026, 11, 9, 21, 15)
+        self.assertEqual(self.h.stay_on_until('23:30', now), datetime.datetime(2026, 11, 9, 23, 30))
+        self.assertEqual(self.h.stay_on_until('01:00', now), datetime.datetime(2026, 11, 10, 1, 0))   # after midnight
+        self.assertEqual(self.h.stay_on_until('21:15', now), datetime.datetime(2026, 11, 10, 21, 15))
 
 
 class TileTests(unittest.TestCase):
@@ -394,6 +431,9 @@ class TileTests(unittest.TestCase):
 
     def probe(self, **kw):
         p = {'ok': True, 'ms': 10, 'mode': 'day clock 12:00', 'time_synced': 'yes',
+             'mode_info': {'mode': 'day', 'reason': 'clock Mon 16:00, open Mon 15:30-22:00', 'now': '2026-11-09T16:00',
+                           'force': '', 'night_mode': 'on', 'stay_on_until': None, 'next_change': '2026-11-09T22:00',
+                           'next_mode': 'night', 'hours': {'MON': '15:30-22:00', 'FRI': 'closed'}},
              'hardware': {'temp_c': 55, 'throttled': '0x0', 'disk_total': 100, 'disk_free': 60,
                           'mem_total': 100, 'mem_available': 50, 'uptime_s': 3600, 'boot_at': 0, 'load': [0.1, 0.1, 0.1]},
              'wifi': {'ssid': 'Hangout', 'signal': 70}, 'tailscale': {'state': 'Running'},
@@ -424,6 +464,18 @@ class TileTests(unittest.TestCase):
         services['kiosk'] = {'ActiveState': 'inactive'}
         self.assertEqual(self.probe(services=services, mode='night clock 23:30')['svc-kiosk']['level'], tiles.OK)
         self.assertEqual(self.probe(services=services)['svc-kiosk']['level'], tiles.BAD)
+
+    def test_overrides_need_a_look(self):
+        base = self.probe()['schedule']
+        self.assertEqual((base['level'], base['value']), (tiles.OK, 'day, night at 22:00'))
+        stay = {'mode': 'day', 'reason': 'staying on until 23:30 (PB Console)', 'now': '2026-11-09T22:10', 'force': '',
+                'night_mode': 'on', 'stay_on_until': '2026-11-09T23:30', 'next_change': '2026-11-09T23:30',
+                'next_mode': 'night', 'hours': {}}
+        t = self.probe(mode_info=stay)['schedule']
+        self.assertEqual((t['level'], t['value']), (tiles.WARN, 'staying on until 23:30 (override)'))
+        self.assertEqual(self.probe(mode_info=dict(stay, stay_on_until=None, force='day'))['schedule']['level'], tiles.WARN)
+        self.assertEqual(self.probe(mode_info=dict(stay, stay_on_until=None, night_mode='off'))['schedule']['level'], tiles.WARN)
+        self.assertEqual(self.probe(mode_info=None)['schedule']['level'], tiles.UNKNOWN)
 
     def test_listener_paused_for_mapping(self):
         services = {u: {'ActiveState': 'active', 'NRestarts': '0'} for u in tiles.SERVICE_TITLES}

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """pb-mode: applies day/night to the screen (and later the relays). Run as root
-by pb-mode.timer every minute. Plan: docs/pi4-listener-kiosk-plan.md R4 (local).
+by pb-mode.timer every minute, and at boot. Plan: docs/pi4-listener-kiosk-plan.md R4 (local).
 
-The mode is worked out from the clock each run (mode.py), and every run checks
-the real state, so a missed run or a reboot changes nothing. The listener works
-out the same mode for itself (LEDs and casts).
+The mode is worked out from the clock and the opening hours each run (mode.py:
+HOURS_MON..HOURS_SUN, and PB Console's "stay on until" override), and every run
+checks the real state, so a missed run or a reboot changes nothing. The listener
+works out the same mode for itself (LEDs and casts). An override that has ended
+is deleted here.
 
     night: stop kiosk.service, then power the HDMI output down (fb0 blank 4)
     day:   unblank, start kiosk.service if it's enabled and not running
@@ -57,6 +59,13 @@ def main():
     except OSError as e:
         log('config unreadable (%s): defaults' % e, syslog.LOG_WARNING)
         cfg = dict(modelib.DEFAULTS)
+    stay = cfg.get('STAY_ON_FILE') or modelib.STAY_ON
+    if os.path.exists(stay) and modelib.read_stay_on(cfg, modelib.london_now()) is None:
+        try:
+            os.remove(stay)
+            log('stay-on override over: back to the opening hours')
+        except OSError as e:
+            log('stay-on override not removed: %s' % e, syslog.LOG_WARNING)
     mode, reason = modelib.mode_now(cfg)
     try:
         last = open(STATE).read().strip()

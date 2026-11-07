@@ -407,8 +407,8 @@
     circuitRun = null;
   }
 
-  // The wall screen going to night (or idle, which can't start while a run goes):
-  // the sheet closes. A run still going is left to the Pi, which ends it at night.
+  // The wall screen going idle (which can't start while a run goes): the sheet
+  // closes. A run still going is left to the Pi.
   function abandonCircuitCast() {
     if (circuitRunGoing()) {
       circuitRun.ended = true;

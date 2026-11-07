@@ -157,14 +157,15 @@ class Console:
                 'board': {'leds': listener.get('leds'), 'pattern': listener.get('idle_pattern'),
                           'plan': listener.get('idle_plan'), 'override': listener.get('idle_override'),
                           'scale': listener.get('brightness_scale', 1.0), 'mode': p.get('mode'),
-                          'screen_off': p.get('screen_off_flag'), 'config': _night_cfg(p.get('config_env'))},
+                          'screen_off': p.get('screen_off_flag'), 'config': _night_cfg(p.get('config_env')),
+                          'schedule': p.get('mode_info')},
                 'casts_5min': p.get('casts_5min'), 'metrics': tiles.metrics(p, lap)}
 
 
 def _night_cfg(text):
     out = {}
     for line in (text or '').splitlines():
-        m = re.match(r'^\s*(NIGHT_[A-Z]+|IDLE_PATTERN|BRIGHTNESS|IDLE_BRIGHTNESS|RELAY_[A-Z_]+)\s*=\s*(.*)$', line)
+        m = re.match(r'^\s*(NIGHT_[A-Z]+|HOURS_[A-Z]+|IDLE_PATTERN|BRIGHTNESS|IDLE_BRIGHTNESS|RELAY_[A-Z_]+)\s*=\s*(.*)$', line)
         if m:
             out[m.group(1)] = m.group(2).strip().strip('"\'')
     return out
@@ -274,7 +275,7 @@ def r_last_night(app, q):
     if not re.match(r'^\d{4}-\d{2}-\d{2}$', date):
         raise ValueError('date: YYYY-MM-DD')
     raw = app.remote.probe('night %s' % date)
-    if not raw.get('ok'):
+    if not raw.get('ok') or raw.get('error'):
         raise RuntimeError(raw.get('error') or 'the Pi did not answer')
     return reports.night_report(raw)
 

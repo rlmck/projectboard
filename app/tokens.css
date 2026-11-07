@@ -249,8 +249,6 @@
   --wall-range-tick-h: 44px;
   --wall-tap: 60px;  /* Mirror and Start circuit: big enough for a chalky finger */
   --wall-qr: 340px;  /* the QR on Get the app and the first idle slide */
-  --wall-qr-night: 260px;  /* the QR on the night screen */
-  --wall-night-dim: 0.32;  /* the night screen's opacity: readable up close, not a light in a dark gym */
   --wall-c-panel-w: 470px;  /* the Create page's panel beside the board */
   --wall-grade-h: 50px;  /* a grade on the Create page */
   --wall-key-h: 66px;  /* a key on the on-screen keyboard */

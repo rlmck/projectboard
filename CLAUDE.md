@@ -88,7 +88,7 @@ This repo is the single source of truth shared by Claude Code and the claude.ai 
 app/       the website: exactly the files that are deployed, flat. build.sh copies it into public/.
 tools/     generators, dev tools and the cast test bench (never deployed)
 print/     the A5 poster and QR (never deployed)
-pi/        the board's Pi 4: cast listener, idle patterns, health checks, night mode, systemd units, deploy.sh (pi/README.md)
+pi/        the board's Pi 4: cast listener, idle patterns, health checks, opening hours (day/night), systemd units, deploy.sh (pi/README.md)
 console/   PB Console, the laptop's local admin console (bash console/start.sh; never deployed)
 docs/      the committed docs (overview, rollout, cast contract, console plan, circuits Phase 2, Pi plan, log/); the rest local only
 .githooks/ the pre-commit secret scan and its test
@@ -109,7 +109,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 | `circuits.js` | Circuits list, detail (swipe, info), **circuit cast** (Cast sheet, run screen, `circuit_logs`), create, delete |
 | `challenge.js` | Challenges (db/31): the `#challenge` view (rules, the phone-timed attempt, summary, save + retry), your best and history, the challenge boards on Ranks |
 | `leaderboard.js` | `#leaderboard` (Points, or a challenge board via the tabs) |
-| `wall.js` | The **wall-screen mode** (`/?wall`, the kiosk): list + board + cast, circuits (a tap lights all its holds, `show_circuit`; Start circuit opens the same Cast sheet), **Create** (on-screen keyboard, `wall_create_problem`), read-only Ranks, Get the app QR, idle slides, night screen, offline note (overview §4.7a). Off unless `WALL` (`state.js`) |
+| `wall.js` | The **wall-screen mode** (`/?wall`, the kiosk): list + board + cast, circuits (a tap lights all its holds, `show_circuit`; Start circuit opens the same Cast sheet), **Create** (on-screen keyboard, `wall_create_problem`), read-only Ranks, Get the app QR, idle slides, offline note (overview §4.7a; no night screen: outside the opening hours the Pi turns the screen off). Off unless `WALL` (`state.js`) |
 | `app.js` | **Loaded last:** event wiring, service worker, install flow, boot |
 
 What each view does in detail (fullscreen viewer, create, the outline editor, circuits, challenges, the wall mode): overview §4.
@@ -188,7 +188,7 @@ await channel.httpSend('cast_problem',
 - **Circuits** (30 Oct 2026): `startCircuitCast()` in `circuits.js` sends `cast_circuit` (`circuit_name`, `interval`, `loop`, `run`) and Stop sends `stop` (`run`); the Pi animates the run itself in `pi/listener/circuit.py`, a port of direction 4 in `tools/circuit-led-simulator.html` (change both together). Contract §8. The wall screen's Circuits page also sends `show_circuit` (`circuit_name`) when a circuit is tapped: every hold lit at once (`circuit.static_frame()`), shown like a problem cast. Contract §8.7.
 - `httpSend` resolving means the **Realtime server** accepted the broadcast, not the Pi. There's no end-to-end confirmation, so never report board-level success.
 - **Test casting without the Pi:** `python tools/serve.py`, open `http://localhost:8000/tools/cast-test.html`. It lists every cast on the channel, and *Run checks* drives the local app through the cast cases using fake problem names.
-- **The Pi 4 listener** (`pi/listener/pb_listener.py`, `pi/README.md`) looks the name up in `problems`, applies the **live** mirror map, uses `problemHoldOrder()`'s order, and lights the LEDs (WS2801 on SPI0, 1 MHz, mode 0, RGB; hold → LED is a formula, contract §6.4). Between casts it shows an idle pattern; night mode is 23:00–08:00. It's deployed with `bash pi/deploy.sh` (gated: `/pi-deploy`; restarts clear the board, so deploy when the gym is closed). Never commit the Wi-Fi keyfile, `secrets.env` or `pi/config.env`.
+- **The Pi 4 listener** (`pi/listener/pb_listener.py`, `pi/README.md`) looks the name up in `problems`, applies the **live** mirror map, uses `problemHoldOrder()`'s order, and lights the LEDs (WS2801 on SPI0, 1 MHz, mode 0, RGB; hold → LED is a formula, contract §6.4). Between casts it shows an idle pattern; outside the opening hours (`HOURS_MON`…`HOURS_SUN` in the Pi's `config.env`, `listener/mode.py`; PB Console edits them and has a self-ending "stay on until") it's night: LEDs dark, casts ignored, the wall screen off. It's deployed with `bash pi/deploy.sh` (gated: `/pi-deploy`; restarts clear the board, so deploy when the gym is closed). Never commit the Wi-Fi keyfile, `secrets.env` or `pi/config.env`.
 
 ---
 

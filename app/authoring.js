@@ -434,7 +434,7 @@
 
   // Setting is on screen: the phone's create view (in front), or the wall's Create page.
   const previewWanted = () => WALL
-    ? wallCreateOn && !wallNightOn && !wallOffline()
+    ? wallCreateOn && !wallOffline()
     : currentView === 'create' && document.visibilityState === 'visible';
 
   // Called after each change to the holds or the feet rule.

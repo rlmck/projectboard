@@ -1,6 +1,6 @@
 # pi/firstboot: a new SD card that sets itself up
 
-Written on 31 Oct 2026, when the Pi 4's card died. A card made this way goes in the Pi, is powered on, and comes back as the board on its own: hostname `projectboard`, the gym Wi-Fi, Tailscale, the listener, the kiosk, the watchdogs, night mode, `pb-netwatch` and the rescue hotspot, passwordless deploys. Nothing secret is in the repo: the secrets go only through the laptop's gitignored `pi/secrets.env` and the card.
+Written on 31 Oct 2026, when the Pi 4's card died. A card made this way goes in the Pi, is powered on, and comes back as the board on its own: hostname `projectboard`, the gym Wi-Fi, Tailscale, the listener, the kiosk, the watchdogs, the opening hours (day/night), `pb-netwatch` and the rescue hotspot, passwordless deploys. Nothing secret is in the repo: the secrets go only through the laptop's gitignored `pi/secrets.env` and the card.
 
 ## What the old card held that isn't in the repo, and where it comes from now
 
@@ -33,7 +33,7 @@ Imager 2 may fill in the Wi-Fi from the laptop's saved network and add a `packag
 
 1. Raspberry Pi OS's own first boot (it may reboot once by itself), then cloud-init applies `user-data`; its `runcmd` installs and starts `pb-firstboot.service`.
 2. `firstboot.sh`: starts `pb-netwatch`, runs `setup.sh` (Wi-Fi, waits up to 10 min for the internet, timezone, apt with the kiosk packages, SSH key, Tailscale, the wall key, journal), clones https://github.com/rlmck/projectboard (else uses the card's copy in `projectboard/repo/`), stages `~/pb-deploy` as `deploy.sh` does, runs `install.sh`, checks the services, deletes `secrets.env`, and **reboots once**.
-3. After that reboot the wall screen shows the app (in the day; 23:00–08:00 it stays off), and casts light the board.
+3. After that reboot the wall screen shows the app (inside the opening hours; outside them it stays off), and casts light the board.
 
 **Where to look:** the wall screen shows the setup's progress while it runs. Everything is in `firstboot.log` in the card's `projectboard` folder (readable on the laptop), and on the Pi in `journalctl -u pb-firstboot`. `netlog.txt` and `netwatch.txt` on the card show the Wi-Fi.
 

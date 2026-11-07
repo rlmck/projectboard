@@ -1,10 +1,13 @@
 [Unit]
-Description=Project Board night mode, applied every minute
+Description=Project Board day/night (opening hours), applied every minute on the minute
 
+# On the minute, so an opening or closing time switches the screen within a few
+# seconds (the listener switches the LEDs itself within 10 s). OnBootSec: once
+# soon after boot too, whatever the time (kiosk.service also won't start at night).
 [Timer]
-OnBootSec=30s
-OnUnitActiveSec=1min
-AccuracySec=5s
+OnBootSec=20s
+OnCalendar=*-*-* *:*:02
+AccuracySec=1s
 
 [Install]
 WantedBy=timers.target

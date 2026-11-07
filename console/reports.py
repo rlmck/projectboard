@@ -179,10 +179,11 @@ R8 = [
      'minute and a cast works.', [('Block Supabase (12 min)', ['block-supabase']), ('Unblock now', ['unblock-supabase'])]),
     ('reboot', 'Reboot mid-cast', 'Cast a problem (Test cast tab), then reboot (Services). Strip dark from '
      'leds-off-at-boot until the next cast; a "pb-boot … came up OK" line; the next cast lights.', []),
-    ('clock', 'Clock across 23:00 and 08:00', 'At 23:00: strip cleared, kiosk stopped, screen off; a cast is logged as '
-     'ignored. At 08:00: screen on, kiosk back, a cast lights. Then NTP back on. (If turning NTP off removes the synced '
-     'flag, the fake clock reads as day: then use Force night / Force day instead.)',
-     [('Clock to 22:59:30', ['clock', '22:59:30']), ('Clock to 07:59:30', ['clock', '07:59:30']),
+    ('clock', 'Clock across closing and opening', 'On a Monday to Thursday (hours 15:30-22:00). At 22:00: strip '
+     'faded out, kiosk stopped, screen off; a cast is logged as ignored. At 15:30: screen on, kiosk back, a cast lights. '
+     'Then NTP back on. (If turning NTP off removes the synced flag, the fake clock reads as day: then use Force night / '
+     'Force day instead.)',
+     [('Clock to 21:59:30', ['clock', '21:59:30']), ('Clock to 15:29:30', ['clock', '15:29:30']),
       ('NTP back on', ['clock-ntp'])]),
     ('nonet', 'Boot with no network', 'On site only (Wi-Fi off at the access point, then reboot): listener up and '
      'backing off, day mode (unsynced), pb-health trying, a guarded reboot at 10 min. Record the result here.', []),

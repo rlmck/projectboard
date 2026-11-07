@@ -1,5 +1,5 @@
 [Unit]
-Description=Project Board night mode (screen; later the LED supplies)
+Description=Project Board day/night from the opening hours (screen; later the LED supplies)
 
 [Service]
 Type=oneshot

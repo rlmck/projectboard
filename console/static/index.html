@@ -109,7 +109,7 @@
   </section>
 
   <section id="tab-board" class="tab" hidden>
-    <header class="page-head"><h1>Board</h1><p>The LEDs, night mode and the wall screen, beside the webcam.</p></header>
+    <header class="page-head"><h1>Board</h1><p>The LEDs, the opening hours and the wall screen, beside the webcam.</p></header>
     <div class="board-grid">
       <div class="controls">
         <div class="card">
@@ -138,24 +138,27 @@
           </div>
         </div>
         <div class="card">
-          <h2>Night mode</h2>
+          <h2>Day and night</h2>
+          <p class="note">Day inside the opening hours (Config → Opening hours, per day); outside them the LEDs go dark, casts are ignored and the wall screen is off.</p>
+          <h3>Stay on tonight</h3>
+          <div class="slider-row">
+            <label>Stay on until <input id="stay-until" type="time" step="60" value="23:00"></label>
+            <button id="stay-go" class="btn">Stay on</button>
+            <button id="stay-end" class="btn" data-act="stay-on" data-until="end">End override</button>
+          </div>
+          <p class="note">Day mode (LEDs, casts, the wall screen) until that time, whatever the hours say: later today, or after midnight if it's already past. It ends by itself and shows on the overview until it does.</p>
+          <h3>Force <span class="muted">(NIGHT_FORCE, for tests: stays until Auto)</span></h3>
           <div class="seg" id="night-seg">
-            <button class="btn" data-act="night" data-mode="auto">Auto (clock)</button>
+            <button class="btn" data-act="night" data-mode="auto">Auto (the hours)</button>
             <button class="btn" data-act="night" data-mode="night">Force night</button>
             <button class="btn" data-act="night" data-mode="day">Force day</button>
           </div>
-          <div class="slider-row">
-            <label>From <input id="night-start" type="time" step="60"></label>
-            <label>to <input id="night-end" type="time" step="60"></label>
-            <button id="night-hours" class="btn">Save hours</button>
-          </div>
-          <p class="note">Writes config.env on the Pi (backed up first) and pi/config.env here, so a deploy keeps it.</p>
           <h3>Wall screen</h3>
           <div class="btn-row">
             <button class="btn" data-act="screen" data-state="off">Screen off</button>
             <button class="btn" data-act="screen" data-state="on">Screen on</button>
           </div>
-          <p class="note">Screen off lasts until Screen on or a reboot; night still turns it off and on by itself.</p>
+          <p class="note">Screen off lasts until Screen on or a reboot; the hours still turn it off and on by themselves.</p>
         </div>
       </div>
       <div class="cam card">
