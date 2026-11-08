@@ -3,7 +3,7 @@
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 15 KB: the 5 newest session entries live here, older ones in `docs/log/` (`docs/log/2026-10.md`, `docs/log/2026-11.md`).
 
 ## Current state (as of 2026-11-08)
-- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-7ed312f8da` since 8 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
+- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-f4b05cd6a2` since 8 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
 - **Sorting and filtering (4 Nov 2026):** a filter icon opens the Filter sheet (phone) or panel (wall): Sort, Grade slider, quick filters, pick **Holds** on the board; the wall searches like the phone; `✕ Clear` when anything isn't default (overview §4.2a). Tried on the touchscreen (Ross, 7 Nov).
 - **Deploying:** ship by default, end to end (Decisions); `build.sh` is the build gate, a pre-commit hook scans for secrets; `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`.
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs; about 0.25–0.45 s from cast to LEDs). People use it: 50 casts on the evening of 26 Oct, 114 in the 3 days to 28 Oct. **Every hold's LED is checked on the wall** (28 Oct, `pb-ledmap`); three app labels were shifted and fixed by db/32 (188 real holds). **Mirrored casts are checked on the wall** (Ross, by 7 Nov), the feet rule both ways too, and the geofence centre on site.
@@ -56,7 +56,7 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
 - **2026-11-08, Claude Code (Move a problem into Circuits, admins; TODO 12).**
   - **Changed:** the problem ⋮ menu's **Move to Circuits** (admins, not benchmarks) opens the circuit Create screen pre-filled (`#move/<id>`; overview §4.8c): holds in `problemHoldOrder()` order, 1 start if the stored pair is one hold, the name, loop off, a sport grade from `FONT_TO_SPORT` (`state.js`) beside the Font grade, "Does this order look right?", a feet-rule note. Save → confirm with the tick and favourite counts → db/40 `admin_move_problem_to_circuit()`: one transaction (circuit with the setter kept; ticks, favourites, problem deleted; logged). Found: middle holds are stored in first-tapped order, not climbing order.
   - **Tested:** db/40 behaviour test (rolled back; fails before 40): anon/non-admin refused, every refusal changes nothing, the move and the Hangout setter. Chrome, writes stubbed: menu visibility, pre-fill, notes, name clash, confirm, discard, landing on the circuit.
-  - **Live:** db/40 applied 8 Nov; the app below.
+  - **Live:** db/40 applied 8 Nov; the app `eb6cac8`, CACHE `pb-f4b05cd6a2`.
   - **Left:** Ross: try it on a phone with a throwaway problem (the report's list).
 
 - **2026-11-08, Claude Code (no scroll bars on the wall screen).**
