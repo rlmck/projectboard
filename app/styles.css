@@ -2397,6 +2397,15 @@
        Outside the opening hours the Pi turns the screen off (pb-mode). */
     #wall { display: none; }
     body.wall { overflow: hidden; --nav-h: 0px; }
+    /* No scroll bars anywhere on the wall: one rule over everything under
+       body.wall (the lists, the Filter panel, the Cast sheet, any modal), so a new
+       scrollable area is covered too. Only the bar goes: overflow, touch drag and
+       momentum are unchanged, and the bar's gutter goes with it. */
+    body.wall,
+    body.wall * { scrollbar-width: none; }
+    body.wall ::-webkit-scrollbar { display: none; }
+    html:has(> body.wall) { scrollbar-width: none; }  /* the page itself (kept apart: an
+       old browser without :has() then drops only this line) */
     body.wall .view,
     body.wall #bottom-nav,
     body.wall #install-banner,

@@ -52,6 +52,11 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-08, Claude Code (no scroll bars on the wall screen).**
+  - **Changed:** one rule in `styles.css` under `body.wall` (`scrollbar-width: none` + `::-webkit-scrollbar` hidden, every element, plus the page) hides every scroll bar in wall mode: the problem and circuit lists, the Filter panel, the Cast sheet, any modal, and new ones automatically. Overflow untouched, so drag and momentum scroll as before; no new values.
+  - **Tested:** build check; Chrome on `/?wall`: Problems list (with the keyboard open), Circuits list, Filter panel, Create: every scrollable area has no bar and no gutter, and the lists still scroll; the phone view unchanged (page bar still there). No real casts sent.
+  - **Left:** Ross: check it on the touchscreen.
+
 - **2026-11-08, Claude Code (one Edit for problems and circuits; owners can edit; TODO 9 names).**
   - **Changed:** the detail ⋮ Edit opens the Create screen pre-filled (problems: holds, name, grade, feet rule; circuits: sequence, start count, loop, name, grade; never the setter), replacing Edit holds / Edit grade. Owners may edit their own while nobody else has ticked it (circuits: nobody else's run), never a benchmark, a challenge's circuit or The Hangout's; db/39 (applied) adds that to RLS plus column guards. Leaving with changes asks first. Names stay the cast key (contract §10; open question 4 closed): no Pi change. Phone only; the wall's Create unchanged.
   - **Tested:** db/39 behaviour test (rolled back; fails on the old schema); Chrome 390 px, writes stubbed: each role, benchmark, challenge circuit, duplicate names, discard, the wall's Create; a renamed cast on `cast-test.html` (its checks pass).
@@ -67,9 +72,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Left: Ross to test:** (1) Sun 09:30: screen on, LEDs idle, a cast lights; 15:00: LEDs fade, screen off, a phone cast does nothing. (2) PB Console → Board → Stay on until (e.g. 30 min ahead) at night: screen and LEDs on, the overview shows it amber; End override puts it back. (3) Config → Opening hours: change one day, Apply, Board → Now shows it. (4) The wall screen opening at 15:30 Mon shows the list, not a night page.
 
 - **2026-11-07, chat (plan: board setup flow, board sets, Specific feet).** Planned in `docs/board-setup-plan.md` (new; TODO 16): decisions, phases, a dry run on the current board. A quick auto-trace test matched 166 of the 188 hand-traced outlines closely. Nothing built. **Left:** Ross: a full-board photo, footholds included.
-
-- **2026-11-05, Claude Code (the circuit LED look "map and next hold", and `laps`; replaces TODO 6).**
-  - **Changed:** `circuit.py` rewritten to Ross's look (§8.3): trace, ghost, track, amber, red let-go and green run-up gone; `check_track()`/`led_track` kept. `cast_circuit` gains `laps` (bad → ignored; absent → from `loop`, then `loops`; `loops` false → 1 lap); `trace_s` ignored. Config: `CIRCUIT_MAP_LEVEL`/`CIRCUIT_FINISH_LEVEL` in, the track keys out. Simulator rewritten as a port. PB Console sends `laps`; Activity reads the new line. The app drops `trace_s` and its 3 s wait (else 3 s behind the Pi).
-  - **Tested:** pi/console tests, build check; the simulator matches `circuit.py` (6000 frames), runs in Chrome.
-  - **Live:** `fe8b40e`, CACHE `pb-1be624474b`; Pi deployed 09:00.
-  - **Left:** Ross: watch it on the webcam (Waiting on). Next: laps on the phone and wall (TODO 6). Night is 23:00–15:00 on the Pi (`NIGHT_END=15:00`, since 4 Nov).
