@@ -155,9 +155,9 @@ Nothing below is decided.
 3. **Acknowledging receipt:** there's no Pi → app message. Is one wanted, and on what channel or event?
 4. **Stale, duplicate and rapid messages:** casts carry no id or timestamp. Debounce or rate-limit on the Pi? What about a cast arriving while one is still being drawn?
 5. **Problem lookup:**
-   - Is the name still the key once problem names can be edited, or should casts carry the id?
-   - What happens for an unknown name?
-   - Exact match, or trimmed?
+   - ~~Is the name still the key once problem names can be edited, or should casts carry the id?~~ Answered 8 Nov 2026 (§10): **the name stays the key.** Names (problems and circuits) are editable through Edit, and the listener looks every cast up by name when it arrives (no cache), so the next cast after a rename uses the new name. No Pi change.
+   - What happens for an unknown name? The board is left as it is and the listener logs it (§5). That's also what a phone still showing the old name gets until it reloads the list (§10).
+   - Exact match, or trimmed? Exact; the app stores names trimmed, and checks them unique ignoring case before saving.
 6. **Mirroring:** does the Pi fetch `board_config.mirror_map` (and when it refreshes), or does the app send resolved holds?
 7. ~~**Feet indicators:** light `hold2`/`hold21` when listed (as Gareth's code did), or from `feet_mode`? Which colours? What do both lights on mean?~~ Decided 30 Oct 2026 (§6.5): from `feet_mode` (Any feet / Orange feet only / Black feet only); Any lights neither sign; the lit sign is blue, as before; both-on in the old data meant Any.
 8. **Colours:**
@@ -329,7 +329,25 @@ While a session is going (inside the geofence), the app subscribes to the channe
 1. There's still no Pi → app message: the app infers a takeover from the channel, and a preview at night or with the Pi down still says "Lit on the board".
 2. Like casts, previews are unauthenticated (§7 item 15): anyone with the anon key can light the board this way. Night, the cast precedence and the 60 s timeout limit what that can do.
 
+## 10. Renaming a problem or a circuit (8 Nov 2026)
+
+Since 8 Nov 2026 one **Edit** (the phone only; not the wall screen) changes a problem's holds, name, grade and feet rule, or a circuit's sequence, start count, loop, name and grade, through the Create screen. Who may: admins, or the owner while nobody else has ticked it (a circuit: nobody else has logged a run), never a benchmark, a circuit a challenge uses, or one of The Hangout's problems (db/39). A name is the cast key, so a rename changes what's sent. What keys on a name, and what happens on a rename:
+
+| What | Keyed on | On a rename |
+|---|---|---|
+| `cast_problem`, `cast_circuit`, `show_circuit` | the name, looked up by the listener when the message arrives (`pi/listener/supa.py`, exact match, no cache) | The next cast uses the new name and lights it. No Pi change. |
+| A circuit run already going | the row the Pi read at the start | Carries on; `stop` is by `run` token, not name. |
+| `preview_holds` (the live LEDs while editing) | a session token and the holds sent, never a name | Unaffected; the session ends on Save as usual. |
+| An app that hasn't reloaded the list (another phone; the wall polls every 5 min) | its in-memory copy | Casting there sends the old name, which the listener doesn't find: the board stays as it is (§5). Pull to refresh, reopening the app or the wall's next poll fixes it. Accepted. |
+| Ticks, favourites, likes, `circuit_logs`, challenges, URLs (`#detail/<id>`, `#circuit/<id>`), the saved lists | the row's id | Kept. The editing phone also rewrites its saved list at once. |
+| `cast_log` | the name at the time of the cast | History; PB Console matches a problem cast by name within 2 minutes of it, so old rows stay matched. |
+| The idle teaser (benchmarks) | re-read every half hour | Picks up the new name. |
+| PB Console's circuit tracks (`console/tracks.py`, the demo's export) | the circuit's current name, chosen from the list | A track import file names circuits; re-export after renaming one (only Pat Burner has a track, and it's admin-only: a challenge uses it). A changed sequence makes a track stale (§8.6), as before. |
+
+Names stay clean (no grade), trimmed, 1–60 characters, unique ignoring case in the app (the database's UNIQUE is exact, and a clash there is refused as `23505` too).
+
 ## Change history
+- **2026-11-08, Claude Code:** §7 item 5 and a new §10: **names are editable** (one Edit for problems and circuits, db/39), and the name stays the cast key: the listener reads every cast by name when it arrives, so a rename works from the next cast. **No change to the channel, events, payloads or the Pi.**
 - **2026-11-07, Claude Code:** §4, §5, §7 item 14, §8, §9: **night mode follows the opening hours** (`HOURS_MON` … `HOURS_SUN` on the Pi, London time, plus PB Console's self-ending "stay on until"), replacing the fixed 23:00–08:00; outside them the wall screen is off (the Pi stops the kiosk) and the wall page has no night screen of its own any more. What night does to casts, circuits and previews is unchanged. **No change to the channel, events or payloads.**
 - **2026-11-05, Claude Code:** §8.1, §8.3, §8.4, §8.6: **the "map and next hold" circuit look** (Ross, 5 Nov 2026) replaces direction 4, "Pulse and fade", and all the track lighting: a blue map at `CIRCUIT_MAP_LEVEL`, the red finish at `CIRCUIT_FINISH_LEVEL` on the final lap only, the start holds blinking green in the countdown, only the hold to go to lit green in the run, a match blinking twice, later laps wrapping from position 0, and a top of three red blinks and a 1 s fade. **`cast_circuit` gains `laps`** (0 = endless, 1–10; a circuit whose `loops` is false always runs 1 lap; a bad value ignores the cast); with `laps` absent, `loop` true = endless, false = 1 lap, and neither = the circuit's `loops`, so old apps and old PB Consoles keep working. **`trace_s` is ignored** (the app stops sending it; the phone's countdown no longer waits for a trace). The `circuit ended` line says `endless` or `N laps` (PB Console reads the old `loop`/`once` too). Config: `CIRCUIT_MAP_LEVEL` and `CIRCUIT_FINISH_LEVEL` in; `CIRCUIT_GHOST`, `CIRCUIT_TRACK_RUN`, `CIRCUIT_TRACK_LEVEL` out. `circuits.led_track` and `check_track()` are kept (not drawn). `cast_problem`, `stop`, `show_circuit` and `preview_holds` are unchanged.
 - **2026-11-02, Claude Code (later):** §2, §5, §8.4 and a new §8.7: **a circuit's static view.** A new event on the same channel, `show_circuit` (`circuit_name`, plus `source`/`signed_in`), sent when a circuit is tapped on the wall screen's Circuits page; the listener lights every hold at once (starts green, the last hold red, the rest blue; finish beats start) and shows it as a problem cast (latest wins, idle after `IDLE_AFTER_S`). The wall's "Light it up" is now "Start circuit". `cast_problem`, `cast_circuit`, `stop` and `preview_holds` are unchanged; a listener from before this ignores the new event.

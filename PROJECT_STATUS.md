@@ -46,8 +46,7 @@ Details in `docs/cast-contract.md` → "Open questions".
 1. How does the board get cleared or switched off? There's no clear/stop event (idle and night cover it today).
 2. Should the phone know whether the Pi is online or got the cast? Today it always says "Cast: X" once Supabase accepts it, including at night.
 3. Stale, duplicate or rapid casts: the listener shows the latest; is a rate limit wanted? (Casts carry no id or timestamp.)
-4. Is the problem name still the cast key once names become editable?
-5. Hardware: what each relay will switch; final cast brightness (the stopgap used 0.5).
+4. Hardware: what each relay will switch; final cast brightness (the stopgap used 0.5).
 
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.

@@ -264,9 +264,9 @@
   function renderCircuitDetail(id) {
     const wrap = document.getElementById('circuit-detail-content');
     const faveBtn = document.getElementById('circuit-detail-fave');
-    const delItem = document.getElementById('circuit-menu-delete');
     faveBtn.hidden = true;
-    delItem.hidden = true;
+    currentCircuit = null;
+    updateCircuitMenu();
 
     if (!circuitsLoaded) {
       currentCircuit = null;
@@ -286,7 +286,7 @@
     }
 
     currentCircuit = c;
-    delItem.hidden = !canEditCircuit(c);
+    updateCircuitMenu();
     faveBtn.hidden = false;
     updateCircuitFaveButton();
     const n = circuitSeq(c).length;
@@ -318,6 +318,24 @@
 
     document.getElementById('circuit-cast-open').addEventListener('click', () => openCircuitCast());
     fillCircuitChallenge(c);   // the challenge link, if a challenge uses this circuit (challenge.js)
+  }
+
+  // The ⋮ menu's Edit and Delete: Delete for the owner (no challenge on it) or an
+  // admin; Edit too, but for the owner only while nobody else has logged a run of
+  // it (db/39). That's asked in the background the first time; Edit appears when
+  // it says no.
+  function updateCircuitMenu() {
+    const c = currentCircuit;
+    document.getElementById('circuit-menu-delete').hidden = !canEditCircuit(c);
+    if (c && !isAdmin() && canEditCircuit(c) && othersUsed('c', c.id) === undefined) {
+      askOthersUsed('c', c.id, () => { if (currentCircuit === c) updateCircuitMenu(); });
+    }
+    document.getElementById('circuit-menu-edit').hidden = !canChangeCircuit(c);
+  }
+
+  function openCircuitEdit() {
+    const c = currentCircuit;
+    if (c && canChangeCircuit(c)) location.hash = '#circuit-create/' + encodeURIComponent(c.id);
   }
 
   // ── Swipe between circuits (detail view) ──────────────────────────────────────
@@ -727,17 +745,88 @@
     btn.setAttribute('aria-pressed', ccLoop ? 'true' : 'false');
   }
 
+  // Create and Edit share the circuit create screen (#circuit-create, and
+  // #circuit-create/<id> for Edit: the sequence, start count, loop, name and grade,
+  // never the setter; db/39).
+  function setCircuitCreateMode(editing) {
+    document.getElementById('cc-title').textContent = editing ? 'Edit circuit' : 'Create circuit';
+    document.getElementById('cc-save').setAttribute('aria-label', editing ? 'Save changes' : 'Save circuit');
+    document.getElementById('cc-reset').setAttribute('aria-label', editing ? 'Undo all changes' : 'Clear all holds');
+  }
+
   function resetCircuitCreate() {
     ccSeq = []; ccStartCount = 2; ccLoop = false; ccGrade = '';
+    ccEditingId = null; ccEditBase = '';
     const nameEl = document.getElementById('cc-name'); if (nameEl) nameEl.value = '';
     document.getElementById('cc-error').textContent = '';
+    setCircuitCreateMode(null);
     buildCcGrades(); buildCcStartCount(); buildCcLoop();
     applyCircuitCreate();
   }
 
-  function initCircuitCreate() {
+  // What a circuit Edit has on screen, as one string: equal = nothing changed.
+  function circuitEditKey() {
+    const nameEl = document.getElementById('cc-name');
+    return JSON.stringify([((nameEl && nameEl.value) || '').trim(), ccGrade, ccStartCount, ccLoop, ccSeq]);
+  }
+  const circuitEditDirty = () => !!ccEditingId && circuitEditKey() !== ccEditBase;
+
+  // Fill the screen from a circuit (Edit), stored in natural order (not inverted).
+  function seedCircuitEdit(c) {
+    ccEditingId = String(c.id);
+    ccSeq = circuitSeq(c).slice();
+    ccStartCount = c.start_count === 1 ? 1 : 2;
+    ccLoop = !!c.loops;
+    ccGrade = c.grade || '';
+    document.getElementById('cc-name').value = c.name || '';
+    document.getElementById('cc-error').textContent = '';
+    setCircuitCreateMode(c);
+    ccEditBase = circuitEditKey();
+  }
+
+  // On entry: with an editId, seed from that circuit as we land on it (the router
+  // running again while it's open keeps the changes); without, a create, which
+  // keeps what was set before as it always has, unless that was an Edit.
+  function initCircuitCreate(editId) {
+    if (editId) {
+      const same = String(ccEditingId) === String(editId);
+      if (!same || (currentView !== 'circuit-create' && !circuitEditDirty())) {
+        const c = allCircuits.find(x => String(x.id) === String(editId));
+        if (!c) {   // not loaded yet (deep link / refresh): its detail loads it
+          redirectRoute('#circuit/' + encodeURIComponent(editId));
+          return;
+        }
+        seedCircuitEdit(c);
+        // An owner: check (fresh) that nobody else has logged a run since.
+        if (!isAdmin() && session) {
+          askOthersUsed('c', c.id, used => {
+            if (used !== true || currentView !== 'circuit-create' || String(ccEditingId) !== String(c.id)) return;
+            showToast('Someone else has climbed this, so only an admin can edit it now', 'error');
+            resetCircuitCreate();
+            redirectRoute('#circuit/' + encodeURIComponent(c.id));
+          });
+        }
+      }
+    } else if (ccEditingId) {
+      resetCircuitCreate();
+    }
     buildCcGrades(); buildCcStartCount(); buildCcLoop();
     applyCircuitCreate();
+  }
+
+  // The header bin: clears everything in Create; in Edit it puts the circuit back
+  // as saved (there's no undo for the whole circuit, so it never wipes the name).
+  function onCircuitCreateReset() {
+    if (ccEditingId) {
+      const c = allCircuits.find(x => String(x.id) === String(ccEditingId));
+      if (c) {
+        seedCircuitEdit(c);
+        buildCcGrades(); buildCcStartCount(); buildCcLoop();
+        applyCircuitCreate();
+      }
+      return;
+    }
+    resetCircuitCreate();
   }
 
   async function saveCircuit() {
@@ -753,10 +842,53 @@
       return;
     }
 
-    // Names must be unique (a circuit is cast by name, like a problem).
+    // Names must be unique (a circuit is cast by name, like a problem), ignoring
+    // case, leaving out the circuit being edited.
+    const editing = ccEditingId ? allCircuits.find(c => String(c.id) === String(ccEditingId)) : null;
+    if (ccEditingId && !editing) { errEl.textContent = 'Couldn’t find that circuit — go back and reopen it.'; return; }
     const lname = name.toLowerCase();
-    if (allCircuits.some(c => circuitName(c).toLowerCase() === lname)) {
+    if (allCircuits.some(c => c !== editing && circuitName(c).toLowerCase() === lname)) {
       errEl.textContent = 'That name is taken — pick another.';
+      return;
+    }
+
+    const btn = document.getElementById('cc-save');
+
+    if (editing) {
+      // One Edit: the sequence, start count, loop, name and grade (never the
+      // setter). Admins may edit any circuit; the owner theirs while no challenge
+      // uses it and nobody else has logged a run (RLS, db/39; its guard refuses
+      // any other column). A rename changes the cast key: the Pi reads the circuit
+      // by name when cast_circuit / show_circuit arrives, so the next cast uses it.
+      const update = { name, grade: ccGrade, hold_sequence: ccSeq.slice(), start_count: ccStartCount, loops: ccLoop };
+      btn.disabled = true; btn.classList.add('casting');
+      const { data, error } = await sb.from('circuits').update(update).eq('id', editing.id).select('id');
+      btn.disabled = false; btn.classList.remove('casting');
+      if (error) {
+        errEl.textContent =
+          error.code === '23505' ? 'That name is taken — pick another.'
+          : error.code === '42501' ? 'You don’t have permission to change that.'
+          : error.message;
+        return;
+      }
+      if (!data || !data.length) {
+        if (isAdmin()) {
+          errEl.textContent = 'Couldn’t save: you’re no longer an admin, or the circuit has been deleted.';
+          recheckAdmin();
+        } else {
+          errEl.textContent = 'Couldn’t save: only an admin can edit this now (someone else has climbed it, or a challenge uses it).';
+          othersKnown.delete(othersKey('c', editing.id));
+        }
+        showToast('Couldn’t save the circuit', 'error');
+        return;
+      }
+      Object.assign(editing, update);    // update in place (same object lives in allCircuits)
+      saveList('circuits', allCircuits);
+      const id = editing.id;
+      resetCircuitCreate();
+      renderCircuits();
+      showToast('Changes saved ✓', 'success');
+      redirectRoute('#circuit/' + encodeURIComponent(id));
       return;
     }
 
@@ -770,7 +902,6 @@
       loops: ccLoop
     };
 
-    const btn = document.getElementById('cc-save');
     btn.disabled = true; btn.classList.add('casting');
     const { data, error } = await sb.from('circuits').insert(row).select().single();
     btn.disabled = false; btn.classList.remove('casting');

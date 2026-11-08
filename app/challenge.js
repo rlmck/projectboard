@@ -90,7 +90,7 @@
     challengesLoaded = true;
     if (currentView === 'circuit-detail' && currentCircuit) {
       fillCircuitChallenge(currentCircuit);
-      document.getElementById('circuit-menu-delete').hidden = !canEditCircuit(currentCircuit);   // the lock may have changed
+      updateCircuitMenu();   // the lock may have changed (circuits.js)
     }
     else if (currentView === 'challenge') renderChallenge(parseHash().param);
     else if (currentView === 'leaderboard') renderLeaderboard();

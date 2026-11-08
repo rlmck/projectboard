@@ -994,9 +994,13 @@
         // Only bounce guests once we actually know the auth state — otherwise a
         // cold reload/deep-link on #create would kick a signed-in user to #auth.
         if (authReady && !session) { redirectRoute('#auth'); break; }
-        // #create/<id> = admin "Edit holds" on an existing problem. Editing is
-        // admin-only (DB enforces it too); bounce non-admins to that problem's detail.
-        if (param && authReady && !isAdmin()) { redirectRoute('#detail/' + encodeURIComponent(param)); break; }
+        // #create/<id> = Edit an existing problem: admins, or its owner while it
+        // isn't a benchmark and nobody else has ticked it (db/39 enforces it too;
+        // initCreateView re-checks the ticks). Anyone else goes to its detail.
+        if (param && authReady) {
+          const p = allProblems.find(x => String(x.id) === String(param));
+          if (p && !mayOpenProblemEdit(p)) { redirectRoute('#detail/' + encodeURIComponent(param)); break; }
+        }
         initCreateView(param);
         setView('create');
         break;
@@ -1031,7 +1035,13 @@
       case 'circuit-create':
         // Login required, same pattern as #create — only bounce once auth is known.
         if (authReady && !session) { redirectRoute('#auth'); break; }
-        initCircuitCreate();
+        // #circuit-create/<id> = Edit a circuit: admins, or its owner (no challenge,
+        // nobody else's runs; db/39). Anyone else goes to its detail.
+        if (param && authReady) {
+          const c = allCircuits.find(x => String(x.id) === String(param));
+          if (c && !mayOpenCircuitEdit(c)) { redirectRoute('#circuit/' + encodeURIComponent(param)); break; }
+        }
+        initCircuitCreate(param);
         setView('circuit-create');
         break;
       case 'challenge':
@@ -1093,6 +1103,7 @@
   // Where the in-app Back goes when there's no in-app entry to step back to.
   function backParentHash() {
     const { route, param } = parseHash();
+    if (route === 'circuit-create' && param) return '#circuit/' + encodeURIComponent(param);
     if (route === 'circuit' || route === 'circuit-create') return '#circuits';
     if (route === 'challenge') {
       const ch = challengeById(param);

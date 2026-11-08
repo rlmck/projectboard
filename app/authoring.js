@@ -87,7 +87,8 @@
     const name = (document.getElementById('create-name').value || '').trim();
     const st = createStatus(name, 'Name it at the top');
     steps.innerHTML = st.steps;
-    next.textContent = st.next === 'Pick a grade' ? 'Tap Grade to pick one' : st.next || 'Ready — tap ✓ to save';
+    next.textContent = st.next === 'Pick a grade' ? 'Tap Grade to pick one'
+      : st.next || (editingProblemId ? 'Ready — tap ✓ to save your changes' : 'Ready — tap ✓ to save');
     next.classList.toggle('ready', st.ready);
     const undo = document.getElementById('create-undo');
     if (undo) undo.disabled = !createUndo.length;
@@ -201,21 +202,42 @@
     if (changed) previewEdited();   // the feet sign lights with the holds
   }
 
+  // Create and Edit share one screen; these say which it is (the title, the save
+  // button's name, the bin's, the benchmark warning).
+  function setCreateMode(editing) {
+    setCreateTitle(editing ? 'Edit problem' : 'New problem');
+    const save = document.getElementById('create-save');
+    if (save) save.setAttribute('aria-label', editing ? 'Save changes' : 'Save problem');
+    const bin = document.getElementById('create-reset');
+    if (bin) bin.setAttribute('aria-label', editing ? 'Undo all changes' : 'Clear all holds');
+    const warn = document.getElementById('create-warn');
+    if (warn) warn.hidden = !(editing && editing.is_benchmark);
+  }
+
   function resetCreate() {
-    createRoles = {}; createGrade = ''; editingProblemId = null; createUndo = [];
+    createRoles = {}; createGrade = ''; editingProblemId = null; createUndo = []; createEditBase = '';
     createFeet = 'any'; updateCreateFeet();
     const nameEl = document.getElementById('create-name');
-    if (nameEl) { nameEl.value = ''; nameEl.disabled = false; }
-    setCreateTitle('New problem');
+    if (nameEl) nameEl.value = '';
+    setCreateMode(null);
     buildCreateGrades();
     applyCreateRoles();
   }
 
-  // Seed the create form from an existing problem so an admin can edit its holds +
-  // grade. Roles come from the canonical (un-inverted) order — problemHoldOrder +
-  // classifyHolds is the exact round-trip the renderer uses, so loading can't drift
-  // from how saveProblem re-inverts on the way out. Name is shown but LOCKED (the
-  // edit is holds + grade only; name and setter are left untouched).
+  // What an Edit has on screen, as one string: equal strings = nothing changed.
+  function problemEditKey() {
+    const nameEl = document.getElementById('create-name');
+    const roles = Object.keys(createRoles).sort().map(h => h + ':' + createRoles[h]).join(',');
+    return JSON.stringify([((nameEl && nameEl.value) || '').trim(), createGrade, createFeet, roles]);
+  }
+  const problemEditDirty = () => !!editingProblemId && problemEditKey() !== createEditBase;
+
+  // Seed the create form from an existing problem: Edit (an admin, or the owner
+  // while nobody else has ticked it; db/39) changes its holds, name, grade and feet
+  // rule in one go. Roles come from the canonical (un-inverted) order —
+  // problemHoldOrder + classifyHolds is the exact round-trip the renderer uses, so
+  // loading can't drift from how saveProblem re-inverts on the way out. The setter
+  // is never editable.
   function seedEdit(p) {
     editingProblemId = String(p.id);
     const order = problemHoldOrder(p);
@@ -228,22 +250,34 @@
     createGrade = p.grade || '';
     createFeet = feetRule(p); updateCreateFeet();
     const nameEl = document.getElementById('create-name');
-    if (nameEl) { nameEl.value = p.name || ''; nameEl.disabled = true; }
-    setCreateTitle('Edit problem');
+    if (nameEl) nameEl.value = p.name || '';
+    setCreateMode(p);
+    createEditBase = problemEditKey();
   }
 
-  // Prepare the create view on entry. With an editId (admin "Edit holds") seed from
-  // that problem the first time we land on it; re-entering the same edit (e.g. the
-  // SW-deferred reload) keeps in-progress changes. No editId = fresh create.
+  // Prepare the create view on entry. With an editId (Edit) seed from that problem
+  // as we land on it; the router running again while the edit is open (data
+  // arriving) keeps the changes in progress. No editId = fresh create.
   function initCreateView(editId) {
     if (editId) {
-      if (String(editingProblemId) !== String(editId)) {
+      const same = String(editingProblemId) === String(editId);
+      if (!same || (currentView !== 'create' && !problemEditDirty())) {
         const p = allProblems.find(x => String(x.id) === String(editId));
         if (!p) {   // not loaded yet (deep link / refresh) — bounce to its detail, which loads it
           redirectRoute('#detail/' + encodeURIComponent(editId));
           return;
         }
         seedEdit(p);
+        // An owner: check (fresh) that nobody else has ticked it since; if someone
+        // has, it's admin-only now, so back to the problem.
+        if (!isAdmin() && session) {
+          askOthersUsed('p', p.id, used => {
+            if (used !== true || currentView !== 'create' || String(editingProblemId) !== String(p.id)) return;
+            showToast('Someone else has ticked this, so only an admin can edit it now', 'error');
+            resetCreate();
+            redirectRoute('#detail/' + encodeURIComponent(p.id));
+          });
+        }
       }
     } else if (editingProblemId) {
       resetCreate();   // leaving an edit for a fresh create — start blank
@@ -271,9 +305,9 @@
     }
   }
 
-  // The header bin. In edit mode it reverts to the problem's saved holds + grade
-  // (discard your edits); in create mode it clears the holds. Either way Undo
-  // brings the holds back.
+  // The header bin. In edit mode it reverts to the problem as saved (holds, name,
+  // grade, feet rule: discard your edits); in create mode it clears the holds.
+  // Either way Undo brings the holds back.
   function onCreateReset() {
     const before = { ...createRoles };
     if (editingProblemId) {
@@ -318,7 +352,7 @@
   async function saveProblem() {
     if (!session) { location.hash = '#auth'; return; }
 
-    // In edit mode we're updating this existing row (holds + grade only).
+    // In edit mode we're updating this existing row (holds, name, grade, feet rule).
     const editing = editingProblemId
       ? allProblems.find(p => String(p.id) === String(editingProblemId))
       : null;
@@ -357,29 +391,39 @@
     btn.disabled = true; btn.classList.add('casting');
 
     if (editing) {
-      // Holds + grade only — never touch name or setter (admin edit; DB enforces
-      // admin-only UPDATE via RLS). Same invert-on-save scheme as create.
-      const update = { grade: createGrade, feet_mode: createFeet, ...holdCols };
+      // One Edit: holds, name, grade and feet rule (never the setter). Admins may
+      // edit any problem; the owner theirs while it isn't a benchmark and nobody
+      // else has ticked it (RLS, db/39; its guard refuses any other column). Same
+      // invert-on-save scheme as create. A rename changes the cast key: the Pi
+      // looks a cast's name up when it arrives, so the next cast uses the new one.
+      const update = { name, grade: createGrade, feet_mode: createFeet, ...holdCols };
       // .select() so a write RLS silently refused (no error, 0 rows) isn't
       // mistaken for success.
       const { data, error } = await sb.from('problems').update(update).eq('id', editing.id).select('id');
       btn.disabled = false; btn.classList.remove('casting');
       if (error) {
-        return createMissing(error.code === '42501'
-          ? 'You don’t have permission to edit problems.'   // not an admin (RLS)
-          : error.message);
+        return createMissing(
+          error.code === '23505' ? 'That name is taken — pick another.'                 // unique-name backstop
+          : error.code === '42501' ? 'You don’t have permission to change that.'        // RLS / the db/39 guard
+          : error.message, error.code === '23505' ? () => nameEl.focus() : null);
       }
       if (!data || !data.length) {
-        createMissing('Couldn’t save: you’re no longer an admin, or the problem has been deleted.');
-        recheckAdmin();
+        if (isAdmin()) {
+          createMissing('Couldn’t save: you’re no longer an admin, or the problem has been deleted.');
+          recheckAdmin();
+        } else {
+          createMissing('Couldn’t save: only an admin can edit this now (someone else has ticked it, or it’s a benchmark).');
+          othersKnown.delete(othersKey('p', editing.id));
+        }
         return;
       }
       Object.assign(editing, update);   // update in place (same object lives in allProblems)
+      saveList('problems', allProblems); // the saved copy (offline, next start) gets the new name and holds
       leaderboardLoaded = false;         // edit may change grade -> base points; refetch next view
       const id = editing.id;
       resetCreate();
       renderList();
-      showToast('Problem updated ✓', 'success');
+      showToast('Changes saved ✓', 'success');
       // Replace the #create entry with the problem's (re-rendered) detail.
       redirectRoute('#detail/' + encodeURIComponent(id));
       return;
@@ -413,8 +457,28 @@
     redirectRoute('#detail/' + encodeURIComponent(data.id));
   }
 
+  // ── Leaving an Edit ──────────────────────────────────────────────────────────
+  // The name of what's being edited when leaving would lose changes (the discard
+  // sheet names it), or null when nothing would be lost. Create doesn't ask.
+  function editLeaveName() {
+    if (currentView === 'create' && problemEditDirty()) {
+      const p = allProblems.find(x => String(x.id) === String(editingProblemId));
+      return p ? displayName(p) : 'this problem';
+    }
+    if (currentView === 'circuit-create' && circuitEditDirty()) {
+      const c = allCircuits.find(x => String(x.id) === String(ccEditingId));
+      return c ? circuitName(c) : 'this circuit';
+    }
+    return null;
+  }
+  // Discard: forget the edit, so opening Edit again starts from what's saved.
+  function discardEdits() {
+    if (currentView === 'create' && editingProblemId) resetCreate();
+    if (currentView === 'circuit-create' && ccEditingId) resetCircuitCreate();
+  }
+
   // ── Live LEDs while setting (cast contract §9) ────────────────────────────────
-  // While someone sets a problem (the phone's Create or admin Edit, or the wall
+  // While someone sets a problem (the phone's Create or Edit, or the wall
   // screen's Create page), every change lights the board in a cast's colours:
   // preview_holds carries the whole selection and a session token, never a diff,
   // so a lost message corrects itself with the next. One message is in flight at
@@ -1439,5 +1503,11 @@
   const canEditCircuit = c =>
     !!(c && profile && (profile.is_admin
       || (session && c.setter_id === session.user.id && !challengeForCircuit(c.id))));
+  // Edit (db/39): as canEditCircuit, and for the owner, only while nobody else has
+  // logged a run of it (circuit_has_other_logs; asked in the background, problems.js).
+  const canChangeCircuit = c =>
+    !!(c && (isAdmin() || (canEditCircuit(c) && othersUsed('c', c.id) === false)));
+  const mayOpenCircuitEdit = c =>
+    !!(c && (isAdmin() || (canEditCircuit(c) && othersUsed('c', c.id) !== true)));
 
 

@@ -232,42 +232,16 @@
 
   // Overflow (⋮) menu — folds Edit/Benchmark/Delete/Information into one header button.
   wireOverflowMenu('detail-menu-btn', 'detail-menu');
-  document.getElementById('menu-edit').addEventListener('click', openEditChoice);
+  document.getElementById('menu-edit').addEventListener('click', openProblemEdit);
   document.getElementById('menu-bench').addEventListener('click', toggleBenchmark);
   document.getElementById('menu-delete').addEventListener('click', openDeleteConfirm);
   document.getElementById('menu-info').addEventListener('click', openInfo);
-
-  // Edit chooser modal (grade vs holds)
-  document.getElementById('edit-choice-close').addEventListener('click', closeEditChoice);
-  document.getElementById('edit-choice-modal').addEventListener('click', e => {
-    if (e.target.id === 'edit-choice-modal') closeEditChoice();
-  });
-  document.getElementById('edit-choice-grade').addEventListener('click', () => { closeEditChoice(); openGradeEdit(); });
-  document.getElementById('edit-choice-holds').addEventListener('click', () => {
-    const p = currentProblem;
-    closeEditChoice();
-    if (p) location.hash = '#create/' + encodeURIComponent(p.id);
-  });
 
   // Delete confirm modal
   document.getElementById('delete-cancel').addEventListener('click', closeDeleteConfirm);
   document.getElementById('delete-confirm').addEventListener('click', doDeleteProblem);
   document.getElementById('delete-modal').addEventListener('click', e => {
     if (e.target.id === 'delete-modal') closeDeleteConfirm();
-  });
-
-  // Edit grade modal
-  document.getElementById('grade-edit-options').addEventListener('click', e => {
-    const t = e.target.closest('.grade-tab');
-    if (!t) return;
-    editGrade = t.dataset.grade;
-    buildGradeEditOptions();
-  });
-  document.getElementById('grade-save').addEventListener('click', saveGradeEdit);
-  document.getElementById('grade-cancel').addEventListener('click', closeGradeEdit);
-  document.getElementById('grade-close').addEventListener('click', closeGradeEdit);
-  document.getElementById('grade-modal').addEventListener('click', e => {
-    if (e.target.id === 'grade-modal') closeGradeEdit();
   });
 
   // Swipe left/right on a detail view to step through its filtered deck (problems
@@ -315,7 +289,7 @@
   document.getElementById('create-btn').addEventListener('click', () => {
     location.hash = session ? '#create' : '#auth';
   });
-  document.getElementById('create-back').addEventListener('click', goBack);
+  document.getElementById('create-back').addEventListener('click', () => confirmLeaveEdit(goBack));
   document.getElementById('create-reset').addEventListener('click', onCreateReset);
 
   // Tap the board: cycle the nearest hold's role.
@@ -403,6 +377,7 @@
   document.getElementById('circuit-back').addEventListener('click', goBack);
   document.getElementById('circuit-detail-fave').addEventListener('click', () => { if (currentCircuit) toggleCircuitFave(currentCircuit.id); });
   wireOverflowMenu('circuit-menu-btn', 'circuit-menu');
+  document.getElementById('circuit-menu-edit').addEventListener('click', openCircuitEdit);
   document.getElementById('circuit-menu-delete').addEventListener('click', openCircuitDelete);
   document.getElementById('circuit-menu-info').addEventListener('click', openCircuitInfo);
   document.getElementById('circuit-delete-cancel').addEventListener('click', closeCircuitDelete);
@@ -427,9 +402,9 @@
   });
 
   // Circuit create: back, undo, reset, board taps, options, grade, save.
-  document.getElementById('cc-back').addEventListener('click', goBack);
+  document.getElementById('cc-back').addEventListener('click', () => confirmLeaveEdit(goBack));
   document.getElementById('cc-undo').addEventListener('click', () => { ccSeq.pop(); applyCircuitCreate(); });
-  document.getElementById('cc-reset').addEventListener('click', resetCircuitCreate);
+  document.getElementById('cc-reset').addEventListener('click', onCircuitCreateReset);
   document.getElementById('cc-board').addEventListener('click', e => {
     const h = ccNearestHold(e.clientX, e.clientY);
     if (h) { ccSeq.push(h); applyCircuitCreate(); }
@@ -449,6 +424,38 @@
     buildCcGrades();
   });
   document.getElementById('cc-save').addEventListener('click', saveCircuit);
+
+  // Leaving an Edit (a problem's or a circuit's) with changes made asks first: the
+  // in-app back and the bottom nav. Keep editing closes the sheet; Discard leaves.
+  let leaveEditGo = null;
+  function confirmLeaveEdit(go) {
+    const name = editLeaveName();
+    if (name === null) { go(); return; }
+    leaveEditGo = go;
+    document.getElementById('edit-discard-name').textContent = name;
+    document.getElementById('edit-discard-modal').classList.add('show');
+  }
+  function closeEditDiscard() {
+    leaveEditGo = null;
+    document.getElementById('edit-discard-modal').classList.remove('show');
+  }
+  document.getElementById('edit-discard-keep').addEventListener('click', closeEditDiscard);
+  document.getElementById('edit-discard-modal').addEventListener('click', e => {
+    if (e.target.id === 'edit-discard-modal') closeEditDiscard();
+  });
+  document.getElementById('edit-discard-go').addEventListener('click', () => {
+    const go = leaveEditGo;
+    closeEditDiscard();
+    discardEdits();
+    if (go) go();
+  });
+  document.getElementById('bottom-nav').addEventListener('click', e => {
+    const a = e.target.closest('a.nav-item');
+    if (!a || editLeaveName() === null) return;
+    e.preventDefault();
+    const href = a.getAttribute('href');
+    confirmLeaveEdit(() => { location.hash = href; });
+  }, true);
 
   // Trace Holds: the hold outline editor (#outlines, admin)
   document.getElementById('ol-back').addEventListener('click', () => {
@@ -611,12 +618,14 @@
     // on the device, but a reload would silence the beeps until the next tap.
     if (chRunning() || (currentView === 'challenge' && challengeRun)) return true;
     if (currentView === 'create') {
+      if (editingProblemId) return problemEditDirty();   // an Edit: only if something changed
       if (Object.keys(createRoles).length) return true;
       if (createGrade) return true;
       const n = document.getElementById('create-name');
       if (n && n.value.trim()) return true;
     }
     if (currentView === 'circuit-create') {
+      if (ccEditingId) return circuitEditDirty();
       if (ccSeq.length) return true;
       if (ccGrade) return true;
       const n = document.getElementById('cc-name');

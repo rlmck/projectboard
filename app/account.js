@@ -691,7 +691,7 @@
     if (loaded) renderList();
     if (currentView === 'detail') { updateTickButton(); updateFaveButton(); }
     if (currentView === 'circuits') renderCircuits();
-    if (currentView === 'circuit-detail') { updateCircuitFaveButton(); document.getElementById('circuit-menu-delete').hidden = !canEditCircuit(currentCircuit); }
+    if (currentView === 'circuit-detail') { updateCircuitFaveButton(); updateCircuitMenu(); }
     if (currentView === 'challenge') renderChallengeBody();
     if (currentView === 'leaderboard') renderLeaderboard();
     // Signed out (or lost admin) while on an admin screen: route away from it.

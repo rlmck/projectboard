@@ -668,7 +668,7 @@
     container.innerHTML = `<div class="problem-list">${list.map(cardHtml).join('')}</div>`;
   }
 
-  // Shared grade-tab markup (the create and grade-edit pickers). `isActive(g)`
+  // Shared grade-tab markup (the create pickers, problems and circuits). `isActive(g)`
   // decides the highlight. `fmt` (optional) formats the LABEL only — data-grade
   // keeps the raw value for matching. Problem grades pass fontGrade (capitalised);
   // circuit grades don't.
@@ -1221,16 +1221,25 @@
     updateAdminUI();
   }
 
-  // Every .admin-only control appears only for admins, on a real problem. Delete
-  // also appears for the problem's owner, unless it's a benchmark (see
-  // openDeleteConfirm for their other limit). The benchmark item reads "Mark" or
-  // "Remove", and isn't offered for an ungraded problem (e.g. "Project"): a
-  // benchmark is accurate at its grade, and an ungraded one would score nothing.
+  // Every .admin-only control appears only for admins, on a real problem. Edit
+  // and Delete also appear for the problem's owner, unless it's a benchmark or
+  // someone else has ticked it (db/39, db/25; canEditProblem above). Until that
+  // check is back Edit stays hidden and Delete shows (openDeleteConfirm checks
+  // again). The benchmark item reads "Mark" or "Remove", and isn't offered for an
+  // ungraded problem (e.g. "Project"): a benchmark is accurate at its grade, and
+  // an ungraded one would score nothing.
   function updateAdminUI() {
-    const show = !!(profile && profile.is_admin && currentProblem);
+    const p = currentProblem;
+    const show = !!(profile && profile.is_admin && p);
     document.querySelectorAll('.admin-only').forEach(btn => { btn.hidden = !show; });
+    const owner = !!(p && !isAdmin() && isOwnProblem(p) && !p.is_benchmark);
+    if (owner && othersUsed('p', p.id) === undefined) {
+      askOthersUsed('p', p.id, () => { if (currentProblem === p) updateAdminUI(); });
+    }
+    const edit = document.getElementById('menu-edit');
+    if (edit) edit.hidden = !canEditProblem(p);
     const del = document.getElementById('menu-delete');
-    if (del) del.hidden = !(currentProblem && (isAdmin() || (isOwnProblem(currentProblem) && !currentProblem.is_benchmark)));
+    if (del) del.hidden = !(p && (isAdmin() || (owner && othersUsed('p', p.id) !== true)));
     const bench = document.getElementById('menu-bench');
     if (bench && show) {
       const on = !!currentProblem.is_benchmark;
@@ -1353,67 +1362,55 @@
     replaceRoute(backTo ? '#detail/' + encodeURIComponent(backTo) : '#list');
   }
 
-  // ── Edit a problem (admins only) — chooser: grade or holds ───────────────────
-  // On a benchmark the chooser doubles as the warning: changing it changes the
-  // points of everyone who's sent it.
-  function openEditChoice() {
-    if (!currentProblem || !(profile && profile.is_admin)) return;
-    document.getElementById('edit-choice-name').textContent = displayName(currentProblem);
-    document.getElementById('edit-choice-bench').hidden = !currentProblem.is_benchmark;
-    document.getElementById('edit-choice-modal').classList.add('show');
-  }
-  function closeEditChoice() { document.getElementById('edit-choice-modal').classList.remove('show'); }
+  // ── Who may edit (db/39) ─────────────────────────────────────────────────────
+  // One Edit for problems and circuits opens the Create screen pre-filled
+  // (#create/<id>, #circuit-create/<id>). Admins may edit anything. The owner may
+  // edit their own problem while it isn't a benchmark and nobody else has ticked
+  // it (problem_has_other_ticks, db/25), and their own circuit while no challenge
+  // uses it and nobody else has logged a run of it (circuit_has_other_logs,
+  // db/39). The Hangout's problems have no owner, so they're admin-only. RLS and
+  // db/39's guards enforce all of it (an owner can't touch the setter, the
+  // benchmark flag or anything else); this is only so Edit shows to the people it
+  // will work for. "Someone else used it" is asked once per item and kept for a
+  // minute, per signed-in account (the answer leaves the caller's own out).
+  const OTHERS_TTL_MS = 60000;
+  const othersKnown = new Map();     // '<uid>|p|<id>' or '<uid>|c|<id>' -> { v, t }
+  const othersAsking = new Set();
+  const othersKey = (kind, id) => `${session ? session.user.id : ''}|${kind}|${id}`;
 
-  // ── Edit a problem's grade (admins only; DB enforces it via RLS) ─────────────
-  let editGrade = '';
-  function buildGradeEditOptions() {
-    document.getElementById('grade-edit-options').innerHTML =
-      gradeTabButtons(GRADE_ORDER, g => g === editGrade, fontGrade);
+  // true / false, or undefined while it isn't known (or is over a minute old).
+  function othersUsed(kind, id) {
+    const k = othersKnown.get(othersKey(kind, id));
+    return k && Date.now() - k.t < OTHERS_TTL_MS ? k.v : undefined;
   }
-  function openGradeEdit() {
-    if (!currentProblem || !(profile && profile.is_admin)) return;
-    editGrade = currentProblem.grade || '';
-    document.getElementById('grade-problem-name').textContent = displayName(currentProblem);
-    document.getElementById('grade-error').textContent = '';
-    buildGradeEditOptions();
-    document.getElementById('grade-modal').classList.add('show');
+  // Ask the database; then(v) gets true/false, or undefined when the ask failed.
+  async function askOthersUsed(kind, id, then) {
+    const key = othersKey(kind, id);
+    if (othersAsking.has(key)) return;
+    othersAsking.add(key);
+    const { data, error } = kind === 'p'
+      ? await sb.rpc('problem_has_other_ticks', { pid: id })
+      : await sb.rpc('circuit_has_other_logs', { cid: id });
+    othersAsking.delete(key);
+    if (error) { console.warn('edit check failed', error); if (then) then(undefined); return; }
+    othersKnown.set(key, { v: !!data, t: Date.now() });
+    if (then) then(!!data);
   }
-  function closeGradeEdit() { document.getElementById('grade-modal').classList.remove('show'); }
 
-  async function saveGradeEdit() {
+  // Edit shows only when it will work. An owner's check runs in the background
+  // the first time (Edit appears when it says yes).
+  function canEditProblem(p) {
+    if (!p) return false;
+    if (isAdmin()) return true;
+    return isOwnProblem(p) && !p.is_benchmark && othersUsed('p', p.id) === false;
+  }
+  // The route guard: let an owner through while it isn't known yet (the Edit
+  // screen asks again and sends them back if someone else has ticked it).
+  const mayOpenProblemEdit = p =>
+    !!p && (isAdmin() || (isOwnProblem(p) && !p.is_benchmark && othersUsed('p', p.id) !== true));
+
+  function openProblemEdit() {
     const p = currentProblem;
-    if (!p) return;
-    const errEl = document.getElementById('grade-error');
-    if (!editGrade) { errEl.textContent = 'Pick a grade.'; return; }
-    if (editGrade === p.grade) { closeGradeEdit(); return; }   // no change
-    const btn = document.getElementById('grade-save');
-    const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
-
-    // Grade only — never touch the name. Name and grade are independent (see
-    // displayName); changing a climb's grade must not alter its name.
-    const update = { grade: editGrade };
-
-    // .select() so a write RLS silently refused (no error, 0 rows) isn't mistaken
-    // for success.
-    const { data, error } = await sb.from('problems').update(update).eq('id', p.id).select('id');
-    btn.disabled = false; btn.textContent = prev;
-    if (error) {
-      errEl.textContent = error.code === '42501'
-        ? 'You don’t have permission to edit problems.'   // not an admin (RLS)
-        : error.message;
-      return;
-    }
-    if (!data || !data.length) {
-      errEl.textContent = 'Couldn’t save: you’re no longer an admin, or the problem has been deleted.';
-      recheckAdmin();
-      return;
-    }
-
-    p.grade = editGrade;                // update in place (same object lives in allProblems)
-    leaderboardLoaded = false;           // base points depend on grade — refetch the board next view
-    closeGradeEdit();
-    renderList();
-    if (currentView === 'detail') renderDetail(p.id);
-    showToast('Grade updated', 'success');
+    if (p && canEditProblem(p)) location.hash = '#create/' + encodeURIComponent(p.id);
   }
 

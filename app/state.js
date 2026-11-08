@@ -114,7 +114,8 @@
   let createRoles = {};        // hold id -> 'start' | 'int' | 'finish'
   let createGrade = '';        // selected grade
   let createFeet = 'any';      // the feet rule: 'any' | 'orange' | 'black' (FEET_RULES in core.js)
-  let editingProblemId = null; // when set, the create view is editing this problem (admin) instead of creating
+  let editingProblemId = null; // when set, the create view is editing this problem (#create/<id>: an admin, or its owner) instead of creating
+  let createEditBase = '';     // the edit's starting point (problemEditKey()), to tell whether anything changed
   let createUndo = [];         // earlier createRoles snapshots, newest last (the create view's Undo)
 
   // ── Circuits ──────────────────────────────────────────────────────────────────
@@ -135,6 +136,8 @@
   let ccStartCount = 2;    // 1 or 2
   let ccLoop = false;
   let ccGrade = '';
+  let ccEditingId = null;  // when set, the circuit create view is editing this circuit (#circuit-create/<id>)
+  let ccEditBase = '';     // the edit's starting point (circuitEditKey())
 
   // ── Leaderboard ─────────────────────────────────────────────────────────────
   let leaderboard = [];          // [{ rank, user_id, username, points, sends }] from the leaderboard() RPC

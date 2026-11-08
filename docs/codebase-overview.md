@@ -116,7 +116,7 @@ These are plain `<script>` tags, not ES modules. There's no build step and no fr
 - **A name may be declared only once across all eleven files.** Check with `cd app && cat state.js core.js … app.js > ../all.js && node --check ../all.js` (then delete `all.js`).
 - **Order matters for top-level code.** Function bodies can reference later files; top-level statements can't.
 - **Symbols don't always live where you'd expect.** Grep across all `.js` before adding one. Traps:
-  - `isAdmin`, `circuitName`, `circuitSeq`, `canEditCircuit` and `circuitsTableMissing` are at the bottom of `authoring.js`.
+  - `isAdmin`, `circuitName`, `circuitSeq`, `canEditCircuit`, `canChangeCircuit`, `mayOpenCircuitEdit` and `circuitsTableMissing` are at the bottom of `authoring.js`; `othersUsed`/`askOthersUsed`/`canEditProblem` (who may Edit, §4.8b) are in `problems.js`.
   - `rpcMissing` (in `admin.js`) is also used by `leaderboard.js`.
   - `gradeTabButtons` (in `problems.js`) is used by circuits and authoring.
   - `rankLabel` (in `leaderboard.js`) is also used by `challenge.js`; `challengeForCircuit` (in `challenge.js`) by `canEditCircuit` in `authoring.js`; `leaveChallenge` by `setView` in `core.js`.
@@ -127,11 +127,11 @@ These are plain `<script>` tags, not ES modules. There's no build step and no fr
 |---|---|
 | `state.js` | Supabase client + cast channel; grade ladders (`GRADE_ORDER`, `SPORT_GRADE_ORDER`, `gradeRank`, `fontGrade`); **all shared mutable state** (`allProblems`, `session`, `profile`, `HOLD_MAP`, `myTicks*`, filters, create/circuit state, leaderboard cache) |
 | `core.js` | Escaping, toast, name/setter/search helpers, hold order + role classification, dot and shape overlays, `boardPct` hit-testing, fullscreen controller, **routing** (`parseHash`, `setView`, `router`, `goBack`) |
-| `problems.js` | Problem list/filters/cards, detail, swipe, info modal, **geofence + `castByName`**, board data loaders (`loadBoardConfig`, `loadHoldMap`, `loadMirrorMap`, `loadHoldShapes`), problem loading, tick button, admin delete + grade edit |
+| `problems.js` | Problem list/filters/cards, detail, swipe, info modal, **geofence + `castByName`**, board data loaders (`loadBoardConfig`, `loadHoldMap`, `loadMirrorMap`, `loadHoldShapes`), problem loading, tick button, delete, **who may Edit** (`canEditProblem`, `othersUsed`, §4.8b) |
 | `admin.js` | `#admin` hub: user list (nickname search) and detail (recent ticks), rename, new PIN or passphrase (the Edge Function), promote/demote, delete user |
 | `account.js` | Ticks, favourites, filter-pill sync, **auth** (create an account with a nickname + 4-digit PIN, sign in with a PIN or an older passphrase, `pinPassword()`, Turnstile, the nickname checker, the iPhone Safari note, sign-out), change-nickname modal, profile page (Ranks switch, delete my account) |
 | `authoring.js` | Create/edit problem (tap-to-cycle roles, the finish-zone rule (not drawn), invert-on-save, the shared checks `createProblemMissing`/`createStatus`/`createLayerHtml`), **the live LEDs while setting** (`previewEdited`…`previewEnd`, contract §9), the hold-outline editor (`#outlines`: pinch/pan, drag/add/delete points, nudge, roundness, preview, draft, **Publish**), circuit helpers |
-| `circuits.js` | Circuits list, detail (swipe, info sheet), the circuit cast (the Cast sheet, the run screen, `circuit_logs`), create, delete |
+| `circuits.js` | Circuits list, detail (swipe, info sheet, the ⋮ menu: `updateCircuitMenu`), the circuit cast (the Cast sheet, the run screen, `circuit_logs`), create **and Edit** (§4.8b), delete |
 | `challenge.js` | Challenges (db/31, section 4.6a): loading, the circuit-detail link, the `#challenge` view (rules, the timed attempt, summary, save with retry, your best and history), and the challenge boards on Ranks (tabs, compare chart, admin delete) |
 | `leaderboard.js` | `#leaderboard` view: Points (opted-in climbers, plus a hidden climber's private note), or a challenge board picked with the tabs; `userPoints()` for the profile |
 | `wall.js` | The wall-screen mode (`/?wall`, section 4.7a): the kiosk layout, casting on the pick (problems, and a circuit's holds), **Create** (the on-screen keyboard, `wall_create_problem`), read-only Ranks, the QR, idle slides and offline note (no night screen since 7 Nov 2026). Does nothing unless `WALL` |
@@ -161,11 +161,11 @@ Hash routing; `router()` switches on `parseHash()` (`route/param`).
 | Hash | View | Notes |
 |---|---|---|
 | `#list` (default) | problem list | search, and a row: the **filter icon** (opens the Filter sheet: Sort New / Random / Easy / Hard / Popular, the Grade range, quick filters; pink with a count when anything isn't the default), Favourites, Benchmarks, Exclude Done (§4.2a) |
-| `#detail/<id>` | problem detail | board overlay, tick/fave/mirror/cast, ⋮ menu (Edit: admin; Delete: admin or the problem's owner; Information: everyone); swipe = next/prev in the filtered deck, via `replaceState` |
-| `#create` / `#create/<id>` | create / admin edit-holds | guests bounced to `#auth`; non-admins bounced off `/<id>` |
+| `#detail/<id>` | problem detail | board overlay, tick/fave/mirror/cast, ⋮ menu (Edit: admin, or the owner while it isn't a benchmark and nobody else has ticked it; Delete: admin or the owner; Information: everyone); swipe = next/prev in the filtered deck, via `replaceState` |
+| `#create` / `#create/<id>` | create / **Edit** (§4.8b) | guests bounced to `#auth`; anyone who may not edit it bounced off `/<id>` to its detail (`mayOpenProblemEdit`) |
 | `#outlines` | hold-outline editor (bottom nav hidden) | admin; the old `#calibrate` redirects here |
 | `#admin`, `#admin/users`, `#admin/user/<id>` | admin hub drill-down | admin |
-| `#circuits`, `#circuit/<id>`, `#circuit-create` | circuits | built to match the problem side: search, the filter icon (the same sheet: Sort New / Random / Easy / Hard, the sport-grade range, Favourites, Looping), Favourites, Looping (§4.2a), pull-to-refresh, a pinned detail with swipe (`circuitTrail`), ⋮ menu (Delete: owner or admin; Information: everyone); create needs sign-in |
+| `#circuits`, `#circuit/<id>`, `#circuit-create`, `#circuit-create/<id>` (Edit, §4.8b) | circuits | built to match the problem side: search, the filter icon (the same sheet: Sort New / Random / Easy / Hard, the sport-grade range, Favourites, Looping), Favourites, Looping (§4.2a), pull-to-refresh, a pinned detail with swipe (`circuitTrail`), ⋮ menu (Edit: admin, or the owner while no challenge uses it and nobody else has logged a run; Delete: owner or admin; Information: everyone); create needs sign-in |
 | `#challenge/<id>` | a challenge (section 4.6a) | rules for everyone; Start needs sign-in; the bottom nav hides while an attempt runs here; in any other view a strip on the nav leads back |
 | `#leaderboard` | ranks | public; tabs: Points + one per active challenge (`ranksTab`) |
 | `#auth`, `#profile` | sign-in, profile | bottom nav hidden on `#auth` |
@@ -200,7 +200,7 @@ Positions are **percentages of the image**, so the overlay scales with it. The r
   - A lone start is duplicated so there are always two start entries.
   - This order is exactly Gareth's original list, so the Pi side reads it the same way.
   - Fixing this for good means a data migration **plus** a Pi change in lockstep.
-- **Names are UNIQUE and are the cast key.** The Pi looks a problem up by `problem_name`. Names are stored clean (no embedded grade), and grade edits never touch the name.
+- **Names are UNIQUE and are the cast key.** The Pi looks a problem up by `problem_name` when the cast arrives. Names are stored clean (no embedded grade) and trimmed; since 8 Nov 2026 they can be changed through Edit (§4.8b), and a rename works from the next cast (contract §10). Changing a grade never touches the name.
 - **Grades are stored lowercase** (`5, 5+, 6a … 8a`) and **displayed** capitalised via `fontGrade()`. Unknown grades sort last: 2 problems are graded `Project`.
 - **Circuits use a separate lowercase sport ladder** (`4, 5a … 8b`), are **not** capitalised, and are stored in **natural order** (not inverted). A circuit is one ordered `hold_sequence` with duplicates allowed, plus `start_count` (1–2) and `loops`.
 - **Board orientation:** row 1 (A1 = `hold1`) is at the **bottom**. `holdN` → grid is row-major: `hold1`=A1, `hold19`=S1, `hold20`=A2, `hold247`=S13.
@@ -223,12 +223,12 @@ Positions are **percentages of the image**, so the overlay scales with it. The r
   - +50% of base once if the benchmark was sent both ways;
   - a non-benchmark scores 0. The old +50% benchmark bonus went with db/27.
 
-  Only climbers with points are listed, and "sends" counts benchmark sends. Points are worked out live, so marking a problem a benchmark scores its existing ticks straight away, and unmarking it takes them back. The profile's "Total points" reads the caller's own row back from the RPC. `leaderboardLoaded = false` invalidates the cache after ticks, grade/hold edits, benchmark toggles and deletes.
+  Only climbers with points are listed, and "sends" counts benchmark sends. Points are worked out live, so marking a problem a benchmark scores its existing ticks straight away, and unmarking it takes them back. The profile's "Total points" reads the caller's own row back from the RPC. `leaderboardLoaded = false` invalidates the cache after ticks, edits, benchmark toggles and deletes.
 - **Benchmarks:** high-quality problems that are accurate at their grade.
   - Only admins mark them: the "Mark as benchmark" / "Remove benchmark" item in the detail ⋮ menu (`toggleBenchmark` in `problems.js`). It isn't offered for an ungraded problem (`Project`).
   - They show a gold disc with a star cut out (`benchMarkSvg()` in `core.js`) on list cards and in the detail badge, and there's a Benchmarks filter pill.
-  - Admin Edit on a benchmark warns in the edit chooser that it changes everyone's points.
-  - Owners lose Delete on their own problem once it's a benchmark (db/27 enforces it).
+  - Admin Edit on a benchmark shows a gold line under the board: changing it changes everyone's points (`#create-warn`).
+  - Owners lose Edit and Delete on their own problem once it's a benchmark (db/27 enforces it).
 - **Casting a circuit (Phase 2, 30 Oct 2026):** Cast beside the title opens a sheet (speed Slow 5 s / Med 3 s / Fast 2 s, Loop, Start); then a run screen with the countdown and beeps, the move count and a big Stop; signed-in runs are logged to `circuit_logs`. The Pi draws the lights itself. Details: `docs/cast-contract.md` §8. The circuits "Exclude Done" pill is still deliberately inert: runs are logged, but what counts as done isn't decided.
 
 ### 4.6a Challenges (db/31, `challenge.js`, since `pb-v110`)
@@ -241,7 +241,7 @@ A **challenge** is a timed competition on a circuit; its rules are data (`challe
 - **Server side:** the trigger works out `total_seconds` and `ended_early`, and checks the rep count against the protocol, the 14-day window and a finish no more than 5 min ahead; CHECKs cap each rep at 0–1200 s and require the time between start and finish to cover the time held (5 s slack). The phone can't send `total_seconds`, `ended_early` or `user_id` (column grants).
 - **Boards:** `challenge_leaderboard(cid)` = each climber's best attempt (higher total first; on a tie the earlier `completed_at`), opted-in climbers only (`is_public`), top 20, plus the caller's own row (ranked outside the top 20, or private if their switch is off). `challenge_compare(cid, uids)` = up to 3 opted-in climbers' best attempts rep by rep, drawn as an inline SVG line chart (no chart library). Both are callable by guests, like `leaderboard()`. Challenges never score points.
 - **Admin:** a delete button on each board row → `admin_delete_attempt(aid)`, logged in `admin_actions` (`delete_attempt`, `target_id` = the climber, `subject_id` = the attempt). Their next-best attempt takes its place.
-- **The circuit is locked:** while a challenge uses it, only admins can edit it (RLS) and nobody can delete it (`ON DELETE RESTRICT`); the app hides the owner's Delete (`canEditCircuit`) and explains a refused admin delete. A challenge with attempts can't be deleted either: retire it with `is_active = false`.
+- **The circuit is locked:** while a challenge uses it, only admins can edit it (RLS) and nobody can delete it (`ON DELETE RESTRICT`); the app hides the owner's Edit and Delete (`canEditCircuit`) and explains a refused admin delete. A challenge with attempts can't be deleted either: retire it with `is_active = false`.
 
 ### 4.7 Casting
 `castByName(name, btn, mirror, stillShowing, { quiet })` in `problems.js` is the only cast path; it resolves `true` once Realtime accepted the cast (the wall screen uses that for its status, §4.7a).
@@ -286,12 +286,21 @@ Since `pb-v106` (22 Sep 2026) fullscreen is a **camera over the board**, the "Fu
 ### 4.8a Creating a problem (`#create`)
 Since `pb-v107` (23 Sep 2026) the create view is built to feel like the problem view (`authoring.js`, top section):
 - **Same layout:** pinned like `#view-detail` (it shares the pinned-view, locked title-block and board rules in `styles.css`), so the board sits at exactly the same place as on a problem.
-- **Title block:** the name is an `<input>` styled as `.detail-name` (typed in place; locked in admin edit, which is holds + grade only). The meta row has the grade as a `.grade-badge` button that opens a sheet of grades (`#create-grade-modal`, `openCreateGrade`/`pickCreateGrade`), and "by" the setter.
+- **Title block:** the name is an `<input>` styled as `.detail-name` (typed in place, in Create and Edit). The meta row has the grade as a `.grade-badge` button that opens a sheet of grades (`#create-grade-modal`, `openCreateGrade`/`pickCreateGrade`), and "by" the setter.
 - **Board:** dimmed like the problem view with every hold bright (`lightAll`), assigned holds outlined and filled in their role colour. The finish zone (the top 25%) still governs the taps (`cycleHold`, and `wall_create_problem()` on the wall) but is **not drawn** on the board, on the phone or the wall (its dashed line and label were removed on 2 Nov 2026).
 - **Guidance:** no paragraph of rules. A strip pinned under the board (`.create-status`) shows start · holds · finish, each ticked off when right, and one line saying what to do next (`updateCreateStatus()`). A save that's missing something says so in a toast and takes you to it (focuses the name, opens the grade sheet).
 - **Header:** back · Undo (`createUndo` in `state.js`, snapshots of `createRoles`; the bin can be undone too) · bin (clear, or revert in edit) · ✓ save.
 - The tap rules (`cycleHold`) and the inverted save are unchanged. Circuit create (`#circuit-create`) is still the older form layout.
 - **Live LEDs while setting** (30 Oct 2026, contract §9): from the first change, every tap (and Undo, the bin, the feet rule) sends the whole selection as `preview_holds`, coalesced to one message in flight, with a keep-alive every 20 s and `end` when the view is left (`setView`), saved, or the app goes to the background. Phones check the geofence first with **no admin bypass** (`ensureCastLocation({ adminBypass: false })`); outside it nothing is sent and the note under the board says so. While a session is going the app subscribes to the channel (its only socket) to notice a cast or someone else's preview taking the board, and offers **Show on board** (`previewShowAgain`).
+
+### 4.8b Edit a problem or a circuit (8 Nov 2026, db/39)
+One **Edit** in the detail ⋮ menu opens the Create screen pre-filled; it replaced the separate "Edit holds" and "Edit grade" (the chooser and the grade sheet are gone). Phone only: the wall screen has no Edit (its Create shares `authoring.js` and is unchanged).
+- **Problems** (`#create/<id>`): holds, name, grade and feet rule in one save (`seedEdit` → `saveProblem`, the same rules and inverted storage as Create; the setter is never editable). Title "Edit problem", the ✓ is "Save changes", the bin puts it back as saved (Undo brings your holds back). The live LEDs work as in Create (contract §9). Saved → the detail with the new values; the editing phone's saved list is rewritten at once (`saveList`).
+- **Circuits** (`#circuit-create/<id>`): the sequence, start count, loop, name and grade (`seedCircuitEdit` → `saveCircuit`, natural order). Title "Edit circuit"; the bin puts it back as saved (`onCircuitCreateReset`).
+- **Who** (`canEditProblem`, `canChangeCircuit`; RLS and db/39's guards are the real gate): admins, anything; the owner, their own problem while it isn't a benchmark and nobody else has ticked it (`problem_has_other_ticks`), their own circuit while no challenge uses it and nobody else has logged a run (`circuit_has_other_logs`). The Hangout's problems have no owner, so admins only. The "someone else" answer is asked in the background the first time a detail shows for its owner (`askOthersUsed`; Edit appears when it says no), kept a minute per account (`othersKnown`), and asked again, fresh, when Edit opens: if someone has ticked it meanwhile, a toast and back to the detail. The route guards (`mayOpenProblemEdit`, `mayOpenCircuitEdit`) bounce anyone else off a typed URL.
+- **Saving:** names trimmed and unique ignoring case (the item being edited left out); a duplicate is refused before saving, and `23505` from the database says the same. The write is `.update(...).select('id')`: 0 rows means RLS refused it (an admin: "no longer an admin" + `recheckAdmin()`; an owner: "only an admin can edit this now"), `42501` means the db/39 guard refused a column.
+- **Leaving with changes asks first** (`editLeaveName`, `confirmLeaveEdit` in `app.js`, the `#edit-discard-modal` sheet): the in-app back and the bottom nav; Discard forgets the edit (`discardEdits`). Not asked: the phone's own back gesture, and Create (unchanged). A clean Edit never holds an app update (`hasUnsavedWork` checks `problemEditDirty()` / `circuitEditDirty()`).
+- **Kept on edit:** ticks, favourites, likes, `circuit_logs`, challenge links, cast history: all keyed by id. A rename is a new cast key; contract §10 lists everything that keys on a name.
 
 ### 4.9 The install flow (welcome overlay)
 `installContext()` returns `standalone | in-app | ios | android-prompt | desktop`.
@@ -328,9 +337,9 @@ RLS is **enabled on every public table**, and it does the row-level gating. Sinc
 - Public read on `problems`, `circuits`, `board_config`. **`profiles` is own-row only** (db/30): setter names come from `setter_names()`, Ranks from `leaderboard()`, the admin list from `admin_list_users()`.
 - Own-rows-only on `ticks`, `likes`, `circuit_likes`, `sessions`.
 - Insert-as-yourself (`setter_id = auth.uid()`) on `problems` and `circuits`.
-- Owner-or-admin update/delete on `circuits`.
+- `circuits` UPDATE (db/31, db/39): an admin, or the owner while no challenge uses it and nobody else has logged a run of it (`circuit_has_other_logs`); DELETE: an admin, or the owner while no challenge uses it.
 - `problems` DELETE (db/25, db/27): **an admin, or the owner while it isn't a benchmark and nobody else has ticked it**. The owner's own ticks don't count.
-- `problems` UPDATE (db/27): an admin, or the owner while it isn't a benchmark. The app only offers editing to admins. Once benchmarks became the only source of points, an owner re-grading their own benchmark through the API would have been a direct route to points, hence the lock. The trigger `problems_guard_curation` (db/25) pins `is_benchmark`, `stars` and the `setter` snapshot for non-admin API callers, on INSERT as well. It's SECURITY INVOKER and keys off `current_user in ('anon','authenticated')`, so the SQL editor and service role are never restricted.
+- `problems` UPDATE (db/27, db/39): an admin, or the owner while it isn't a benchmark **and nobody else has ticked it** (since 8 Nov 2026; WITH CHECK keeps the row the owner's). **db/39's guards** (`problems_guard_owner_edit`, `circuits_guard_owner_edit`, BEFORE UPDATE) refuse, with `42501`, any change by a non-admin API caller outside the editable columns (problems: name, grade, the three hold columns, `feet_mode`; circuits: name, grade, `hold_sequence`, `start_count`, `loops`), compared as jsonb minus those keys, so a column added later is locked by default. Once benchmarks became the only source of points, an owner re-grading their own benchmark through the API would have been a direct route to points, hence the lock. The trigger `problems_guard_curation` (db/25) pins `is_benchmark`, `stars` and the `setter` snapshot for non-admin API callers, on INSERT as well. It's SECURITY INVOKER and keys off `current_user in ('anon','authenticated')`, so the SQL editor and service role are never restricted.
 - **Row checks (db/29, 19 Sep 2026).** RLS decides *who* may write a row; these CHECKs decide *what* may go in, so a scripted API call can't bypass the app's rules. `problems`: `grade` in the Font ladder or `Project`; `name` 1–60 characters after trimming; `finish_hold` and every start and intermediate a `holdN` id, with 1–2 starts. `circuits`: `grade` in the sport ladder; the same name rule; `hold_sequence` all `holdN` ids and longer than `start_count` (which db/14 already limits to 1–2). A violation returns `23514`. "At least one intermediate" is *not* enforced, because one live problem has none. The tick/like/circuit-like policies all carry `WITH CHECK (user_id = auth.uid())`. **When a ladder changes in `state.js`, change the CHECK too**, or saves of the new grade fail.
 - `profiles` (db/30): no INSERT through the API (only the sign-up trigger creates profiles); users UPDATE only `username` and `is_public` on their own row, via column grants. **`is_admin` can't be written through the API.** Guests can't read it at all. Every new or changed `username` goes through the `profiles_nickname_guard` trigger (→ `nickname_check()`), plus the `profiles_nickname_format` CHECK.
 - `auth.users` (db/30): the `auth_users_placeholder_only` trigger refuses any email that isn't `u-<16 base32>@users.invalid` and any phone number, so no real contact detail can be stored, even through `updateUser`.
@@ -342,7 +351,8 @@ RLS is **enabled on every public table**, and it does the row-level gating. Sinc
 - `nickname_problem(n)` (anon + authenticated, the app's live check) over `nickname_check(n, ignore_id)` (no API access): returns NULL or one of `length`, `chars`, `contact`, `reserved`, `offensive`, `taken`. The same codes come back as the message of a refused save (SQLSTATE `23514`).
 - `login_email(nick)` (anon): the placeholder email for a nickname, never a real one. `setter_names()` (anon): nicknames of accounts that set something.
 - `problem_tick_counts()` (db/38): `(problem_id, climbers)`, distinct users with a tick on each problem, aggregate only, callable by anon; SECURITY DEFINER for the ticks RLS. The list's Popular sort (§4.2a); `privacy.html` says so.
-- `problem_has_other_ticks(pid)`: signed-in users only. It has to be SECURITY DEFINER because ticks RLS hides other users' rows. The db/25 delete policy uses it, and so does the app before it offers Delete to an owner.
+- `problem_has_other_ticks(pid)`: signed-in users only. It has to be SECURITY DEFINER because ticks RLS hides other users' rows. The db/25 delete policy and the db/39 update policy use it, and so does the app before it offers Edit or Delete to an owner.
+- `circuit_has_other_logs(cid)` (db/39): the same for `circuit_logs` (another climber's run); the circuits update policy and the app's circuit Edit use it.
 - `admin_delete_user(target)`: refuses yourself and other admins; writes the nickname onto their problems and circuits first (db/30).
 - `admin_set_admin(target, make_admin)`: refuses changing your own flag. Both log to `admin_actions`.
 - `challenge_leaderboard(cid)`, `challenge_compare(cid, uids)` (anon + authenticated) and `admin_delete_attempt(aid)` (authenticated; checks `is_admin()`, logs): db/31, section 4.6a.
@@ -386,7 +396,7 @@ Behind the scenes: `signUp({ email: 'u-<16 base32>@users.invalid', password: pin
 - `session`, `profile` (`id, username, is_admin, is_public`), `authReady` (in `state.js`); `authMode` (`'signup'` or `'signin'`). The PINs typed live only in the fields, cleared on switching mode; a service-worker update waits while a PIN is typed on Create.
 - `onAuthStateChange` reloads the profile, ticks and faves on every event, and clears them on sign-out (with the cached admin member list).
 - **Sign-out is this device only** (`signOut({ scope: 'local' })`, Ross, 19 Sep 2026). supabase-js drops the local session even if the server call fails, so `doSignOut` judges success by whether a session is left.
-- **An admin write that RLS refuses** (grade edit, edit holds: no error, 0 rows) shows an error and calls `recheckAdmin()`, which re-reads the profile so a demoted admin loses the admin controls without a reload.
+- **An admin write that RLS refuses** (an Edit: no error, 0 rows) shows an error and calls `recheckAdmin()`, which re-reads the profile so a demoted admin loses the admin controls without a reload.
 - The `onAuthStateChange` callback itself is synchronous (since `pb-v102`): it ignores `INITIAL_SESSION` and `TOKEN_REFRESHED`, and hands every other event to `onAuthChanged()` on a `setTimeout(…, 0)`, because supabase-js holds its auth lock while the callback runs.
 
 **The admin model:**
@@ -506,7 +516,7 @@ All of these live in `tools/`. The Python scripts find their files relative to t
 - **`manifest.json` has `"orientation": "portrait"`.** On Android installs this locks portrait, so the landscape auto-fullscreen on detail views never fires there; the expand button still works. iOS ignores the manifest orientation.
 - **Circuits Phase 3** (PBs, leaderboards from `circuit_logs`) isn't built. Mirrored circuits and a circuits Done filter are future releases. The Pat Burner challenge (section 4.6a) is phone-timed and doesn't use any of it.
 - **Challenge scores are self-reported.** The database sets the total and range-checks the reps, but it can't know whether someone really held on; admins delete suspicious attempts (logged).
-- **Problem name/setter editing isn't built** (admins can edit holds and grade).
+- **The setter can't be edited** (by design: Edit changes holds, name, grade and feet rule only, §4.8b).
 - **No offline mode beyond the shell** (section 7).
 - **The Supabase plan tier** isn't recorded anywhere. If it's Free, the project pauses after 7 days without API activity (e.g. a gym closure), and Realtime is capped at 200 concurrent connections. Since `pb-v99` the app holds no socket (casts are REST), so only the Pi uses one.
 
@@ -529,7 +539,7 @@ Security findings are **not** listed here; they're in `docs/security-findings.md
 **Minor**
 - **UI polish:**
   - The toast (z-index 200) renders behind modals (300).
-  - Escape doesn't close the edit-choice or board-saved modals.
+  - Escape doesn't close the board-saved modal.
 - **Correctness nits:**
   - `escAttr` doesn't escape `<`/`>`.
   - `loadHoldMap`/`loadMirrorMap` check their guard before the `await`. That's only safe because of the boot ordering.
