@@ -2,7 +2,7 @@
 
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 15 KB: the 5 newest session entries live here, older ones in `docs/log/` (`docs/log/2026-10.md`, `docs/log/2026-11.md`).
 
-## Current state (as of 2026-11-07)
+## Current state (as of 2026-11-08)
 - **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-acfbd791ce` since 7 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
 - **Sorting and filtering (Filter sheet, 4 Nov 2026):** a filter icon (pink + count when not default) and one-tap pills per list; the icon opens a Filter sheet (phone) or panel (wall): Sort (New default; circuits without Popular), Grade slider, quick filters. Problems and circuits, phone and wall (§4.2a). **Holds** (4 Nov): pick holds on the board to see only items that use them all, as set. **Wall search + Clear** (4 Nov): the wall searches like the phone (on-screen keyboard over the board); `✕ Clear` on every row when anything isn't default. Tried on the touchscreen (Ross, 7 Nov).
 - **Deploying:** ship by default, end to end (Decisions); `build.sh` is the build gate, a pre-commit hook scans for secrets; `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`.
@@ -19,7 +19,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 
 ## Decisions
 - **End to end (30 Oct 2026):** Claude finishes the whole job, including applying migrations (`db/apply.py`, dry run first) and Pi deploys (busy check, passwordless). Still gated: deleting user data, force pushes, secrets.
-- **Deploy policy (29 Oct 2026):** ship to `main` once checks pass; "staging first" = `dev` only; rollback = `git revert` + push. `CACHE` is stamped from the shipped files' blob ids, so docs-only pushes don't re-download the app. Details: CLAUDE.md, working rule 2.
+- **Deploy policy (29 Oct 2026):** ship to `main` once checks pass; "staging first" = `dev` only; rollback = `git revert` + push. `CACHE` is stamped from the shipped files' blob ids, so docs-only pushes don't re-download the app. Details: CLAUDE.md, working rule 2. **Confirmed 8 Nov 2026: keep shipping straight to `main`;** the bundled-release idea (staging first, What's new) is parked in `TODO.md` → Not now.
 - **Accounts (2 Nov 2026):** nickname + 4-digit PIN for new accounts; accounts made before keep their 4-word passphrase (no switch offered) and sign in through the same field. No lockout, rate limit or weak-PIN blocking, by design. No personal data, under-18s welcome, Ranks opt-in (`profiles.is_public`); a forgotten PIN or passphrase is reset by an admin (activity check, logged), giving a new PIN or new words to match. Google sign-in removed. The gym is the data controller.
 - Points only for benchmark climbs (db/27).
 - **Opening hours (7 Nov 2026):** the board and the wall screen follow one per-day schedule; no bank holidays; a one-evening "stay on until" from PB Console; `NIGHT_FORCE` stays for tests.
@@ -52,6 +52,8 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-08, chat (deploy policy kept; release workflow parked).** Ross confirmed all the earlier Waiting-on tests (cleared by Claude Code on 7 Nov). Discussed a release workflow: features on `dev`, bundled releases, a "What's new" popup on phones (new features only, never bug fixes), a PB Console switch to point the kiosk at staging, and a phone message when the board is off ("back Mon 15:30"). **Decided: park it, keep shipping straight to `main`** (Decisions). Added to `TODO.md`: the parked workflow (Not now) and the board-off message (item 7). Nothing built. **Left:** Ross: test the opening hours (Waiting on).
+
 - **2026-11-07, Claude Code (opening hours for the LEDs and the wall screen; status tidy).**
   - **Changed:** `mode.py` works out day/night from `HOURS_MON`…`HOURS_SUN` (London time, past-midnight hours allowed) and a stay-on file; `NIGHT_START`/`NIGHT_END` gone. `pb-mode.timer` on the minute; listener checks every 10 s; `kiosk.service` won't start at night (ExecCondition). Helper: `HOURS_*` keys, `stay-on HH:MM|end`, `night-hours` gone. PB Console: hours table (Config), Stay on until / End override (Board), an Opening hours check (amber while overridden), night check by the hours. Wall page: its night screen removed. Docs: `pi/README.md`, `console/README.md`, contract, overview, CLAUDE.md. Waiting on: Ross's confirmed tests cleared.
   - **Tested:** pi (160) and console (112) tests, build check; the wall page in Chrome (list, idle slides); on the Pi: night at 17:30 (kiosk stopped, screen off), Stay on 17:45 (kiosk up, LEDs idle), End (back to night, file gone), the console probe's night check.
@@ -71,9 +73,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Tested:** build; Chrome wall and phone 390 px, casts stubbed: filtering, rail in Easy, empty list, panel, taps while open never cast, idle, Create's name.
   - **Live:** `fb622d4`, CACHE `pb-2e83db5fe9`.
   - **Left:** Ross: try it on the touchscreen and a phone.
-
-- **2026-11-04, Claude Code (the hold filter, problems and circuits, phone and wall).**
-  - **Changed:** the Filter's Holds section: items using all picked holds, any role, as set. Phone: a row (thumbnail, names) opens a hold picker (whole board, live count, chips, Clear holds, Show N); pinch or expand → the fullscreen viewer, taps pick. Wall: the board beside the open panel is the picker; no Mirror, casts or `show_circuit`; idle clears. Badge +1; Reset/Clear filters clear it. Overview §4.2a/§4.7a/§4.8.
-  - **Tested:** build; Chrome 390×844 and 1280×720 `?wall`, broadcast stubbed: 1–3 holds match a recount, faded hold, chips, Clear, Reset, viewer, circuits, drag ≠ tap, no casts, idle.
-  - **Live:** `25ca555`, CACHE `pb-c900459de0`.
-  - **Left:** Ross: try it with real fingers on a phone and the touchscreen.

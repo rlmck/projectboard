@@ -20,7 +20,7 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 ## Pi and infrastructure
 5. **Circuit run screen: laps on the phone and wall (session 2).** The Pi already takes `laps` (0 = endless, 1–10) since 5 Nov 2026; the Cast sheet still sends only `loop` (contract §8.1, §8.4).
 6. **Pull the Pi-only files into `pi/`** (PB Console → Deploy): `pb-netwatch.sh` v2 and its unit, the `pb-rescue` profile (secrets stripped), the newer `pb-netlog` unit; then add their `install.sh` lines. Look at the kernel errors seen on 28 Oct (about 3,460 in 24 h, nearly all kernel) in Logs once the gym is closed.
-7. **A heartbeat from the Pi to Supabase** so the app can show "board online".
+7. **A heartbeat from the Pi to Supabase** so the app can show "board online". Also: when the board is off (opening hours), a phone cast says so instead of "Cast: X", e.g. "Board's off, back Mon 15:30" (needs the hours where the app can read them; open question 2).
 8. **A mock listener on the laptop** that turns a cast into LED indices (lower priority now the webcam shows the real board).
 
 ## App design and features
@@ -39,4 +39,4 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 17. **Known bugs to triage:** `docs/codebase-overview.md` §13.
 
 ## Not now
-Don't build yet: Circuits Phase 3 (PBs, leaderboards), mirrored circuits, a Done filter for circuits ("done" = done both sides, problems only), tags, session/logbook tracking beyond ticks, the Flutter migration.
+Don't build yet: Circuits Phase 3 (PBs, leaderboards), mirrored circuits, a Done filter for circuits ("done" = done both sides, problems only), tags, session/logbook tracking beyond ticks, the Flutter migration; **the release workflow** (parked 8 Nov 2026, revisit later; ship straight to `main` until then): features on `dev`, bundled releases tested on staging, a "What's new" popup on phones for new features only (never bug fixes), a PB Console switch pointing the kiosk at staging that reverts itself.
