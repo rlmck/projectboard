@@ -55,6 +55,7 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
 - **2026-11-08, Claude Code (no scroll bars on the wall screen).**
   - **Changed:** one rule in `styles.css` under `body.wall` (`scrollbar-width: none` + `::-webkit-scrollbar` hidden, every element, plus the page) hides every scroll bar in wall mode: the problem and circuit lists, the Filter panel, the Cast sheet, any modal, and new ones automatically. Overflow untouched, so drag and momentum scroll as before; no new values.
   - **Tested:** build check; Chrome on `/?wall`: Problems list (with the keyboard open), Circuits list, Filter panel, Create: every scrollable area has no bar and no gutter, and the lists still scroll; the phone view unchanged (page bar still there). No real casts sent.
+  - **Live:** `26e2799`, CACHE `pb-3116114eba`.
   - **Left:** Ross: check it on the touchscreen.
 
 - **2026-11-08, Claude Code (one Edit for problems and circuits; owners can edit; TODO 9 names).**
