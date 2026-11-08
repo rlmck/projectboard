@@ -235,6 +235,12 @@
   document.getElementById('menu-edit').addEventListener('click', openProblemEdit);
   document.getElementById('menu-bench').addEventListener('click', toggleBenchmark);
   document.getElementById('menu-delete').addEventListener('click', openDeleteConfirm);
+  document.getElementById('menu-move').addEventListener('click', openProblemMove);
+  document.getElementById('move-cancel').addEventListener('click', closeMoveConfirm);
+  document.getElementById('move-confirm').addEventListener('click', doMoveToCircuits);
+  document.getElementById('move-modal').addEventListener('click', e => {
+    if (e.target.id === 'move-modal') closeMoveConfirm();
+  });
   document.getElementById('menu-info').addEventListener('click', openInfo);
 
   // Delete confirm modal
@@ -625,7 +631,7 @@
       if (n && n.value.trim()) return true;
     }
     if (currentView === 'circuit-create') {
-      if (ccEditingId) return circuitEditDirty();
+      if (ccEditingId || ccMoveId) return circuitEditDirty();   // an Edit or a Move: only if changed
       if (ccSeq.length) return true;
       if (ccGrade) return true;
       const n = document.getElementById('cc-name');

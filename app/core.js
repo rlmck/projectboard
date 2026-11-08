@@ -1044,6 +1044,18 @@
         initCircuitCreate(param);
         setView('circuit-create');
         break;
+      case 'move':
+        // #move/<problem id> = Move a problem into Circuits (admins only, db/40):
+        // the circuit Create screen pre-filled from the problem. Anyone else, or a
+        // benchmark, goes to the problem. Wait for auth so admin is known.
+        if (!authReady) break;
+        {
+          const p = allProblems.find(x => String(x.id) === String(param));
+          if (!isAdmin() || (p && p.is_benchmark)) { redirectRoute(param ? '#detail/' + encodeURIComponent(param) : '#list'); break; }
+        }
+        initCircuitMove(param);
+        setView('circuit-create');
+        break;
       case 'challenge':
         // Open to guests (rules + a sign-in prompt); setView first so the clock's
         // wake lock and body class are set up on a visible view.
@@ -1104,6 +1116,7 @@
   function backParentHash() {
     const { route, param } = parseHash();
     if (route === 'circuit-create' && param) return '#circuit/' + encodeURIComponent(param);
+    if (route === 'move' && param) return '#detail/' + encodeURIComponent(param);
     if (route === 'circuit' || route === 'circuit-create') return '#circuits';
     if (route === 'challenge') {
       const ch = challengeById(param);

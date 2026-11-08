@@ -734,6 +734,7 @@
   function buildCcGrades() {
     document.getElementById('cc-grades').innerHTML =
       gradeTabButtons(SPORT_GRADE_ORDER, g => g === ccGrade);
+    updateCcMoveGrade();
   }
   function buildCcStartCount() {
     document.querySelectorAll('#cc-start-count .cc-seg-btn').forEach(b =>
@@ -748,15 +749,24 @@
   // Create and Edit share the circuit create screen (#circuit-create, and
   // #circuit-create/<id> for Edit: the sequence, start count, loop, name and grade,
   // never the setter; db/39).
-  function setCircuitCreateMode(editing) {
-    document.getElementById('cc-title').textContent = editing ? 'Edit circuit' : 'Create circuit';
-    document.getElementById('cc-save').setAttribute('aria-label', editing ? 'Save changes' : 'Save circuit');
-    document.getElementById('cc-reset').setAttribute('aria-label', editing ? 'Undo all changes' : 'Clear all holds');
+  // Move to Circuits (#move/<problem id>, admins) uses the same screen too.
+  function setCircuitCreateMode(editing, moving) {
+    document.getElementById('cc-title').textContent =
+      moving ? 'Move to Circuits' : editing ? 'Edit circuit' : 'Create circuit';
+    document.getElementById('cc-save').setAttribute('aria-label',
+      moving ? 'Move to Circuits' : editing ? 'Save changes' : 'Save circuit');
+    document.getElementById('cc-reset').setAttribute('aria-label',
+      editing || moving ? 'Undo all changes' : 'Clear all holds');
+    document.getElementById('cc-move-note').hidden = !moving;
+    const feet = moving ? feetRule(moving) : 'any';
+    document.getElementById('cc-move-feet').hidden = feet === 'any';
+    document.getElementById('cc-move-feet-rule').textContent = feetLabel(feet);
+    updateCcMoveGrade();
   }
 
   function resetCircuitCreate() {
     ccSeq = []; ccStartCount = 2; ccLoop = false; ccGrade = '';
-    ccEditingId = null; ccEditBase = '';
+    ccEditingId = null; ccEditBase = ''; ccMoveId = null;
     const nameEl = document.getElementById('cc-name'); if (nameEl) nameEl.value = '';
     document.getElementById('cc-error').textContent = '';
     setCircuitCreateMode(null);
@@ -769,11 +779,12 @@
     const nameEl = document.getElementById('cc-name');
     return JSON.stringify([((nameEl && nameEl.value) || '').trim(), ccGrade, ccStartCount, ccLoop, ccSeq]);
   }
-  const circuitEditDirty = () => !!ccEditingId && circuitEditKey() !== ccEditBase;
+  const circuitEditDirty = () => !!(ccEditingId || ccMoveId) && circuitEditKey() !== ccEditBase;
 
   // Fill the screen from a circuit (Edit), stored in natural order (not inverted).
   function seedCircuitEdit(c) {
     ccEditingId = String(c.id);
+    ccMoveId = null;
     ccSeq = circuitSeq(c).slice();
     ccStartCount = c.start_count === 1 ? 1 : 2;
     ccLoop = !!c.loops;
@@ -782,6 +793,144 @@
     document.getElementById('cc-error').textContent = '';
     setCircuitCreateMode(c);
     ccEditBase = circuitEditKey();
+  }
+
+  // ── Move a problem into Circuits (admins only, db/40) ──────────────────────────
+  // The problem's holds in problemHoldOrder() order (starts, then intermediates,
+  // then the finish), on the unmirrored side (there are no mirrored circuits). A
+  // lone start is stored twice, so it becomes one start. The feet signs are never
+  // holds. The middle holds are in the order they were first tapped when the
+  // problem was set, not necessarily climbing order: the screen asks the admin to
+  // check before saving.
+  function problemAsCircuit(p) {
+    const order = problemHoldOrder(p).filter(h => !FEET_LIGHT_HOLDS.has(h));
+    if (order.length < 2) return { seq: order, startCount: 1 };
+    const one = order[0] === order[1];
+    return { seq: one ? order.slice(1) : order, startCount: one ? 1 : 2 };
+  }
+  const movingProblem = () => ccMoveId ? allProblems.find(x => String(x.id) === String(ccMoveId)) : null;
+
+  // The problem's Font grade beside the picked sport grade, to sanity-check the
+  // conversion (FONT_TO_SPORT in state.js).
+  function updateCcMoveGrade() {
+    const el = document.getElementById('cc-move-grade');
+    if (!el) return;
+    const p = movingProblem();
+    el.hidden = !p;
+    if (!p) return;
+    const guess = FONT_TO_SPORT[p.grade];
+    const was = isGraded(p) ? `<b>${escHtml(fontGrade(p.grade))}</b> (Font)` : `<b>${escHtml(p.grade || 'no grade')}</b>, no sport guess`;
+    el.innerHTML = `As a problem: ${was}. ` + (
+      !ccGrade ? 'Pick a sport grade below.'
+      : ccGrade === guess ? `Picked <b>${escHtml(ccGrade)}</b> (sport), a best guess: check it.`
+      : `Picked <b>${escHtml(ccGrade)}</b> (sport).`);
+  }
+
+  function seedCircuitMove(p) {
+    ccEditingId = null;
+    ccMoveId = String(p.id);
+    const { seq, startCount } = problemAsCircuit(p);
+    ccSeq = seq;
+    ccStartCount = startCount;
+    ccLoop = false;                               // the circuit defaults
+    ccGrade = FONT_TO_SPORT[p.grade] || '';       // "Project" or unknown: the admin picks
+    document.getElementById('cc-name').value = p.name || '';
+    document.getElementById('cc-error').textContent = '';
+    setCircuitCreateMode(null, p);
+    ccEditBase = circuitEditKey();
+  }
+
+  // #move/<problem id>: seed as we land on it; the router running again while it's
+  // open keeps the changes (as Edit does).
+  function initCircuitMove(pid) {
+    const same = String(ccMoveId) === String(pid);
+    if (!same || (currentView !== 'circuit-create' && !circuitEditDirty())) {
+      const p = allProblems.find(x => String(x.id) === String(pid));
+      if (!p) { redirectRoute('#detail/' + encodeURIComponent(pid)); return; }
+      seedCircuitMove(p);
+    }
+    buildCcGrades(); buildCcStartCount(); buildCcLoop();
+    applyCircuitCreate();
+  }
+
+  // The confirm sheet, with the counts the move will delete (an admin-only RPC:
+  // ticks and favourites are private to each climber).
+  async function openMoveConfirm(p) {
+    const errEl = document.getElementById('cc-error');
+    const btn = document.getElementById('cc-save');
+    btn.disabled = true; btn.classList.add('casting');
+    const { data, error } = await sb.rpc('admin_problem_move_counts', { pid: p.id });
+    btn.disabled = false; btn.classList.remove('casting');
+    if (error) {
+      if (error.code === '42501') { errEl.textContent = 'Only admins can move problems: you may no longer be one.'; recheckAdmin(); }
+      else errEl.textContent = 'Couldn’t check its ticks and favourites — try again.';
+      return;
+    }
+    if (currentView !== 'circuit-create' || String(ccMoveId) !== String(p.id)) return;
+    const row = (data && data[0]) || { ticks: 0, favourites: 0 };
+    const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+    document.getElementById('move-text').innerHTML =
+      `This deletes the problem <b>${escHtml(displayName(p))}</b> and its ` +
+      `${plural(row.ticks, 'tick')} and ${plural(row.favourites, 'favourite')}. This can’t be undone.`;
+    document.getElementById('move-error').textContent = '';
+    document.getElementById('move-modal').classList.add('show');
+  }
+  function closeMoveConfirm() { document.getElementById('move-modal').classList.remove('show'); }
+
+  // The move, in one transaction (db/40): the circuit is created with the
+  // problem's setter, then its ticks, favourites and the problem are deleted.
+  async function doMoveToCircuits() {
+    const p = movingProblem();
+    const errEl = document.getElementById('move-error');
+    if (!p) { errEl.textContent = 'Couldn’t find that problem — it may have been deleted.'; return; }
+    const name = document.getElementById('cc-name').value.trim();
+    const btn = document.getElementById('move-confirm');
+    errEl.textContent = '';
+    btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Moving…';
+    const { data: cid, error } = await sb.rpc('admin_move_problem_to_circuit', {
+      pid: p.id, p_name: name, p_grade: ccGrade, p_sequence: ccSeq.slice(),
+      p_start_count: ccStartCount, p_loops: ccLoop
+    });
+    btn.disabled = false; btn.textContent = prev;
+    if (error || !cid) {
+      const m = (error && error.message) || '';
+      if (error && error.code === '23505') {
+        closeMoveConfirm();
+        document.getElementById('cc-error').textContent = 'A circuit already has that name — rename it, then save.';
+        document.getElementById('cc-name').focus();
+        return;
+      }
+      errEl.textContent =
+        error && error.code === '42501' ? 'Only admins can move problems: you may no longer be one.'
+        : m === 'benchmark' ? 'It’s a benchmark now: remove the benchmark first.'
+        : m === 'not_found' ? 'That problem has already gone.'
+        : error && error.code === '23514' ? 'The circuit isn’t valid (grade or holds): check them and try again.'
+        : 'Couldn’t move it: ' + (m || 'try again.');
+      if (error && error.code === '42501') recheckAdmin();
+      return;
+    }
+
+    // Read the new circuit back as the list loads it; build it here if that fails.
+    let c = null;
+    const got = await sb.from('circuits').select('*').eq('id', cid).maybeSingle();
+    if (!got.error && got.data) c = got.data;
+    if (!c) c = { id: cid, name, grade: ccGrade, setter_id: p.setter_id, setter: p.setter || '', comment: '',
+                  hold_sequence: ccSeq.slice(), start_count: ccStartCount, loops: ccLoop,
+                  created_at: new Date().toISOString(), led_track: null };
+
+    const id = String(p.id);
+    allProblems = allProblems.filter(x => String(x.id) !== id);
+    myTicks.delete(id); myTicksNormal.delete(id); myTicksMirrored.delete(id); myFaves.delete(id);
+    allCircuits.push(c);
+    saveList('problems', allProblems);
+    saveList('circuits', allCircuits);
+    leaderboardLoaded = false;
+    closeMoveConfirm();
+    resetCircuitCreate();
+    renderList();
+    renderCircuits();
+    showToast('Moved to Circuits ✓', 'success');
+    redirectRoute('#circuit/' + encodeURIComponent(c.id));
   }
 
   // On entry: with an editId, seed from that circuit as we land on it (the router
@@ -807,7 +956,7 @@
           });
         }
       }
-    } else if (ccEditingId) {
+    } else if (ccEditingId || ccMoveId) {
       resetCircuitCreate();
     }
     buildCcGrades(); buildCcStartCount(); buildCcLoop();
@@ -817,6 +966,13 @@
   // The header bin: clears everything in Create; in Edit it puts the circuit back
   // as saved (there's no undo for the whole circuit, so it never wipes the name).
   function onCircuitCreateReset() {
+    const p = movingProblem();
+    if (p) {   // Move: back to the problem as converted
+      seedCircuitMove(p);
+      buildCcGrades(); buildCcStartCount(); buildCcLoop();
+      applyCircuitCreate();
+      return;
+    }
     if (ccEditingId) {
       const c = allCircuits.find(x => String(x.id) === String(ccEditingId));
       if (c) {
@@ -848,7 +1004,17 @@
     if (ccEditingId && !editing) { errEl.textContent = 'Couldn’t find that circuit — go back and reopen it.'; return; }
     const lname = name.toLowerCase();
     if (allCircuits.some(c => c !== editing && circuitName(c).toLowerCase() === lname)) {
-      errEl.textContent = 'That name is taken — pick another.';
+      errEl.textContent = ccMoveId ? 'A circuit already has that name — rename it, then save.' : 'That name is taken — pick another.';
+      return;
+    }
+
+    // Move to Circuits (admins): confirm, then one RPC does the lot (db/40).
+    if (ccMoveId) {
+      const p = movingProblem();
+      if (!p) { errEl.textContent = 'Couldn’t find that problem — it may have been deleted.'; return; }
+      if (!isAdmin()) { errEl.textContent = 'Only admins can move problems.'; return; }
+      if (p.is_benchmark) { errEl.textContent = 'It’s a benchmark: remove the benchmark first.'; return; }
+      openMoveConfirm(p);
       return;
     }
 

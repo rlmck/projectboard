@@ -2004,6 +2004,18 @@
     #view-circuit-create .board-graphic { width: 100%; height: auto; display: block; border-radius: var(--radius-md); }
     #cc-board { cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
     #cc-hold-layer { pointer-events: none; }
+    /* Move to Circuits (admins): the check-the-order prompt above the board, and
+       the problem's Font grade beside the picked sport grade. */
+    .cc-move-note {
+      background: var(--accent-a12); border: 1px solid var(--accent-a40);
+      border-radius: var(--radius-md); padding: 10px 12px; margin: 0 0 10px;
+      font-size: 13px; line-height: 1.45; color: var(--text);
+    }
+    .cc-move-note p { margin: 0; }
+    .cc-move-note p + p { margin-top: 6px; color: var(--text-muted); }
+    .cc-move-note[hidden], .cc-move-note p[hidden], .cc-move-grade[hidden] { display: none; }
+    .cc-move-grade { font-size: 13px; color: var(--text-muted); margin: -2px 0 8px; }
+    .cc-move-grade b { color: var(--text); }
     .cc-seq-summary { display: flex; gap: 8px; margin: 0 0 14px; }
     .cc-seq-summary span {
       flex: 1; text-align: center; font-size: 13px; font-weight: 700;

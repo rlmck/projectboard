@@ -106,7 +106,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 | `admin.js` | The `#admin` hub: users, promote/demote, delete (RPCs) |
 | `account.js` | Ticks, favourites, filter pills, **auth**, display-name modal, profile |
 | `authoring.js` | Create/edit problem, **the live LEDs while setting** (`preview_holds`), the `#outlines` hold-outline editor, circuit helpers |
-| `circuits.js` | Circuits list, detail (swipe, info), **circuit cast** (Cast sheet, run screen, `circuit_logs`), create, delete |
+| `circuits.js` | Circuits list, detail (swipe, info), **circuit cast** (Cast sheet, run screen, `circuit_logs`), create, delete, **Move a problem to Circuits** (admins, db/40) |
 | `challenge.js` | Challenges (db/31): the `#challenge` view (rules, the phone-timed attempt, summary, save + retry), your best and history, the challenge boards on Ranks |
 | `leaderboard.js` | `#leaderboard` (Points, or a challenge board via the tabs) |
 | `wall.js` | The **wall-screen mode** (`/?wall`, the kiosk): list + board + cast, circuits (a tap lights all its holds, `show_circuit`; Start circuit opens the same Cast sheet), **Create** (on-screen keyboard, `wall_create_problem`), read-only Ranks, Get the app QR, idle slides, offline note (overview §4.7a; no night screen: outside the opening hours the Pi turns the screen off). Off unless `WALL` (`state.js`) |
@@ -164,7 +164,7 @@ What each view does in detail (fullscreen viewer, create, the outline editor, ci
 | Anon key | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA` |
 
 - **Tables, policies and functions:** overview §5. RLS is on everywhere and is the real gate; the app's admin-only UI is just UX.
-- **DB scripts** live in local `db/`, numbered and idempotent. Since 30 Oct 2026 Claude applies them with `python db/apply.py` (dry run first; working rule 2). 01–39 are applied. The index and warnings are in `db/README.md`. A new script takes the next number.
+- **DB scripts** live in local `db/`, numbered and idempotent. Since 30 Oct 2026 Claude applies them with `python db/apply.py` (dry run first; working rule 2). 01–40 are applied. The index and warnings are in `db/README.md`. A new script takes the next number.
 - **Admin** = `profiles.is_admin`. It's set in the Supabase dashboard or in-app through `admin_set_admin()`, which only an existing admin can call and which refuses changing your own flag. **Nobody can promote themselves.**
 - **Who can do what:** browsing and casting need no login. Ticking, favourites and creating need sign-in. Admins edit and delete any problem or circuit. One **Edit** (the Create screen, pre-filled: holds, name, grade, feet rule; never the setter) is also open to the owner while nobody else has ticked it (a circuit: nobody else's run) and it isn't a benchmark or a challenge's circuit (db/39); an owner can delete their own problem only while nobody else has ticked it. Details: overview §5–6.
 - **Who cast is never in a broadcast** (the channel is public). A signed-in member's cast is recorded privately in `cast_log` (db/34: insert-only, no API reads) by `logCast()` in `problems.js`; only PB Console reads it, over direct Postgres. Keep `privacy.html` in step.

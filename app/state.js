@@ -122,6 +122,15 @@
   // Sport grades (lowercase French), a different ladder from boulder problems.
   const SPORT_GRADE_ORDER = ['4','5a','5b','5c','6a','6a+','6b','6b+','6c','6c+','7a','7a+','7b','7b+','7c','7c+','8a','8a+','8b'];
   const sportRank = g => { const i = SPORT_GRADE_ORDER.indexOf(g); return i === -1 ? 999 : i; };
+  // Move to Circuits (admins, db/40): a problem's Font grade -> a best-guess sport
+  // grade for the pre-filled circuit, one step up the sport ladder (the admin checks
+  // it; the Font grade is shown beside it). The one place this table lives. A grade
+  // not in it (e.g. "Project") pre-fills nothing.
+  const FONT_TO_SPORT = {
+    '5': '5c', '5+': '6a', '6a': '6a+', '6a+': '6b', '6b': '6b+', '6b+': '6c',
+    '6c': '6c+', '6c+': '7a', '7a': '7a+', '7a+': '7b', '7b': '7b+', '7b+': '7c',
+    '7c': '7c+', '7c+': '8a', '8a': '8a+'
+  };
 
   let allCircuits = [];
   let circuitsLoaded = false;
@@ -138,6 +147,7 @@
   let ccGrade = '';
   let ccEditingId = null;  // when set, the circuit create view is editing this circuit (#circuit-create/<id>)
   let ccEditBase = '';     // the edit's starting point (circuitEditKey())
+  let ccMoveId = null;     // when set, the screen is moving this PROBLEM into Circuits (#move/<problem id>, admins)
 
   // ── Leaderboard ─────────────────────────────────────────────────────────────
   let leaderboard = [];          // [{ rank, user_id, username, points, sends }] from the leaderboard() RPC

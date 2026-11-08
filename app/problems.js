@@ -1240,6 +1240,9 @@
     if (edit) edit.hidden = !canEditProblem(p);
     const del = document.getElementById('menu-delete');
     if (del) del.hidden = !(p && (isAdmin() || (owner && othersUsed('p', p.id) !== true)));
+    // Move to Circuits: admins only, never a benchmark (unmark it first; db/40).
+    const move = document.getElementById('menu-move');
+    if (move) move.hidden = !(show && !p.is_benchmark);
     const bench = document.getElementById('menu-bench');
     if (bench && show) {
       const on = !!currentProblem.is_benchmark;
@@ -1408,6 +1411,12 @@
   // screen asks again and sends them back if someone else has ticked it).
   const mayOpenProblemEdit = p =>
     !!p && (isAdmin() || (isOwnProblem(p) && !p.is_benchmark && othersUsed('p', p.id) !== true));
+
+  // Move to Circuits (admins, db/40): the circuit Create screen, pre-filled.
+  function openProblemMove() {
+    const p = currentProblem;
+    if (p && isAdmin() && !p.is_benchmark) location.hash = '#move/' + encodeURIComponent(p.id);
+  }
 
   function openProblemEdit() {
     const p = currentProblem;

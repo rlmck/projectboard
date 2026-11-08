@@ -466,6 +466,10 @@
       return p ? displayName(p) : 'this problem';
     }
     if (currentView === 'circuit-create' && circuitEditDirty()) {
+      if (ccMoveId) {
+        const p = allProblems.find(x => String(x.id) === String(ccMoveId));
+        return p ? displayName(p) : 'this problem';
+      }
       const c = allCircuits.find(x => String(x.id) === String(ccEditingId));
       return c ? circuitName(c) : 'this circuit';
     }
@@ -474,7 +478,7 @@
   // Discard: forget the edit, so opening Edit again starts from what's saved.
   function discardEdits() {
     if (currentView === 'create' && editingProblemId) resetCreate();
-    if (currentView === 'circuit-create' && ccEditingId) resetCircuitCreate();
+    if (currentView === 'circuit-create' && (ccEditingId || ccMoveId)) resetCircuitCreate();
   }
 
   // ── Live LEDs while setting (cast contract §9) ────────────────────────────────
