@@ -3,7 +3,7 @@
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 15 KB: the 5 newest session entries live here, older ones in `docs/log/` (`docs/log/2026-10.md`, `docs/log/2026-11.md`).
 
 ## Current state (as of 2026-11-08)
-- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-acfbd791ce` since 7 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
+- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-7ed312f8da` since 8 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
 - **Sorting and filtering (Filter sheet, 4 Nov 2026):** a filter icon (pink + count when not default) and one-tap pills per list; the icon opens a Filter sheet (phone) or panel (wall): Sort (New default; circuits without Popular), Grade slider, quick filters. Problems and circuits, phone and wall (§4.2a). **Holds** (4 Nov): pick holds on the board to see only items that use them all, as set. **Wall search + Clear** (4 Nov): the wall searches like the phone (on-screen keyboard over the board); `✕ Clear` on every row when anything isn't default. Tried on the touchscreen (Ross, 7 Nov).
 - **Deploying:** ship by default, end to end (Decisions); `build.sh` is the build gate, a pre-commit hook scans for secrets; `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`.
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs; about 0.25–0.45 s from cast to LEDs). People use it: 50 casts on the evening of 26 Oct, 114 in the 3 days to 28 Oct. **Every hold's LED is checked on the wall** (28 Oct, `pb-ledmap`); three app labels were shifted and fixed by db/32 (188 real holds). **Mirrored casts are checked on the wall** (Ross, by 7 Nov), the feet rule both ways too, and the geofence centre on site.
@@ -22,6 +22,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **Deploy policy (29 Oct 2026):** ship to `main` once checks pass; "staging first" = `dev` only; rollback = `git revert` + push. `CACHE` is stamped from the shipped files' blob ids, so docs-only pushes don't re-download the app. Details: CLAUDE.md, working rule 2. **Confirmed 8 Nov 2026: keep shipping straight to `main`;** the bundled-release idea (staging first, What's new) is parked in `TODO.md` → Not now.
 - **Accounts (2 Nov 2026):** nickname + 4-digit PIN for new accounts; accounts made before keep their 4-word passphrase (no switch offered) and sign in through the same field. No lockout, rate limit or weak-PIN blocking, by design. No personal data, under-18s welcome, Ranks opt-in (`profiles.is_public`); a forgotten PIN or passphrase is reset by an admin (activity check, logged), giving a new PIN or new words to match. Google sign-in removed. The gym is the data controller.
 - Points only for benchmark climbs (db/27).
+- **Editing (8 Nov 2026):** one Edit (the Create screen) for problems and circuits; the owner may edit while nobody else has ticked it (circuits: nobody else's run), never a benchmark, a challenge's circuit or The Hangout's; the setter is never editable; the name stays the cast key (db/39, contract §10).
 - **Opening hours (7 Nov 2026):** the board and the wall screen follow one per-day schedule; no bank holidays; a one-evening "stay on until" from PB Console; `NIGHT_FORCE` stays for tests.
 - **Board sets, Specific feet (7 Nov 2026, planned):** a new set per rearrange, the old archived (ticks kept); hands only on wooden holds; Specific feet never lit. `docs/board-setup-plan.md`.
 - **Feet rule (30 Oct 2026):** every problem is Any feet (default), Orange feet only or Black feet only (`problems.feet_mode`, db/33). Any lights no sign; Orange lights B2 (LED 25), Black lights B1 (LED 26), never mirrored; `hold2`/`hold21` are never in a hold list. Migrated: both signs or none → Any, one sign → that rule. Cast contract §6.5.
@@ -51,6 +52,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-08, Claude Code (one Edit for problems and circuits; owners can edit; TODO 9 names).**
+  - **Changed:** the detail ⋮ Edit opens the Create screen pre-filled (problems: holds, name, grade, feet rule; circuits: sequence, start count, loop, name, grade; never the setter), replacing Edit holds / Edit grade. Owners may edit their own while nobody else has ticked it (circuits: nobody else's run), never a benchmark, a challenge's circuit or The Hangout's; db/39 (applied) adds that to RLS plus column guards. Leaving with changes asks first. Names stay the cast key (contract §10; open question 4 closed): no Pi change. Phone only; the wall's Create unchanged.
+  - **Tested:** db/39 behaviour test (rolled back; fails on the old schema); Chrome 390 px, writes stubbed: each role, benchmark, challenge circuit, duplicate names, discard, the wall's Create; a renamed cast on `cast-test.html` (its checks pass).
+  - **Live:** `446cf22`, CACHE `pb-7ed312f8da`.
+  - **Left:** Ross: try it on a phone and the board (the report's list). Not asked on the phone's own back gesture.
+
 - **2026-11-08, chat (deploy policy kept; release workflow parked).** Ross confirmed all the earlier Waiting-on tests (cleared by Claude Code on 7 Nov). Discussed a release workflow: features on `dev`, bundled releases, a "What's new" popup on phones (new features only, never bug fixes), a PB Console switch to point the kiosk at staging, and a phone message when the board is off ("back Mon 15:30"). **Decided: park it, keep shipping straight to `main`** (Decisions). Added to `TODO.md`: the parked workflow (Not now) and the board-off message (item 7). Nothing built. **Left:** Ross: test the opening hours (Waiting on).
 
 - **2026-11-07, Claude Code (opening hours for the LEDs and the wall screen; status tidy).**
@@ -66,9 +73,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Tested:** pi/console tests, build check; the simulator matches `circuit.py` (6000 frames), runs in Chrome.
   - **Live:** `fe8b40e`, CACHE `pb-1be624474b`; Pi deployed 09:00.
   - **Left:** Ross: watch it on the webcam (Waiting on). Next: laps on the phone and wall (TODO 6). Night is 23:00–15:00 on the Pi (`NIGHT_END=15:00`, since 4 Nov).
-
-- **2026-11-04, Claude Code (wall search and the Clear pill, phone and wall).**
-  - **Changed:** wall rows get the phone's search (same state and matching) on Create's keyboard, now shared (`wallKbOpen(target)`), docked over the board for a search. A tap outside closes it and never casts; panel, page change, Clear, idle close it. `✕ Clear` pinned right on all four rows (the phone had none since the Filter sheet) = `clearFilters`, now clearing the wall's search. Overview §4.2a/§4.7a.
-  - **Tested:** build; Chrome wall and phone 390 px, casts stubbed: filtering, rail in Easy, empty list, panel, taps while open never cast, idle, Create's name.
-  - **Live:** `fb622d4`, CACHE `pb-2e83db5fe9`.
-  - **Left:** Ross: try it on the touchscreen and a phone.
