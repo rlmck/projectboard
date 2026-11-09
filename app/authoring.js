@@ -685,7 +685,7 @@
   const olPts = () => OL.shapes[olCurHold()] || [];
   const olW = () => OL.fitW * OL.s;
   const olH = () => olW() / (OL.aspect || 1);
-  const olLabel = h => `${gridName(holdNum(h))} · hold ${holdNum(h)}`;
+  const olLabel = h => `${holdName(h)} · hold ${holdNum(h)}`;
   function olStrip(src) {
     const out = {};
     Object.keys(src || {}).forEach(k => { if (k !== '__meta' && Array.isArray(src[k])) out[k] = src[k]; });
@@ -1006,8 +1006,8 @@
     if (OL.staleDraft) return olSetNote('Someone published outlines since this draft was saved. Publishing overwrites theirs.', 'Discard my draft');
     if (OL.drawing) {
       return olSetNote(pts.length
-        ? `Tap around ${gridName(holdNum(olCurHold()))} to outline it · ${pts.length} point${pts.length === 1 ? '' : 's'}`
-        : `${gridName(holdNum(olCurHold()))} has no outline. Tap around the hold to draw one.`,
+        ? `Tap around ${holdName(olCurHold())} to outline it · ${pts.length} point${pts.length === 1 ? '' : 's'}`
+        : `${holdName(olCurHold())} has no outline. Tap around the hold to draw one.`,
         pts.length >= 3 ? 'Done' : '');
     }
     if (OL.preview) {
@@ -1377,7 +1377,7 @@
     if (OL.baseline[h]) OL.shapes[h] = olClone(OL.baseline[h]); else delete OL.shapes[h];
     OL.sel = null; OL.drawing = olPts().length < 3;
     olRenderCur(); olStatus();
-    showToast(`${gridName(holdNum(h))} is back to the published outline`, 'success');
+    showToast(`${holdName(h)} is back to the published outline`, 'success');
   }
 
   function olDiscardAll() {

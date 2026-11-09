@@ -45,7 +45,7 @@ print('  mode        %s  (%s)' % (s.get('mode'), s.get('mode_reason')))
 print('  last frame  %s' % ago(s.get('last_message_at')))
 print('  last cast   %s  %s' % (repr(s['last_cast_name']) if s.get('last_cast_name') else '-', ago(s.get('last_cast_at'))))
 print('  casts       %s shown, %s ignored at night (since the listener started %s)' % (s.get('casts_shown'), s.get('casts_ignored_night'), ago(s.get('started_at'))))
-print('  mirror map  loaded %s' % ago(s.get('mirror_map_at')))
+print('  holds       %s from %s, loaded %s' % (s.get('holds') or '-', s.get('holds_source') or '-', ago(s.get('mirror_map_at'))))
 print('  idle        %s%s' % (s.get('idle_plan'), '  (benchmarks for the teaser: %s)' % s['benchmarks'] if s.get('benchmarks') is not None else ''))
 print('  leds        %s%s%s' % (s.get('idle_pattern') or s.get('leds'), '  %s fps, %s ms a frame' % (s.get('idle_fps'), s.get('idle_frame_ms')) if s.get('idle_fps') else '',
       '  capped %s frames' % s['idle_capped_frames'] if s.get('idle_capped_frames') else ''))

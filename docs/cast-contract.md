@@ -57,9 +57,9 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
   - on `cast_problem`, checks the payload (§3: `problem_name` a string of 1–60 characters, `mirror` true or absent) and logs and skips anything else;
   - logs each cast with its origin, e.g. `cast received: 'Good Bug' mirrored [wall, guest]` (or `cast 'Good Bug' ignored: night mode [phone, member]`); the `[source, who]` part is left off when the app sent neither (before 29 Oct 2026). PB Console's Activity tab reads these lines;
   - looks the problem up by exact name over REST (one retry); an unknown name leaves the board as it is;
-  - builds the frame by §6.2–6.5: roles are classified on the stored ids first, ids off the grid are then dropped and logged, and with `mirror` each hold moves to its partner, keeping its role; the feet-rule light comes from `feet_mode` (§6.5), never mirrored. Brightness is 0.5, with a whole-frame current cap;
+  - builds the frame by §6.2–6.5: roles are classified on the stored ids first, ids with no LED (not in the holds table, or footholds) are then dropped and logged, and with `mirror` each hold moves to its partner, keeping its role; the feet-rule light comes from `feet_mode` (§6.5), never mirrored. Brightness is 0.5, with a whole-frame current cap;
   - latest cast wins: a cast still being fetched when a newer one arrives is dropped;
-  - loads the mirror map on every join and refreshes it every 10 min; a mirrored cast with no map loaded is skipped;
+  - loads the **holds table** (db/41: each hold's LED and mirror partner, §6.3–6.4) on every join and every 10 min, and keeps a copy in `/var/lib/projectboard/cache/holds.json`, used at once on the next start, so a boot with no network still lights every hold and mirrors; with neither, the formula (§6.4) lights the holds and a mirrored cast is skipped (as before 9 Nov 2026, when it read `board_config.mirror_map`);
   - **night mode = outside the opening hours** (since 7 Nov 2026; was 23:00–08:00): `HOURS_MON` … `HOURS_SUN` in the Pi's `config.env`, London time (default Mon–Thu 15:30–22:00, Fri closed, Sat–Sun 09:30–15:00), unless PB Console's "stay on until" override is going; day if the clock hasn't synced (`pi/README.md` → Opening hours). The strip fades out and casts of every kind are ignored (logged, not shown), while the socket stays joined; the wall screen is off;
   - **idle (an idle pattern, Glisten by default):** `IDLE_AFTER_S` after the last cast (15 min by default since 2 Nov 2026, was 20; every problem cast, from any source, restarts it), and on start or at opening time, the problem crossfades (1.5 s) into an ambient animation (`IDLE_PATTERN`: one of ten patterns, or a cycle; `pb-idle` on the Pi tries them live; the teaser pattern reads the benchmark problems, unmirrored, every half hour); a cast cuts straight in. With `IDLE_ANIMATION=off` the strip is cleared instead. At night everything fades to black over 3 s. Details in `pi/README.md`;
   - on `cast_circuit` and `stop`, runs and ends a circuit (§8);
@@ -72,7 +72,8 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
 - `tools/cast-test.html` (served by `python tools/serve.py`) subscribes like a listener and logs every cast with its payload.
 - **What a listener can read with the anon key** (public-read RLS):
   - `problems`: `name`, `start_holds`, `intermediate_holds`, `finish_hold`, `feet_mode`
-  - `board_config` where `wall = 'HangoutPortland'`: `mirror_map`
+  - `holds` where `wall = 'HangoutPortland'` (db/41): `id`, `name`, `kind`, `led`, `mirror`
+  - `board_config` where `wall = 'HangoutPortland'`: `mirror_map` (pb-ledmap's mirrored problems; the listener reads the holds table since 9 Nov 2026)
   - `circuits`: `hold_sequence`, `start_count`, `loops`, `led_track` (§8.6)
 - **What the old listener did** (a description, not a requirement):
   - subscribed with the anon key;
@@ -87,7 +88,8 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
 
 ### 6.1 Hold ids
 - **Format:** `holdN`. The grid is 19 columns (A–S) × 13 rows, numbered row by row from the **bottom-left**: `hold1` = A1, `hold19` = S1, `hold20` = A2, `hold247` = S13. Row 1 is the bottom of the wall.
-- **Allowed values:** the database CHECK allows `^hold[0-9]{1,3}$`. Live data uses `hold1`–`hold246`. 188 grid cells have real holds (189 until db/32 on 28 Oct 2026 removed `hold218`, I12, which was never a hold: its LED 116 is behind the board).
+- **The holds table** (db/41, 9 Nov 2026): one row per hold per board, `id` (as stored in problems), `name` (visible: A1–S13; footholds will get their own names), `kind` (`hand`, `foot`, `feet_sign`), `led` (null only for a foothold), `x`/`y`/`outline` and `mirror`. Seeded from the live board: 188 hand holds plus the two feet signs; `tools/check_holds.py` checks it against everything below. Positions, outlines and mirror partners are still edited in `board_config` until the setup flow (a trigger copies them); `led`, `name` and `kind` live only in the table.
+- **Allowed values:** the database CHECK allows `^hold[0-9]{1,3}$` in the hand hold lists. Live data uses `hold1`–`hold246`. 188 grid cells have real holds (189 until db/32 on 28 Oct 2026 removed `hold218`, I12, which was never a hold: its LED 116 is behind the board).
 
 ### 6.2 Order and roles (holds are stored inverted)
 
@@ -103,11 +105,13 @@ others                        → blue
 - Colours: start green `(0,255,0)`, intermediate blue `(0,0,255)`, finish red `(255,0,0)`. These are from Gareth's `DisplayProblem.py`, and the app's overlay uses the same three.
 
 ### 6.3 Mirroring
-- With `mirror: true`, each hold becomes `board_config.mirror_map[hold]`. A hold that is absent from the map, or maps to itself, stays in place.
+- With `mirror: true`, each hold becomes its partner, `holds.mirror` (the same pairs as `board_config.mirror_map`, kept in step by db/41's trigger). A hold with no partner, or its own, stays in place.
 - Roles don't change.
 - The live table differs from the original system's `MirrorDic.txt` in 5 entries among real holds (E3, E4, E5, O5, O6). The app uses the live table. (Before db/32 on 28 Oct 2026 it differed in 7 more, from three shifted hold labels; those are now Gareth's pairs: K9↔I11, N13↔F13, O13↔E13.)
 
 ### 6.4 Hold → LED index
+**Since 9 Nov 2026 (db/41) the listener reads each hold's LED from `holds.led`** (`board.hold_led()`), not the formula. The table was seeded with the formula's values and `tools/check_holds.py` (plus `pi/tests/test_holds.py`) checks they agree for every hold, so every cast lights exactly the LEDs it lit before. A foothold has no LED and lights nothing; an id not in the table lights nothing. The formula is still the fallback before the table has ever loaded, and the grid the idle patterns and pb-ledmap's cell tools draw on.
+
 Gareth's formula, from `SearchingByProblemName.py`; the same values are in `tools/led_map.json` (generated by `tools/register_leds.py`; checked equal for all 247):
 
 ```
@@ -132,16 +136,18 @@ led = x*13 + (13 - y)     if x is odd    (B, D, F … run down)
 
 ### 6.5 Feet rule (decided 30 Oct 2026)
 - Two signs at B1 and B2, which aren't holds: the original settings file names `hold21` (B2, **LED 25**) "Orange" and `hold2` (B1, **LED 26**) "Black". "Red" and "orange" feet mean the same thing.
-- Every problem has a **feet rule** in `problems.feet_mode` (CHECK: `any`, `orange`, `black`; default `any`):
+- Every problem has a **feet rule** in `problems.feet_mode` (CHECK: `any`, `orange`, `black`, `specific`; default `any`):
 
   | `feet_mode` | Meaning | Lights |
   |---|---|---|
   | `any` | Any feet | neither sign |
   | `orange` | Orange feet only | LED 25 (B2) |
   | `black` | Black feet only | LED 26 (B1) |
+  | `specific` | Specific feet (db/41, 9 Nov 2026): the footholds in `problems.feet_holds` | **nothing**: shown in the app and on the wall screen only |
 
 - The lit sign is **blue** `(0,0,255)`, the colour Gareth's code gave it (it lit the signs as intermediates).
 - **The listener reads `feet_mode`** with the problem (`pi/listener/board.py`, `FEET_LIGHTS`). `hold2`/`hold21` in a hold list are skipped, never lit. The payload doesn't change: the rule travels with the problem row, like its holds.
+- **Specific feet** (db/41; the app's UI comes in session 3): `problems.feet_holds` lists 1–30 footholds, each a `foot` hold of this board (`problems_guard_feet` checks it; any other rule empties the list). The board never lights them and lights no sign; the listener treats `specific` like `any`. The payload doesn't change.
 - **Never mirrored:** the signs are fixed to the wall, so a mirrored cast lights the same sign. Neither id is in `board_config.mirror_map`, and no hold mirrors onto them (`pi/tests/test_board.py`, `Feet`).
 - **Data:** before db/33 the rule lived only in migrated problems' hold lists (Gareth's lists carried the signs just before the finish; the old notes say both on = any feet). db/33 set `feet_mode` from them (only `hold2` → `black`, only `hold21` → `orange`, both or neither → `any`: 26, 19 and 220 problems on 30 Oct 2026) and took `hold2`/`hold21` out of every hold list. Neither was ever a start or the finish, so no problem's roles changed.
 - **The app:** Create and admin Edit offer the rule as three options (Any feet by default); the problem view shows a badge when it isn't Any, and the info sheet always shows it. The app never draws the signs on the board.
@@ -290,7 +296,7 @@ While someone sets a problem (the phone's Create, an admin's Edit, or the wall s
 |---|---|---|---|
 | `session` | string, 1–64 characters | yes | A token naming this setting session (the app sends 16 random hex characters). |
 | `start`, `hold`, `finish` | arrays of hold ids | no (empty when absent) | The **whole current selection**, as set: start (at most 2), intermediate, finish (at most 1); at most 100 holds in all. **Not stored inverted** (unlike a problem row, §6.2) and never mirrored. Never a diff, so a lost message is corrected by the next. Ids off the grid and the feet signs (`hold2`/`hold21`) light nothing. |
-| `feet` | `"any"`, `"orange"` or `"black"` | no (`any`) | The feet rule being set: lights the sign as §6.5. |
+| `feet` | `"any"`, `"orange"`, `"black"` or `"specific"` | no (`any`) | The feet rule being set: lights the sign as §6.5 (`specific` lights none; the listener before 9 Nov 2026 ignored a message with it). |
 | `end` | `true` | no | The session is over (Save, Cancel, leaving the screen, the app going to the background). Nothing else is read. |
 | `first` | `true` | no | The session's first message. For other apps listening (§9.4); the Pi doesn't need it. |
 | `show` | `true` | no | **Show on board**: take the board back after a takeover (§9.3). |
@@ -347,6 +353,7 @@ Since 8 Nov 2026 one **Edit** (the phone only; not the wall screen) changes a pr
 Names stay clean (no grade), trimmed, 1–60 characters, unique ignoring case in the app (the database's UNIQUE is exact, and a clash there is refused as `23505` too).
 
 ## Change history
+- **2026-11-09, Claude Code:** §5, §6.1, §6.3, §6.4, §6.5, §9.1: **holds in the database** (db/41). The listener reads each hold's LED and mirror partner from the new `holds` table (cached on the Pi for a boot with no network; the formula only as a last resort) instead of the formula and `board_config.mirror_map`; the seeded values are the formula's, checked by `tools/check_holds.py`, so every cast lights the same LEDs. **`feet_mode` gains `specific`** with `problems.feet_holds` (footholds only); the board lights nothing for it, and `preview_holds` accepts `feet: "specific"`. **No change to the channel, events or payloads.**
 - **2026-11-08, Claude Code:** §7 item 5 and a new §10: **names are editable** (one Edit for problems and circuits, db/39), and the name stays the cast key: the listener reads every cast by name when it arrives, so a rename works from the next cast. **No change to the channel, events, payloads or the Pi.**
 - **2026-11-07, Claude Code:** §4, §5, §7 item 14, §8, §9: **night mode follows the opening hours** (`HOURS_MON` … `HOURS_SUN` on the Pi, London time, plus PB Console's self-ending "stay on until"), replacing the fixed 23:00–08:00; outside them the wall screen is off (the Pi stops the kiosk) and the wall page has no night screen of its own any more. What night does to casts, circuits and previews is unchanged. **No change to the channel, events or payloads.**
 - **2026-11-05, Claude Code:** §8.1, §8.3, §8.4, §8.6: **the "map and next hold" circuit look** (Ross, 5 Nov 2026) replaces direction 4, "Pulse and fade", and all the track lighting: a blue map at `CIRCUIT_MAP_LEVEL`, the red finish at `CIRCUIT_FINISH_LEVEL` on the final lap only, the start holds blinking green in the countdown, only the hold to go to lit green in the run, a match blinking twice, later laps wrapping from position 0, and a top of three red blinks and a 1 s fade. **`cast_circuit` gains `laps`** (0 = endless, 1–10; a circuit whose `loops` is false always runs 1 lap; a bad value ignores the cast); with `laps` absent, `loop` true = endless, false = 1 lap, and neither = the circuit's `loops`, so old apps and old PB Consoles keep working. **`trace_s` is ignored** (the app stops sending it; the phone's countdown no longer waits for a trace). The `circuit ended` line says `endless` or `N laps` (PB Console reads the old `loop`/`once` too). Config: `CIRCUIT_MAP_LEVEL` and `CIRCUIT_FINISH_LEVEL` in; `CIRCUIT_GHOST`, `CIRCUIT_TRACK_RUN`, `CIRCUIT_TRACK_LEVEL` out. `circuits.led_track` and `check_track()` are kept (not drawn). `cast_problem`, `stop`, `show_circuit` and `preview_holds` are unchanged.

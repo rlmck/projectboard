@@ -70,6 +70,8 @@
   let HOLD_MAP = null;   // hold id -> {x,y} %, from board_config or bundled hold_map.json
   let HOLD_SHAPES = null; // hold id -> [[x,y],…] % polygon, from board_config (admin) or bundled hold_shapes.json (problem + circuit overlays, and the #outlines editor)
   let MIRROR_MAP = null; // hold id -> mirror-partner hold id (bundled mirror_map.json); self = centre/no-partner
+  let HOLD_INFO = null;  // hold id -> {name, kind, mirror}, from the holds table (db/41): kind hand | foot | feet_sign
+  let holdsHaveMirror = false;          // true once the holds table supplied the mirror partners (board_config's then step aside)
   let detailMirror = false; // detail view is showing the left/right-mirrored problem
   let BOARD_IMG = 'board-fallback.jpg'; // resolved board image URL (Supabase upload, else the bundled fallback: a snapshot of the live photo)
   let configHasMap = false;             // true once board_config supplied a hold map (suppresses the bundled fallback)

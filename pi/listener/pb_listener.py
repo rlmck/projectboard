@@ -22,6 +22,10 @@ docs/pi4-listener-kiosk-plan.md, section R1:
   SIGUSR2 = read pb-idle's choice from /run/projectboard/idle-pattern (the
   file is removed at start, so a restart goes back to config.env).
 - The benchmark problems (for the teaser pattern) are read every half hour.
+- Each hold's LED and mirror partner come from the holds table (db/41, contract
+  6.4), read on each join and every 10 min, cached in
+  /var/lib/projectboard/cache/holds.json for a boot with no network; with
+  neither, the formula lights the holds and mirrored casts are skipped.
 - Status in /run/projectboard/listener.json for pb-health and pb-status.
 
     pb_listener.py [--dry-run] [--config FILE] [--status FILE]
@@ -53,7 +57,7 @@ BACKOFF_MAX = 60
 STABLE_AFTER = 60          # a connection joined this long resets the backoff
 TICK = 10                  # watchdog ping and status write
 MODE_EVERY = 10             # day/night (mode.py): the opening hours switch within 10 s
-MIRROR_EVERY = 600
+HOLDS_EVERY = 600           # the holds table (each hold's LED and mirror partner, db/41)
 BENCHMARKS_EVERY = 1800    # the teaser's problems: one small read
 IDLE_FILE = 'idle-pattern'  # pb-idle writes it next to the status file, then sends SIGUSR2
 LED_STALL = 20             # the LED thread silent this long = stuck: exit, systemd restarts us
@@ -104,11 +108,13 @@ class Listener:
         self.ws_url = '%s/realtime/v1/websocket?apikey=%s&vsn=1.0.0' % (host, self.cfg['SUPABASE_ANON_KEY'])
         self.pending = None
         self.cast_ready = asyncio.Event()
-        self.mirror_wanted = asyncio.Event()
+        self.holds_wanted = asyncio.Event()
+        self.holds_cache = supa.HOLDS_CACHE
         self.benchmarks_wanted = asyncio.Event()
         self.idle_file = os.path.join(os.path.dirname(status_path), IDLE_FILE) if status_path else None
         self.stop = asyncio.Event()
         self.mirror_map = None
+        self.holds_source = None      # where the LEDs come from: supabase | cache | formula
         self.mode, self.mode_reason = modelib.mode_now(self.cfg)
         self.leds = renderer.Renderer(self.strip, self.cfg, self.mode == 'night', log, warn, err)
         self.circuit_opts = circuit.options(self.cfg, warn)     # the map and finish levels (contract 8.3)
@@ -118,7 +124,7 @@ class Listener:
             'state': 'starting', 'connected_since': None, 'disconnected_since': now,
             'last_message_at': None, 'last_cast_at': None, 'last_cast_name': None,
             'casts_shown': 0, 'circuits_shown': 0, 'casts_ignored_night': 0, 'error_count': 0, 'last_error': None,
-            'mirror_map_at': None, 'last_preview_at': None, 'updated_at': now,
+            'mirror_map_at': None, 'holds': None, 'holds_source': None, 'last_preview_at': None, 'updated_at': now,
             'leds': None, 'idle_pattern': None, 'idle_plan': None, 'idle_override': None, 'benchmarks': None,
             'idle_fps': None, 'idle_frame_ms': None, 'idle_capped_frames': 0, 'led_write_errors': 0,
         }
@@ -223,22 +229,49 @@ class Listener:
             self.pending = None
         self.leds.set_night(mode == 'night')
 
-    async def mirror_loop(self):
+    def use_holds(self, rows, source):
+        """Each hold's LED and mirror partner (db/41, contract 6.4) from now on. Raises ValueError."""
+        leds, mm = board.check_holds(rows)
+        changed = leds != board._LEDS or mm != self.mirror_map
+        board.set_holds(leds)
+        self.mirror_map = mm
+        self.holds_source = source
+        if changed or source != self.status.get('holds_source'):
+            log('holds loaded from %s: %d (%d with an LED), %d mirror pairs' % (
+                source, len(leds), sum(1 for v in leds.values() if v is not None), len(mm)))
+        self.set(holds=len(leds), holds_source=source, mirror_map_at=time.time())
+        return changed
+
+    async def holds_loop(self):
+        """The holds table: the cached copy at once (a boot with no network still lights
+        every hold and mirrors), then Supabase on each join and every HOLDS_EVERY.
+        Never loaded at all: the formula lights the holds and mirrored casts are skipped."""
+        try:
+            cached = await asyncio.to_thread(supa.load_cache, self.holds_cache)
+            if cached is not None:
+                self.use_holds(cached, 'cache')
+        except ValueError as e:
+            self.error('cached holds unusable (%s): waiting for Supabase' % e)
+        if self.holds_source is None:
+            self.status['holds_source'] = 'formula'
         while True:
             try:
-                await asyncio.wait_for(self.mirror_wanted.wait(), MIRROR_EVERY)
+                await asyncio.wait_for(self.holds_wanted.wait(), HOLDS_EVERY)
             except asyncio.TimeoutError:
                 pass
-            self.mirror_wanted.clear()
+            self.holds_wanted.clear()
             try:
-                mm = board.check_mirror_map(await asyncio.to_thread(supa.fetch_mirror_map, self.cfg))
-                if mm != self.mirror_map:
-                    log('mirror map loaded: %d entries' % len(mm))
-                self.mirror_map = mm
-                self.set(mirror_map_at=time.time())
+                rows = await asyncio.to_thread(supa.fetch_holds, self.cfg)
+                if self.use_holds(rows, 'supabase') or self.status.get('holds_cached') is None:
+                    try:
+                        await asyncio.to_thread(supa.save_cache, self.holds_cache, rows)
+                        self.status['holds_cached'] = time.time()
+                    except OSError as e:
+                        warn('holds not cached (%s): a boot with no network will use the formula' % e)
             except Exception as e:
-                self.error('mirror map not loaded (%s): %s' % (
-                    'keeping the last one' if self.mirror_map is not None else 'mirrored casts skipped', e))
+                self.error('holds not loaded (%s): %s: %s' % (
+                    'keeping the %s copy' % self.holds_source if self.holds_source else
+                    'the formula lights the holds, mirrored casts skipped', type(e).__name__, e))
 
     async def benchmarks_loop(self):
         while True:
@@ -284,7 +317,7 @@ class Listener:
             return
         leds, dropped = board.frame(row, mirror, self.mirror_map)
         if dropped:
-            warn('cast %r: hold ids off the grid ignored: %s' % (name, dropped))
+            warn('cast %r: hold ids with no LED ignored: %s' % (name, dropped))
         out, cap, ma = board.scale(leds, self.cfg['BRIGHTNESS'], float(self.cfg['POWER_BUDGET_MA']),
                                    float(self.cfg['MA_PER_CHANNEL']))
         if self.mode == 'night':
@@ -309,7 +342,7 @@ class Listener:
             return
         leds, dropped = circuit.static_frame(row.get('hold_sequence'), row.get('start_count'))
         if dropped:
-            warn('circuit view %r: hold ids off the grid ignored: %s' % (name, sorted(dropped)))
+            warn('circuit view %r: hold ids with no LED ignored: %s' % (name, sorted(dropped)))
         out, cap, ma = board.scale(leds, self.cfg['BRIGHTNESS'], float(self.cfg['POWER_BUDGET_MA']),
                                    float(self.cfg['MA_PER_CHANNEL']))
         if self.mode == 'night':
@@ -337,7 +370,7 @@ class Listener:
         run = circuit.Run(name, row.get('hold_sequence'), row.get('start_count'), interval, laps, token,
                           self.mirror_map if mirror else None, tag, **opts)
         if run.dropped:
-            warn('circuit %r: hold ids off the grid ignored: %s' % (name, sorted(run.dropped)))
+            warn('circuit %r: hold ids with no LED ignored: %s' % (name, sorted(run.dropped)))
         if self.mode == 'night':
             log('circuit %r ignored: night began while it was fetched' % name)
             return
@@ -551,7 +584,7 @@ class Listener:
                     joined_at = time.monotonic()
                     self.set_state('joined')
                     log('joined %s' % self.topic)
-                    self.mirror_wanted.set()
+                    self.holds_wanted.set()
                     if self.status['benchmarks'] is None:
                         self.benchmarks_wanted.set()
                     await self.pump(ws)
@@ -592,7 +625,7 @@ class Listener:
         self.write_status()
         sd_notify('READY=1')
         tasks = [asyncio.create_task(c) for c in
-                 (self.ticker(), self.mirror_loop(), self.benchmarks_loop(), self.worker(), self.connection())]
+                 (self.ticker(), self.holds_loop(), self.benchmarks_loop(), self.worker(), self.connection())]
         stopper = asyncio.create_task(self.stop.wait())
         done, _ = await asyncio.wait(tasks + [stopper], return_when=asyncio.FIRST_COMPLETED)
         for t in done:

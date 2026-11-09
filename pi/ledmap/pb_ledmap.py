@@ -216,7 +216,7 @@ class LedMap:
             target = mm.get(h, h) if mirror else h
             n = board.hold_number(target)
             holds.append({'hold': h, 'shown_at': target, 'role': role,
-                          'cell': cell_ref(n) if n else None, 'led': board.led_index(n) if n else None,
+                          'cell': cell_ref(n) if n else None, 'led': board.hold_led(target),
                           'real': target in self.real})
         r.update(name=row['name'], mirror=bool(mirror), holds=holds, dropped=dropped)
         return r
@@ -388,6 +388,20 @@ def main(argv):
         log('config unreadable (%s): defaults, so "light a problem" will not work' % e)
         cfg = dict(modelib.DEFAULTS)
     import supa
+    # "Light a problem" lights each hold's LED from the holds table (db/41), as the
+    # listener does: from Supabase, else the listener's cached copy, else the formula.
+    # The grid tools (a cell, the column check) stay on the formula: they check it.
+    rows = None
+    try:
+        rows = supa.fetch_holds(cfg)
+    except Exception as e:          # noqa: BLE001
+        log('holds not loaded from Supabase (%s: %s): trying the cached copy' % (type(e).__name__, e))
+        rows = supa.load_cache(supa.HOLDS_CACHE)
+    try:
+        board.set_holds(board.check_holds(rows)[0])
+        log('holds loaded: %d' % len(rows))
+    except ValueError as e:
+        log('no usable holds (%s): problems light through the formula' % e)
     app = LedMap(ledlib.make_strip(cfg, a.dry_run), cfg, a.brightness, a.idle,
                  fetch_problem=supa.fetch_problem, fetch_mirror_map=supa.fetch_mirror_map, fetch_names=fetch_names)
     httpd = ThreadingHTTPServer((host, a.port), make_handler(app))

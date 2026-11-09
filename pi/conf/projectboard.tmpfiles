@@ -2,3 +2,4 @@
 d /run/projectboard         0755 pi   pi   -
 d /run/projectboard/health  0755 root root -
 d /var/lib/projectboard     0755 root root -
+d /var/lib/projectboard/cache 0755 pi pi   -

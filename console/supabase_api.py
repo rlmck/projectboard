@@ -20,6 +20,7 @@ EXPORT = {
     'problems': '*',
     'circuits': '*',
     'board_config': '*',
+    'holds': '*',               # db/41: each hold's name, kind, LED, mirror partner
     'challenges': '*',
 }
 

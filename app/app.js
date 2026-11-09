@@ -662,6 +662,7 @@
     else if (!document.getElementById('circuit-offline').hidden) refreshCircuits().catch(() => {});
     loadProfileNames();
     loadChallenges();
+    loadHolds();
     retryChallengeSaves();
   });
   // Prefer the admin-saved board (image + hold map) from Supabase; fall back to the
@@ -669,6 +670,7 @@
   // chosen once that's settled (applyBoardImage also measures its w/h, which the
   // shape overlay needs for round fallback dots), so a normal load never downloads
   // the bundled fallback image just to replace it.
+  loadHolds();          // the holds table (db/41): names and mirror partners
   loadBoardConfig().then(() => { applyBoardImage(); loadHoldMap(); loadMirrorMap(); });
   loadHoldShapes();     // bundled hold outlines for the problem shape overlay
   initAuth();      // restore the session and wire auth state

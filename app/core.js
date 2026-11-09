@@ -36,7 +36,7 @@
   // At start-up they show at once while the fresh copy loads (weak gym Wi-Fi), and
   // if the fetch fails they stay up with a note (offline, Supabase down). All of it
   // is public data, so nothing needs clearing on sign-out. { t, rows }.
-  const SAVED_KEYS = { problems: 'pb-saved-problems', circuits: 'pb-saved-circuits', names: 'pb-saved-names', challenges: 'pb-saved-challenges' };
+  const SAVED_KEYS = { problems: 'pb-saved-problems', circuits: 'pb-saved-circuits', names: 'pb-saved-names', challenges: 'pb-saved-challenges', holds: 'pb-saved-holds' };
   function saveList(kind, rows) {
     lsSet(SAVED_KEYS[kind], JSON.stringify({ t: Date.now(), rows }));
   }
@@ -143,6 +143,13 @@
   function holdNum(id) {
     const m = /^hold(\d+)$/i.exec(String(id));
     return m ? m[1] : String(id);
+  }
+
+  // A hold's visible name ('B2'): from the holds table (db/41), else the grid name
+  // its id gives (hold23 -> B2), which is what the table holds for every hand hold today.
+  function holdName(h) {
+    const info = HOLD_INFO && HOLD_INFO[h];
+    return info && info.name ? info.name : gridName(holdNum(h));
   }
 
   // Grid name for a hold number: hold1 -> A1, hold19 -> S1, hold20 -> A2, hold243 -> O13.

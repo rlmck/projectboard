@@ -89,7 +89,9 @@ def main(argv):
             print('no problem called %r' % name)
             return 1
         mirror = '--mirror' in argv
-        mm = board.check_mirror_map(supa.fetch_mirror_map(cfg)) if mirror else None
+        leds, mm = board.check_holds(supa.fetch_holds(cfg))     # each hold's LED and partner (db/41)
+        board.set_holds(leds)
+        mm = mm if mirror else None
         leds, dropped = board.frame(row, mirror, mm)
         out, cap, ma = board.scale(leds, cfg['BRIGHTNESS'], float(cfg['POWER_BUDGET_MA']),
                                    float(cfg['MA_PER_CHANNEL']))

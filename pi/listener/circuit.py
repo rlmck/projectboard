@@ -199,11 +199,10 @@ def static_frame(seq, start_count):
             roles[h] = role
     leds, ranks, dropped = {}, {}, []
     for h, role in roles.items():
-        n = board.hold_number(h)
-        if n is None or h in board.FEET_HOLDS:
+        i = board.hold_led(h) if h not in board.FEET_HOLDS else None
+        if i is None:
             dropped.append(h)
             continue
-        i = board.led_index(n)
         if i not in ranks or board.RANK[role] > ranks[i]:
             ranks[i] = board.RANK[role]
             leds[i] = board.COLOURS[role]
@@ -241,11 +240,11 @@ class Run:
         self.led = {}
         self.dropped = []
         for h in dict.fromkeys(self.seq):
-            n = board.hold_number(h)
-            if n is None or h in board.FEET_HOLDS:
+            i = board.hold_led(h) if h not in board.FEET_HOLDS else None
+            if i is None:
                 self.dropped.append(h)
             else:
-                self.led[h] = board.led_index(n)
+                self.led[h] = i
         self.finish = self.seq[-1]
 
     def hold(self, i):

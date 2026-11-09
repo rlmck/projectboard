@@ -24,6 +24,17 @@ FEET_COLOUR = COLOURS[INT]
 
 _HOLD = re.compile(r'^hold([0-9]{1,3})$')
 
+# Each hold's LED comes from the holds table (db/41, contract 6.4): {hold id: LED
+# index, or None for a foothold, which has no LED}. The listener loads it from
+# Supabase (or its cached copy, at boot with no network) and hands it to
+# set_holds(). Until it has, hold_led() falls back to Gareth's formula
+# (led_index), which the table was seeded from: tools/check_holds.py checks that
+# the two agree for every hold. Swapped whole, never edited, so the LED thread
+# can read it while the event loop replaces it.
+_LEDS = None
+HOLD_KINDS = ('hand', 'foot', 'feet_sign')
+MAX_LED = 1199                      # the holds table's CHECK (0-1199)
+
 
 def hold_number(h):
     """'hold24' -> 24; None for anything that isn't a hold id on the grid."""
@@ -35,10 +46,72 @@ def hold_number(h):
 
 
 def led_index(n):
-    """Hold number (1-247) -> LED index (1-247). Contract 6.4, Gareth's formula."""
+    """Hold number (1-247) -> LED index (1-247): Gareth's formula, which seeded the
+    holds table (db/41). Casts use hold_led(); this is the fallback before the
+    table is loaded, and the grid the idle patterns and pb-ledmap draw on."""
     x = (n - 1) % COLS              # column, 0 = A
     y = (n - 1) // COLS             # row, 0 = row 1 (bottom)
     return x * ROWS + y + 1 if x % 2 == 0 else x * ROWS + (ROWS - y)
+
+
+def hold_led(h):
+    """A hold id -> its LED index, or None when it lights nothing: a foothold (no
+    LED), or an id that isn't a hold. From the holds table once loaded, else the
+    formula (ids on the grid only)."""
+    m = _LEDS
+    if m is not None:
+        return m.get(h) if isinstance(h, str) else None
+    n = hold_number(h)
+    return led_index(n) if n is not None else None
+
+
+def check_holds(rows):
+    """Rows of the holds table (id, kind, led, mirror) -> ({id: led or None}, {id: mirror id}).
+
+    Raises ValueError for anything the table's own checks would refuse: a missing
+    or repeated id, an unknown kind, a hand hold or feet sign with no LED, a
+    foothold with one, an LED out of range or on two holds, a mirror partner that
+    isn't a hold. A hold with no mirror partner isn't in the mirror map (it stays
+    put when mirrored, contract 6.3)."""
+    if not isinstance(rows, list) or not rows:
+        raise ValueError('no holds')
+    leds, mirror, used = {}, {}, set()
+    for r in rows:
+        if not isinstance(r, dict):
+            raise ValueError('a holds row is a %s' % type(r).__name__)
+        h, kind, led, m = r.get('id'), r.get('kind'), r.get('led'), r.get('mirror')
+        if not isinstance(h, str) or not h or h in leds:
+            raise ValueError('a bad or repeated hold id: %r' % (h,))
+        if kind not in HOLD_KINDS:
+            raise ValueError('%s: kind %r' % (h, kind))
+        if kind == 'foot':
+            if led is not None:
+                raise ValueError('%s: a foothold with an LED' % h)
+        else:
+            if isinstance(led, bool) or not isinstance(led, int) or not 0 <= led <= MAX_LED:
+                raise ValueError('%s: LED %r' % (h, led))
+            if led in used:
+                raise ValueError('%s: LED %d is on two holds' % (h, led))
+            used.add(led)
+        if m is not None:
+            if not isinstance(m, str):
+                raise ValueError('%s: mirror %r' % (h, m))
+            mirror[h] = m
+        leds[h] = led
+    for h, m in mirror.items():
+        if m not in leds:
+            raise ValueError('%s: mirror partner %r is not a hold' % (h, m))
+    return leds, mirror
+
+
+def set_holds(leds):
+    """Use this {hold id: LED or None} from now on (check_holds() made it); None = the formula."""
+    global _LEDS
+    _LEDS = dict(leds) if leds is not None else None
+
+
+def holds_loaded():
+    return _LEDS is not None
 
 
 def _as_list(v):
@@ -89,22 +162,28 @@ def frame(row, mirror=False, mirror_map=None):
         if h in FEET_HOLDS:
             continue
         target = mirror_map.get(h, h) if mirror else h
-        n = hold_number(target)
-        if n is None:
+        i = hold_led(target)
+        if i is None:
             dropped.append(h if target == h else '%s->%s' % (h, target))
             continue
-        i = led_index(n)
         if i not in ranks or RANK[role] > ranks[i]:
             ranks[i] = RANK[role]
             leds[i] = COLOURS[role]
-    light = FEET_LIGHTS.get(row.get('feet_mode'))
-    if light:
-        leds[led_index(hold_number(light))] = FEET_COLOUR
+    _feet_light(leds, row.get('feet_mode'))
     return leds, dropped
 
 
+def _feet_light(leds, feet_mode):
+    """Light the feet sign feet_mode names ('orange', 'black'); 'any' and 'specific'
+    light none (contract 6.5: Specific feet is shown in the app only)."""
+    light = FEET_LIGHTS.get(feet_mode)
+    i = hold_led(light) if light else None
+    if i is not None:
+        leds[i] = FEET_COLOUR
+
+
 PREVIEW_MAX_HOLDS = 100            # a preview with more holds than this is refused (contract 9)
-FEET_MODES = ('any', 'orange', 'black')
+FEET_MODES = ('any', 'orange', 'black', 'specific')     # 'specific' lights no sign (6.5)
 
 
 def check_preview(body):
@@ -142,17 +221,14 @@ def preview_frame(start, hold, finish, feet='any'):
         for h in ids:
             if h in FEET_HOLDS:
                 continue
-            n = hold_number(h)
-            if n is None:
+            i = hold_led(h)
+            if i is None:
                 dropped.append(h)
                 continue
-            i = led_index(n)
             if i not in ranks or RANK[role] > ranks[i]:
                 ranks[i] = RANK[role]
                 leds[i] = COLOURS[role]
-    light = FEET_LIGHTS.get(feet)
-    if light:
-        leds[led_index(hold_number(light))] = FEET_COLOUR
+    _feet_light(leds, feet)
     return leds, dropped
 
 

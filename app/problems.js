@@ -330,7 +330,7 @@
     const which = picks.length === 1 ? 'that hold' : picks.length === 2 ? 'both holds' : `all ${picks.length} holds`;
     return `${n ? `${n} ${k.noun}${n === 1 ? '' : 's'}` : `No ${k.noun}s`} use${n === 1 ? 's' : ''} ${which}`;
   }
-  const holdLabel = h => gridName(holdNum(h));
+  const holdLabel = h => holdName(h);
 
   // The picks as chips (tap one to drop it).
   function holdChipsHtml(picks) {
@@ -1114,7 +1114,7 @@
         HOLD_MAP = data.hold_map;
         configHasMap = true;
       }
-      if (data.mirror_map && typeof data.mirror_map === 'object' && Object.keys(data.mirror_map).length) {
+      if (!holdsHaveMirror && data.mirror_map && typeof data.mirror_map === 'object' && Object.keys(data.mirror_map).length) {
         MIRROR_MAP = data.mirror_map;
         configHasMirror = true;
       }
@@ -1129,6 +1129,42 @@
     } catch (err) {
       console.warn('board_config load failed — using bundled board', err);
     }
+  }
+
+  // ── Load the holds table (db/41): each hold's name, kind and mirror partner ──
+  // Names label the hold chips and the outline editor; the mirror partners replace
+  // board_config.mirror_map (a trigger keeps the two the same until the setup flow,
+  // session 2). Positions and outlines still come from board_config. The saved copy
+  // is used at once, so a phone offline keeps the names. Read-only, public.
+  function useHolds(rows) {
+    if (!Array.isArray(rows) || !rows.length) return false;
+    const info = {}, mirror = {};
+    rows.forEach(r => {
+      if (!r || typeof r.id !== 'string') return;
+      info[r.id] = { name: r.name, kind: r.kind, mirror: r.mirror || null };
+      if (r.kind === 'hand' && r.mirror) mirror[r.id] = r.mirror;
+    });
+    HOLD_INFO = info;
+    if (Object.keys(mirror).length) {
+      MIRROR_MAP = mirror;
+      holdsHaveMirror = configHasMirror = true;
+    }
+    return true;
+  }
+  async function loadHolds() {
+    if (!HOLD_INFO) {
+      const saved = savedList('holds');
+      if (saved) useHolds(saved.rows);
+    }
+    try {
+      const { data, error } = await sb.from('holds').select('id,name,kind,mirror')
+        .eq('wall', 'HangoutPortland').order('id').limit(2000);
+      if (error) { console.warn('holds load failed', error); return; }
+      if (useHolds(data)) saveList('holds', data);
+    } catch (err) {
+      console.warn('holds load failed', err);
+    }
+    if (currentView === 'detail' && detailMirror) router();
   }
 
   // ── Load the id -> nickname map (so setters show the live nickname) ───────────
