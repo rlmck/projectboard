@@ -22,7 +22,8 @@ Planned in the claude.ai project chat on 7 Nov 2026; narrowed on 9 Nov 2026. TOD
 **9 Nov 2026 (Ross):**
 - **No rearrange for now:** Ross is only rotating a few little-used holds on the current board. So the **dry run is on the current board**, no archive and no new board set are needed, and nothing waits on the archive.
 - **Existing hand holds keep their ids (`holdN`) and names (A1–S13)**, so no problem, circuit, tick or benchmark changes.
-- **Footholds are new holds, named F1, F2…**, added by the setup flow from the new full-board photo (footholds included). Nothing in session 1 depends on that photo.
+- **Footholds are new holds**, added by the setup flow from the new full-board photo (footholds included). Nothing in session 1 depends on that photo.
+- **Foothold names: FT1, FT2…** (Ross, later on 9 Nov 2026), numbered left to right, starting from the bottom row, then the next row up, left to right, and so on. The first idea, F1, F2…, clashed with the hand holds in column F (F2–F11 and F13), and names are unique per board. The setup flow numbers them this way when it adds them.
 - **Three sessions:** (1) the holds table and the Specific feet backend; (2) the admin setup flow; (3) Specific feet in Create and on the problem view (phone and wall screen).
 
 ## What session 1 built (9 Nov 2026, db/41)
@@ -46,10 +47,9 @@ Planned in the claude.ai project chat on 7 Nov 2026; narrowed on 9 Nov 2026. TOD
 - **`holdName()`** falls back to the grid name when the table hasn't loaded.
 
 ## Open questions
-1. **Foothold names clash:** F1, F2… are already the visible names of the hand holds in column F (**F2–F11 and F13** are hand holds; F1 and F12 are free). The table refuses a name twice per board, so footholds need other names (e.g. `f1`, `FT1`, or a number on a foot icon). Ross to choose before session 2.
-2. **How the setup flow talks to the Pi** for mapping (a new Realtime event to light one LED?): a cast contract change.
-3. **Mirroring Specific feet** in the app's mirrored view: do footholds have mirror partners (foot ↔ foot), or are Specific feet shown unmirrored?
-4. **Other gyms:** today there's one board (`board:HangoutPortland`, one `board_config` row, one wall key, one geofence). Multi-gym comes later; keep the setup flow free of Hangout and grid assumptions. Specific feet are checked against the one board today (problems have no board column).
+1. **How the setup flow talks to the Pi** for mapping (a new Realtime event to light one LED?): a cast contract change.
+2. **Mirroring Specific feet** in the app's mirrored view: do footholds have mirror partners (foot ↔ foot), or are Specific feet shown unmirrored?
+3. **Other gyms:** today there's one board (`board:HangoutPortland`, one `board_config` row, one wall key, one geofence). Multi-gym comes later; keep the setup flow free of Hangout and grid assumptions. Specific feet are checked against the one board today (problems have no board column).
 
 ## The setup flow (session 2: admin, on a phone)
 1. **Upload** the photo and the cartoon (same framing).
@@ -84,4 +84,3 @@ The full prompt gets written once the new photo exists.
 ## Next steps (Ross)
 1. A full-board photo of the current board, footholds included: straight on, even light.
 2. The cartoon from it, with the prompt (written in the chat when the photo exists).
-3. Choose the footholds' names (open question 1).

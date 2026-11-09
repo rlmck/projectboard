@@ -88,7 +88,7 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
 
 ### 6.1 Hold ids
 - **Format:** `holdN`. The grid is 19 columns (A–S) × 13 rows, numbered row by row from the **bottom-left**: `hold1` = A1, `hold19` = S1, `hold20` = A2, `hold247` = S13. Row 1 is the bottom of the wall.
-- **The holds table** (db/41, 9 Nov 2026): one row per hold per board, `id` (as stored in problems), `name` (visible: A1–S13; footholds will get their own names), `kind` (`hand`, `foot`, `feet_sign`), `led` (null only for a foothold), `x`/`y`/`outline` and `mirror`. Seeded from the live board: 188 hand holds plus the two feet signs; `tools/check_holds.py` checks it against everything below. Positions, outlines and mirror partners are still edited in `board_config` until the setup flow (a trigger copies them); `led`, `name` and `kind` live only in the table.
+- **The holds table** (db/41, 9 Nov 2026): one row per hold per board, `id` (as stored in problems), `name` (visible: A1–S13; footholds will be FT1, FT2…, left to right from the bottom row), `kind` (`hand`, `foot`, `feet_sign`), `led` (null only for a foothold), `x`/`y`/`outline` and `mirror`. Seeded from the live board: 188 hand holds plus the two feet signs; `tools/check_holds.py` checks it against everything below. Positions, outlines and mirror partners are still edited in `board_config` until the setup flow (a trigger copies them); `led`, `name` and `kind` live only in the table.
 - **Allowed values:** the database CHECK allows `^hold[0-9]{1,3}$` in the hand hold lists. Live data uses `hold1`–`hold246`. 188 grid cells have real holds (189 until db/32 on 28 Oct 2026 removed `hold218`, I12, which was never a hold: its LED 116 is behind the board).
 
 ### 6.2 Order and roles (holds are stored inverted)

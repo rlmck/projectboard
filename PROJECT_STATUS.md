@@ -26,7 +26,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **Move to Circuits (8 Nov 2026):** admins only; a move, not a copy: the problem, its ticks and favourites are deleted in one transaction with the circuit's creation (Ross OK'd the deletes for this feature); benchmarks can't be moved; the setter is kept; a name clash asks for a rename (db/40).
 - **Editing (8 Nov 2026):** one Edit (the Create screen) for problems and circuits; the owner may edit while nobody else has ticked it (circuits: nobody else's run), never a benchmark, a challenge's circuit or The Hangout's; the setter is never editable; the name stays the cast key (db/39, contract §10).
 - **Opening hours (7 Nov 2026):** the board and the wall screen follow one per-day schedule; no bank holidays; a one-evening "stay on until" from PB Console; `NIGHT_FORCE` stays for tests.
-- **Board setup, Specific feet (7, 9 Nov 2026):** Specific feet = footholds only, never lit. No rearrange now: a dry run on the current board, no archive; hand holds keep ids and names. Sessions: holds table (done), setup flow, Specific feet UI. `docs/board-setup-plan.md`.
+- **Board setup, Specific feet (7, 9 Nov 2026):** Specific feet = footholds only, never lit. No rearrange now: a dry run on the current board, no archive; hand holds keep ids and names. Sessions: holds table (done), setup flow, Specific feet UI. Footholds FT1, FT2…, left to right, bottom row up. `docs/board-setup-plan.md`.
 - **Feet rule (30 Oct 2026):** every problem is Any feet (default), Orange feet only or Black feet only (`problems.feet_mode`, db/33). Any lights no sign; Orange lights B2 (LED 25), Black lights B1 (LED 26), never mirrored; `hold2`/`hold21` are never in a hold list. Migrated: both signs or none → Any, one sign → that rule. Cast contract §6.5.
 - **Circuits (30 Oct 2026):** no mirrored circuits and no circuits Done filter for now (future releases); "done" means done both sides and is for problems only. No Play preview.
 - **Who cast (30 Oct 2026):** never in the public broadcast. Members' casts go to a private, insert-only `cast_log` (db/34) that only PB Console reads (direct Postgres), for nicknames on Activity. `privacy.html` says so.
@@ -41,9 +41,9 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
-- **Ross:** the db/41 checks (9 Nov report); the full-board photo; foothold names.
+- **Ross:** the db/41 checks (9 Nov report); the full-board photo.
 - **Ross: test the opening hours** (live 7 Nov): see the 2026-11-07 session entry's checklist.
-- Ross (low priority): delete the local passphrase hand-out file in the archive (then empty the Recycle Bin) once all 7 migrated accounts have signed in.
+- Ross (low priority): delete the local passphrase hand-out file (and empty the Recycle Bin) once all 7 migrated accounts have signed in.
 
 ## Open questions
 Details in `docs/cast-contract.md` → "Open questions".
@@ -58,8 +58,8 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
 - **2026-11-09, Claude Code (holds in the database + Specific feet backend; board setup session 1 of 3).**
   - **Changed:** db/41: `holds` table (name, kind, LED, position, outline, mirror) seeded from the live board with the formula's LEDs; `board_config` edits copied in by a trigger. `feet_mode` + `specific` with `feet_holds` (footholds only, never lit), owner Edit and `wall_create_problem` updated. The Pi lights LEDs from the table (cached on the Pi); the app reads names and pairs from it. Nothing visible changed. Contract §5, §6, §9.1; `docs/board-setup-plan.md`.
   - **Tested:** `tools/check_holds.py`; db/41 test (fails on the old schema); pi 178 + console 112 tests; all 297 live problems (both ways) and 11 circuits: identical LEDs; on the Pi: cache after restart, test casts on the webcam; the app (phone, `/?wall`).
-  - **Live:** db/41, the Pi and the app, 9 Nov.
-  - **Left:** Ross: the checks in the report; the photo; **foothold names** (F2–F11, F13 are hand holds: plan open question 1).
+  - **Live:** db/41, Pi, app, 9 Nov.
+  - **Left:** Ross: the report's checks; the photo. Footholds named **FT1, FT2…** later (F1… clashed with column F).
 
 - **2026-11-08, Claude Code (Move a problem into Circuits, admins; TODO 12).**
   - **Changed:** the problem ⋮ menu's **Move to Circuits** (admins, not benchmarks) opens the circuit Create screen pre-filled (`#move/<id>`; overview §4.8c): holds in `problemHoldOrder()` order, 1 start if the stored pair is one hold, the name, loop off, a sport grade from `FONT_TO_SPORT` (`state.js`) beside the Font grade, "Does this order look right?", a feet-rule note. Save → confirm with the tick and favourite counts → db/40 `admin_move_problem_to_circuit()`: one transaction (circuit with the setter kept; ticks, favourites, problem deleted; logged). Found: middle holds are stored in first-tapped order, not climbing order.
