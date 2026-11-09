@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: circuits - load, list, detail, swipe, info, cast + run screen, create, delete.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, trace, setup, app. This file: circuits - load, list, detail, swipe, info, cast + run screen, create, delete.
 //
 // Circuits are built to look and behave like problems: the same cards and grade
 // tabs (tap = one grade, hold = several), pull-to-refresh, a pinned detail view
@@ -723,6 +723,7 @@
     const { x: px, y: py, w, h: bh } = boardPct(document.getElementById('cc-board'), clientX, clientY);
     let best = null, bestD = Infinity;
     for (const h in HOLD_MAP) {
+      if (!isHandHold(h)) continue;                 // footholds are never in a circuit
       const dx = (HOLD_MAP[h].x - px) / 100 * w;
       const dy = (HOLD_MAP[h].y - py) / 100 * bh;
       const d = dx * dx + dy * dy;

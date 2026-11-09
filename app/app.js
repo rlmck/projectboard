@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: event wiring, PWA service worker + install banner, and boot (loaded LAST).
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, trace, setup, app. This file: event wiring, PWA service worker + install banner, and boot (loaded LAST).
 
   // ── No pinch-zoom ─────────────────────────────────────────────────────────────
   // The viewport meta (user-scalable=no) stops it on Android, but iOS Safari and
@@ -511,6 +511,9 @@
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => b.addEventListener(t, olStopRepeat));
     b.addEventListener('click', e => { if (e.detail === 0) olNudge(dx, dy, true); });   // keyboard activation
   });
+
+  // Board setup (#setup, admin; setup.js)
+  bsWire();
 
   // Admin hub (#admin): hold outlines link + user management
   document.getElementById('admin-back').addEventListener('click', goBack);

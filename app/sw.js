@@ -42,6 +42,8 @@ const ASSETS = [
   './challenge.js',
   './leaderboard.js',
   './wall.js',
+  './trace.js',
+  './setup.js',
   './app.js',
   './manifest.json',
   './icon.svg',

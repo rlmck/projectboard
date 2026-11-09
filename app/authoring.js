@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: create-a-problem, the hold outlines editor (#outlines), and circuit helpers.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, trace, setup, app. This file: create-a-problem, the hold outlines editor (#outlines), and circuit helpers.
 
   // ── Create a problem ──────────────────────────────────────────────────────────
   // The create view is laid out like the problem view: pinned, the same title
@@ -27,6 +27,7 @@
     if (!HOLD_MAP) return -Infinity;
     let ymin = Infinity, ymax = -Infinity;
     for (const h in HOLD_MAP) {
+      if (!isHandHold(h)) continue;                 // the finish zone: hand holds only
       const y = HOLD_MAP[h].y;
       if (y < ymin) ymin = y;
       if (y > ymax) ymax = y;
@@ -103,6 +104,7 @@
     const { x: px, y: py, w, h: bh } = boardPct(boardEl, clientX, clientY);
     let best = null, bestD = Infinity;
     for (const h in HOLD_MAP) {
+      if (!isHandHold(h)) continue;                 // footholds are never picked as holds
       const dx = (HOLD_MAP[h].x - px) / 100 * w;
       const dy = (HOLD_MAP[h].y - py) / 100 * bh;
       const d = dx * dx + dy * dy;
@@ -1452,13 +1454,12 @@
     if (n < 1) { showToast('Nothing to publish', 'error'); return; }
     OL.publishing = true; olStatus();
     try {
-      // hold_shapes ONLY: updated_at is the board version these outlines are pinned
-      // to, and bumping it would retire the very outlines being published. .select()
-      // because an update RLS blocks returns no error, just no rows.
-      const { data, error } = await sb.from('board_config')
-        .update({ hold_shapes: out }).eq('wall', 'HangoutPortland').select('wall');
+      // Into the holds table (db/42): admin_set_hold_outlines() checks the set is
+      // pinned to this board's version, writes each hand hold's outline, and
+      // board_config.hold_shapes follows as the copy every client reads. It never
+      // moves updated_at, which would retire the very outlines being published.
+      const { error } = await sb.rpc('admin_set_hold_outlines', { p_wall: 'HangoutPortland', p_shapes: out });
       if (error) throw error;
-      if (!data || !data.length) throw Object.assign(new Error('not admin'), { code: '42501' });
       HOLD_SHAPES = olClone(out);
       configHasShapes = true;
       OL.baseline = olStrip(olClone(out));

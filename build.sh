@@ -63,6 +63,8 @@ FILES=(
   challenge.js
   leaderboard.js
   wall.js
+  trace.js
+  setup.js
   app.js
 
   # service worker (registered by app.js; /sw.js is no-cache in _headers)

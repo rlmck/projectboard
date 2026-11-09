@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: the signed-in user's data: ticks, favourites, auth, profile.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, trace, setup, app. This file: the signed-in user's data: ticks, favourites, auth, profile.
 
   // Load the signed-in user's ticks into myTicks; clear for guests. RLS limits
   // the rows to this user, so we never see anyone else's sends.
@@ -695,7 +695,7 @@
     if (currentView === 'challenge') renderChallengeBody();
     if (currentView === 'leaderboard') renderLeaderboard();
     // Signed out (or lost admin) while on an admin screen: route away from it.
-    if ((currentView === 'outlines' || currentView === 'admin') && !isAdmin()) router();
+    if ((currentView === 'outlines' || currentView === 'setup' || currentView === 'admin') && !isAdmin()) router();
   }
 
   // Every account has a profile now: the sign-up trigger (db/30) creates it with
@@ -716,7 +716,7 @@
     await loadProfile();
     updateAdminUI();
     renderProfile();
-    if ((currentView === 'outlines' || currentView === 'admin') && !isAdmin()) router();
+    if ((currentView === 'outlines' || currentView === 'setup' || currentView === 'admin') && !isAdmin()) router();
   }
 
   // Signs out this device only: 'local' leaves the account's other devices signed

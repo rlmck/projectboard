@@ -88,7 +88,7 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
 
 ### 6.1 Hold ids
 - **Format:** `holdN`. The grid is 19 columns (A–S) × 13 rows, numbered row by row from the **bottom-left**: `hold1` = A1, `hold19` = S1, `hold20` = A2, `hold247` = S13. Row 1 is the bottom of the wall.
-- **The holds table** (db/41, 9 Nov 2026): one row per hold per board, `id` (as stored in problems), `name` (visible: A1–S13; footholds will be FT1, FT2…, left to right from the bottom row), `kind` (`hand`, `foot`, `feet_sign`), `led` (null only for a foothold), `x`/`y`/`outline` and `mirror`. Seeded from the live board: 188 hand holds plus the two feet signs; `tools/check_holds.py` checks it against everything below. Positions, outlines and mirror partners are still edited in `board_config` until the setup flow (a trigger copies them); `led`, `name` and `kind` live only in the table.
+- **The holds table** (db/41, 9 Nov 2026): one row per hold per board, `id` (as stored in problems), `name` (visible: A1–S13; footholds will be FT1, FT2…, left to right from the bottom row), `kind` (`hand`, `foot`, `feet_sign`), `led` (null only for a foothold), `x`/`y`/`outline` and `mirror`. Seeded from the live board: 188 hand holds plus the two feet signs; `tools/check_holds.py` checks it against everything below. Since db/42 (9 Nov 2026) the table is the source of positions, outlines and mirror partners too (`board_config`'s `hold_map` / `mirror_map` / `hold_shapes` are copies made from it, hand holds only), written by the admin board setup flow; it never changes `led` (hand holds keep their LEDs until camera mapping, session 2b). Footholds (`footN`, named `FTn`) have no LED, so the listener lights nothing for them; a foothold's mirror partner is always a foothold, so a mirrored cast never moves a hand hold onto one.
 - **Allowed values:** the database CHECK allows `^hold[0-9]{1,3}$` in the hand hold lists. Live data uses `hold1`–`hold246`. 188 grid cells have real holds (189 until db/32 on 28 Oct 2026 removed `hold218`, I12, which was never a hold: its LED 116 is behind the board).
 
 ### 6.2 Order and roles (holds are stored inverted)
@@ -105,7 +105,7 @@ others                        → blue
 - Colours: start green `(0,255,0)`, intermediate blue `(0,0,255)`, finish red `(255,0,0)`. These are from Gareth's `DisplayProblem.py`, and the app's overlay uses the same three.
 
 ### 6.3 Mirroring
-- With `mirror: true`, each hold becomes its partner, `holds.mirror` (the same pairs as `board_config.mirror_map`, kept in step by db/41's trigger). A hold with no partner, or its own, stays in place.
+- With `mirror: true`, each hold becomes its partner, `holds.mirror` (`board_config.mirror_map` is a copy of the hand holds' pairs, made from the table since db/42). A hold with no partner, or its own, stays in place.
 - Roles don't change.
 - The live table differs from the original system's `MirrorDic.txt` in 5 entries among real holds (E3, E4, E5, O5, O6). The app uses the live table. (Before db/32 on 28 Oct 2026 it differed in 7 more, from three shifted hold labels; those are now Gareth's pairs: K9↔I11, N13↔F13, O13↔E13.)
 
@@ -353,6 +353,7 @@ Since 8 Nov 2026 one **Edit** (the phone only; not the wall screen) changes a pr
 Names stay clean (no grade), trimmed, 1–60 characters, unique ignoring case in the app (the database's UNIQUE is exact, and a clash there is refused as `23505` too).
 
 ## Change history
+- **2026-11-09, Claude Code (later):** §5, §6.3: **board setup** (db/42). The holds table becomes the source of positions, outlines and mirror pairs (`board_config`'s are copies); footholds can be added (no LED, foot ↔ foot pairs only). LEDs unchanged. **No change to the channel, events or payloads, and no Pi change.**
 - **2026-11-09, Claude Code:** §5, §6.1, §6.3, §6.4, §6.5, §9.1: **holds in the database** (db/41). The listener reads each hold's LED and mirror partner from the new `holds` table (cached on the Pi for a boot with no network; the formula only as a last resort) instead of the formula and `board_config.mirror_map`; the seeded values are the formula's, checked by `tools/check_holds.py`, so every cast lights the same LEDs. **`feet_mode` gains `specific`** with `problems.feet_holds` (footholds only); the board lights nothing for it, and `preview_holds` accepts `feet: "specific"`. **No change to the channel, events or payloads.**
 - **2026-11-08, Claude Code:** §7 item 5 and a new §10: **names are editable** (one Edit for problems and circuits, db/39), and the name stays the cast key: the listener reads every cast by name when it arrives, so a rename works from the next cast. **No change to the channel, events, payloads or the Pi.**
 - **2026-11-07, Claude Code:** §4, §5, §7 item 14, §8, §9: **night mode follows the opening hours** (`HOURS_MON` … `HOURS_SUN` on the Pi, London time, plus PB Console's self-ending "stay on until"), replacing the fixed 23:00–08:00; outside them the wall screen is off (the Pi stops the kiosk) and the wall page has no night screen of its own any more. What night does to casts, circuits and previews is unchanged. **No change to the channel, events or payloads.**

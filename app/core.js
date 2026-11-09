@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, app. This file: escape/toast/render helpers, hold + board-overlay helpers, and hash routing.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, trace, setup, app. This file: escape/toast/render helpers, hold + board-overlay helpers, and hash routing.
 
   // ── Escape helpers ───────────────────────────────────────────────────────────
   function escHtml(s) {
@@ -152,6 +152,15 @@
     return info && info.name ? info.name : gridName(holdNum(h));
   }
 
+  // A hand hold: one Create, the hold filter and circuits can pick. Footholds
+  // (kind 'foot', db/41) are only ever Specific feet, and the feet signs are never
+  // holds. HOLD_MAP holds hand holds only today (board_config's copy, db/42); this
+  // keeps hit-testing and the finish zone right if footholds ever reach it.
+  function isHandHold(h) {
+    const info = HOLD_INFO && HOLD_INFO[h];
+    return !info || info.kind === 'hand';
+  }
+
   // Grid name for a hold number: hold1 -> A1, hold19 -> S1, hold20 -> A2, hold243 -> O13.
   // 19 columns (A–S) × 13 rows, numbered row-major. Labels holds in the outline editor.
   function gridName(n) {
@@ -290,6 +299,7 @@
     if (dim && lightAll) {
       holes.length = 0;
       Object.keys(HOLD_MAP).forEach(key => {
+        if (!isHandHold(key)) return;
         const pts = HOLD_SHAPES[key], pos = HOLD_MAP[key];
         if (pts && pts.length >= 3) holes.push(`<path d="${smoothShapePath(pts)}" fill="#000"/>`);
         else if (pos && typeof pos.x === 'number') holes.push(`<ellipse cx="${pos.x}" cy="${pos.y}" rx="${rx}" ry="${ry}" fill="#000"/>`);
@@ -961,16 +971,16 @@
     // A challenge attempt keeps running in other views, with a way back on the nav.
     if (name !== 'challenge') leaveChallenge();
 
-    ['list','detail','create','outlines','admin','auth','profile','circuits','circuit-detail','circuit-create','challenge','leaderboard'].forEach(v => {
+    ['list','detail','create','outlines','setup','admin','auth','profile','circuits','circuit-detail','circuit-create','challenge','leaderboard'].forEach(v => {
       document.getElementById('view-' + v).classList.toggle('active', v === name);
     });
 
     // Bottom nav: hidden on the focused auth screen, and in the outline editor,
     // which needs the whole screen for the board and its controls.
-    document.getElementById('bottom-nav').style.display = (name === 'auth' || name === 'outlines') ? 'none' : 'flex';
+    document.getElementById('bottom-nav').style.display = (name === 'auth' || name === 'outlines' || name === 'setup') ? 'none' : 'flex';
 
     // Active nav highlight.
-    const navFor = { list: 'list', detail: 'list', create: 'list', outlines: 'profile', admin: 'profile', profile: 'profile', auth: 'profile', circuits: 'circuits', 'circuit-detail': 'circuits', 'circuit-create': 'circuits', challenge: 'circuits', leaderboard: 'leaderboard' }[name] || 'list';
+    const navFor = { list: 'list', detail: 'list', create: 'list', outlines: 'profile', setup: 'profile', admin: 'profile', profile: 'profile', auth: 'profile', circuits: 'circuits', 'circuit-detail': 'circuits', 'circuit-create': 'circuits', challenge: 'circuits', leaderboard: 'leaderboard' }[name] || 'list';
     document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.nav === navFor));
 
     const keep = name === 'list' ? listScroll : name === 'circuits' ? circuitsScroll : null;
@@ -1024,6 +1034,14 @@
         if (!isAdmin()) { redirectRoute('#list'); break; }
         setView('outlines');
         initOutlines();
+        break;
+      case 'setup':
+        // Board setup (setup.js): admins only, same gate as #outlines. setView first:
+        // the board stage measures itself, which needs the view showing.
+        if (!authReady) break;
+        if (!isAdmin()) { redirectRoute('#list'); break; }
+        setView('setup');
+        initSetup();
         break;
       case 'admin':
         // Admin-only hub (Trace Holds + user management). Same gate as #outlines:

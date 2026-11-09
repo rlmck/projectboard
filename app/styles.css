@@ -1457,6 +1457,139 @@
     /* The install banner would sit on top of the panel's controls. */
     #view-outlines.active ~ #install-banner { display: none; }
 
+    /* ── Board setup (#setup, admins; setup.js) ─────────────────────────
+       A full-screen tool like the outline editor: a page for the first two steps
+       (start, photos), then the board stage with a panel below it. */
+    #view-setup.active {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    #view-setup .topbar { flex: none; }
+    .bs-stepno { margin-left: 8px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+    .bs-page { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px 24px; }
+    .bs-page > * { max-width: 520px; margin-left: auto; margin-right: auto; }
+    .bs-stage { display: none; }
+    #view-setup.bs-board .bs-stage { display: block; }
+    #view-setup.bs-board .bs-page { display: none; }
+    #view-setup:not(.bs-board) .bs-panel, #view-setup:not(.bs-board) #bs-fit { display: none; }
+    .bs-canvas { position: absolute; left: 0; top: 0; }
+    .bs-img { display: block; width: 100%; height: 100%; pointer-events: none; }
+    .bs-svg { pointer-events: none; }
+    .bs-over { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+
+    .bs-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+    .bs-card + .bs-card { margin-top: 10px; }
+    .bs-card-title { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+    .bs-facts { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: var(--text-soft); margin-bottom: 8px; }
+    .bs-muted { color: var(--text-muted); font-size: 13px; line-height: 1.45; margin: 0 0 10px; }
+    .bs-row { display: flex; gap: 8px; }
+    .bs-wide { width: 100%; flex: none; }
+    .bs-mt { margin-top: 10px; }
+    .ol-btn.bs-danger { color: var(--error-text); border-color: var(--error-text-a40); }
+    .ol-btn.on { border-color: var(--feet); color: var(--feet); background: var(--feet-a12); }
+
+    /* the photo and cartoon pickers */
+    .bs-pick {
+      position: relative; display: flex; align-items: center; gap: 12px; cursor: pointer;
+      padding: 10px; margin-top: 8px; border-radius: var(--radius-md);
+      background: var(--surface2); border: 1px dashed var(--border);
+    }
+    .bs-pick.done { border-style: solid; border-color: var(--success-a45); }
+    .bs-pick input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    .bs-pick-thumb {
+      flex: none; width: 64px; height: 64px; border-radius: var(--radius-sm); overflow: hidden;
+      display: flex; align-items: center; justify-content: center; background: var(--board-backdrop);
+    }
+    .bs-pick-thumb canvas { max-width: 100%; max-height: 100%; }
+    .bs-pick-plus { font-size: 28px; color: var(--text-muted); }
+    .bs-pick-text { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+    .bs-pick-text span { color: var(--text-muted); font-size: 12px; }
+
+    /* the board's shapes (stroke widths stay put at any zoom: non-scaling-stroke) */
+    .bs-quad { fill: none; stroke: var(--ol-edit); stroke-width: 2px; }
+    .bs-s { stroke-width: 1.4px; }
+    .bs-s.hand { fill: var(--int-a12); stroke: var(--ol-other-line); }
+    .bs-s.foot { fill: var(--feet-a16); stroke: var(--feet); }
+    .bs-s.extra { fill: var(--finish-a10); stroke: var(--finish); stroke-dasharray: 4 3; stroke-width: 1.8px; }
+    .bs-s.flag { stroke: var(--gold); stroke-width: 2px; }
+    .bs-s.partner { fill: var(--start-a28); stroke: var(--start); stroke-width: 2.4px; }
+    .bs-s.sel { fill: var(--ol-edit-a16); stroke: var(--ol-edit); stroke-width: 2.6px; stroke-dasharray: none; }
+    .bs-link { stroke: var(--start); stroke-width: 1.5px; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+    .bs-lasso { fill: none; stroke: var(--ol-edit); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+
+    .bs-corner {
+      position: absolute; width: 34px; height: 34px; transform: translate(-50%, -50%);
+      border-radius: 50%; border: 2px solid var(--ol-edit); background: var(--bg-a55);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .bs-corner::after { content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--ol-edit); }
+    .bs-corner span { position: absolute; top: -20px; font-size: 12px; font-weight: 700; color: var(--on-board); text-shadow: var(--text-shadow-seq); }
+    .bs-miss {
+      position: absolute; transform: translate(-50%, -50%);
+      min-width: 26px; height: 26px; padding: 0 5px; border-radius: var(--radius-pill);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; color: var(--on-accent);
+      background: var(--finish-a55); border: 2px solid var(--finish);
+    }
+    .bs-miss.sel { background: var(--ol-edit-a90); border-color: var(--white); color: var(--ol-vertex-ring); }
+    .bs-label {
+      position: absolute; transform: translate(-50%, calc(-100% - 6px));
+      padding: 2px 8px; border-radius: var(--radius-pill); white-space: nowrap;
+      font-size: 12px; font-weight: 700; color: var(--ol-vertex-ring); background: var(--ol-edit);
+    }
+    .bs-loupe canvas { display: block; width: 100%; height: 100%; }
+    #bs-loupe[hidden] { display: none; }
+
+    /* the panel */
+    .bs-panel { max-height: 48vh; overflow-y: auto; }
+    .bs-panel .ol-row { flex-wrap: wrap; }
+    .bs-panel .ol-btn { flex: 1 1 auto; }
+    .bs-hint { font-size: 13px; line-height: 1.4; color: var(--text-muted); margin: 0 auto 8px; max-width: 680px; }
+    .bs-hint b { color: var(--text); }
+    .bs-status {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+      max-width: 680px; margin: 0 auto 8px; font-size: 13px; font-weight: 600; color: var(--text-soft);
+    }
+    .bs-status .ok { color: var(--success-text); }
+    .bs-status .bad { color: var(--error-text); }
+    .bs-link-btn {
+      margin-left: auto; background: none; border: none; padding: 4px 0; cursor: pointer;
+      color: var(--accent-hover); font: inherit; font-weight: 700;
+    }
+    .bs-link-btn:disabled { color: var(--text-faint); cursor: default; }
+    .bs-tabs { display: flex; gap: 6px; max-width: 680px; margin: 0 auto 8px; }
+    .bs-tab {
+      flex: 1; height: 34px; border-radius: var(--btn-radius); cursor: pointer;
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted);
+      font-size: 13px; font-weight: 700;
+    }
+    .bs-tab.done { color: var(--text); }
+    .bs-tab.on { border-color: var(--ol-edit); color: var(--ol-edit); background: var(--ol-edit-a12); }
+    .bs-flags { max-width: 680px; margin: 0 auto 8px; }
+    .bs-flag { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; color: var(--text-muted); border-top: 1px solid var(--border); }
+    .bs-flag .bs-link-btn { margin: 0; min-width: 34px; text-align: left; }
+    .bs-flag span { flex: 1; min-width: 0; }
+    .bs-mini {
+      flex: none; height: 30px; padding: 0 10px; border-radius: var(--btn-radius); cursor: pointer;
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 700;
+    }
+    .bs-mini.on { border-color: var(--gold); color: var(--gold); }
+    .bs-sel-text { font-size: 14px; font-weight: 700; color: var(--text); }
+    .bs-checks { list-style: none; padding: 0; margin: 0 auto 10px; max-width: 680px; font-size: 13px; line-height: 1.4; }
+    .bs-checks li { padding: 4px 0 4px 22px; position: relative; color: var(--text-soft); }
+    .bs-checks li::before { position: absolute; left: 0; font-weight: 700; }
+    .bs-checks li.ok::before { content: "✓"; color: var(--success-text); }
+    .bs-checks li.bad::before { content: "✕"; color: var(--error-text); }
+    #view-setup.active ~ #toast {
+      bottom: calc(180px + env(safe-area-inset-bottom));
+      transform: translateX(-50%) translateY(calc(100% + 220px));
+    }
+    #view-setup.active ~ #toast.show { transform: translateX(-50%) translateY(0); }
+    #view-setup.active ~ #install-banner { display: none; }
+
     /* ── Problem hold overlay (detail view) ──────────────────────────── */
     /* The board-wrap matches the image box (natural aspect), so percentage
        positions from hold_map.json land correctly on each hold. */

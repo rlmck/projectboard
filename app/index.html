@@ -399,6 +399,29 @@
   </div>
 </section>
 
+<!-- ══ BOARD SETUP VIEW (admins — a new photo + cartoon: trace, match, footholds, mirror pairs, publish; setup.js) ══ -->
+<section id="view-setup" class="view">
+  <header class="topbar detail-bar">
+    <button class="icon-btn" id="bs-back" aria-label="Back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
+    <div class="detail-bar-title"><span id="bs-title">Board setup</span><span class="bs-stepno" id="bs-stepno"></span></div>
+    <button class="icon-btn" id="bs-fit" aria-label="Show the whole board">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+    </button>
+  </header>
+  <div class="bs-page" id="bs-page"></div>
+  <div class="ol-stage bs-stage" id="bs-stage">
+    <div class="bs-canvas" id="bs-canvas">
+      <canvas class="bs-img" id="bs-img" width="1" height="1"></canvas>
+      <svg class="ol-svg bs-svg" id="bs-svg" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="bs-over" id="bs-over"></div>
+    <div class="ol-loupe bs-loupe" id="bs-loupe" hidden><canvas width="120" height="120"></canvas></div>
+  </div>
+  <div class="ol-panel bs-panel" id="bs-panel"></div>
+</section>
+
 <!-- ══ AUTH VIEW ══════════════════════════════════════════════════════
      Nickname + PIN accounts (db/30, account.js). Two modes in one card:
        signup  (the default, #auth)  nickname (live check, Suggest one) + PIN + PIN again + robot check
@@ -1179,6 +1202,8 @@
 <script src="challenge.js"></script>
 <script src="leaderboard.js"></script>
 <script src="wall.js"></script>
+<script src="trace.js"></script>
+<script src="setup.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -8,8 +8,13 @@ app/state.js) and checks, for every hold:
   - its LED is what the formula gives (pi/listener/board.py led_index, contract
     6.4) and what tools/led_map.json says: so the Pi lights exactly the LEDs it lit
     before the table (until a hold is deliberately re-mapped in session 2);
-  - its mirror partner, position and outline are board_config's (the trigger
-    board_config_sync_holds keeps them in step), and its name is the grid name;
+  - its mirror partner, position and outline are board_config's (since db/42 the
+    table is the source and board_config's hold_map / mirror_map / hold_shapes are
+    copies made from it by the holds_sync_board_config trigger), and its name is
+    the grid name;
+  - footholds (the board setup, db/42): id footN, name FTn, no LED, a position and
+    an outline, and a mirror partner (if any) that is a foothold; every partner pairs
+    back, and never a hand hold with a foothold;
   - the 188 hand holds are exactly the live hold map's, the feet signs are B1 =
     hold2 = LED 26 and B2 = hold21 = LED 25, footholds have no LED, no LED is used
     twice, every partner is a hold;
@@ -86,9 +91,20 @@ def check(holds, bc, led_map, snap_map, snap_mirror):
                    % (len(hands - set(hold_map)), len(set(hold_map) - hands)))
     for h in holds:
         i, kind = h['id'], h['kind']
+        m = h.get('mirror')
+        if m is not None and m != i:
+            p = by_id.get(m)
+            if not p or p.get('kind') != kind:
+                bad.append('%s: mirror partner %s is not a %s hold' % (i, m, kind))
+            elif p.get('mirror') != i:
+                bad.append('%s: mirror partner %s does not pair back' % (i, m))
         if kind == 'foot':
             if h.get('led') is not None:
                 bad.append('%s: a foothold with LED %s' % (i, h['led']))
+            if not re.match(r'^foot[0-9]{1,4}$', i) or not re.match(r'^FT[0-9]{1,3}$', h.get('name') or ''):
+                bad.append('%s: a foothold named %s (ids footN, names FTn)' % (i, h.get('name')))
+            if h.get('x') is None or h.get('y') is None or not h.get('outline'):
+                bad.append('%s: a foothold with no position or outline' % i)
             continue
         n = board.hold_number(i)
         if n is None:
