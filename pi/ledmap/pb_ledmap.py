@@ -298,13 +298,30 @@ def make_handler(app):
 
         def do_POST(self):
             path = self.path.split('?', 1)[0]
+            # Read the body before any reply, even one refusing it: a reply that leaves the
+            # request body unread makes the socket close with data pending, which resets the
+            # connection (RST) and the client can lose the reply (seen as a flaky test, 2b).
+            try:
+                n = max(0, int(self.headers.get('Content-Length') or 0))
+            except ValueError:
+                n = -1
+            raw = self.rfile.read(n) if 0 < n <= 65536 else b''
+            if n > 65536:
+                left = min(n, 1 << 20)                # drain a too-big body (bounded), then refuse it
+                while left > 0:
+                    chunk = self.rfile.read(min(left, 65536))
+                    if not chunk:
+                        break
+                    left -= len(chunk)
+                self.close_connection = True
             # A plain form or a cross-site page can't send JSON without a CORS
             # preflight, which this server never answers: a cheap CSRF guard.
             if (self.headers.get('Content-Type') or '').split(';')[0].strip() != 'application/json':
                 return self._send(415, {'error': 'send Content-Type: application/json'})
             try:
-                n = int(self.headers.get('Content-Length') or 0)
-                body = json.loads(self.rfile.read(n) or b'{}') if n <= 65536 else None
+                if n < 0:
+                    raise ValueError('a bad Content-Length')
+                body = json.loads(raw or b'{}') if n <= 65536 else None
                 if not isinstance(body, dict):
                     raise ValueError('the body must be a JSON object (64 KB at most)')
             except ValueError as e:
