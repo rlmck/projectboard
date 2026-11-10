@@ -15,9 +15,9 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 | **Local path** | `C:\Users\rossl\Documents\ProjectBoard\` (the repo root; there's no subfolder) |
 
 **Which document to trust:**
-- **Now:** `PROJECT_STATUS.md` (current state, decisions, waiting on, open questions, the last 5 sessions). Older sessions: `docs/log/<yyyy-mm>.md`.
+- **Now:** `PROJECT_STATUS.md` (current state, decisions, waiting on, open questions, the last 3 sessions). Older sessions: `docs/log/<yyyy-mm>.md`.
 - **To-do:** `TODO.md`, Ross's one ordered list (top item = now). Asked "what's on my to-do list?", show the top 3; the rest only if asked. He adds, removes and reorders by asking; edit it, then ship it.
-- **Architecture, data model, auth, caching, deploy mechanics, known issues:** `docs/codebase-overview.md`. Read it at the start of a session. It was checked against the live database.
+- **Architecture, data model, auth, caching, deploy mechanics, known issues:** `docs/codebase-overview.md`. Read the sections a task touches (working rule 1). It was checked against the live database.
 - **Hosting, rollout and the install flow:** `docs/rollout-plan.md`.
 - **The cast contract:** `docs/cast-contract.md`. **Circuits Phase 2 spec:** `docs/circuits-phase2.md`.
 - **The Pi:** `pi/README.md` (what runs, deploy, rollback, wiring, LED mapping); a new SD card: `pi/firstboot/README.md`; the listener and kiosk plan with the R8 acceptance tests: `docs/pi4-listener-kiosk-plan.md`.
@@ -29,7 +29,7 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 
 ## Working rules
 
-1. **Read this file, `PROJECT_STATUS.md`, `TODO.md` and `docs/codebase-overview.md` at the start of every session** (`/start`).
+1. **At the start of every session read `PROJECT_STATUS.md` and `TODO.md`** (`/start`; this file is already loaded, don't re-read it). **Then read only the sections of the big docs the feature touches, never the whole file**: `grep -n '^##' <doc>` for the map, then Read with offset/limit. Big = `docs/codebase-overview.md` (131 KB), `docs/cast-contract.md` (53 KB), `pi/README.md`, `docs/board-setup-plan.md`, `docs/rollout-plan.md`, `console/README.md`, `docs/log/*`. Don't re-read a file that's already in the session. Wait for a deploy with `bash tools/wait-live.sh` (one command), never repeated curls. In Chrome tests, check with `javascript_tool`/`get_page_text` and take a screenshot only to judge a layout. Run `pi/tests`, `console/tests` and the `tools/*_score.js` tools only when their code changed. Why: `docs/token-audit.md`.
 2. **Deploying (Ross, 29 Oct 2026; replaces the 19 Oct two-confirmation rule).**
    - **By default, ship:** when a task is done and the checks pass (`bash build.sh --check`, plus `console/tests` or `pi/tests` when those changed), commit and push `main` in one step, without asking (`/ship`). Stage only the files the task changed, by name. Then, if a shipped file in `app/` changed, confirm the live `sw.js` shows the new `CACHE` stamp (`bash build.sh --stamp HEAD`); if the session can't reach the live site, say so rather than skipping it silently.
    - **"Staging first"** (Ross says so): commit, push to `dev` only, give him the staging URL (`/staging`). There's no rule about keeping `dev` and `main` level; `dev` is just the staging branch.
@@ -72,7 +72,7 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 This repo is the single source of truth shared by Claude Code and the claude.ai project chat, which reads and commits through GitHub (to `main`). The chat can't see local-only files (`docs/*` except the committed ones, `db/`, `pi/_old/`, `reference/`), so `PROJECT_STATUS.md` and the committed docs must stand on their own.
 
 - **Start of every session (`/start`):** `git fetch` and `git pull --ff-only` on `main` (the chat may have committed), check the hook is on, read `PROJECT_STATUS.md` and `TODO.md`, summarise. Read `docs/cast-contract.md` too if the work touches casting, Supabase Realtime or the Pi.
-- **End of every session (`/wrap`):** a Session log entry at the top of `PROJECT_STATUS.md` (date, Claude Code or chat, what changed, what's left, new questions); keep the 5 newest there and move older ones word for word to `docs/log/<yyyy-mm>.md`; update Current state, Decisions, Waiting on and Open questions; in `TODO.md`, remove what's done and add what Ross agreed to (keep the order). Keep the status file under 15 KB. Then ship both.
+- **End of every session (`/wrap`):** a Session log entry at the top of `PROJECT_STATUS.md` (date, Claude Code or chat, what changed, what's left, new questions); keep the 3 newest there (each under 800 bytes) and move older ones word for word to `docs/log/<yyyy-mm>.md`; update Current state, Decisions, Waiting on and Open questions (a rule already in this file isn't repeated there: point to it); in `TODO.md`, remove what's done and add what Ross agreed to (keep the order). Keep the status file under 12 KB. Then ship both.
 - **Any change to the cast channel, event or payload** updates `docs/cast-contract.md` in the same commit, with a Change history line.
 - **`PROJECT_STATUS.md` and `TODO.md` may be edited from the chat**, so never assume your local copy is current: pull first.
 - **Never record personal data about users** in these files. The repo is public: no personal circumstances, no secrets either, and nothing copied from `docs/security-findings.md`. A local-only doc is checked for both before it's ever committed.
@@ -118,12 +118,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 
 What each view does in detail (fullscreen viewer, create, the outline editor, circuits, challenges, the wall mode): overview §4.
 
-**Other tracked files:**
-- **Shipped (`app/`):** `index.html`, `privacy.html` (keep its claims true), `tokens.css` (every design value, loaded before `styles.css` by both pages), `styles.css`, `sw.js`, `manifest.json`, the icons, and the offline fallback board, a snapshot of the live one written by `tools/snapshot_board.py`: `board-fallback.jpg`, `hold_map.json`, `mirror_map.json`, `hold_shapes.json`. Plus Cloudflare's `_headers` and `_redirects`. (`ProjectBoard.png`, the old drawing, is still in `build.sh` but unused.)
-- **`app/supabase-js-2.116.0.js`:** vendored and pinned. Never a CDN URL. To upgrade, see overview §4.1.
-- **Hosting config:** `build.sh` (the allowlist, the checks, the CACHE stamp), `wrangler.jsonc`, `app/_headers`, `app/_redirects`, `.gitattributes`.
-- **Tools (`tools/`, not deployed):** `snapshot_board.py` (refreshes the fallback board from live), `register_shapes.py`, `register_leds.py`, `make_icons.py`, `make_qr.py`, `idle_preview.py`, `cast-test.html` + `serve.py`, `led_map.json` (the Pi wiring contract), and the retired `register_holds.py`/`register_mirror.py` + `hold_positions.json` (history; they can't write into `app/`).
-- **`print/`:** the A5 poster and QR, not deployed. The QR encodes `/scan`; change where it lands in `app/_redirects`, never by reprinting.
+**Other tracked files** (the full map: overview §3, tools §11): `app/privacy.html` (keep its claims true); `app/supabase-js-2.116.0.js`, vendored and pinned, never a CDN URL (upgrade: overview §4.1); the offline fallback board (`board-fallback.jpg`, `hold_map.json`, `mirror_map.json`, `hold_shapes.json`, written only by `tools/snapshot_board.py`); `tools/wait-live.sh` (waits for a deploy's CACHE in one command). `print/`'s QR encodes `/scan`: change where it lands in `app/_redirects`, never by reprinting.
 
 **Local only (gitignored):** `db/`, `pi/_old/` (the June 2026 Pi 3 listener, the 26 Oct stopgap, and `problems.csv`, which holds setters' nicknames), `pi/config.env` (the laptop's copy of the Pi's settings), `docs/*` except the committed docs, `console/.env.local`, `console/audit.log` and `console/data/`, `backups/`, `reference/original-pi-codebase/dtb/` (Gareth's original code; two register scripts read it by path). Gareth's SD-card image, the old reverse-engineering, old LED test scripts and old audits are archived outside the repo in `Documents\_Archive\ProjectBoard\ProjectBoard-archive\`.
 

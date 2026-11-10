@@ -15,6 +15,7 @@ docs/*
 !docs/console-plan.md
 !docs/circuits-phase2.md
 !docs/pi4-listener-kiosk-plan.md
+!docs/token-audit.md
 !docs/log/
 !docs/screenshots/
 reference/

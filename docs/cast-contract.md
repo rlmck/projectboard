@@ -1,5 +1,7 @@
 # Cast contract
 
+> **Read by section, not whole** (53 KB): `grep -n '^##' docs/cast-contract.md` for the map, then only the sections your task touches (`docs/token-audit.md`).
+
 How a cast gets from the app to the LEDs. **This describes what the code does** (first written 19 Oct 2026; circuits added 30 Oct 2026, §8; the live preview while setting 30 Oct 2026, §9; a circuit's static view 2 Nov 2026, §8.7). Anything the code doesn't settle is under "Open questions"; nothing there is decided. Any change to the channel, event or payload must update this file in the same commit. The repo is public: no secrets here.
 
 ## 1. Overview

@@ -8,4 +8,4 @@ Roll back live by reverting, never through the Cloudflare dashboard (CLAUDE.md w
 3. A database migration can't be reverted by git: if the commit went with one, say so and stop (that's Ross's, in the SQL editor).
 4. `git revert --no-edit <commit>` (a merge needs `-m 1`: ask first). A conflict: `git revert --abort` and tell Ross what clashed.
 5. `bash build.sh --check` must pass, then `git push origin HEAD:main`. Never a force push or a reset of `main` on GitHub.
-6. Poll the live `sw.js` until `CACHE` equals `bash build.sh --stamp HEAD`, as `/ship` does, and report it.
+6. `bash tools/wait-live.sh live` once (timeout 660000 ms), as `/ship` does, and report it.

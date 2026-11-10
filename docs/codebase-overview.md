@@ -1,5 +1,7 @@
 # Project Board: codebase overview
 
+> **Don't read this file whole** (131 KB, about 33,000 tokens). Run `grep -n '^##' docs/codebase-overview.md` for the map and Read only the sections your task touches (CLAUDE.md working rule 1, `docs/token-audit.md`).
+
 **Written 10 September 2026**, from a full read of the code plus read-only checks against the live Supabase database. It's the architecture reference for any new session: what the pieces are, how they fit, and what you'd otherwise have to rediscover.
 
 **Which document wins:**

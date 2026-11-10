@@ -1,5 +1,7 @@
 # pi/: the board's Raspberry Pi
 
+> **Read by section, not whole** (32 KB): `grep -n '^##' pi/README.md` for the map, then only the sections your task touches (`docs/token-audit.md`).
+
 Everything that runs on the Pi 4 behind the board: the cast listener that lights the LEDs, and the services that keep it running unattended. The app side of casting is in `docs/cast-contract.md`. The plan and the reasons behind it are in the local, uncommitted `docs/pi4-listener-kiosk-plan.md`.
 
 **Nothing secret lives here.** The Pi's settings are in `/etc/projectboard/config.env` on the Pi. The laptop keeps its copy in `pi/config.env`, which is gitignored. The Wi-Fi password and the Tailscale key only ever go through `secrets.env` on the SD card's boot partition (for `setup.sh`), which is also gitignored.
