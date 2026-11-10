@@ -1,7 +1,7 @@
 // ProjectBoard - ordered classic <script>s sharing ONE global scope (no ES modules, no
 // build step). Order: state, core, problems, admin, account, authoring, circuits,
 // challenge, leaderboard, wall, trace, setup, holdedit, app. This file: the admin hold
-// editor (Admin → Board Setup → Edit holds; docs/board-setup-plan.md, "The hold editor").
+// editor (Admin → Board Setup → Edit holds, the super admin only (db/44); docs/board-setup-plan.md, "The hold editor").
 //
 // It works on the live board directly (no photo, cartoon or line-up), on setup.js's
 // stage (pan, pinch, the loupe) as the step 'edit':
@@ -1143,7 +1143,7 @@ async function hePublish() {
   } catch (e) {
     console.error('hold editor: publish', e);
     HE.busy = false;
-    showToast(e && e.code === '42501' ? 'Only admins can publish a board' : 'Publish failed: ' + ((e && (e.details || e.message)) || 'check the connection'), 'error');
+    showToast(e && e.code === '42501' ? 'Only the super admin can publish a board' : 'Publish failed: ' + ((e && (e.details || e.message)) || 'check the connection'), 'error');
     bsRenderPanel();
   }
 }

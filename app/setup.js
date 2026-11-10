@@ -1,14 +1,14 @@
 // ProjectBoard - ordered classic <script>s sharing ONE global scope (no ES modules, no
 // build step). Order: state, core, problems, admin, account, authoring, circuits,
 // challenge, leaderboard, wall, trace, setup, holdedit, app. This file: Board setup
-// (#setup, admins), session 2a of docs/board-setup-plan.md. The hold editor (Edit holds,
+// (#setup, the super admin only: db/44), session 2a of docs/board-setup-plan.md. The hold editor (Edit holds,
 // the step 'edit') lives in holdedit.js and uses this file's stage and gestures.
 //
 // The flow, one step at a time, on a phone:
 //   start    the board as it is (holds, footholds, its corners), a saved draft to carry
 //            on with, and Undo for the last publish (db/42 admin_undo_board)
 //   photos   the straight-on photo and the cartoon (same framing), scaled down and
-//            uploaded to the 'board' bucket (admin-only writes) under setup/
+//            uploaded to the 'board' bucket (super-admin-only writes, db/44) under setup/
 //   corners  the board's four corners on the cartoon and the photo (the trace's area,
 //            saved to board_config.corners)
 //   lineup   the first time only (board_config has no corners yet): four hand holds
@@ -328,7 +328,7 @@ function bsPhotosHtml() {
   const ready = BS.img.cartoon && BS.img.photo;
   return `
     <div class="bs-card">
-      <p class="bs-muted">Both pictures need the same framing: the whole board, straight on, footholds included. They’re uploaded to the app’s storage (admins only can write there).</p>
+      <p class="bs-muted">Both pictures need the same framing: the whole board, straight on, footholds included. They’re uploaded to the app’s storage (only the super admin can write there).</p>
       ${tile('photo', 'The photo', 'Straight on, even light')}
       ${tile('cartoon', 'The cartoon', 'Made from that photo')}
       <button class="ol-btn ol-publish bs-wide bs-mt" data-act="upload" ${ready && !BS.busy ? '' : 'disabled'}>${BS.busy ? 'Uploading…' : 'Upload and go on'}</button>
@@ -1457,7 +1457,7 @@ async function bsPublish() {
   } catch (e) {
     console.error('board setup: publish', e);
     BS.busy = false;
-    showToast(e && e.code === '42501' ? 'Only admins can publish a board' : 'Publish failed: ' + ((e && (e.details || e.message)) || 'check the connection'), 'error');
+    showToast(e && e.code === '42501' ? 'Only the super admin can publish a board' : 'Publish failed: ' + ((e && (e.details || e.message)) || 'check the connection'), 'error');
     bsRenderPanel();
   }
 }

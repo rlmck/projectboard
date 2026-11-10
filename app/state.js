@@ -84,7 +84,7 @@
   const BOARD_BUCKET = 'board';         // Supabase Storage bucket holding the uploaded board image
   let session = null;    // Supabase auth session (null = guest)
   let authReady = false; // true once the session AND (if signed in) the profile are known — route guards wait for it
-  let profile = null;    // { id, username, is_admin, is_public } for the signed-in user
+  let profile = null;    // { id, username, is_admin, is_super_admin, is_public } for the signed-in user
   let profileNames = {}; // account id -> current username (for live setter names)
   let myTicks = new Set();         // problem_ids ticked in ANY orientation (the ✓ flag + "Total ticks")
   let myTicksNormal = new Set();   // problem_ids sent in the normal orientation

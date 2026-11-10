@@ -695,7 +695,7 @@
     if (currentView === 'challenge') renderChallengeBody();
     if (currentView === 'leaderboard') renderLeaderboard();
     // Signed out (or lost admin) while on an admin screen: route away from it.
-    if ((currentView === 'outlines' || currentView === 'setup' || currentView === 'admin') && !isAdmin()) router();
+    if (((currentView === 'outlines' || currentView === 'setup') && !isSuperAdmin()) || (currentView === 'admin' && !isAdmin())) router();
   }
 
   // Every account has a profile now: the sign-up trigger (db/30) creates it with
@@ -703,7 +703,7 @@
   async function loadProfile() {
     if (!session) { profile = null; return; }
     const { data, error } = await sb
-      .from('profiles').select('id, username, is_admin, is_public').eq('id', session.user.id).maybeSingle();
+      .from('profiles').select('id, username, is_admin, is_super_admin, is_public').eq('id', session.user.id).maybeSingle();
     // A load *error* is not the same as "no profile": don't null an existing profile.
     if (error) { console.warn('profile load failed', error); return; }
     profile = data || null;
@@ -716,7 +716,7 @@
     await loadProfile();
     updateAdminUI();
     renderProfile();
-    if ((currentView === 'outlines' || currentView === 'setup' || currentView === 'admin') && !isAdmin()) router();
+    if (((currentView === 'outlines' || currentView === 'setup') && !isSuperAdmin()) || (currentView === 'admin' && !isAdmin())) router();
   }
 
   // Signs out this device only: 'local' leaves the account's other devices signed

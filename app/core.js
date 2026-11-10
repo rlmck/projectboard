@@ -1082,20 +1082,20 @@
         redirectRoute('#outlines');
         break;
       case 'outlines':
-        // Admin-only tool. Nothing is shown until auth (and the profile) is known —
-        // initAuth re-runs the router then — so a non-admin never sees it, not even
-        // for a moment on a cold deep link. setView first: the editor measures its
+        // Super-admin-only tool (db/44). Nothing is shown until auth (and the profile)
+        // is known — initAuth re-runs the router then — so nobody else ever sees it, not
+        // even for a moment on a cold deep link. setView first: the editor measures its
         // stage, which has no size while the view is hidden.
         if (!authReady) break;
-        if (!isAdmin()) { redirectRoute('#list'); break; }
+        if (!isSuperAdmin()) { redirectRoute(isAdmin() ? '#admin' : '#list'); break; }
         setView('outlines');
         initOutlines();
         break;
       case 'setup':
-        // Board setup (setup.js): admins only, same gate as #outlines. setView first:
-        // the board stage measures itself, which needs the view showing.
+        // Board setup and Edit holds (setup.js, holdedit.js): the super admin only, same
+        // gate as #outlines. setView first: the board stage measures itself.
         if (!authReady) break;
-        if (!isAdmin()) { redirectRoute('#list'); break; }
+        if (!isSuperAdmin()) { redirectRoute(isAdmin() ? '#admin' : '#list'); break; }
         setView('setup');
         initSetup();
         break;

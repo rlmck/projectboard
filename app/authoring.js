@@ -751,7 +751,7 @@
     });
   }
 
-  // ── Hold outlines editor (#outlines, admin) ──────────────────────────────────
+  // ── Hold outlines editor (#outlines, super admin) ──────────────────────────────────
   // Fine-tune the traced outline of every hold, on a phone, and publish the set to
   // board_config.hold_shapes (db/28) so every client draws it on its next load.
   // It replaced both the old #calibrate tool and the desktop tools/trace_holds.html.
@@ -769,6 +769,9 @@
   // Hold positions (hold_map) are never changed here. Work in progress is kept as
   // a draft in localStorage until it's published or discarded.
   const isAdmin = () => !!(profile && profile.is_admin);
+  // The super admin (db/44) alone works on the board: #outlines, #setup and Edit holds.
+  // Always an admin too. RLS and the RPCs enforce it; this is only the UI.
+  const isSuperAdmin = () => !!(profile && profile.is_super_admin);
 
   const OL_DRAFT_KEY = 'pb-outline-draft';
   const OL_MAX_W = 8000;          // px: the widest the zoomed board gets (a hold is then ~350px across on a phone)
@@ -1586,7 +1589,7 @@
       showToast(`Published ${n} outlines — live on everyone’s next load`, 'success');
     } catch (err) {
       console.error('outline publish failed', err);
-      showToast(err && err.code === '42501' ? 'Only admins can publish outlines' : 'Publish failed — check connection', 'error');
+      showToast(err && err.code === '42501' ? 'Only the super admin can publish outlines' : 'Publish failed — check connection', 'error');
     }
     OL.publishing = false;
     olRenderStatic(); olRenderCur(); olStatus();

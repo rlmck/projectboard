@@ -1,10 +1,11 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, trace, setup, holdedit, app. This file: admin hub (#admin) - the hold outlines and board setup entry points + user management.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, trace, setup, holdedit, app. This file: admin hub (#admin) - the hold outlines and board setup entry points (the super admin only) + user management.
 
   // ── Admin hub (#admin) — hold outlines + user management ─────────────────────
   // Three sub-screens, all under the one #admin view, driven by the hash param:
-  //   #admin            -> hub: cards for Trace Holds + Users
+  //   #admin            -> hub: cards for Trace Holds + Board Setup (the super admin
+  //                        only, db/44) + Users (every admin)
   //   #admin/users      -> the user list, with a nickname search (rows are links)
   //   #admin/user/<id>  -> one user: stats, recent activity, and the actions
   // Accounts hold no email (db/30): a row is a nickname, its roles and its counts.
@@ -64,11 +65,17 @@
     return renderAdminHub();
   }
 
+  // A user row's role badge: Super admin (db/44), Admin, or nothing for a member.
+  function roleBadge(u) {
+    return u.is_super_admin ? '<span class="user-badge">Super admin</span>'
+      : u.is_admin ? '<span class="user-badge">Admin</span>' : '';
+  }
+
   function renderAdminHub() {
     adminSetHeader('Admin', false);
     document.getElementById('admin-content').innerHTML = `
       <div class="admin-hub">
-        <a class="admin-card" href="#outlines">
+        ${isSuperAdmin() ? `<a class="admin-card" href="#outlines">
           <div class="admin-card-icon">${boardIconSvg}</div>
           <div class="admin-card-text">
             <div class="admin-card-title">Trace Holds</div>
@@ -83,7 +90,7 @@
             <div class="admin-card-sub">A new photo and cartoon: trace the holds, add footholds, set mirror pairs, publish. Or undo the last publish.</div>
           </div>
           <div class="admin-card-chev">${chevSvg}</div>
-        </a>
+        </a>` : ''}
         <a class="admin-card" href="#admin/users">
           <div class="admin-card-icon">${usersIconSvg}</div>
           <div class="admin-card-text">
@@ -126,7 +133,7 @@
       <a class="admin-card user-link" href="#admin/user/${encodeURIComponent(u.id)}">
         <div class="user-avatar">${escHtml(userInitial(u.username))}</div>
         <div class="admin-card-text">
-          <div class="admin-card-title">${escHtml(u.username)}${u.is_admin ? '<span class="user-badge">Admin</span>' : ''}${u.is_public ? '<span class="user-badge public">On Ranks</span>' : ''}</div>
+          <div class="admin-card-title">${escHtml(u.username)}${roleBadge(u)}${u.is_public ? '<span class="user-badge public">On Ranks</span>' : ''}</div>
           <div class="admin-card-sub">Joined ${escHtml(fmtJoinDate(u.created_at))} · ${sends} send${sends === 1 ? '' : 's'}</div>
         </div>
         <div class="admin-card-chev">${chevSvg}</div>
@@ -152,10 +159,17 @@
     const sends = Number(u.tick_count) || 0;
     // Actions. Everyone can be renamed. Not on yourself: a new PIN (ask
     // another admin), the admin toggle (db/13) or delete (use Profile). Delete is
-    // for members only: remove admin first.
-    let action = `<button class="btn-block btn-ghost" id="user-rename-btn">Rename</button>`;
+    // for members only: remove admin first. The super admin's account (db/44) is
+    // out of every admin's reach: no rename, new PIN, demote or delete (the RPCs
+    // and the Edge Function refuse them too); its PIN is reset in the dashboard.
+    const lockedSuper = !!u.is_super_admin && !isSelf;
+    let action = lockedSuper ? '' : `<button class="btn-block btn-ghost" id="user-rename-btn">Rename</button>`;
     if (isSelf) {
-      action += `<p class="user-detail-note">This is your account. Another admin can give you a new PIN.</p>`;
+      action += u.is_super_admin
+        ? `<p class="user-detail-note">This is your account, the super admin’s. A new PIN for it is set in the Supabase dashboard.</p>`
+        : `<p class="user-detail-note">This is your account. Another admin can give you a new PIN.</p>`;
+    } else if (lockedSuper) {
+      action += `<p class="user-detail-note">This is the super admin’s account. Admins can’t rename it, give it a new PIN or change its role.</p>`;
     } else {
       action += `<button class="btn-block btn-primary" id="user-reset-btn">Give a new PIN</button>`;
       if (u.is_admin) {
@@ -169,9 +183,9 @@
     el.innerHTML = `
       <div class="user-detail-head">
         <div class="user-avatar lg">${escHtml(userInitial(u.username))}</div>
-        <div class="user-detail-name">${escHtml(u.username)}${u.is_admin ? '<span class="user-badge">Admin</span>' : ''}</div>
+        <div class="user-detail-name">${escHtml(u.username)}${roleBadge(u)}</div>
       </div>
-      <div class="profile-row"><span class="k">Role</span><span class="v">${u.is_admin ? 'Admin' : 'Member'}</span></div>
+      <div class="profile-row"><span class="k">Role</span><span class="v">${u.is_super_admin ? 'Super admin' : u.is_admin ? 'Admin' : 'Member'}</span></div>
       <div class="profile-row"><span class="k">Joined</span><span class="v">${fmtJoinDate(u.created_at)}</span></div>
       <div class="profile-row"><span class="k">On Ranks</span><span class="v">${u.is_public ? 'Yes' : 'No'}</span></div>
       <div class="profile-row"><span class="k">Routes set</span><span class="v">${routes}</span></div>
@@ -179,7 +193,8 @@
       <div class="section-label user-activity-label">Recent activity</div>
       <div id="user-activity"><div class="spinner"></div></div>
       <div class="user-detail-actions">${action}</div>`;
-    document.getElementById('user-rename-btn').addEventListener('click', () => openUserRename(u.id, u.username));
+    const rename = document.getElementById('user-rename-btn');
+    if (rename) rename.addEventListener('click', () => openUserRename(u.id, u.username));
     const reset = document.getElementById('user-reset-btn');
     if (reset) reset.addEventListener('click', () => openUserReset(u.id, u.username));
     const promote = document.getElementById('user-promote-btn');
@@ -344,7 +359,7 @@
     pendingAdminChange = { id, name, make };
     document.getElementById('user-admin-modal-title').textContent = make ? 'Make admin?' : 'Remove admin?';
     document.getElementById('user-admin-modal-text').innerHTML = make
-      ? `Give <b>${escHtml(name)}</b> admin rights? They’ll be able to delete and re-grade problems, edit the hold outlines, and manage users, including renaming them and giving them new PINs.`
+      ? `Give <b>${escHtml(name)}</b> admin rights? They’ll be able to delete problems, mark benchmarks, move problems to Circuits, delete challenge attempts and manage users, including renaming them and giving them new PINs. The board itself (holds, outlines, Board Setup) stays with the super admin.`
       : `Remove admin rights from <b>${escHtml(name)}</b>? They’ll go back to a normal member.`;
     document.getElementById('user-admin-error').textContent = '';
     const confirm = document.getElementById('user-admin-confirm');

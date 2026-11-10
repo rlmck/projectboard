@@ -15,7 +15,8 @@
 // What it does:
 //   1. answers CORS for the app's origins only;
 //   2. reads the caller from their own access token, and refuses anyone who isn't
-//      an admin (403), their own account (400) and unknown accounts (404);
+//      an admin (403), their own account (400), unknown accounts (404) and the
+//      super admin's account (403, db/44: no admin can take it over);
 //   3. reads the account's user_metadata: pin: true (set by the app at sign-up
 //      since 2 Nov 2026) means a PIN account, which gets a new 4-digit PIN, padded
 //      exactly as the app pads it (pinPassword(), keep in sync with app/account.js);
@@ -113,9 +114,12 @@ Deno.serve(async (req: Request) => {
     return reply({ error: 'You can’t reset your own PIN here. Ask another admin.' }, 400, origin);
   }
 
-  const { data: found, error: findErr } = await admin.from('profiles').select('id').eq('id', target).maybeSingle();
+  const { data: found, error: findErr } = await admin.from('profiles').select('id, is_super_admin').eq('id', target).maybeSingle();
   if (findErr) return reply({ error: 'Couldn’t look up that account.' }, 500, origin);
   if (!found) return reply({ error: 'That account doesn’t exist any more.' }, 404, origin);
+  // The super admin's PIN is never reset here (db/44): a new PIN would let an admin
+  // sign in as the super admin. It's reset from the Supabase dashboard instead.
+  if (found.is_super_admin) return reply({ error: 'That’s the super admin’s account: its PIN can’t be reset here.' }, 403, origin);
 
   // PIN or passphrase? (Read only: nothing here changes the account.)
   const { data: authUser, error: userErr } = await admin.auth.admin.getUserById(target);
