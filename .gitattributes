@@ -11,3 +11,5 @@ console/**    text eol=lf
 # ...except binary files under console/ (the desktop icon)
 console/**/*.ico binary
 console/*.ico binary
+# tools/ shell scripts run under bash: keep LF
+tools/*.sh    text eol=lf
