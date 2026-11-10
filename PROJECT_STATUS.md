@@ -2,8 +2,8 @@
 
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 15 KB: the 5 newest session entries live here, older ones in `docs/log/` (`docs/log/2026-10.md`, `docs/log/2026-11.md`).
 
-## Current state (as of 2026-11-09)
-- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-f4b05cd6a2` since 8 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
+## Current state (as of 2026-11-10)
+- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-6305d7e765` since 10 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
 - **Sorting and filtering (4 Nov 2026):** the Filter sheet (phone) or panel (wall): Sort, Grade slider, quick filters, pick Holds; `✕ Clear` (overview §4.2a).
 - **Deploying:** ship by default, end to end (Decisions); `build.sh` is the build gate, a pre-commit hook scans for secrets; `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`.
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs, about 0.25–0.45 s) and is used daily. Every hold's LED is checked on the wall (28 Oct, `pb-ledmap`; db/32 fixed three labels); mirrored casts and the feet rule are checked too (Ross, by 7 Nov), and the geofence centre on site.
@@ -14,7 +14,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **The wall kiosk** (`kiosk.service`: cage + Chromium on `HDMI-A-2`, opening `/?wall` with the wall key in the URL fragment) runs on the 1280×720 touchscreen and picks up a deploy at its next idle (within the hour) or each morning. **The touchscreen has a picture again** (the 4 Nov hardware fault is fixed; Ross, 7 Nov).
 - **Create on the wall, live LEDs while setting (30 Oct 2026):** the wall's Create saves as The Hangout (db/35, the wall key); taps on Create/Edit light the board (contract §9). Tried on the touchscreen and phones (Ross, 7 Nov).
 - **Opening hours (7 Nov 2026):** one per-day schedule in the Pi's `config.env` (`HOURS_MON`…`HOURS_SUN`, London time): Mon–Thu 15:30–22:00, Fri closed, Sat–Sun 09:30–15:00. Outside, the LEDs go dark, casts are ignored and the wall screen is off. PB Console: the hours table (Config), **Stay on until HH:MM** and End override (Board). `pi/README.md` → Opening hours.
-- **Holds in the database (9 Nov 2026, db/41, db/42):** the `holds` table holds each hold's name, kind, LED, position, outline and mirror partner (`board_config`'s are copies since db/42); the Pi and the app read it; `tools/check_holds.py` checks it. **Board setup** (Admin → Board Setup): photo + cartoon → trace → footholds → mirror pairs → publish, with Undo; not yet run on a new photo. Specific feet exists in the database only (UI: session 3, `docs/board-setup-plan.md`).
+- **Holds in the database (9 Nov 2026, db/41, db/42):** the `holds` table holds each hold's name, kind, LED, position, outline and mirror partner (`board_config`'s are copies since db/42); the Pi and the app read it; `tools/check_holds.py` checks it. **Board setup** (Admin → Board Setup): photo + cartoon → corners → line up (first run: four holds on today's image, then on the cartoon) → trace → footholds → mirror pairs → publish, with Undo; not yet run on a new photo. Specific feet exists in the database only (UI: session 3, `docs/board-setup-plan.md`).
 - **Hardware:** temporary wiring (`pi/README.md` → "Wiring"); the Pi is in the junction box (31 Oct). Power in at six points, two YU0510 5 V 10 A supplies (both needed). No relays or level shifter fitted (3.3 V data works); the relay module and the 74AHCT125 have arrived. A USB webcam shows the back of the board on Tailscale only.
 - **PB Console** (`console/`, `bash console/start.sh`): health, services, board controls, logs, config, Pi deploy (drift check), release, LED map, test cast, **circuit tracks** (1 Nov, direct Postgres), Activity (4 Nov), the R8 checklist, backups, runbook; warnings can be dismissed until they change (`console/README.md`). Phase 13 (Data) isn't built; phase 14 (Power) waits for the relays.
 
@@ -41,7 +41,8 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
-- **Ross:** the db/41 checks (9 Nov report); the full-board photo and cartoon, then run Board Setup with them (`docs/board-setup-plan.md` → Next steps) and try the 2a checklist (9 Nov report).
+- **Ross:** the db/41 checks (9 Nov report); the full-board photo and cartoon, then run Board Setup with them (`docs/board-setup-plan.md` → Next steps, now with the Line up step) and try the 2a checklist (9 Nov report).
+- **Ross:** decide what happens to the uncommitted session 2b work on the laptop (LED mapping, Check mode, db/43, Pi listener): it was never shipped.
 - **Ross: test the opening hours** (live 7 Nov): see the 2026-11-07 session entry's checklist.
 - Ross (low priority): delete the local passphrase hand-out file (and empty the Recycle Bin) once all 7 migrated accounts have signed in.
 
@@ -55,6 +56,11 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-10, Claude Code (board setup: line up today's board by four holds; TODO 13).**
+  - **Changed:** the Corners step's "Today's board" tab is gone (today's image is cropped, so its corners aren't the board's). A **Line up** step (first run only, while `board_config.corners` is empty): tap four hand holds on today's image (snapped, named), then the same four on the cartoon; `bsMatch()`'s first guess is the homography from those four pairs, the affine refinement unchanged. Bunched, collinear or out-of-order picks refused. In the draft. Plan + overview §4.8d.
+  - **Tested:** Chrome at phone width, writes stubbed: today's = `board-fallback.jpg` minus its bottom 30%, cartoon = the whole: 188/188 hand holds matched their own shape; refusals; draft restore; later run skips it.
+  - **Live:** `5093768`, CACHE `pb-6305d7e765` (seen live).
+  - **Left:** Ross: run the flow. The session 2b work (`ledmap.js`, db/43, Pi listener) is still uncommitted on the laptop (the line-up is merged into it there); not shipped.
 - **2026-11-09, Claude Code (board setup 2a: the admin flow, no LED mapping; TODO 13).**
   - **Changed:** db/42: `holds` is the source of positions, outlines, pairs (`board_config`'s are copies); `admin_publish_board` (hand holds keep id, name, LED), `admin_undo_board` + `board_versions`, `admin_set_hold_outlines`. Admin → **Board Setup** (`setup.js`, `trace.js`; overview §4.8d). No event or Pi change.
   - **Tested:** db/42 test (fails before 42); the flow in Chrome at phone width (writes stubbed), its payload through the real publish + undo (rolled back); auto-trace median IoU 0.923 (bar 0.91), 0 missed; pi + console tests; app views and `/?wall`.
@@ -77,9 +83,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Tested:** build check; Chrome on `/?wall`: Problems list (with the keyboard open), Circuits list, Filter panel, Create: every scrollable area has no bar and no gutter, and the lists still scroll; the phone view unchanged (page bar still there). No real casts sent.
   - **Live:** `26e2799`, CACHE `pb-3116114eba`.
   - **Left:** Ross: check it on the touchscreen.
-
-- **2026-11-08, Claude Code (one Edit for problems and circuits; owners can edit; TODO 9 names).**
-  - **Changed:** the detail ⋮ Edit opens the Create screen pre-filled (problems: holds, name, grade, feet rule; circuits: sequence, start count, loop, name, grade; never the setter), replacing Edit holds / Edit grade. Owners may edit their own while nobody else has ticked it (circuits: nobody else's run), never a benchmark, a challenge's circuit or The Hangout's; db/39 (applied) adds that to RLS plus column guards. Leaving with changes asks first. Names stay the cast key (contract §10; open question 4 closed): no Pi change. Phone only; the wall's Create unchanged.
-  - **Tested:** db/39 behaviour test (rolled back; fails on the old schema); Chrome 390 px, writes stubbed: each role, benchmark, challenge circuit, duplicate names, discard, the wall's Create; a renamed cast on `cast-test.html` (its checks pass).
-  - **Live:** `446cf22`, CACHE `pb-7ed312f8da`.
-  - **Left:** Ross: try it on a phone and the board (the report's list). Not asked on the phone's own back gesture.
