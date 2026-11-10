@@ -2,7 +2,7 @@
 
 Planned in the claude.ai project chat on 7 Nov 2026; narrowed on 9 Nov 2026. TODO 13. The repo is public: nothing personal, nothing secret.
 
-**Built so far:** session 1 (9 Nov 2026): the holds table and the backend for Specific feet (db/41). Session 2a (9 Nov 2026): the admin setup flow without camera LED mapping (db/42, `#setup`), with the line-up (10 Nov) and the prior-guided trace and tap-to-fix (10 Nov, below). Not built: 2b (camera LED mapping) and 3 (Specific feet in Create and on the problem view).
+**Built so far:** session 1 (9 Nov 2026): the holds table and the backend for Specific feet (db/41). Session 2a (9 Nov 2026): the admin setup flow without camera LED mapping (db/42, `#setup`), with the line-up (10 Nov) and the prior-guided trace and tap-to-fix (10 Nov, below). Not built: 3 (Specific feet in Create and on the problem view). **Session 2b (camera LED mapping) is dropped for now** (Ross, 10 Nov 2026; below).
 
 ## Why
 - **The holds will be rearranged** one day. Some LEDs sit at fixed positions (which dictate where holds go), some go through the board into the hold itself, so LEDs move with holds. After a rearrange: a new photo, a new cartoon board image, and the holds re-mapped to LEDs.
@@ -24,7 +24,7 @@ Planned in the claude.ai project chat on 7 Nov 2026; narrowed on 9 Nov 2026. TOD
 - **Existing hand holds keep their ids (`holdN`) and names (A1–S13)**, so no problem, circuit, tick or benchmark changes.
 - **Footholds are new holds**, added by the setup flow from the new full-board photo (footholds included). Nothing in session 1 depends on that photo.
 - **Foothold names: FT1, FT2…** (Ross, later on 9 Nov 2026), numbered left to right, starting from the bottom row, then the next row up, left to right, and so on. The first idea, F1, F2…, clashed with the hand holds in column F (F2–F11 and F13), and names are unique per board. The setup flow numbers them this way when it adds them.
-- **Three sessions:** (1) the holds table and the Specific feet backend; (2) the admin setup flow, split into 2a (everything but LED mapping) and 2b (camera LED mapping); (3) Specific feet in Create and on the problem view (phone and wall screen).
+- **Three sessions:** (1) the holds table and the Specific feet backend; (2) the admin setup flow, 2a (everything but LED mapping; 2b, camera LED mapping, dropped on 10 Nov 2026); (3) Specific feet in Create and on the problem view (phone and wall screen).
 - **For 2a (Ross, 9 Nov 2026):** the dry run is on the current board; Ross rotates a few little-used holds and takes a new full-board photo (footholds included) and makes a cartoon from it, so every hand hold's position and outline change and the rotated holds' outlines change shape. Hand holds keep id, name and LED; no problem, circuit, tick or benchmark changes; no board sets, no archive.
 - **Footholds have mirror partners** (Ross, 9 Nov 2026; open question 2): foot ↔ foot where the reflection finds one; an unpaired foothold has none. **Hand ↔ foot pairs are never allowed.**
 
@@ -66,15 +66,15 @@ Ross's first run on the new photo and cartoon left a lot of manual work in Revie
 - **`shapesUsable()`:** unchanged and still right: a publish moves `updated_at` and `__meta.board_updated_at` together.
 - **Create's hit-testing and the finish zone:** hand holds only (`isHandHold()`; `HOLD_MAP` holds hand holds anyway).
 - **Hand hold ids** stay `holdN` (the CHECKs are untouched); footholds only ever go in `feet_holds`.
-- **Still as they were, not blocking:** the feet signs hard-coded as `hold2`/`hold21`; the Pi's idle patterns, teaser and pb-ledmap cell tools on the 19 × 13 grid through the formula (2b's camera mapping replaces pb-ledmap's cells); the outline editor sorts by the id's number; `holdName()` falls back to the grid name; PB Console's test cast reads `board_config.mirror_map` (a copy now, so right).
+- **Still as they were, not blocking:** the feet signs hard-coded as `hold2`/`hold21`; the Pi's idle patterns, teaser and pb-ledmap cell tools on the 19 × 13 grid through the formula (fine while hand holds keep their LEDs); the outline editor sorts by the id's number; `holdName()` falls back to the grid name; PB Console's test cast reads `board_config.mirror_map` (a copy now, so right).
 - **The offline snapshot** (`app/hold_map.json` etc.) is hand holds only and must be re-taken after a real publish (`python tools/snapshot_board.py`, then ship). Footholds reach the app from the `holds` table (session 3 draws them).
 
-## Session 2b: camera LED mapping (not built)
-- The phone on a tripod facing the board; a new cast-contract event has the Pi light one LED at a time (open question 1); the camera finds the lit spot on the photo, which maps to the cartoon through the two corner quads (`board_config.corners`), and the nearest hand hold takes that LED. Where it can't tell, tap the lit hold. Every hand hold ends with exactly one LED; the feet-sign LEDs stay.
-- Publishing new LEDs goes through the same transaction and undo (`board_versions` already keeps `led`). `holds_led_unique` isn't deferrable: a swap of LEDs needs the publish to move them in one statement or through a free value.
-- pb-ledmap's grid tools and the idle patterns' grid would then move onto the table's LEDs.
+## Session 2b: camera LED mapping (dropped for now)
+**Ross, 10 Nov 2026: not needed at this scale.** Every LED on the board is already verified (28 Oct, `pb-ledmap`), rotating a hold doesn't move its LED, and footholds have none; `pb-ledmap` (`pi/README.md`) covers LED checks. The setup flow keeps every hand hold's LED.
+- The unfinished work (written 9 Nov 2026: `ledmap.js`, the step and Check mode, the Pi's `map_leds`/`map_state`/`holds_changed`, cast contract §11, `tools/ledmap_score.js`) is **parked on the branch `parked/2b-camera-led-mapping`**, never shipped, never tested at the gym. Only for a full rearrange or another gym (`TODO.md` → Not now); rebase it onto `main` first.
+- **db/43 is live** (applied 9 Nov 2026) and stays: `admin_publish_board()` accepts an optional `led` per hand hold; without one (as the shipped app always publishes) it keeps the hold's LED, exactly as db/42 did.
 ## Open questions
-1. **How the setup flow talks to the Pi** for mapping (a new Realtime event to light one LED?): a cast contract change.
+1. ~~**How the setup flow talks to the Pi** for mapping~~ **Moot while 2b is dropped** (the parked branch answers it with `map_leds` / `map_state`).
 2. ~~**Mirroring Specific feet**~~ **Answered (Ross, 9 Nov 2026):** footholds have mirror partners, foot ↔ foot, where the reflection finds one; an unpaired foothold has none (stays put in the mirrored view). Hand ↔ foot pairs are never allowed (the setup flow refuses them, and so does the database).
 3. **Other gyms:** today there's one board (`board:HangoutPortland`, one `board_config` row, one wall key, one geofence). Multi-gym comes later; keep the setup flow free of Hangout and grid assumptions. Specific feet are checked against the one board today (problems have no board column).
 
@@ -82,9 +82,8 @@ Ross's first run on the new photo and cartoon left a lot of manual work in Revie
 1. **Upload** the photo and the cartoon (same framing). *(2a: built)*
 2. **Corners:** the four board corners on the cartoon and the photo. **Line up** (the first time only): four hand holds tapped on today's board image, then on the cartoon. *(2a: built; the line-up 10 Nov 2026)*
 3. **Trace:** auto-trace the holds on the cartoon (below), match them to today's holds; review: add, move, redraw, delete; mark footholds; fix a wrong match. *(2a: built)*
-4. **Map LEDs:** phone on a tripod (session 2b, above). *(not built)*
-5. **Mirror pairs:** generated by reflecting the layout about the vertical centre line (fitted to the holds) and matching nearest holds of the same kind; review. *(2a: built)*
-6. **Publish.** On the current board this updates the holds in place: the hand holds keep their ids, the footholds are added. Undo puts the previous board back. A real rearrange later publishes a new set and archives the old one. *(2a: built, without sets)*
+4. **Mirror pairs:** generated by reflecting the layout about the vertical centre line (fitted to the holds) and matching nearest holds of the same kind; review. *(2a: built)*
+5. **Publish.** On the current board this updates the holds in place: the hand holds keep their ids, the footholds are added. Undo puts the previous board back. A real rearrange later publishes a new set and archives the old one. *(2a: built, without sets)*
 ## Later (a real rearrange)
 - **Board sets and the archive:** a set per layout; problems, circuits and benchmarks belong to a set; browse old sets read-only, with your ticks.
 
