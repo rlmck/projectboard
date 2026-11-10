@@ -16,7 +16,7 @@ action at a time (a lock); every action goes to console/audit.log.
     GET  /api/logs?source=&since=&until=&lines=&filter=&follow=1   streamed text
     POST /api/preview {action, args}                 what a confirm would say, and the busy check
     POST /api/action  {action, args, confirm, override_busy}   streamed output, then '@@result {...}'
-    GET  /api/tracks                 circuits with their led_track (direct Postgres) and the board's cell positions
+    GET  /api/health-history         the Pi's health log, 7 days (pb-healthlog; probe.py healthlog), cached 4 min
     GET  /api/holds                  the live holds, board version, image path, feet in use (holds.py, public reads)
     GET  /api/holds-image?path=      the live board image's bytes (the public bucket, through here: the CSP)
     GET  /api/whoami                 pid, code stamp, busy: a new launch reuses or replaces this one (session.py)
@@ -43,10 +43,10 @@ sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 import actions  # noqa: E402
 import autodeploy  # noqa: E402
+import backups  # noqa: E402
 import castlog  # noqa: E402
 import checks  # noqa: E402
 import drift  # noqa: E402
-import gitops  # noqa: E402
 import reports  # noqa: E402
 import supabase_api as supa  # noqa: E402
 import security  # noqa: E402
@@ -62,17 +62,15 @@ STATIC = {
     '/static/console.js': ('static/console.js', 'text/javascript; charset=utf-8'),
     '/static/more.js': ('static/more.js', 'text/javascript; charset=utf-8'),
     '/static/dash.js': ('static/dash.js', 'text/javascript; charset=utf-8'),
-    '/static/tracks.js': ('static/tracks.js', 'text/javascript; charset=utf-8'),
     '/static/activity.js': ('static/activity.js', 'text/javascript; charset=utf-8'),
     '/static/holds.js': ('static/holds.js', 'text/javascript; charset=utf-8'),
     # the app's own pure geometry for the Holds tab: outlines, simplify, footholds' FTn names
     '/app/trace.js': ('../app/trace.js', 'text/javascript; charset=utf-8'),
     '/app/setup.js': ('../app/setup.js', 'text/javascript; charset=utf-8'),
-    '/board.jpg': ('../app/board-fallback.jpg', 'image/jpeg'),         # the app's board photo (Circuit tracks)
     '/static/icon.svg': ('static/icon.svg', 'image/svg+xml'),
     '/tokens.css': ('../app/tokens.css', 'text/css; charset=utf-8'),   # the app's own design tokens
 }
-PI_TTL, LAPTOP_TTL, REALTIME_TTL = 25, 60, 300
+PI_TTL, LAPTOP_TTL, REALTIME_TTL, HEALTH_TTL = 25, 60, 300, 240
 KEEPALIVE_S = 15
 
 LOG_SOURCES = {
@@ -126,6 +124,9 @@ class Console:
         self._pi, self._pi_at, self._pi_lock = None, 0.0, threading.Lock()
         self._lap, self._lap_at, self._rt_at, self._lap_lock = None, 0.0, 0.0, threading.Lock()
         self._task_ok, self._task_at, self._kick_at = None, 0.0, 0.0
+        self._hist, self._hist_at, self._hist_lock = None, 0.0, threading.Lock()
+        self._backup_running = False
+        self.auto_backup = remote is None       # the real console; never from the tests' fake Pi
 
     def pi(self, refresh=False):
         with self._pi_lock:
@@ -169,6 +170,30 @@ class Console:
                 pass
         return autodeploy.attention(state, config_drift, self._task_ok)
 
+    def health_history(self, refresh=False):
+        """pb-healthlog's 7 days from the Pi (it keeps them; the console only reads)."""
+        with self._hist_lock:
+            if refresh or not self._hist or time.time() - self._hist_at > HEALTH_TTL:
+                h = self.remote.probe('healthlog 7')
+                if h.get('ok') or not self._hist:
+                    self._hist, self._hist_at = h, time.time()
+            return self._hist
+
+    def backup_if_due(self):
+        """The weekly backup, if it's due while the console is open (the scheduled task does it otherwise)."""
+        if not self.auto_backup or self._backup_running or not backups.due():
+            return
+        self._backup_running = True
+
+        def go():
+            try:
+                backups.run_if_due(self.remote, self.env, say=lambda line: actions.audit('backup', 'ok' if line.endswith(': ok') else 'failed', line))
+            except Exception as e:
+                actions.audit('backup', 'failed', '%s: %s' % (type(e).__name__, e))
+            finally:
+                self._backup_running = False
+        threading.Thread(target=go, daemon=True).start()
+
     def overview(self, refresh=False):
         result = {}
         t = threading.Thread(target=lambda: result.setdefault('lap', self.laptop_checks(refresh)))
@@ -181,7 +206,11 @@ class Console:
         listener = p.get('listener') or {}
         units = {u: s.get('ActiveState') for u, s in (p.get('services') or {}).items()}
         units.update({t + '.timer': s.get('ActiveState') for t, s in (p.get('timers') or {}).items()})
-        return {'at': time.time(), 'units': units, 'tiles': pi_tiles[:1] + tiles.laptop_tiles(lap) + pi_tiles[1:],
+        self.backup_if_due()
+        b = backups.summary()
+        return {'at': time.time(), 'units': units,
+                'tiles': pi_tiles[:1] + tiles.laptop_tiles(lap) + pi_tiles[1:] + [tiles.backup_tile(b)],
+                'backup': dict(b, running=self._backup_running),
                 'pi_ok': bool(p.get('ok')), 'helper': p.get('helper'), 'config_drift': drift,
                 'attention': self.attention(drift), 'autodeploy': autodeploy.load_state(),
                 'board': {'leds': listener.get('leds'), 'pattern': listener.get('idle_pattern'),
@@ -233,23 +262,6 @@ def r_drift(app, q):
     out['config_drift'] = actions.config_drift(app.pi().get('config_env'))
     out['autodeploy'] = autodeploy.load_state()
     return out
-
-
-def r_git(app, q):
-    return gitops.status()
-
-
-def r_git_diff(app, q):
-    path = q.get('path')
-    if path and path not in {f['path'] for f in gitops.status()['files']}:
-        raise ValueError('path: one of the changed files')
-    return {'diff': gitops.diff(path, staged=q.get('staged') == '1')}
-
-
-def r_live(app, q):
-    s = checks.site(checks.LIVE)
-    return {'cache': s.get('cache'), 'status': s.get('status'), 'repo': gitops.stamp('origin/main'),
-            'head': gitops.stamp('HEAD'), 'staging': checks.site(checks.STAGING).get('cache')}
 
 
 def r_ledmap(app, q):
@@ -311,37 +323,30 @@ def r_last_night(app, q):
     return reports.night_report(raw)
 
 
-def r_tracks(app, q):
-    import tracks
-    c = tracks.circuit_mod()
-    return {'circuits': tracks.list_circuits(), 'cells': tracks.cells(),
-            'limits': {'moves': c.TRACK_MAX_MOVES, 'cells': c.TRACK_MAX_CELLS, 'bytes': c.TRACK_MAX_BYTES},
-            'trace': TRACE_PREVIEW}
-
-
-# The route trace's timing, for the Circuit tracks tab's preview only: the Pi drew this trace
-# before a run until 5 Nov 2026 (circuit.py, contract 8.6); now the preview is just a way to
-# see a track run along its path.
-TRACE_PREVIEW = {'lap': 2.8, 'step_min': 0.034, 'step_max': 0.15, 'fade': 0.3, 'dim': 0.12}
-
-
 def r_holds(app, q):
     import holds
     return holds.board(app.env)
 
 
 def r_backups(app, q):
-    return {'backups': reports.backups_list()}
+    return {'backups': reports.backups_list(), 'state': backups.summary()}
+
+
+def r_health_history(app, q):
+    h = app.health_history(q.get('refresh') == '1')
+    if not h.get('ok'):
+        raise RuntimeError(h.get('error') or 'the Pi did not answer')
+    return h
 
 
 def r_runbook(app, q):
     return {'sections': reports.runbook()}
 
 
-GET_ROUTES = {'/api/config': r_config, '/api/drift': r_drift, '/api/git': r_git, '/api/git-diff': r_git_diff,
-              '/api/live': r_live, '/api/ledmap': r_ledmap, '/api/problems': r_problems, '/api/problem': r_problem,
+GET_ROUTES = {'/api/config': r_config, '/api/drift': r_drift,
+              '/api/ledmap': r_ledmap, '/api/problems': r_problems, '/api/problem': r_problem,
               '/api/activity': r_activity, '/api/activity-history': r_activity_history, '/api/acceptance': r_acceptance, '/api/last-night': r_last_night,
-              '/api/backups': r_backups, '/api/runbook': r_runbook, '/api/tracks': r_tracks,
+              '/api/backups': r_backups, '/api/runbook': r_runbook, '/api/health-history': r_health_history,
               '/api/holds': r_holds}
 
 

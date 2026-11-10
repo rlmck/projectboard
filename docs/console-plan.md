@@ -37,6 +37,8 @@ Edit the Pi's `config.env` in a form.
 
 ## Phase 7: App release
 
+**Removed 10 Nov 2026** (the console layout, phase 18): Claude Code ships (`/ship`), so the Release section went. Holds' Ship the snapshot keeps the gate and push it used. What follows is the history.
+
 **Built 28 Oct 2026; reworked 29 Oct 2026** for the ship-by-default rule (CLAUDE.md working rule 2): the separate commit, push-dev, fast-forward-main and CACHE-bump steps became **Ship** (commit the ticked files + push `main`, one confirm), **Staging** (push `HEAD` to `dev`, fast-forward only) and **Rollback** (revert one of `main`'s last 15 commits + push), all through the action table, the audit and the lock. Each runs `bash build.sh --check` first: the syntax check and the three-places rule now live in `build.sh` (the Cloudflare build gate), not in the console. CACHE is stamped by the build; the console asks `bash build.sh --stamp <ref>` what live should show. New (untracked) files start unticked, so nothing unrelated gets committed by default. Console commits carry no attribution lines. The bullets below are the original 28 Oct plan.
 
 - **Status:** `git status`, the branch, ahead/behind `origin/dev` and `origin/main`, `git pull --ff-only` (and `git pull --ff-only origin main` on `dev`, as CLAUDE.md asks).
@@ -118,6 +120,8 @@ First edits worth having: mark or unmark a benchmark; the mirror partner of one 
 
 ## Phase 14: Power
 
+**Its section was removed 10 Nov 2026** (phase 18): the relays aren't fitted. When they are, the control goes on Home's Board tile.
+
 **Built 28 Oct 2026 as the disabled view.** The switching itself waits for the relay module.
 
 Relay on/off for the LED supplies. `pi/listener/power.py` is the hook; it's a no-op while `RELAY_PINS` is empty. The relay module hasn't arrived.
@@ -132,6 +136,8 @@ Relay on/off for the LED supplies. `pi/listener/power.py` is the hook; it's a no
 A tab that works without the Pi (static content, no ssh): the rescue hotspot steps (`projectboard-rescue`, the Pi at 10.42.0.1, stop `pb-netwatch` first), reading `netlog.txt` from the SD card, the rollback to the stopgap listener, the key commands from `pi/README.md` (pb-status, pb-idle, pb-ledmap, journalctl lines, deploy), and what each overview tile's red means and what to try. Generated from `pi/README.md` at start (so it stays in step), with the hotspot section always shown first when the Pi is unreachable.
 
 ## Phase 16: Circuit tracks
+
+**Removed 10 Nov 2026** (phase 18): the Pi stopped lighting tracks on 5 Nov. `circuits.led_track` and `check_track()` stay (contract §8.6); the editor is in git history.
 
 **Built 1 Nov 2026** (cast contract §8.6, db/37). A tab that edits a circuit's track: the LEDs between each hold and the next, which the Pi lit in the route trace before a run and dim pink under it until 5 Nov 2026 (the "map and next hold" look, contract §8.3, doesn't draw them; they're kept and checked).
 
@@ -152,6 +158,17 @@ A tab that works without the Pi (static content, no ssh): the rescue hotspot ste
 - **Ship the snapshot** (`holds-ship-snapshot`, confirm): `tools/snapshot_board.py`, `tools/check_holds.py`, `build.sh --check`, a commit of the four snapshot files alone, push `main`, then the Pi's automatic deploy (`autodeploy.start_background()`).
 - **Not here:** turning a hold and Board Setup's photo and cartoon steps. They upload a board image to Storage, which needs a signed-in session (or the service key); the console has neither: its write path is direct Postgres (28 Oct 2026), Turnstile guards sign-in, and the service key stays in the Edge Function. They stay on the app's Board Setup until Ross picks a way (a console sign-in needs `127.0.0.1` on the Turnstile widget's hostnames).
 - Tests: `console/tests/test_holds.py`. Checked on 10 Nov 2026 against the live board with the publish and the undo rolled back.
+
+## Phase 18: A simpler layout (10 Nov 2026)
+
+Ross found the console cluttered (19 sections in 5 groups). Kept what he uses, folded the rest away (`console/README.md` → What it does):
+
+- **Sidebar:** Home · Holds · Activity · ⚙ Advanced, and the Runbook only while the Pi is offline.
+- **Home** is one page you drill into: Board (webcam, the LED, pattern, brightness, stay-on, night and screen controls, Light a problem), **Health** (temperature, power, Wi-Fi, disk with 7-day lines; services with Restart; the app; self-healing; click for the 7-day charts), Activity (7 days), Opening hours (click to edit them), Recent actions. Board, Services and Test cast merged into it.
+- **Advanced:** Logs, Config, Deploy, LED map, Tests, Backups, Audit, as closed sections.
+- **Deleted:** Release, Circuit tracks, Power.
+- **Health history** is kept by the Pi, since the laptop isn't always on: `pb-healthlog` (a service as `pi`) reads temperature and `get_throttled` every 15 s and writes a line every 5 minutes (temperature now and highest, under-voltage and throttled counts, Wi-Fi signal, disk) to `/var/lib/projectboard/healthlog/`, 7 days kept; `probe.py healthlog` reads it.
+- **Backups are weekly by themselves** (`console/backups.py`): the existing 10-minute scheduled task makes one when the last good one is 7 days old (retrying hourly after a failure), and the console does too while open. Home warns only when the last try failed or the newest good backup is over 8 days old.
 
 ## Later: the phone
 

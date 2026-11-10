@@ -273,6 +273,26 @@ def errors_tile(e, warn_at=50, bad_at=500):
                 '%s|%s' % (level, newest))
 
 
+def backup_tile(b, now=None):
+    """The weekly backup (console/backups.py summary()): a warning only when the last try failed or
+    the newest good backup is more than 8 days old. Home shows it only then (in the status line)."""
+    now = now or time.time()
+    b = b or {}
+    when = lambda t: time.strftime('%a %d %b %H:%M', time.localtime(t)) if t else 'never'
+    lines = ['last good backup: %s%s' % (when(b.get('ok_at')), ' (%s)' % b['how'] if b.get('how') and b.get('ok_at') else ''),
+             'last try: %s, %s' % (when(b.get('tried_at')), b.get('result') or '-') if b.get('tried_at') else None,
+             "next: %s (weekly, by the laptop's scheduled task)" % when(b['next_at']) if b.get('next_at') else None,
+             'into backups/<date>/ at the repo root (gitignored)']
+    if b.get('result') == 'failed':
+        return tile('backup', 'Backups', BAD, 'the last backup failed', lines + ['why: %s' % b.get('error')],
+                    sig='bad|%s' % b.get('tried_at'))
+    age = (now - b['ok_at']) / 86400 if b.get('ok_at') else None
+    if age is None or age > 8:
+        return tile('backup', 'Backups', WARN, 'no backup yet' if age is None else 'last backup %d days ago' % age,
+                    lines, sig='warn|%s' % b.get('ok_at'))
+    return tile('backup', 'Backups', OK, 'backed up %s' % ago(now - b['ok_at']), lines, sig='ok')
+
+
 def laptop_tiles(c):
     if not c:
         return [tile('site', 'Live site', UNKNOWN, 'not checked yet'),

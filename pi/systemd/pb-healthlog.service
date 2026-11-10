@@ -1,0 +1,16 @@
+[Unit]
+Description=Project Board health log (temperature, under-voltage, Wi-Fi, disk; 7 days, for PB Console)
+Documentation=https://github.com/rlmck/projectboard/tree/main/pi
+After=systemd-tmpfiles-setup.service
+
+[Service]
+User=pi
+SupplementaryGroups=video
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /usr/local/bin/pb-healthlog
+Restart=always
+RestartSec=30
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

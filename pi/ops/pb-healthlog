@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""pb-healthlog: the Pi's health over the last 7 days, for PB Console's Health charts (10 Nov 2026).
+
+The Pi keeps its own record, because the laptop's console isn't always running.
+Every 15 s it reads the temperature and `vcgencmd get_throttled` (under-voltage,
+throttling and frequency capping right now); every 5 minutes it appends one line
+to /var/lib/projectboard/healthlog/YYYY-MM-DD.jsonl (London date):
+
+    {"t": 1762800000, "temp": 52.1, "tmax": 54.0, "uv": 0, "thr": 0, "wifi": 72, "disk": 41.3}
+
+    t      Unix time of the line
+    temp   the temperature now (°C);  tmax  the highest in the 5 minutes
+    uv     how many 15 s readings in the 5 minutes saw under-voltage (0-20). The Pi 4
+           can't measure its supply voltage; the firmware only flags when it drops
+           below about 4.63 V, which is what this counts.
+    thr    how many saw throttling or a capped frequency (0-20)
+    wifi   the Wi-Fi signal (%, as nmcli shows it), or null when not connected
+    disk   % of the SD card used
+
+Files older than 7 days are deleted (about 30 KB a day). PB Console reads them with
+`probe.py healthlog` (read-only). Runs as pi (the video group, for vcgencmd) from
+pb-healthlog.service; standard library only; it never changes anything else.
+"""
+import datetime
+import json
+import os
+import subprocess
+import sys
+import time
+
+DIR = '/var/lib/projectboard/healthlog'
+SAMPLE_S = 15
+WRITE_S = 300
+KEEP_DAYS = 7
+THERMAL = '/sys/class/thermal/thermal_zone0/temp'
+UV_NOW = 1 << 0                       # get_throttled: under-voltage now
+THR_NOW = (1 << 1) | (1 << 2) | (1 << 3)   # frequency capped, throttled, soft temperature limit: now
+
+
+def sh(*cmd, timeout=10):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return ''
+
+
+def temp_c():
+    try:
+        with open(THERMAL) as f:
+            return round(int(f.read().strip()) / 1000, 1)
+    except (OSError, ValueError):
+        return None
+
+
+def throttled():
+    """The get_throttled bits as an int, or None when vcgencmd doesn't answer."""
+    out = sh('vcgencmd', 'get_throttled')
+    try:
+        return int(out.split('=', 1)[1], 16)
+    except (IndexError, ValueError):
+        return None
+
+
+def wifi_signal():
+    for line in sh('nmcli', '-t', '-f', 'IN-USE,SIGNAL', 'device', 'wifi', 'list', '--rescan', 'no').splitlines():
+        if line.startswith('*:'):
+            try:
+                return int(line.split(':')[1])
+            except (IndexError, ValueError):
+                return None
+    return None
+
+
+def disk_used():
+    try:
+        st = os.statvfs('/')
+        return round(100 * (1 - st.f_bavail / st.f_blocks), 1) if st.f_blocks else None
+    except OSError:
+        return None
+
+
+class Window:
+    """The 15 s readings between two lines."""
+
+    def __init__(self):
+        self.tmax = None
+        self.uv = 0
+        self.thr = 0
+
+    def add(self, temp, bits):
+        if temp is not None:
+            self.tmax = temp if self.tmax is None else max(self.tmax, temp)
+        if bits is not None:
+            self.uv += 1 if bits & UV_NOW else 0
+            self.thr += 1 if bits & THR_NOW else 0
+
+    def line(self, t, temp, wifi, disk):
+        return {'t': int(t), 'temp': temp, 'tmax': self.tmax if self.tmax is not None else temp,
+                'uv': self.uv, 'thr': self.thr, 'wifi': wifi, 'disk': disk}
+
+
+def day_file(t, folder=DIR):
+    return os.path.join(folder, datetime.datetime.fromtimestamp(t).strftime('%Y-%m-%d') + '.jsonl')
+
+
+def append(row, folder=DIR):
+    os.makedirs(folder, exist_ok=True)
+    with open(day_file(row['t'], folder), 'a', encoding='utf-8') as f:
+        f.write(json.dumps(row, separators=(',', ':')) + '\n')
+
+
+def prune(now, folder=DIR, keep=KEEP_DAYS):
+    """Delete day files older than `keep` days (today and the 7 before stay). Returns their names."""
+    oldest = (datetime.datetime.fromtimestamp(now) - datetime.timedelta(days=keep)).strftime('%Y-%m-%d')
+    gone = []
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return gone
+    for n in names:
+        if n.endswith('.jsonl') and len(n) == 16 and n[:10] < oldest:
+            try:
+                os.remove(os.path.join(folder, n))
+                gone.append(n)
+            except OSError:
+                pass
+    return gone
+
+
+def main():
+    w = Window()
+    next_write = time.time() + WRITE_S
+    print('pb-healthlog: a line every %d s to %s, %d days kept' % (WRITE_S, DIR, KEEP_DAYS), flush=True)
+    while True:
+        t = temp_c()
+        w.add(t, throttled())
+        now = time.time()
+        if now >= next_write:
+            try:
+                append(w.line(now, t, wifi_signal(), disk_used()))
+                prune(now)
+            except OSError as e:
+                print('pb-healthlog: could not write: %s' % e, file=sys.stderr, flush=True)
+            w = Window()
+            next_write = now + WRITE_S
+        time.sleep(SAMPLE_S)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass

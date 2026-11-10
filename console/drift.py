@@ -30,7 +30,7 @@ def installed():
     for f in sorted(glob.glob(os.path.join(PI, 'listener', 'patterns', '*.py'))):
         add(os.path.relpath(f, REPO), '/opt/projectboard/listener/patterns/' + os.path.basename(f))
     add('pi/ops/board-cam.sh', '/opt/projectboard/ops/board-cam.sh')
-    for n in ('pb-health', 'pb-mode', 'pb-status', 'pb-idle', 'pb-ledmap', 'pb-bootcheck', 'pb-weekly-reboot', 'pb-touchwatch'):
+    for n in ('pb-health', 'pb-mode', 'pb-status', 'pb-idle', 'pb-ledmap', 'pb-bootcheck', 'pb-weekly-reboot', 'pb-touchwatch', 'pb-healthlog'):
         add('pi/ops/' + n, '/usr/local/bin/' + n)
     add('pi/ops/pb-console-helper', '/usr/local/sbin/pb-console-helper')
     add('pi/ops/pb-netwatch.sh', '/usr/local/sbin/pb-netwatch.sh')

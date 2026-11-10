@@ -167,7 +167,9 @@ button.lvl-chip:hover { border-color: var(--text-faint); }
 .w3 { grid-column: span 3; }
 .w4 { grid-column: span 4; }
 .w5 { grid-column: span 5; }
+.w6 { grid-column: span 6; }
 .w8 { grid-column: span 8; }
+.w12 { grid-column: span 12; }
 .tall { grid-row: span 2; }
 .t {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
@@ -287,6 +289,45 @@ button.lvl-chip:hover { border-color: var(--text-faint); }
 .kv span:not(.k), .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .empty { color: var(--text-muted); font-size: 12.5px; }
 
+/* Health (10 Nov 2026): rows of name, value and a 7-day line; the drawer's week charts */
+.health-top { display: flex; align-items: center; gap: 14px; }
+.hrows { display: grid; gap: 2px; min-width: 0; align-content: start; }
+.health-top .hrows { flex: 1; }
+.hrow {
+  display: grid; grid-template-columns: 8px 92px minmax(0, 1fr) 120px; align-items: center; gap: 8px;
+  font-size: 12.5px; padding: 4px 0; border-top: 1px solid var(--border);
+}
+.hrows > .hrow:first-child { border-top: 0; }
+.h-name { color: var(--text-muted); font-weight: 600; }
+.h-val { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 6px; }
+.h-val .icon-btn { padding: 0 6px; }
+.h-x { display: flex; justify-content: flex-end; }
+.hrow .sig { height: 18px; gap: 2px; }
+.hrow .sig i { width: 4px; }
+.spark { width: 120px; height: 26px; display: block; }
+.spark path { fill: none; stroke: var(--lvl-ok); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.spark.warn path { stroke: var(--lvl-warn); }
+.spark.bad path { stroke: var(--lvl-bad); }
+.spark-empty { color: var(--text-faint); font-size: 11px; }
+.strip-bg { fill: var(--surface2); }
+.ev.uv { fill: var(--lvl-bad); }
+.ev.thr { fill: var(--lvl-warn); }
+.chart.week .grid { stroke: var(--border); }
+.chart.week .ln { fill: none; stroke-width: 1.6; stroke-linejoin: round; }
+.chart.week .ln.a { stroke: var(--accent); }
+.chart.week .ln.b { stroke: var(--text-faint); stroke-width: 1; }
+.chart.week .mark { stroke-dasharray: 4 3; stroke-width: 1; }
+.chart.week .mark.warn { stroke: var(--lvl-warn); }
+.chart.week .mark.bad { stroke: var(--lvl-bad); }
+.chart.week .hit:hover { fill: var(--white-a12); }
+.chart.strip { margin-top: 4px; }
+.warn-text { color: var(--feet); }
+.d-more { margin-top: 10px; }
+.t-sub { margin: 2px 0 0; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); }
+.week-hours li.today { font-weight: 700; color: var(--text); }
+.week-hours li.today .when { color: var(--text); }
+.hours-table input[type=time] { padding: 3px 6px; }
+
 /* Floating tooltip for chart marks */
 .tip {
   position: fixed; z-index: 20; pointer-events: none; transform: translate(-50%, calc(-100% - 10px));
@@ -320,6 +361,18 @@ button.lvl-chip:hover { border-color: var(--text-faint); }
 .palette li .kind { color: var(--text-muted); font-size: 12px; }
 .palette li[aria-selected="true"] { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
 .palette .note { padding: 0 4px; }
+
+/* Sidebar: the Runbook shows only while the Pi is offline */
+.nav button.nav-alert { color: var(--finish-text); margin-top: 10px; }
+
+/* Advanced: one page of closed sections */
+details.adv { margin: 0 0 10px; }
+details.adv > summary { list-style: none; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+details.adv > summary::before { content: '▸'; color: var(--text-muted); }
+details.adv[open] > summary::before { content: '▾'; }
+details.adv > summary strong { color: var(--text); font-size: 15px; }
+.adv-body { margin-top: 14px; }
+.adv-body .card { background: var(--surface2); }
 
 /* -- The other sections ------------------------------------------------------------------- */
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
@@ -409,7 +462,7 @@ summary { cursor: pointer; color: var(--text-soft); }
 @media (max-width: 1320px) {
   .bento { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .w3, .w4 { grid-column: span 3; }
-  .w5, .w8 { grid-column: span 6; }
+  .w5, .w6, .w8, .w12 { grid-column: span 6; }
   .tall { grid-row: auto; }
   .t-board { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
   .t-board .t-head { grid-column: 1 / -1; }
@@ -436,23 +489,11 @@ summary { cursor: pointer; color: var(--text-soft); }
 }
 @media (max-width: 720px) {
   .bento { grid-template-columns: 1fr; }
-  .w3, .w4, .w5, .w8 { grid-column: auto; }
+  .w3, .w4, .w5, .w6, .w8, .w12 { grid-column: auto; }
   .t-board { display: flex; }
   .hero-kpis { gap: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .drawer { animation: none; } }
-
-/* Circuit tracks */
-.trk-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); gap: 16px; align-items: start; }
-@media (max-width: 1100px) { .trk-grid { grid-template-columns: 1fr; } }
-.trk-stage { position: sticky; top: 16px; }
-.trk-board { display: block; width: 100%; height: auto; border-radius: var(--radius-sm); background: var(--board-backdrop); cursor: crosshair; touch-action: manipulation; }
-.trk-now { margin: 10px 0 0; font-weight: 600; }
-.trk-legs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.trk-leg { font-family: var(--font-mono); }
-.trk-leg.trk-dirty { border-style: dashed; }
-.warn-text { color: var(--error-text); }
-#trk-circuit { flex: 1; min-width: 0; }
 
 /* Holds (outlines, footholds, foothold pairs; static/holds.js). Laptop-first: the list, the
    board and the panel side by side, filling the window; the list scrolls inside its card. */

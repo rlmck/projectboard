@@ -10,7 +10,6 @@
 <script src="/static/console.js" defer></script>
 <script src="/static/more.js" defer></script>
 <script src="/static/dash.js" defer></script>
-<script src="/static/tracks.js" defer></script>
 <script src="/static/activity.js" defer></script>
 <script src="/app/trace.js" defer></script>
 <script src="/app/setup.js" defer></script>
@@ -22,28 +21,11 @@
   <div class="brand"><span class="mark" aria-hidden="true"></span>PB Console</div>
   <div id="attention" class="attention" role="status" aria-live="polite" hidden></div>
   <nav class="nav" role="tablist" aria-label="Sections">
-    <button role="tab" data-tab="overview" aria-selected="true"><span class="nav-dot" id="nav-dot-overview"></span>Overview</button>
-    <div class="nav-group">Board</div>
-    <button role="tab" data-tab="board"><span class="nav-dot" id="nav-dot-board"></span>Board</button>
+    <button role="tab" data-tab="overview" aria-selected="true"><span class="nav-dot" id="nav-dot-overview"></span>Home</button>
     <button role="tab" data-tab="holds"><span class="nav-dot" id="nav-dot-holds"></span>Holds</button>
-    <button role="tab" data-tab="cast"><span class="nav-dot" id="nav-dot-cast"></span>Test cast</button>
-    <button role="tab" data-tab="tracks"><span class="nav-dot" id="nav-dot-tracks"></span>Circuit tracks</button>
-    <button role="tab" data-tab="ledmap"><span class="nav-dot" id="nav-dot-ledmap"></span>LED map</button>
-    <button role="tab" data-tab="power"><span class="nav-dot" id="nav-dot-power"></span>Power</button>
-    <div class="nav-group">Pi</div>
-    <button role="tab" data-tab="services"><span class="nav-dot" id="nav-dot-services"></span>Services</button>
-    <button role="tab" data-tab="logs"><span class="nav-dot" id="nav-dot-logs"></span>Logs</button>
-    <button role="tab" data-tab="config"><span class="nav-dot" id="nav-dot-config"></span>Config</button>
-    <button role="tab" data-tab="deploy"><span class="nav-dot" id="nav-dot-deploy"></span>Deploy</button>
-    <button role="tab" data-tab="backups"><span class="nav-dot" id="nav-dot-backups"></span>Backups</button>
-    <div class="nav-group">Checks</div>
     <button role="tab" data-tab="activity"><span class="nav-dot" id="nav-dot-activity"></span>Activity</button>
-    <button role="tab" data-tab="tests"><span class="nav-dot" id="nav-dot-tests"></span>Tests</button>
-    <button role="tab" data-tab="audit"><span class="nav-dot" id="nav-dot-audit"></span>Audit</button>
-    <div class="nav-group">Ship</div>
-    <button role="tab" data-tab="release"><span class="nav-dot" id="nav-dot-release"></span>Release</button>
-    <div class="nav-group">Help</div>
-    <button role="tab" data-tab="runbook"><span class="nav-dot" id="nav-dot-runbook"></span>Runbook</button>
+    <button role="tab" data-tab="advanced"><span class="nav-dot" id="nav-dot-advanced"></span>⚙ Advanced</button>
+    <button role="tab" data-tab="runbook" id="nav-runbook" class="nav-alert" hidden><span class="nav-dot bad"></span>Pi offline: Runbook</button>
   </nav>
   <div class="side-foot">
     <button id="palette-open" class="kbd-hint" title="Every section and quick action">Search actions <kbd>Ctrl K</kbd></button>
@@ -67,9 +49,9 @@
   <section id="tab-overview" class="tab">
     <div id="hero" class="hero"><div class="hero-state"><span class="hero-icon">…</span><div><h1 id="hero-title">Checking the Pi, the live site and Supabase…</h1><div id="hero-chips" class="hero-chips"></div></div></div><dl id="hero-kpis" class="hero-kpis"></dl></div>
     <div id="bento" class="bento">
-      <article class="t w5 tall t-board" id="t-board">
-        <div class="t-head"><h2>Board</h2><span id="board-chip" class="lvl-chip unknown">…</span><button class="t-more" data-goto="board" title="Open the Board section">Board ›</button></div>
-        <div class="cam-wrap" id="ov-cam-wrap">
+      <article class="t w6 tall t-board" id="t-board">
+        <div class="t-head"><h2>Board</h2><span id="board-chip" class="lvl-chip unknown">…</span><button class="t-more" data-detail-open="board" title="What the board is doing, in full">Details ›</button></div>
+        <div class="cam-wrap" id="ov-cam-wrap" title="Details">
           <img id="ov-cam" alt="The board from the webcam">
           <div class="cam-over"><span id="ov-leds" class="cam-pill"></span><span id="ov-mode" class="cam-pill"></span></div>
           <p id="ov-cam-note" class="cam-note" hidden>The webcam didn't answer. Is this laptop on Tailscale, and board-cam running?</p>
@@ -81,190 +63,21 @@
             <select id="ov-pattern" aria-label="Idle pattern"></select><button class="btn small" id="ov-pattern-set">Show</button></div>
           <div class="ctl-row"><span class="ctl-label">Brightness</span>
             <input id="ov-bright" type="range" min="5" max="100" step="5" value="100" aria-label="Brightness"><output id="ov-bright-out">100%</output><button class="btn small" id="ov-bright-set">Set</button></div>
+          <div class="ctl-row"><span class="ctl-label">Stay on</span>
+            <label>until <input id="ov-stay-until" type="time" step="60" value="23:00"></label><button class="btn small" id="ov-stay-go">Stay on</button><button class="btn small" id="ov-stay-end" data-act="stay-on" data-until="end">End override</button></div>
           <div class="ctl-row"><span class="ctl-label">Night</span>
-            <div class="seg" id="ov-night"><button class="btn small" data-act="night" data-mode="auto">Auto</button><button class="btn small" data-act="night" data-mode="night">Night</button><button class="btn small" data-act="night" data-mode="day">Day</button></div></div>
+            <div class="seg" id="ov-night"><button class="btn small" data-act="night" data-mode="auto" title="Follow the opening hours">Auto</button><button class="btn small" data-act="night" data-mode="night" title="NIGHT_FORCE, for tests: stays until Auto">Force night</button><button class="btn small" data-act="night" data-mode="day" title="NIGHT_FORCE, for tests: stays until Auto">Force day</button></div></div>
           <div class="ctl-row"><span class="ctl-label">Screen</span>
             <div class="seg" id="ov-screen"><button class="btn small" data-act="screen" data-state="on">On</button><button class="btn small" data-act="screen" data-state="off">Off</button></div></div>
+          <div class="ctl-row"><span class="ctl-label">Light a problem</span>
+            <input id="ov-cast-name" list="ov-cast-list" placeholder="Problem name" aria-label="Problem to light"><datalist id="ov-cast-list"></datalist>
+            <label class="check"><input type="checkbox" id="ov-cast-mirror"> Mirrored</label><button class="btn small" id="ov-cast-go" title="A real cast_problem, as the app sends it: the board lights">Cast</button></div>
         </div>
       </article>
-      <article class="t w4" id="t-listener"></article>
+      <article class="t w6" id="t-health"></article>
       <article class="t w3" id="t-casts"></article>
-      <article class="t w4" id="t-pi"></article>
-      <article class="t w3" id="t-wifi"></article>
-      <article class="t w4" id="t-services"></article>
-      <article class="t w4" id="t-site"></article>
-      <article class="t w4" id="t-release"></article>
-      <article class="t w4" id="t-health"></article>
-      <article class="t w4" id="t-errors"></article>
-      <article class="t w4" id="t-top"></article>
-      <article class="t w8" id="t-audit"></article>
-      <article class="t w4" id="t-schedule"></article>
-    </div>
-  </section>
-
-  <section id="tab-services" class="tab" hidden>
-    <header class="page-head"><h1>Services</h1><p>Start, stop and restart the Pi's units.</p></header>
-    <p class="note">Each button asks first. A stop or restart checks for a cast in the last 5 minutes and warns if there was one.</p>
-    <div id="services" class="rows"></div>
-    <div class="row-actions">
-      <button class="btn" data-act="service" data-unit="kiosk" data-verb="restart">Restart kiosk (wall loads the latest app)</button>
-      <button class="btn danger" data-act="reboot">Reboot the Pi</button>
-    </div>
-  </section>
-
-  <section id="tab-board" class="tab" hidden>
-    <header class="page-head"><h1>Board</h1><p>The LEDs, the opening hours and the wall screen, beside the webcam.</p></header>
-    <div class="board-grid">
-      <div class="controls">
-        <div class="card">
-          <h2>Now</h2>
-          <div id="board-now" class="kv"></div>
-        </div>
-        <div class="card">
-          <h2>LEDs</h2>
-          <div class="btn-row">
-            <button class="btn" data-act="idle" data-cmd="now">Idle now</button>
-            <button class="btn" data-act="idle" data-cmd="off">LEDs off</button>
-            <button class="btn" data-act="idle" data-cmd="default">Back to the default</button>
-          </div>
-          <p class="note">LEDs off: dark now and whenever idle; a cast still lights. Back to the default ends it. Both last until the listener restarts.</p>
-          <h3>Idle pattern <span class="muted">(until a restart; the permanent one is IDLE_PATTERN)</span></h3>
-          <div id="patterns" class="chips"></div>
-          <div class="btn-row">
-            <button class="btn" data-act="idle" data-cmd="tour">Tour (each for 60 s)</button>
-            <button class="btn" data-act="idle" data-cmd="cycle">Cycle (IDLE_CYCLE)</button>
-          </div>
-          <h3>Brightness <span class="muted">(of the configured level, until a restart)</span></h3>
-          <div class="slider-row">
-            <input id="brightness" type="range" min="5" max="100" step="5" value="100" aria-label="Brightness">
-            <output id="brightness-out">100%</output>
-            <button id="brightness-apply" class="btn">Set</button>
-          </div>
-        </div>
-        <div class="card">
-          <h2>Day and night</h2>
-          <p class="note">Day inside the opening hours (Config → Opening hours, per day); outside them the LEDs go dark, casts are ignored and the wall screen is off.</p>
-          <h3>Stay on tonight</h3>
-          <div class="slider-row">
-            <label>Stay on until <input id="stay-until" type="time" step="60" value="23:00"></label>
-            <button id="stay-go" class="btn">Stay on</button>
-            <button id="stay-end" class="btn" data-act="stay-on" data-until="end">End override</button>
-          </div>
-          <p class="note">Day mode (LEDs, casts, the wall screen) until that time, whatever the hours say: later today, or after midnight if it's already past. It ends by itself and shows on the overview until it does.</p>
-          <h3>Force <span class="muted">(NIGHT_FORCE, for tests: stays until Auto)</span></h3>
-          <div class="seg" id="night-seg">
-            <button class="btn" data-act="night" data-mode="auto">Auto (the hours)</button>
-            <button class="btn" data-act="night" data-mode="night">Force night</button>
-            <button class="btn" data-act="night" data-mode="day">Force day</button>
-          </div>
-          <h3>Wall screen</h3>
-          <div class="btn-row">
-            <button class="btn" data-act="screen" data-state="off">Screen off</button>
-            <button class="btn" data-act="screen" data-state="on">Screen on</button>
-          </div>
-          <p class="note">Screen off lasts until Screen on or a reboot; the hours still turn it off and on by themselves.</p>
-        </div>
-      </div>
-      <div class="cam card">
-        <h2>Webcam <span class="muted" id="cam-url"></span></h2>
-        <img id="cam" alt="The board from the webcam">
-        <p class="note" id="cam-note">Over Tailscale only.</p>
-      </div>
-    </div>
-  </section>
-
-  <section id="tab-logs" class="tab" hidden>
-    <header class="page-head"><h1>Logs</h1><p>The Pi's journal and log files.</p></header>
-    <form id="log-form" class="log-form">
-      <label>Log <select id="log-source"></select></label>
-      <label>Since <input id="log-since" value="-1h" size="12" placeholder="-1h, today"></label>
-      <label>Until <input id="log-until" size="12" placeholder="(now)"></label>
-      <label>Lines <input id="log-lines" type="number" min="1" max="5000" value="300"></label>
-      <label>Filter <input id="log-filter" size="16" placeholder="text"></label>
-      <label class="check"><input id="log-follow" type="checkbox"> Follow</label>
-      <button class="btn primary" type="submit">Show</button>
-      <button class="btn" type="button" id="log-stop" disabled>Stop</button>
-    </form>
-    <pre id="log-out" class="out tall"></pre>
-  </section>
-
-  <section id="tab-config" class="tab" hidden>
-    <header class="page-head"><h1>Config</h1><p>The Pi's config.env, every value checked and backed up.</p></header>
-    <p class="note">The Pi's <code>/etc/projectboard/config.env</code>. Change fields, then Apply: the dialog shows what changes, the Pi backs up the old file first, the listener restarts only if a key it reads at start changed, and the laptop's <code>pi/config.env</code> follows so a deploy keeps it.</p>
-    <div id="cfg-drift" class="banner warn" hidden>
-      <strong>The laptop's pi/config.env and the Pi's differ.</strong> Changes are refused until they match. Choose which one is right:
-      <div class="btn-row"><button class="btn" id="cfg-pull">Laptop ← Pi (keep the Pi's)</button><button class="btn" id="cfg-push">Pi ← laptop (keep the laptop's)</button></div>
-      <pre id="cfg-drift-text" class="out"></pre>
-    </div>
-    <div class="btn-row"><button class="btn primary" id="cfg-apply">Apply changes</button><button class="btn" id="cfg-reload">Reload from the Pi</button></div>
-    <div id="cfg-form" class="cfg-grid"></div>
-    <h2>Earlier copies</h2>
-    <p class="note">The Pi keeps the last 30, each made just before a change. Each shows what putting it back would change.</p>
-    <div id="cfg-backups"></div>
-  </section>
-
-  <section id="tab-deploy" class="tab" hidden>
-    <header class="page-head"><h1>Deploy</h1><p>Ship pi/ to the Pi, and what differs from the repo.</p></header>
-    <div class="card">
-      <h2>Deploy pi/ to the Pi</h2>
-      <p class="note"><strong>This happens on its own:</strong> every 10 minutes the laptop puts main's Pi files on the Pi (<code>console/autodeploy.py</code>, a scheduled task): in opening hours only after 15 minutes with nobody using the board, outside them straight away. These buttons are for doing it by hand.</p>
-      <p class="note">Runs <code>bash pi/deploy.sh</code>: copies pi/ over and installs what changed, with no password (the Pi's <code>/etc/sudoers.d/pb-deploy</code> rule). A real deploy restarts the listener if its files or config.env changed (do it when the gym is closed). On a freshly flashed card without that rule, run <code>bash pi/deploy.sh</code> in Git Bash once instead: it asks for the password and puts the rule back.</p>
-      <div class="slider-row">
-        <button class="btn" id="deploy-dry">Dry run</button>
-        <button class="btn primary" id="deploy-go">Deploy</button>
-      </div>
-    </div>
-    <div class="card">
-      <h2>Drift <button class="btn small" id="drift-reload">Check again</button></h2>
-      <div id="drift-out"></div>
-    </div>
-  </section>
-
-  <section id="tab-release" class="tab" hidden>
-    <header class="page-head"><h1>Release</h1><p>Ship the app (commit + push main), push to staging, or roll back.</p></header>
-    <div class="board-grid">
-      <div class="controls">
-        <div class="card"><h2>Repo <button class="btn small" id="git-reload">Refresh</button> <button class="btn small" id="git-pull">Pull</button></h2><div id="git-status"></div></div>
-        <div class="card">
-          <h2>Ship</h2>
-          <div id="git-files" class="rows"></div>
-          <textarea id="git-msg" rows="3" placeholder="What changed and why"></textarea>
-          <div class="btn-row">
-            <button class="btn" id="git-alldiff">Show the whole diff</button>
-            <button class="btn" id="git-check">Build check</button>
-            <button class="btn danger" id="git-ship">Ship (commit + push main)</button>
-          </div>
-          <p class="note">Ship commits the ticked files (none ticked: it pushes what's committed) and pushes main, which deploys to real users, after one confirm. <code>bash build.sh --check</code> (the syntax check and the three-places rule) runs first, and Cloudflare runs it again: a failed build keeps the last good version live. CACHE is stamped by the build. Afterwards the live <code>sw.js</code> is polled until it shows the new stamp.</p>
-        </div>
-        <div class="card">
-          <h2>Staging and rollback</h2>
-          <div class="btn-row"><button class="btn" id="git-staging">Push to staging (dev)</button></div>
-          <p class="note">Pushes the committed work here to <code>dev</code> (a fast-forward only). <a href="https://dev-projectboard.rosslewismckechnie.workers.dev" target="_blank" rel="noopener">Staging</a> · <a href="https://symmetryboard.co.uk" target="_blank" rel="noopener">Live</a></p>
-          <div class="btn-row"><select id="git-rollback-pick"></select> <button class="btn danger" id="git-rollback">Roll back (revert + push main)</button></div>
-          <p class="note">Rollback is always a revert and a push, never the Cloudflare dashboard.</p>
-          <div class="btn-row"><button class="btn small" id="git-poll">Check the live CACHE</button> <span id="live-cache" class="muted"></span></div>
-        </div>
-      </div>
-      <div class="card"><h2>Recent commits</h2><pre id="git-log" class="out"></pre><h2>Diff</h2><pre id="git-diff" class="out tall"></pre></div>
-    </div>
-  </section>
-
-  <section id="tab-ledmap" class="tab" hidden>
-    <header class="page-head"><h1>LED map</h1><p>Map holds to LEDs with the webcam.</p></header>
-    <div class="btn-row">
-      <button class="btn primary" id="ledmap-start">Start mapping (pauses the listener)</button>
-      <button class="btn" id="ledmap-stop">Stop (listener back)</button>
-      <span id="ledmap-state" class="muted"></span>
-    </div>
-    <div class="board-grid">
-      <iframe id="ledmap-frame" class="ledmap-frame" title="The LED mapping tool"></iframe>
-      <div class="cam card"><h2>Webcam</h2><img id="ledmap-cam" alt="The board from the webcam"></div>
-    </div>
-    <div class="card">
-      <h2>Results</h2>
-      <p class="note">Export JSON on the mapping page, then add the file here to keep it in <code>console/data/ledmap/</code>.</p>
-      <input type="file" id="ledmap-file" accept="application/json,.json">
-      <ul id="ledmap-history"></ul>
+      <article class="t w3" id="t-schedule"></article>
+      <article class="t w12" id="t-audit"></article>
     </div>
   </section>
 
@@ -316,75 +129,6 @@
         <details class="card hl-keys"><summary>Keys</summary>
           <p class="note"><kbd>↑</kbd> <kbd>↓</kbd> (or <kbd>J</kbd> <kbd>K</kbd>) previous / next in the list · <kbd>/</kbd> jump to a hold · <kbd>C</kbd> clear and draw · <kbd>Enter</kbd> finish drawing · <kbd>Backspace</kbd> remove the last point · <kbd>Esc</kbd> stop drawing · <kbd>Ctrl Z</kbd> / <kbd>Ctrl Y</kbd> undo / redo · <kbd>R</kbd> revert the hold · <kbd>N</kbd> new foothold · <kbd>P</kbd> pair a foothold · <kbd>F</kbd> whole board · <kbd>Z</kbd> zoom to the hold. On the board: drag a point to move it, Shift+click a point to remove it, double-click an edge to add one; drag anywhere else to move the view, wheel to zoom.</p>
         </details>
-      </div>
-    </div>
-  </section>
-
-  <section id="tab-cast" class="tab" hidden>
-    <header class="page-head"><h1>Test cast</h1><p>A real cast, timed from the listener's log.</p></header>
-    <div class="board-grid">
-      <div class="controls">
-        <div class="card">
-          <h2>Cast a problem</h2>
-          <p class="note">Sends <code>cast_problem</code> on <code>board:HangoutPortland</code> exactly as the app does, then reads the listener's journal for when it arrived and lit. The real board lights.</p>
-          <div class="slider-row">
-            <input id="cast-name" list="cast-list" placeholder="Problem name" size="28">
-            <datalist id="cast-list"></datalist>
-            <label class="check"><input type="checkbox" id="cast-mirror"> Mirrored</label>
-            <button class="btn primary" id="cast-go">Cast</button>
-          </div>
-        </div>
-        <div class="card"><h2>Holds, and where mirroring puts them</h2><div id="cast-holds" class="muted">Choose a problem.</div></div>
-      </div>
-      <div class="cam card"><h2>Webcam</h2><img id="cast-cam" alt="The board from the webcam"></div>
-    </div>
-  </section>
-
-  <section id="tab-tracks" class="tab" hidden>
-    <header class="page-head"><h1>Circuit tracks</h1><p>The LEDs between a circuit's holds, move by move (contract 8.6). Kept and checked, but the Pi doesn't light them in a run any more (5 Nov 2026: the map and next hold look, §8.3).</p></header>
-    <div class="trk-grid">
-      <div class="trk-stage card">
-        <canvas id="trk-board" class="trk-board" width="1386" height="1135" aria-label="The board: tap LEDs to add or remove them from the move"></canvas>
-        <p id="trk-now" class="trk-now"></p>
-        <p id="trk-counts" class="note"></p>
-      </div>
-      <div class="controls">
-        <div class="card">
-          <h2>Circuit</h2>
-          <div class="slider-row"><select id="trk-circuit" aria-label="Circuit"></select><button class="btn small" id="trk-reload">Reload</button></div>
-          <p id="trk-msg" class="note"></p>
-          <div id="trk-stale" class="banner warn" hidden></div>
-        </div>
-        <div class="card">
-          <h2>Moves</h2>
-          <p class="note">Pick a move, then tap LEDs on the board to add or remove them. Tapping one of the circuit's holds jumps to the move that starts there. Dots are LEDs under holds; rings are empty cells (positions estimated). A dashed ring marks a track LED under a hold that isn't in the circuit.</p>
-          <div id="trk-legs" class="trk-legs"></div>
-          <div class="btn-row">
-            <button class="btn small" id="trk-suggest">Suggested for this move</button>
-            <button class="btn small" id="trk-clear">Clear this move</button>
-            <button class="btn small" id="trk-all-suggested">Every move suggested</button>
-          </div>
-        </div>
-        <div class="card">
-          <h2>Save</h2>
-          <p id="trk-dirty" class="note"></p>
-          <div class="btn-row">
-            <button class="btn primary" id="trk-save">Save the track</button>
-            <button class="btn small" id="trk-preview">Preview the trace</button>
-            <label class="btn small">Import JSON<input type="file" id="trk-import" accept="application/json,.json" hidden></label>
-            <button class="btn small danger" id="trk-remove">Remove track</button>
-          </div>
-          <p class="note">Save shows the moves that change first, checks the track exactly as the Pi does, and writes <code>circuits.led_track</code> over direct Postgres (<code>db/.env</code>); the old value goes to <code>console/data/undo/</code>. Import takes the circuit trace demo's export (<code>pb-circuit-tracks</code> v1).</p>
-        </div>
-        <div class="card">
-          <h2>Test cast</h2>
-          <p class="note">Casts the circuit to the real board: the countdown, then 3 s a move; 1 lap, or endless with Loop.</p>
-          <div class="slider-row">
-            <label class="check"><input type="checkbox" id="trk-loop"> Loop</label>
-            <button class="btn" id="trk-cast">Test cast</button>
-            <button class="btn small" id="trk-stop">Stop</button>
-          </div>
-        </div>
       </div>
     </div>
   </section>
@@ -459,8 +203,81 @@
     <div class="ad-tip" id="ad-tip" hidden></div>
   </section>
 
-  <section id="tab-tests" class="tab" hidden>
-    <header class="page-head"><h1>Tests</h1><p>The R8 acceptance checklist and the night check.</p></header>
+  <section id="tab-advanced" class="tab" hidden>
+    <header class="page-head"><h1>Advanced</h1><p>For fault-finding and the occasional job. Open a section to load it.</p></header>
+    <details class="adv card" id="adv-logs" data-adv="logs">
+      <summary><strong>Logs</strong> <span class="muted">The Pi's journal and log files: for fault-finding.</span></summary>
+      <div class="adv-body">
+    <form id="log-form" class="log-form">
+      <label>Log <select id="log-source"></select></label>
+      <label>Since <input id="log-since" value="-1h" size="12" placeholder="-1h, today"></label>
+      <label>Until <input id="log-until" size="12" placeholder="(now)"></label>
+      <label>Lines <input id="log-lines" type="number" min="1" max="5000" value="300"></label>
+      <label>Filter <input id="log-filter" size="16" placeholder="text"></label>
+      <label class="check"><input id="log-follow" type="checkbox"> Follow</label>
+      <button class="btn primary" type="submit">Show</button>
+      <button class="btn" type="button" id="log-stop" disabled>Stop</button>
+    </form>
+    <pre id="log-out" class="out tall"></pre>
+      </div>
+    </details>
+    <details class="adv card" id="adv-config" data-adv="config">
+      <summary><strong>Config</strong> <span class="muted">The Pi's settings file, every value checked and backed up. The opening hours are on Home.</span></summary>
+      <div class="adv-body">
+    <p class="note">The Pi's <code>/etc/projectboard/config.env</code>. Change fields, then Apply: the dialog shows what changes, the Pi backs up the old file first, the listener restarts only if a key it reads at start changed, and the laptop's <code>pi/config.env</code> follows so a deploy keeps it. The opening hours are edited on Home (the Opening hours tile).</p>
+    <div id="cfg-drift" class="banner warn" hidden>
+      <strong>The laptop's pi/config.env and the Pi's differ.</strong> Changes are refused until they match. Choose which one is right:
+      <div class="btn-row"><button class="btn" id="cfg-pull">Laptop ← Pi (keep the Pi's)</button><button class="btn" id="cfg-push">Pi ← laptop (keep the laptop's)</button></div>
+      <pre id="cfg-drift-text" class="out"></pre>
+    </div>
+    <div class="btn-row"><button class="btn primary" id="cfg-apply">Apply changes</button><button class="btn" id="cfg-reload">Reload from the Pi</button></div>
+    <div id="cfg-form" class="cfg-grid"></div>
+    <h2>Earlier copies</h2>
+    <p class="note">The Pi keeps the last 30, each made just before a change. Each shows what putting it back would change.</p>
+    <div id="cfg-backups"></div>
+      </div>
+    </details>
+    <details class="adv card" id="adv-deploy" data-adv="deploy">
+      <summary><strong>Deploy</strong> <span class="muted">The Pi updates itself from main; by hand, and what differs from the repo.</span></summary>
+      <div class="adv-body">
+    <div class="card">
+      <h2>Deploy pi/ to the Pi</h2>
+      <p class="note"><strong>This happens on its own:</strong> every 10 minutes the laptop puts main's Pi files on the Pi (<code>console/autodeploy.py</code>, a scheduled task): in opening hours only after 15 minutes with nobody using the board, outside them straight away. These buttons are for doing it by hand.</p>
+      <p class="note">Runs <code>bash pi/deploy.sh</code>: copies pi/ over and installs what changed, with no password (the Pi's <code>/etc/sudoers.d/pb-deploy</code> rule). A real deploy restarts the listener if its files or config.env changed (do it when the gym is closed). On a freshly flashed card without that rule, run <code>bash pi/deploy.sh</code> in Git Bash once instead: it asks for the password and puts the rule back.</p>
+      <div class="slider-row">
+        <button class="btn" id="deploy-dry">Dry run</button>
+        <button class="btn primary" id="deploy-go">Deploy</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Drift <button class="btn small" id="drift-reload">Check again</button></h2>
+      <div id="drift-out"></div>
+    </div>
+      </div>
+    </details>
+    <details class="adv card" id="adv-ledmap" data-adv="ledmap">
+      <summary><strong>LED map</strong> <span class="muted">Which hold each LED lights, with the webcam. Only needed after rewiring.</span></summary>
+      <div class="adv-body">
+    <div class="btn-row">
+      <button class="btn primary" id="ledmap-start">Start mapping (pauses the listener)</button>
+      <button class="btn" id="ledmap-stop">Stop (listener back)</button>
+      <span id="ledmap-state" class="muted"></span>
+    </div>
+    <div class="board-grid">
+      <iframe id="ledmap-frame" class="ledmap-frame" title="The LED mapping tool"></iframe>
+      <div class="cam card"><h2>Webcam</h2><img id="ledmap-cam" alt="The board from the webcam"></div>
+    </div>
+    <div class="card">
+      <h2>Results</h2>
+      <p class="note">Export JSON on the mapping page, then add the file here to keep it in <code>console/data/ledmap/</code>.</p>
+      <input type="file" id="ledmap-file" accept="application/json,.json">
+      <ul id="ledmap-history"></ul>
+    </div>
+      </div>
+    </details>
+    <details class="adv card" id="adv-tests" data-adv="tests">
+      <summary><strong>Tests</strong> <span class="muted">The R8 acceptance checklist, and whether night mode switched on time.</span></summary>
+      <div class="adv-body">
     <div class="card">
       <h2>Check a night</h2>
       <div class="slider-row"><label>Night starting <input type="date" id="night-date"></label><button class="btn" id="night-check">Check (default: last night)</button></div>
@@ -469,26 +286,28 @@
     <h2>Acceptance tests (R8)</h2>
     <p class="note">Each step breaks something on purpose and the board should heal by itself. Every step asks first and checks for recent casts. Steps that cut the network schedule their own undo on the Pi first. Watch the Overview and Logs while they run; record the result here (kept in <code>console/data/acceptance.json</code>).</p>
     <div id="tests-list" class="tests"></div>
-  </section>
-
-  <section id="tab-backups" class="tab" hidden>
-    <header class="page-head"><h1>Backups</h1><p>The Pi's settings and the public tables.</p></header>
+      </div>
+    </details>
+    <details class="adv card" id="adv-backups" data-adv="backups">
+      <summary><strong>Backups</strong> <span class="muted">The Pi's settings and the public tables: weekly by themselves.</span></summary>
+      <div class="adv-body">
     <div class="btn-row">
-      <button class="btn primary" id="backup-pi">Back up the Pi</button>
-      <button class="btn" id="backup-sb">Export Supabase (public tables)</button>
+      <button class="btn primary" id="backup-now">Back up now</button>
+      <button class="btn" id="backup-pi">The Pi only</button>
+      <button class="btn" id="backup-sb">Supabase only</button>
     </div>
+    <p id="backup-state" class="note"></p>
     <p class="note">Saved under <code>backups/&lt;date&gt;/</code> at the repo root (gitignored). The Pi backup holds config.env and its earlier copies, the units and drop-ins, the scripts and the NetworkManager profiles with every password line removed on the Pi.</p>
     <ul id="backups-list"></ul>
-  </section>
-
-  <section id="tab-power" class="tab" hidden>
-    <header class="page-head"><h1>Power</h1><p>The LED supplies' relays.</p></header>
-    <div class="card">
-      <h2>LED supplies</h2>
-      <p id="power-state" class="muted"></p>
-      <div class="btn-row"><button class="btn" disabled>Power on</button><button class="btn" disabled>Power off</button></div>
-      <p class="note">Waiting for the relay module. When it's fitted, <code>pi/listener/power.py</code> switches the pins and these buttons go live (docs/console-plan.md, phase 14).</p>
-    </div>
+      </div>
+    </details>
+    <details class="adv card" id="adv-audit" data-adv="audit">
+      <summary><strong>Audit</strong> <span class="muted">Every button pressed in the console.</span></summary>
+      <div class="adv-body">
+    <p class="note">Every action, from <code>console/audit.log</code> (local, gitignored). Newest last.</p>
+    <table class="audit"><thead><tr><th>Time</th><th>Action</th><th>Result</th><th>Detail</th></tr></thead><tbody id="audit"></tbody></table>
+      </div>
+    </details>
   </section>
 
   <section id="tab-runbook" class="tab" hidden>
@@ -505,11 +324,6 @@
     <div id="runbook-out"></div>
   </section>
 
-  <section id="tab-audit" class="tab" hidden>
-    <header class="page-head"><h1>Audit</h1><p>Every action the console ran.</p></header>
-    <p class="note">Every action, from <code>console/audit.log</code> (local, gitignored). Newest last.</p>
-    <table class="audit"><thead><tr><th>Time</th><th>Action</th><th>Result</th><th>Detail</th></tr></thead><tbody id="audit"></tbody></table>
-  </section>
 </main>
 </div>
 </div>

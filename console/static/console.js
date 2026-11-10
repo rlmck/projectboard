@@ -1,10 +1,16 @@
 // PB Console page. Every data call goes to /api/ with this launch's token
 // (X-PB-Token); the token arrives in the address's #t= part from start.sh,
 // is kept in sessionStorage for this tab, and is taken out of the address bar.
+//
+// The sidebar (10 Nov 2026): Home · Holds · Activity · ⚙ Advanced, and the Runbook
+// only while the Pi is offline. Advanced is one page of closed sections (Logs, Config,
+// Deploy, LED map, Tests, Backups, Audit); opening one loads it. showTab('logs') (from
+// a link, the palette or an old saved tab) opens Advanced at that section.
 'use strict';
 
 const TOKEN_KEY = 'pb-console-token';
 const OVERVIEW_MS = 30000;
+const ADVANCED = ['logs', 'config', 'deploy', 'ledmap', 'tests', 'backups', 'audit'];
 const $ = (id) => document.getElementById(id);
 
 let token = '';
@@ -85,66 +91,37 @@ async function readStream(res, onLine) {
 
 // -- tabs ----------------------------------------------------------------------
 
+function runHook(name) {
+  const hook = window.PB && window.PB.tabHooks[name];
+  if (hook) hook();
+}
+
+function openAdvanced(name) {
+  const d = $('adv-' + name);
+  if (!d) return;
+  if (!d.open) d.open = true;          // the toggle event loads it
+  else runHook(name);
+  setTimeout(() => d.scrollIntoView({ block: 'start', behavior: 'smooth' }), 30);
+}
+
 function showTab(name) {
+  let section = null;
+  if (ADVANCED.includes(name)) { section = name; name = 'advanced'; }
   if (!document.getElementById('tab-' + name)) name = 'overview';
   document.querySelectorAll('.nav [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
   document.querySelectorAll('.tab').forEach((s) => { s.hidden = s.id !== 'tab-' + name; });
   try { localStorage.setItem('pb-console-tab', name); } catch (e) { /* ignore */ }
-  if (name === 'audit') loadState();
-  if (name === 'board') startCam();
-  const hook = window.PB && window.PB.tabHooks[name];
-  if (hook) hook();
+  runHook(name);
   if (window.PB && window.PB.dash) window.PB.dash.onTab(name);
-  window.scrollTo(0, 0);
+  if (section) openAdvanced(section);
+  else window.scrollTo(0, 0);
 }
 
 // -- overview ------------------------------------------------------------------
 
-
-function renderServices() {
-  if (!overview) return;
-  const units = overview.units || {};
-  $('services').innerHTML = (state.units || []).map((u) => {
-    const s = units[u] || '?';
-    const lvl = s === 'active' ? 'ok' : s === '?' ? 'unknown' : (u === 'kiosk' && overview.board && /^night/.test(overview.board.mode || '')) ? 'ok' : 'bad';
-    return '<div class="svc ' + lvl + '"><span class="dot"></span><span class="name">' + esc(u) + '</span>' +
-      '<span class="muted">' + esc(s) + '</span><div class="btn-row">' +
-      ['start', 'stop', 'restart'].map((v) =>
-        '<button class="btn small' + (v === 'stop' ? ' danger' : '') + '" data-act="service" data-unit="' + esc(u) + '" data-verb="' + v + '">' +
-        v[0].toUpperCase() + v.slice(1) + '</button>').join('') + '</div></div>';
-  }).join('');
-}
-
-function renderBoard() {
-  const b = (overview && overview.board) || {};
-  const cfg = b.config || {}, sc = b.schedule || {};
-  const rows = [
-    ['LEDs', b.leds || '?'],
-    ['Pattern', b.pattern || '-'],
-    ['Idle plan', b.plan || '-'],
-    ['Idle override', b.override || 'none'],
-    ['Brightness', b.scale != null && b.scale < 1 ? 'x' + b.scale + ' (pb-idle)' : 'as configured (' + (cfg.BRIGHTNESS || '?') + ' cast, ' + (cfg.IDLE_BRIGHTNESS || '?') + ' idle)'],
-    ['Mode', b.mode || '?'],
-    ['Next switch', sc.next_change ? (sc.next_mode === 'night' ? 'dark at ' : 'lights at ') + sc.next_change.replace('T', ' ') : '-'],
-    ['Override', sc.stay_on_until ? 'staying on until ' + sc.stay_on_until.replace('T', ' ') : cfg.NIGHT_FORCE ? 'forced ' + cfg.NIGHT_FORCE + ' (NIGHT_FORCE)' : 'none: the opening hours'],
-    ['Hours', sc.hours && !sc.hours.error ? Object.keys(sc.hours).map((d) => d[0] + d.slice(1, 3).toLowerCase() + ' ' + sc.hours[d]).join(' · ') : (sc.hours && sc.hours.error) || '?'],
-    ['Screen', b.screen_off ? 'off by hand' : 'normal'],
-    ['Casts (5 min)', (overview && overview.casts_5min ? overview.casts_5min.length : 0) + ''],
-  ];
-  $('board-now').innerHTML = rows.map(([k, v]) => '<span class="k">' + esc(k) + '</span><span>' + esc(v) + '</span>').join('');
-  document.querySelectorAll('#patterns .btn').forEach((el) => el.classList.toggle('on', b.leds === el.dataset.cmd || (b.override || '') === el.dataset.cmd));
-  const force = cfg.NIGHT_FORCE || 'auto';
-  document.querySelectorAll('#night-seg .btn').forEach((el) => el.classList.toggle('on', el.dataset.mode === force));
-  $('stay-end').disabled = !sc.stay_on_until;
-  if (!$('brightness').matches(':active') && b.scale != null) {
-    $('brightness').value = Math.round(b.scale * 100);
-    $('brightness-out').textContent = Math.round(b.scale * 100) + '%';
-  }
-}
-
 // Things that need Ross, in the sidebar (never above the page, so no screen is pushed down):
-// only real problems, each in plain English with what to do and a button to the right section.
-const TAB_NAMES = { config: 'Config', deploy: 'Deploy', overview: 'Overview', services: 'Services' };
+// only real problems, each in plain English with what to do and a button to the right place.
+const TAB_NAMES = { config: 'Config', deploy: 'Deploy', overview: 'Home', backups: 'Backups' };
 function renderAttention(items) {
   const box = $('attention');
   box.hidden = !items.length;
@@ -159,12 +136,11 @@ async function loadOverview(refresh) {
     const { status, data } = await apiJson('/api/overview' + (refresh ? '?refresh=1' : ''));
     if (status !== 200) throw new Error(data.error || status);
     overview = data;
-    $('stale').hidden = !!(window.PB.dash && data.metrics);
+    $('stale').hidden = !!(window.PB.dash && data.metrics && data.backup);
     if (window.PB.dash) window.PB.dash.render(data);
     $('no-helper').hidden = !(data.pi_ok && data.helper === false);
+    $('nav-runbook').hidden = !!data.pi_ok;
     renderAttention(data.attention || []);
-    renderServices();
-    renderBoard();
     $('updated').textContent = 'updated ' + new Date().toLocaleTimeString('en-GB');
   } catch (e) {
     $('updated').textContent = 'update failed: ' + e.message;
@@ -274,6 +250,7 @@ function actionFromButton(el) {
     case 'night': return ['night', { mode: d.mode }, 'Night mode: ' + d.mode];
     case 'stay-on': return ['stay-on', { until: d.until }, d.until === 'end' ? 'End the stay-on override' : 'Stay on until ' + d.until];
     case 'screen': return ['screen', { state: d.state }, 'Screen ' + d.state];
+    case 'backup': return ['backup-now', {}, 'Back up now'];
     default: return null;
   }
 }
@@ -312,22 +289,13 @@ async function showLogs(ev) {
   }
 }
 
-// -- webcam ------------------------------------------------------------------------
-
-function startCam() {
-  const img = $('cam');
-  if (!state.cam_url || img.src) return;
-  $('cam-url').textContent = state.cam_url;
-  img.onerror = () => { $('cam-note').textContent = "The webcam didn't answer (" + state.cam_url + '): is this laptop on Tailscale, and board-cam running?'; };
-  img.src = state.cam_url;
-}
-
 // -- start -------------------------------------------------------------------------
 
 async function boot() {
   readToken();
   if (!token) { $('no-token').hidden = false; return; }
   document.querySelectorAll('.nav [data-tab]').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  document.querySelectorAll('details.adv').forEach((d) => d.addEventListener('toggle', () => { if (d.open) runHook(d.dataset.adv); }));
   document.body.addEventListener('click', (ev) => {
     const el = ev.target.closest('[data-act]');
     if (!el) return;
@@ -340,13 +308,8 @@ async function boot() {
     if (go) showTab(go.dataset.attGoto);
   });
   $('output-close').addEventListener('click', () => { $('output').hidden = true; });
-  $('brightness').addEventListener('input', () => { $('brightness-out').textContent = $('brightness').value + '%'; });
-  $('brightness-apply').addEventListener('click', () => {
-    const v = Number($('brightness').value) / 100;
-    runAction('brightness', { value: v }, 'Brightness ' + Math.round(v * 100) + '%');
-  });
-  $('stay-go').addEventListener('click', () => {
-    const t = $('stay-until').value;
+  $('ov-stay-go').addEventListener('click', () => {
+    const t = $('ov-stay-until').value;
     if (!/^\d{2}:\d{2}$/.test(t)) { toast('Choose a time'); return; }
     runAction('stay-on', { until: t }, 'Stay on until ' + t);
   });
@@ -355,8 +318,6 @@ async function boot() {
 
   const s = await loadState();
   if (!s) return;
-  $('patterns').innerHTML = (s.patterns || []).map(([n, about]) =>
-    '<button class="btn" data-act="idle" data-cmd="' + esc(n) + '" title="' + esc(about) + '">' + esc(n) + '</button>').join('');
   $('log-source').innerHTML = (s.log_sources || []).map((n) => '<option>' + esc(n) + '</option>').join('');
   let tab = 'overview';
   try { tab = localStorage.getItem('pb-console-tab') || tab; } catch (e) { /* ignore */ }
@@ -366,6 +327,6 @@ async function boot() {
   setInterval(() => { if (!document.hidden && !running) loadState(); }, 10000);
 }
 
-window.PB = { api, apiJson, readStream, esc, toast, runAction, tabHooks: {}, afterAction: null,
-  state: () => state, overview: () => overview, showTab, isRunning: () => running };
+window.PB = { api, apiJson, readStream, esc, toast, runAction, tabHooks: { audit: () => loadState() }, afterAction: null,
+  state: () => state, overview: () => overview, showTab, isRunning: () => running, ADVANCED };
 boot();

@@ -118,17 +118,6 @@ def func_action(name, fn, describe, shown='', **kw):
     return Action(name, describe, lambda app: procs.func(lambda out: fn(app, out)), shown=shown or name, **kw)
 
 
-def _git_files(files):
-    """Only paths git status lists now (the page shows them; nothing else gets staged)."""
-    listed = {f['path'] for f in gitops.status()['files']}
-    if not isinstance(files, list) or not files or not all(isinstance(f, str) and f in listed for f in files):
-        raise Invalid('files: choose from the changed files git status lists')
-    return files
-
-
-STAGING_URL = 'https://dev-projectboard.rosslewismckechnie.workers.dev'
-
-
 def _fetch_ok(out):
     code, o, e = gitops.git('fetch', 'origin', timeout=120)
     out('$ git fetch origin\n%s%s' % (o, e))
@@ -333,107 +322,6 @@ def build(kind, args):
         return func_action('pull-nm %s' % name, pull_nm, 'Copy the NetworkManager profile %r into the repo as %s, '
                            'with every password/psk/secret line removed on the Pi.' % (name, target), confirm=True)
 
-    # -- phase 7: app release (CLAUDE.md working rule 2: Ship = commit + push main) ------------------
-    if kind == 'git-pull':
-        def pull(app, out):
-            for s in (['fetch', 'origin'], ['pull', '--ff-only']):
-                code, o, e = gitops.git(*s, timeout=120)
-                out('$ git %s\n%s%s' % (' '.join(s), o, e))
-                if code:
-                    return code
-            return 0
-        return func_action('git pull', pull, 'Fetch and fast-forward.')
-    if kind == 'ship':
-        st = gitops.status()
-        if st['branch'] != 'main':
-            raise Invalid('ship: work on main (on %s)' % st['branch'])
-        files = args.get('files') or []
-        msg = args.get('message') or ''
-        if files:
-            files = _git_files(files)
-            if not isinstance(msg, str) or not msg.strip() or len(msg) > 5000:
-                raise Invalid('ship: a commit message')
-        elif not st['unpushed']:
-            raise Invalid('ship: nothing to commit and nothing to push')
-
-        def ship(app, out):
-            if not _fetch_ok(out):
-                return 1
-            if gitops.count('HEAD', 'origin/main'):
-                out('main on GitHub has commits this copy lacks: Pull first, then Ship.')
-                return 1
-            if not _gate(out):
-                return 1
-            if files and _commit(files, msg, out):
-                return 1
-            return _push(['git', 'push', 'origin', 'HEAD:main'], out)
-        what = ('Commit %d file(s) and push main: ' % len(files) if files else 'Push main: ')
-        return func_action('ship', ship, what + 'THIS DEPLOYS TO REAL USERS (symmetryboard.co.uk). Runs build.sh '
-                           '--check first; Cloudflare runs it again and keeps the last good version if it fails.',
-                           shown='bash build.sh --check && git commit && git push origin HEAD:main', confirm=True,
-                           timeout=300,
-                           preview={'log': '\n'.join(st['unpushed'] + (['(new) ' + msg.strip().splitlines()[0]]
-                                                                       if files else [])) or '(nothing)',
-                                    'diff': ''.join(gitops.diff(f, limit=60000) for f in files)[:200000]})
-    if kind == 'staging':
-        st = gitops.status()
-        if not st['staging_ff']:
-            raise Invalid("staging: dev on GitHub has commits this branch lacks, so pushing would need a force "
-                          "push (Ross's call, outside the console)")
-        if not st['dev_behind']:
-            raise Invalid('staging: dev already has every commit here (commit first: Staging pushes commits only)')
-        log = gitops.out('log', 'origin/dev..HEAD', '--format=%h %s')
-        dirty = [f['path'] for f in st['files'] if f['xy'] != '??']
-
-        def staging(app, out):
-            if not _fetch_ok(out) or not _gate(out):
-                return 1
-            return _push(['git', 'push', 'origin', 'HEAD:dev'], out)
-        return func_action('staging', staging, 'Push %s to dev: staging (%s) rebuilds from it. Live is untouched.'
-                           % (st['branch'], STAGING_URL) + (' Uncommitted changes are NOT included.' if dirty else ''),
-                           shown='bash build.sh --check && git push origin HEAD:dev', confirm=True, timeout=300,
-                           preview={'log': log or '(nothing)'})
-    if kind == 'rollback':
-        sha = args.get('commit')
-        st = gitops.status()
-        if not isinstance(sha, str) or sha not in {c['hash'] for c in st['recent_main']}:
-            raise Invalid('rollback: choose one of the last %d commits on main' % gitops.RECENT)
-        if st['branch'] != 'main':
-            raise Invalid('rollback: on main only (on %s)' % st['branch'])
-        if [f for f in st['files'] if f['xy'] != '??']:
-            raise Invalid('rollback: commit or discard the changes here first')
-        if st['ahead_main'] or st['behind_main']:
-            raise Invalid('rollback: this copy and main on GitHub differ (pull, or ship, first)')
-
-        def rollback(app, out):
-            if not _fetch_ok(out):
-                return 1
-            if gitops.count('HEAD', 'origin/main') or gitops.count('origin/main', 'HEAD'):
-                out('main moved on GitHub: pull, then try again.')
-                return 1
-            code, o, e = gitops.git('revert', '--no-edit', sha, timeout=60)
-            out('$ git revert --no-edit %s\n%s%s' % (sha, o, e))
-            if code:
-                gitops.git('revert', '--abort')
-                out("The revert didn't apply cleanly (a later commit changed the same lines): nothing pushed.")
-                return code
-            if not _gate(out):
-                gitops.git('reset', '--hard', 'HEAD~1')
-                out('The reverted tree fails build.sh: the revert commit was dropped, nothing pushed.')
-                return 1
-            return _push(['git', 'push', 'origin', 'HEAD:main'], out)
-        return func_action('rollback %s' % sha, rollback, 'Revert %s on main and push: THIS DEPLOYS TO REAL USERS. '
-                           'A new commit undoes it; history is kept.' % sha,
-                           shown='git revert --no-edit %s && git push origin HEAD:main' % sha, confirm=True,
-                           timeout=300, preview={'diff': gitops.out('show', '--stat', '--format=%h %s%n%ad%n', sha)})
-    if kind == 'build-check':
-        def check(app, out):
-            code, text = gitops.build_check()
-            out(text)
-            return code
-        return func_action('build check', check, 'bash build.sh --check: the syntax check and the three-places '
-                           'rule, as Cloudflare runs them.')
-
     # -- phase 8: LED mapping ------------------------------------------------------------------------
     if kind == 'ledmap':
         state = args.get('state')
@@ -489,34 +377,19 @@ def build(kind, args):
                              'heals; the board may go dark or offline for a while.' % ' '.join(targs),
                              confirm=True, busy=True, timeout=60)
 
-    # -- phase 12: backups ---------------------------------------------------------------------------
-    if kind == 'backup-pi':
+    # -- phase 12: backups (console/backups.py; weekly by itself since 10 Nov 2026) --------------------
+    if kind in ('backup-now', 'backup-pi', 'backup-supabase'):
+        import backups
+        parts = {'backup-now': ('pi', 'supabase'), 'backup-pi': ('pi',), 'backup-supabase': ('supabase',)}[kind]
+
         def backup(app, out):
-            dest = os.path.join(reports.backup_dir(), 'pi-%s.tar.gz' % time.strftime('%H%M%S'))
-            p = subprocess.run(app.remote.argv(helper_cmd('backup')), capture_output=True, timeout=120,
-                               creationflags=procs.NO_WINDOW)
-            if p.returncode != 0 or p.stdout[:2] != b'\x1f\x8b':
-                out('backup failed: %s' % p.stderr.decode('utf-8', 'replace')[-500:])
-                return 1
-            with open(dest, 'wb') as f:
-                f.write(p.stdout)
-            out('%s (%d KB): config.env and its backups, the units, drop-ins, scripts and NetworkManager profiles '
-                '(secrets removed on the Pi)' % (os.path.relpath(dest, REPO), len(p.stdout) // 1024))
-            return 0
-        return func_action('backup pi', backup, 'Back up the Pi\'s settings into backups/ (gitignored).')
-    if kind == 'backup-supabase':
-        def backup(app, out):
-            import supabase_api as supa
-            d = os.path.join(reports.backup_dir(), 'supabase-%s' % time.strftime('%H%M%S'))
-            os.makedirs(d, exist_ok=True)
-            for table, rows in supa.export(app.env).items():
-                with open(os.path.join(d, table + '.json'), 'w', encoding='utf-8') as f:
-                    json.dump(rows, f, indent=1)
-                out('%s: %d rows' % (table, len(rows)))
-            out('saved in %s' % os.path.relpath(d, REPO))
-            return 0
-        return func_action('backup supabase', backup, 'Export the public tables (problems, circuits, board_config, '
-                           'challenges) into backups/ (gitignored).')
+            return backups.run(app.remote, app.env, out, parts=parts)
+        return func_action(kind.replace('-', ' '), backup,
+                           {'backup-now': "Back up the Pi's settings (secrets stripped on the Pi) and export the public "
+                                          'Supabase tables into backups/ (gitignored). This happens weekly by itself.',
+                            'backup-pi': "Back up the Pi's settings into backups/ (gitignored).",
+                            'backup-supabase': 'Export the public tables (problems, circuits, board_config, '
+                                               'challenges) into backups/ (gitignored).'}[kind])
     # -- holds: outlines, footholds, foothold pairs (db/42, db/44; console/holds.py) ---------------------
     if kind == 'holds-publish':
         import holds
@@ -568,8 +441,12 @@ def build(kind, args):
             if not _fetch_ok(out):
                 return 1
             if gitops.count('HEAD', 'origin/main'):
-                out('main on GitHub has commits this copy lacks: Pull (Release) first, then ship the snapshot.')
-                return 1
+                code, o, e = gitops.git('pull', '--ff-only', timeout=120)
+                out('$ git pull --ff-only\n%s%s' % (o, e))
+                if code:
+                    out("main on GitHub has commits this copy lacks and they didn't pull in cleanly: "
+                        'ask Claude Code to sort it out, then ship the snapshot.')
+                    return 1
             out('$ python tools/snapshot_board.py')
             if holds.run_tool(['tools/snapshot_board.py'], out):
                 return 1
@@ -599,133 +476,7 @@ def build(kind, args):
                            'commit those files alone and push main: THIS DEPLOYS TO REAL USERS. Then the Pi\'s '
                            'automatic deploy.', shown='python tools/snapshot_board.py && bash build.sh --check && '
                            'git commit -- app/<4 snapshot files> && git push origin HEAD:main', confirm=True, timeout=600)
-    # -- circuit tracks (contract 8.6, db/37) --------------------------------------------------------
-    if kind in ('circuit-track-save', 'circuit-track-remove', 'circuit-test-cast'):
-        name = args.get('circuit')
-        if not isinstance(name, str) or not 1 <= len(name) <= 60:
-            raise Invalid('%s: a circuit name' % kind)
-    if kind == 'circuit-track-save':
-        import tracks
-        track = args.get('track')
-        if not isinstance(track, dict):
-            raise Invalid('circuit-track-save: track, an object {"version": 1, "moves": [...]}')
-        if len(json.dumps(track)) > 4 * tracks.circuit_mod().TRACK_MAX_BYTES:
-            raise Invalid('circuit-track-save: the track is far too big')
-        try:
-            row = tracks.get_circuit(name)
-            if not row:
-                raise Invalid('circuit-track-save: no circuit called %r' % name)
-            track = tracks.check_for_save(track, row)
-        except tracks.Refused as e:
-            raise Invalid('circuit-track-save: %s' % e)
-        except RuntimeError as e:
-            raise Invalid('circuit-track-save: the database: %s' % e)
-        changes = tracks.describe_changes(row['led_track'], track, row['hold_sequence'])
-        seq = row['hold_sequence']
-
-        def save(app, out):
-            out('writing %d moves of %r over direct Postgres (db/.env)' % (len(track['moves']), name))
-            tracks.write(name, track, seq, out)
-            for line in changes or ['no move changed']:
-                out(line)
-            out('saved: the Pi reads it at the next cast of %r' % name)
-            return 0
-        return func_action('circuit track save %s' % name, save,
-                           'Save the track of %r (%d moves) to the live database: the next cast of it uses it. '
-                           '%s' % (name, len(track['moves']),
-                                   '%d moves change.' % len(changes) if changes else 'No move changes.'),
-                           confirm=True, preview={'diff': '\n'.join(changes) or '(no move changes)'}, timeout=60)
-    if kind == 'circuit-track-remove':
-        import tracks
-        try:
-            row = tracks.get_circuit(name)
-        except RuntimeError as e:
-            raise Invalid('circuit-track-remove: the database: %s' % e)
-        if not row:
-            raise Invalid('circuit-track-remove: no circuit called %r' % name)
-        if row['led_track'] is None:
-            raise Invalid('circuit-track-remove: %r has no track' % name)
-        seq = row['hold_sequence']
-
-        def remove(app, out):
-            tracks.write(name, None, seq, out)
-            out('removed: %r has no track now' % name)
-            return 0
-        return func_action('circuit track remove %s' % name, remove,
-                           'Remove the track of %r from the live database (an undo record is kept in '
-                           'console/data/undo/).' % name, confirm=True, timeout=60)
-    if kind == 'circuit-test-cast':
-        loop = args.get('loop') is True
-
-        def cast(app, out):
-            import supabase_api as supa
-            status, ms, sent, body, token = supa.cast_circuit(name, 3, loop, app.env)
-            out('sent cast_circuit %r (3 s a move, %s, run %s) at %s: HTTP %s in %d ms %s' % (
-                name, 'endless' if loop else '1 lap', token, time.strftime('%H:%M:%S', time.localtime(sent)),
-                status, ms, '' if status == 202 else body))
-            if status != 202:
-                return 1
-            LAST_TEST_RUN['token'] = token
-            out('waiting for the listener (up to 15 s)…')
-            got = {}
-            for _ in range(8):
-                time.sleep(2)
-                code, text, _ = app.remote.run("journalctl -u pb-listener --since @%d --no-pager -q "
-                                               "-o json --output-fields=MESSAGE" % int(sent - 1), timeout=20)
-                got = _circuit_receipt(text, name, sent)
-                if got.get('started') or got.get('ignored') or got.get('unknown'):
-                    break
-            for k in ('received', 'started', 'ignored', 'unknown'):
-                if got.get(k):
-                    out('%-9s %s' % (k, got[k]))
-            if not got.get('received'):
-                out("no 'circuit received' line from the listener: is it running and joined? (night ignores casts)")
-                return 1
-            return 0
-        return func_action('test cast circuit %s' % name, cast,
-                           'Cast the circuit %r to the real board, 3 s a move, %s. '
-                           'Whoever is climbing sees it.%s' % (name, 'endless until stopped' if loop else '1 lap to the top',
-                                                               ' Stop ends it.' if loop else ''),
-                           confirm=True, busy=True, timeout=60)
-    if kind == 'circuit-test-stop':
-        token = LAST_TEST_RUN.get('token')
-        if not token:
-            raise Invalid('circuit-test-stop: no test cast from this console to stop')
-
-        def stop(app, out):
-            import supabase_api as supa
-            status, ms = supa.stop_circuit(token, app.env)
-            out('sent stop (run %s): HTTP %s in %d ms' % (token, status, ms))
-            return 0 if status == 202 else 1
-        return func_action('test stop circuit', stop, 'Stop the test circuit run %s' % token, timeout=30)
     raise Invalid('no action called %r' % kind)
-
-
-LAST_TEST_RUN = {}       # the run token of this console's last circuit test cast (its Stop sends it)
-
-
-def _circuit_receipt(json_lines, name, sent):
-    """From the listener's journal after a circuit test cast: received, started (with its ms),
-    ignored at night, or unknown."""
-    got = {}
-    q = repr(name)
-    for line in json_lines.splitlines():
-        try:
-            r = json.loads(line)
-        except ValueError:
-            continue
-        msg = str(r.get('MESSAGE') or '')
-        at = int(r.get('__REALTIME_TIMESTAMP', 0)) / 1e6
-        lag = '%s (%+d ms after sending)' % (time.strftime('%H:%M:%S', time.localtime(at)), round((at - sent) * 1000))
-        if msg.startswith('circuit received: ' + q) and 'received' not in got:
-            got['received'] = lag
-        elif msg.startswith('circuit started ' + q) and 'started' not in got:
-            got['started'] = '%s; %s' % (lag, msg)
-        elif msg.startswith('circuit ' + q) and 'ignored' in msg:
-            got['ignored'] = '%s; %s' % (lag, msg)
-        elif msg.startswith('unknown circuit ' + q):
-            got['unknown'] = msg
-    return got
 
 
 def _receipt(json_lines, name, sent):

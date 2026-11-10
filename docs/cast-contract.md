@@ -201,7 +201,7 @@ A circuit cast runs a timed animation on the Pi: the phone sends one message to 
 |---|---|---|---|
 | `circuit_name` | string | yes | `circuits.name` exactly as stored (UNIQUE, 1–60 characters). |
 | `interval` | number | yes | Seconds a move. The app sends 5, 3 or 2 (Slow, Med, Fast); the listener accepts 1–10 and ignores anything else. |
-| `laps` | integer, 0–10 | no | **Since 5 Nov 2026.** `0` = loop until stopped (endless); `1`–`10` = that many laps. **A circuit whose `loops` is false always runs 1 lap**, whatever is sent. Anything else (not an integer, out of range, a boolean, `3.0`) and the listener warns and ignores the cast, as a bad `interval`. PB Console sends it (0 for its Loop option, else 1); the app doesn't yet (TODO: laps on the phone and wall). |
+| `laps` | integer, 0–10 | no | **Since 5 Nov 2026.** `0` = loop until stopped (endless); `1`–`10` = that many laps. **A circuit whose `loops` is false always runs 1 lap**, whatever is sent. Anything else (not an integer, out of range, a boolean, `3.0`) and the listener warns and ignores the cast, as a bad `interval`. Nothing sends it today: PB Console's circuit test cast went with its Circuit tracks section (10 Nov 2026), and the app doesn't yet (TODO: laps on the phone and wall). |
 | `loop` | boolean | no | The old way to ask, still honoured when `laps` is absent (old cached apps, and the app today): `true` = endless (0), `false` = 1 lap; `loop` absent too = the circuit's `loops` (`true` → endless, `false` → 1 lap). With `laps` present it's ignored. |
 | `mirror` | boolean, `true` when present | no | Mirror every hold through `board_config.mirror_map`, as §6.3. **No mirrored circuits for now** (Ross, 30 Oct 2026: a future release): the app never sends it; the listener would honour it. |
 | `run` | string, 1–64 characters | no | A token naming this run (the app sends 16 random hex characters). `stop` uses it. |
@@ -247,7 +247,7 @@ The look is **"map and next hold"**, agreed by Ross on 5 Nov 2026 (it replaced d
 
 ### 8.6 Circuit tracks (built 1 Nov 2026; not lit since 5 Nov 2026)
 
-A circuit can carry a **track**: for each move, the ordered LEDs between one hold and the next. Ross designed it in `tools/circuit-trace-demo.html` ("Train track"); his Pat Burner track is `tools/circuit-tracks-pat-burner.json`. **Since 5 Nov 2026 the Pi doesn't draw tracks** (no route trace, ghost or run track: §8.3's look replaced them). The column, the check and PB Console's editor stay, so a track can be used again later.
+A circuit can carry a **track**: for each move, the ordered LEDs between one hold and the next. Ross designed it in `tools/circuit-trace-demo.html` ("Train track"); his Pat Burner track is `tools/circuit-tracks-pat-burner.json`. **Since 5 Nov 2026 the Pi doesn't draw tracks** (no route trace, ghost or run track: §8.3's look replaced them). The column and the check stay, so a track can be used again later; PB Console's editor was removed on 10 Nov 2026 (it's in git history).
 
 **Data:** `circuits.led_track` jsonb (db/37), null = no track:
 
@@ -256,10 +256,10 @@ A circuit can carry a **track**: for each move, the ordered LEDs between one hol
 ```
 
 - `move` is 1-based: `from` = `hold_sequence[move-1]`, `to` = the next hold, wrapping to the first (the wrap move, `move` = the length). `cells` are `holdN` grid cells ordered from `from` to `to`; each would light LED `led_index(N)` (§6.4). Every non-match move is stored, edited or not; a match (`from` = `to`) has none.
-- A CHECK pins the shape (an object, `version` 1, a `moves` array) and 32 KB. Public read like the rest of `circuits`; nobody writes it through the API (the `circuits_guard_track` trigger keeps it from `anon` and `authenticated`, as db/30 does `comment`). **PB Console writes it** (Circuit tracks tab, direct Postgres).
+- A CHECK pins the shape (an object, `version` 1, a `moves` array) and 32 KB. Public read like the rest of `circuits`; nobody writes it through the API (the `circuits_guard_track` trigger keeps it from `anon` and `authenticated`, as db/30 does `comment`). Since 10 Nov 2026 nothing writes it (PB Console's Circuit tracks tab, which did over direct Postgres, was removed).
 - **Checked move by move** by `check_track()` in `pi/listener/circuit.py` (PB Console's save uses it): the move number in range and not twice; `from`/`to` equal to the circuit's `hold_sequence` now (a circuit edited since is **stale**); `cells` a list of at most 40 grid hold ids, never `hold2`/`hold21` (the feet signs, §6.5), none twice. The console saves only a track with no problems and every move. The listener no longer reads `led_track` with the circuit.
 
-**PB Console** (Circuit tracks tab): edit a circuit's track on the board photo, preview it running along its path (the old trace's timing, kept in the console), import the demo's export, save (the moves that change shown first), remove, and a test cast (§8.3's look; 1 lap, or endless with Loop).
+**PB Console** had a Circuit tracks tab (edit, preview, import, save, a test cast) until 10 Nov 2026; it's in git history.
 
 ### 8.7 A circuit's static view: `show_circuit` (built 2 Nov 2026)
 
@@ -356,6 +356,7 @@ Names stay clean (no grade), trimmed, 1–60 characters, unique ignoring case in
 
 ## Change history
 
+- **2026-11-10, Claude Code (console layout):** §8.1, §8.6: PB Console's Circuit tracks section (the track editor and its circuit test cast) was removed, so nothing sends `laps` or writes `led_track` today. No change to the channel, events or payloads; the console's problem cast (Home → Light a problem) is unchanged.
 - **2026-11-10, Claude Code:** §6.5, §9.1: Specific feet in the app (board setup session 3): Create/Edit save `feet_mode: 'specific'` + `feet_holds`; previews carry `feet: "specific"` (already accepted since 9 Nov). No change to the channel, events or payloads; the Pi unchanged (a new test).
 - **2026-11-09, Claude Code (later):** §5, §6.3: **board setup** (db/42). The holds table becomes the source of positions, outlines and mirror pairs (`board_config`'s are copies); footholds can be added (no LED, foot ↔ foot pairs only). LEDs unchanged. **No change to the channel, events or payloads, and no Pi change.**
 - **2026-11-09, Claude Code:** §5, §6.1, §6.3, §6.4, §6.5, §9.1: **holds in the database** (db/41). The listener reads each hold's LED and mirror partner from the new `holds` table (cached on the Pi for a boot with no network; the formula only as a last resort) instead of the formula and `board_config.mirror_map`; the seeded values are the formula's, checked by `tools/check_holds.py`, so every cast lights the same LEDs. **`feet_mode` gains `specific`** with `problems.feet_holds` (footholds only); the board lights nothing for it, and `preview_holds` accepts `feet: "specific"`. **No change to the channel, events or payloads.**

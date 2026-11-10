@@ -14,7 +14,7 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 2. **Try the wall mode on the touchscreen:** the rail with a real finger, whether ~8 rows feels right, the 20-minute screen idle (tap-to-cast, Create, search and Clear are tried and fine, 7 Nov 2026).
 
 ## Hardware
-3. **Tidy and box the wiring;** when they arrive, fit the relay module and the 74AHCT125; then relay control in `pb-mode` (`pi/listener/power.py` is the hook) and the console's Power phase. `pb-mode` mustn't cut the LED supplies while `pb-ledmap` runs.
+3. **Tidy and box the wiring;** when they arrive, fit the relay module and the 74AHCT125; then relay control in `pb-mode` (`pi/listener/power.py` is the hook) and a power control on PB Console's Home (its Power section was removed 10 Nov 2026). `pb-mode` mustn't cut the LED supplies while `pb-ledmap` runs.
 4. **Docs: the touchscreen's HDMI port.** Since the rebuild the screen's video is on the Pi's **`HDMI-A-1`** (the micro-HDMI port nearest the USB-C power), not `HDMI-A-2`: seen 2 Nov 2026 in `/sys/class/drm` (`card0-HDMI-A-1` connected and enabled, `HDMI-A-2` disconnected). `cage` uses whichever output is connected, so nothing is broken; fix the text in `pi/README.md` ("Touchscreen" under Wiring) and the wall kiosk line in `PROJECT_STATUS.md`, and check nothing else names `HDMI-A-2`. Also write the screen's video chain as it is now (the picture is back since 7 Nov 2026) into that "Touchscreen" section.
 
 ## Pi and infrastructure

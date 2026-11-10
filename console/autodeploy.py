@@ -368,6 +368,17 @@ def start_background():
                      stderr=subprocess.DEVNULL, creationflags=NO_WINDOW)
 
 
+def weekly_backup():
+    """The weekly backup rides on this task (console/backups.py): it does nothing unless one is due."""
+    try:
+        import backups
+        code = backups.run_if_due(say=log)
+        if code is not None:
+            actions.audit('backup', 'ok' if code == 0 else 'failed', 'weekly (scheduled task)')
+    except Exception as e:
+        log('backup error: %s: %s' % (type(e).__name__, e))
+
+
 def main(argv):
     if '--install' in argv:
         install_task()
@@ -382,11 +393,14 @@ def main(argv):
         print('another run is going (%s): not starting a second' % LOCK)
         return 0
     try:
-        result = run(force='--force' in argv)
-    except Exception as e:
-        log('error: %s: %s' % (type(e).__name__, e))
-        print('error: %s: %s' % (type(e).__name__, e))
-        return 1
+        try:
+            result = run(force='--force' in argv)
+        except Exception as e:
+            log('error: %s: %s' % (type(e).__name__, e))
+            print('error: %s: %s' % (type(e).__name__, e))
+            return 1
+        finally:
+            weekly_backup()
     finally:
         drop_lock()
     return 1 if result == 'failed' else 0

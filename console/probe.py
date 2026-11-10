@@ -8,6 +8,7 @@ changes anything.
     python3 - < probe.py          everything the overview shows
     python3 - busy < probe.py     the busy guard: was the board used in the last 15 minutes, in opening hours?
     python3 - history 0 < probe.py   the activity lines since a Unix time (0: all), for Activity
+    python3 - healthlog 7 < probe.py   pb-healthlog's lines for the last N days (1-7), for Health
 """
 import json
 import os
@@ -24,6 +25,8 @@ BUSY_S = 300                 # the overview's "casts in the last 5 minutes"
 QUIET_S = 900                # the busy guard: 15 minutes with nobody using the board (10 Nov 2026)
 TOUCH = RUN + '/touch'       # pb-touchwatch: the wall screen's last touch (Unix time)
 NETWATCH_LOG = '/boot/firmware/netwatch.txt'
+HEALTHLOG = '/var/lib/projectboard/healthlog'      # pb-healthlog's day files (pi/ops/pb-healthlog)
+HEALTH_COLS = ('t', 'temp', 'tmax', 'uv', 'thr', 'wifi', 'disk')
 
 
 def sh(*cmd, timeout=20):
@@ -346,6 +349,29 @@ def last_night(date):
                                                         '--no-pager', '-q', '--grep', 'ignored').splitlines()[-20:]}
 
 
+def healthlog(days, folder=HEALTHLOG, now=None):
+    """pb-healthlog's lines from the last `days` days, oldest first, as rows of HEALTH_COLS
+    (compact: about 2,000 rows a week). running: whether pb-healthlog is active."""
+    now = now or time.time()
+    since = now - days * 86400
+    rows = []
+    try:
+        names = sorted(n for n in os.listdir(folder) if n.endswith('.jsonl'))
+    except OSError:
+        names = []
+    for n in names:
+        for line in (read(os.path.join(folder, n)) or '').splitlines():
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(r, dict) and isinstance(r.get('t'), (int, float)) and r['t'] >= since:
+                rows.append([r.get(c) for c in HEALTH_COLS])
+    rows.sort(key=lambda r: r[0])
+    return {'cols': list(HEALTH_COLS), 'rows': rows, 'days': days, 'now': now,
+            'running': sh('systemctl', 'is-active', 'pb-healthlog') if folder == HEALTHLOG else None}
+
+
 def config_backups():
     d = '/var/lib/projectboard/config-backups'
     out = []
@@ -367,6 +393,8 @@ def main(argv):
         out = history(int(argv[1]) if len(argv) > 1 and argv[1].isdigit() else 0)
     elif argv[:1] == ['night'] and len(argv) > 1 and re.match(r'^\d{4}-\d{2}-\d{2}$', argv[1]):
         out = last_night(argv[1])
+    elif argv[:1] == ['healthlog']:
+        out = healthlog(max(1, min(7, int(argv[1]) if len(argv) > 1 and argv[1].isdigit() else 7)))
     elif argv[:1] == ['config']:
         out = config_backups()
     else:

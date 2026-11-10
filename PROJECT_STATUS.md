@@ -16,7 +16,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **Holds in the database (db/41, db/42):** the `holds` table is the source of each hold's name, kind, LED, position, outline and mirror partner (`board_config` copies it); checked by `tools/check_holds.py`. **Board setup** (Admin → Board Setup, the super admin only since db/44) publishes a whole board with Undo; Ross published the new board on 10 Nov (188 hand holds, 50 footholds). **Edit holds** adds/deletes/pairs footholds and turns holds. **Specific feet** (10 Nov): footholds picked in Create/Edit, yellow, never lit (overview §4.8a, §4.8d).
 - **Hardware:** temporary wiring (`pi/README.md` → "Wiring"); the Pi is in the junction box. Two YU0510 5 V 10 A supplies (both needed). No relays or level shifter fitted yet (3.3 V data works; both parts have arrived). A USB webcam shows the back of the board (Tailscale only).
 - **Pi deploys are automatic (10 Nov 2026):** `console/autodeploy.py` keeps the Pi on main (a scheduled task every 10 min, and `/ship`): 15 quiet minutes in opening hours, straight away outside them (`pi/README.md` → Deploying).
-- **PB Console** (`console/`, `bash console/start.sh`): health, services, board controls, **Holds** (outlines, footholds, foothold pairs; 10 Nov), logs, config, Pi deploy, release, LED map, test cast, circuit tracks, Activity, the R8 checklist, backups, runbook (`console/README.md`). Phase 13 (Data) isn't built; phase 14 (Power) waits for the relays.
+- **PB Console** (`console/`, `bash console/start.sh`; simplified 10 Nov 2026): Home (board controls and webcam, Health with the Pi's 7-day history from `pb-healthlog`, Activity, opening hours), **Holds** (outlines, footholds, pairs), Activity, and Advanced (logs, config, Pi deploy, LED map, the R8 checklist, backups, audit); weekly automatic backups (`console/README.md`). Phase 13 (Data) isn't built.
 
 ## Decisions
 - **Deploying:** CLAUDE.md working rule 2 (ship by default, end to end, gated items, rollback). **Confirmed 8 Nov 2026: keep shipping straight to `main`;** the bundled-release idea is parked in `TODO.md` → Not now.
@@ -40,7 +40,6 @@ The ordered to-do list (next steps, backlog, and what not to build yet) lives in
 
 ## Waiting on
 - **Ross:** Edit holds: 3 of the 5 missing footholds are in (beside F3 and M2, a pair, and on J1); the pair beside **G1 and N1** isn't yet; after the next publish, Claude snapshots + ships (the 10 Nov board is snapshotted, `c669ae8`). Sign in as Pablo with the new PIN once (reset 10 Nov). The db/41 checks (9 Nov report). **Try Specific feet** (plan → Session 3 → "Try it").
-- **Ross: run `python console/autodeploy.py --install` once** in Git Bash at the repo root (the scheduled task; Claude's session may not create one). Until then only `/ship` deploys.
 - **Ross: try PB Console → Holds** (restart the console first; what it does: `console/README.md` → Holds): a redraw, a new foothold, a pair, Publish, Ship the snapshot. **Decide** whether turning a hold and new photos should also move to the console: they upload a board image, which needs either a console sign-in as Pablo (add `127.0.0.1` to the Turnstile widget's hostnames in Cloudflare) or the service key in the console (today only the Edge Function has it). Until then they stay in the app's Board Setup.
 - **Parked branch `parked/2b-camera-led-mapping`:** camera LED mapping (2b), unfinished, never shipped; only for a full rearrange or another gym (`TODO.md` → Not now). Its db/43 is live and harmless.
 - **Ross: test the opening hours** (live 7 Nov): see the 2026-11-07 session entry's checklist.
@@ -56,6 +55,11 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-10, Claude Code (PB Console: a simpler layout).**
+  - **Changed:** sidebar Home · Holds · Activity · ⚙ Advanced (+ Runbook when the Pi is offline). Home: Board (controls, stay-on, Light a problem), Health (temperature, power, Wi-Fi, disk with 7-day charts; restarts), Activity, Opening hours (edited there). Release, Circuit tracks, Power deleted. New `pb-healthlog` on the Pi (5-min lines, 7 days). Backups weekly via the autodeploy task; Home warns if failed or >8 days.
+  - **Live:** console + Pi (autodeploy); CACHE unchanged. First automatic backup ran 22:07.
+  - **Left:** Ross: restart the console and try it.
+
 - **2026-11-10, Claude Code (PB Console → Holds; score tools re-baselined).**
   - **Changed:** a laptop tab for outlines (point counts, Clear and draw, Simplify, drag/add/remove points), footholds (add, delete, pair) and Undo the last publish, publishing via `admin_publish_board()` as the super admin over `db/.env`; Ship the snapshot. Console plan phase 17. `trace_prior_score` bar 178; `holdedit_score` skips specks.
   - **Tested:** 13 console tests; headless Chrome on the live board; publish and undo run live, rolled back. Hold checks pass.
@@ -65,9 +69,3 @@ Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which si
   - **Changed:** `profiles.is_super_admin` (Pablo only), `is_super_admin()`. Board work is super admin only in RLS/RPCs (`board_config`, the `board` bucket, `holds`, `board_versions`, publish, undo, outlines) and in the app (Trace Holds, Board Setup, Edit holds; phone too). Admins can't rename, demote, delete or reset the super admin (RPCs + Edge Function, redeployed). CLAUDE.md, overview §4.8d, §5, §6.
   - **Live:** db/44 applied (dry run first), Edge Function v3, app shipped (see the commit).
   - **Left:** Ross: try it as Pablo (Board Setup, Edit holds, Trace Holds still work) and as another admin (no board cards; deep links bounce; Pablo's account locked). A lost super admin PIN is reset in the Supabase dashboard.
-
-- **2026-11-10, Claude Code (automatic Pi deploys; the console banner).**
-  - **Cause:** the yellow banner was the config.env drift check: the laptop's `pi/config.env` had `STRIP_LEDS` from the parked 2b work (nothing on main reads it); removed. The Pi was also behind main (pb-ledmap, the 10 Nov snapshot).
-  - **Changed:** `console/autodeploy.py` (clean export of main, pi tests, busy check, deploy); busy = 15 min, opening-hours aware, counts wall touches (`pb-touchwatch`); the banner is now a sidebar notice for real problems only. CLAUDE.md rule 2, `/ship`, `/pi-deploy`, both READMEs.
-  - **Live:** console + Pi only, CACHE unchanged. Pi deployed by autodeploy at 20:29 (open, 54 min quiet); no listener restart.
-  - **Left:** Ross: `--install` (Waiting on).
