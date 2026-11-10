@@ -112,12 +112,18 @@
     try { d = await get('/api/drift'); } catch (e) { return fail(box, e); }
     const bad = d.files.filter((f) => f.state !== 'same');
     const label = { same: 'same', differs: 'differs: deploy', missing: 'not on the Pi', unreadable: 'root only' };
+    const a = d.autodeploy || {};
+    const auto = !a.checked_at ? 'Automatic updates have not run yet on this laptop.'
+      : a.result === 'up to date' || a.result === 'deployed'
+        ? 'Automatic updates: the Pi has main ' + esc((a.deployed_commit || '').slice(0, 7)) + (a.deployed_at ? ', put there ' + esc(a.deployed_at.replace('T', ' ')) : '') + '. Last checked ' + esc(a.checked_at.replace('T', ' ')) + '.'
+        : 'Automatic updates: main ' + esc((a.target || '').slice(0, 7)) + ' is waiting (' + esc(a.waiting || a.result) + '). Last checked ' + esc(a.checked_at.replace('T', ' ')) + '.';
     box.innerHTML =
+      '<p>' + auto + '</p>' +
       '<p>' + (d.files.length - bad.length) + ' of ' + d.files.length + ' files the same as the repo.</p>' +
       (bad.length ? '<table class="audit"><tr><th>Repo</th><th>On the Pi</th><th></th></tr>' + bad.map((f) =>
         '<tr><td>' + esc(f.repo) + '</td><td>' + esc(f.pi) + '</td><td class="r-' + (f.state === 'differs' ? 'failed' : 'cancelled') + '">' +
         esc(label[f.state] || f.state) + '</td></tr>').join('') + '</table>' : '') +
-      (d.config_drift ? '<p class="banner warn">pi/config.env differs from the Pi\'s: a deploy installs the laptop\'s. Fix it on the Config tab first if the Pi\'s is the right one.</p>' : '') +
+      (d.config_drift ? '<p class="banner warn">The board\'s settings on this laptop and on the Pi don\'t match, so automatic updates are paused. Open Config and keep the right copy.</p>' : '') +
       '<h3>On the Pi, not in the repo</h3>' +
       (d.extra.length ? d.extra.map((x) => '<div class="svc"><span class="dot"></span><span class="name">' + esc(x.path) + '</span><span class="muted">' +
         esc(x.pull_to ? '→ ' + x.pull_to : 'not pullable') + '</span><div class="btn-row">' +

@@ -40,6 +40,7 @@
     <div class="nav-group">Help</div>
     <button role="tab" data-tab="runbook"><span class="nav-dot" id="nav-dot-runbook"></span>Runbook</button>
   </nav>
+  <div id="attention" class="attention" role="status" aria-live="polite" hidden></div>
   <div class="side-foot">
     <button id="palette-open" class="kbd-hint" title="Every section and quick action">Search actions <kbd>Ctrl K</kbd></button>
     <div class="side-status"><span id="lock-state" class="pill">idle</span><button id="refresh" class="btn small" title="Probe the Pi and the site now">Refresh</button></div>
@@ -51,7 +52,6 @@
 <div id="no-token" class="banner bad" hidden>
   This page needs this launch's token. Start the console with <code>bash console/start.sh</code> from the repo root in Git Bash; it opens the right address.
 </div>
-<div id="drift" class="banner warn" hidden></div>
 <div id="stale" class="banner bad" hidden>
   The console's server is older than this page (it was started before the last update). Close the console window and run <code>bash console/start.sh</code> again.
 </div>
@@ -203,6 +203,7 @@
     <header class="page-head"><h1>Deploy</h1><p>Ship pi/ to the Pi, and what differs from the repo.</p></header>
     <div class="card">
       <h2>Deploy pi/ to the Pi</h2>
+      <p class="note"><strong>This happens on its own:</strong> every 10 minutes the laptop puts main's Pi files on the Pi (<code>console/autodeploy.py</code>, a scheduled task): in opening hours only after 15 minutes with nobody using the board, outside them straight away. These buttons are for doing it by hand.</p>
       <p class="note">Runs <code>bash pi/deploy.sh</code>: copies pi/ over and installs what changed, with no password (the Pi's <code>/etc/sudoers.d/pb-deploy</code> rule). A real deploy restarts the listener if its files or config.env changed (do it when the gym is closed). On a freshly flashed card without that rule, run <code>bash pi/deploy.sh</code> in Git Bash once instead: it asks for the password and puts the rule back.</p>
       <div class="slider-row">
         <button class="btn" id="deploy-dry">Dry run</button>

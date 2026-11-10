@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""pb-touchwatch: when the wall screen was last touched, for the deploy busy check.
+
+Reads the touchscreen's input events (and any mouse plugged in) alongside the
+kiosk, never grabbing them, and writes the Unix time of the latest touch to
+/run/projectboard/touch (tmpfs: no SD-card writes), at most every 5 seconds.
+Nothing else: not where, not what, never who. console/probe.py's busy check
+reads it, so an automatic Pi deploy waits while someone is browsing the wall
+screen even if they haven't cast anything (10 Nov 2026).
+
+Runs as pi (the input group) from pb-touchwatch.service. Devices are looked for
+again every 30 s, so a screen plugged in later is picked up. Standard library only.
+"""
+import glob
+import os
+import select
+import time
+
+OUT = '/run/projectboard/touch'
+RESCAN_S = 30
+MIN_GAP_S = 5
+
+
+def pointer_device(name):
+    """A touchscreen, tablet or mouse: absolute or relative axes. Not the HDMI CEC 'keyboards'."""
+    base = '/sys/class/input/%s/device/capabilities/' % name
+    for kind in ('abs', 'rel'):
+        try:
+            with open(base + kind) as f:
+                if any(int(x, 16) for x in f.read().split()):
+                    return True
+        except (OSError, ValueError):
+            pass
+    return False
+
+
+def write_touch(t):
+    tmp = OUT + '.tmp'
+    try:
+        with open(tmp, 'w') as f:
+            f.write('%d\n' % t)
+        os.replace(tmp, OUT)
+    except OSError:
+        pass                # /run/projectboard missing for a moment: the next touch tries again
+
+
+def main():
+    fds = {}                # device path -> fd
+    last_write = 0.0
+    next_scan = 0.0
+    while True:
+        now = time.monotonic()
+        if now >= next_scan:
+            for path in sorted(glob.glob('/dev/input/event*')):
+                if path not in fds and pointer_device(os.path.basename(path)):
+                    try:
+                        fds[path] = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+                    except OSError:
+                        pass
+            next_scan = now + RESCAN_S
+        if not fds:
+            time.sleep(RESCAN_S)
+            continue
+        ready, _, _ = select.select(list(fds.values()), [], [], RESCAN_S)
+        touched = False
+        for fd in ready:
+            try:
+                while os.read(fd, 4096):
+                    touched = True
+            except BlockingIOError:
+                pass
+            except OSError:          # unplugged: forget it, the rescan finds it again
+                for path, f in list(fds.items()):
+                    if f == fd:
+                        del fds[path]
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+        if touched and time.time() - last_write >= MIN_GAP_S:
+            last_write = time.time()
+            write_touch(last_write)
+
+
+if __name__ == '__main__':
+    main()

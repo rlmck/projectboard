@@ -1,0 +1,16 @@
+[Unit]
+Description=Wall screen touch watch (the last touch's time, for the deploy busy check)
+Documentation=https://github.com/rlmck/projectboard/tree/main/pi
+After=systemd-tmpfiles-setup.service
+
+[Service]
+User=pi
+SupplementaryGroups=input
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /usr/local/bin/pb-touchwatch
+Restart=always
+RestartSec=10
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

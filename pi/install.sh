@@ -8,7 +8,7 @@
 # Where things go:
 #   listener/*.py      /opt/projectboard/listener/ (and listener/patterns/*.py)
 #   ops/board-cam.sh   /opt/projectboard/ops/
-#   ops/pb-*           /usr/local/bin/ (pb-console-helper, pb-netwatch.sh: /usr/local/sbin/, root only)
+#   ops/pb-*           /usr/local/bin/ (pb-touchwatch too; pb-console-helper, pb-netwatch.sh: /usr/local/sbin/, root only)
 #   conf/pb-console.sudoers  /etc/sudoers.d/pb-console (checked with visudo -cf first)
 #   conf/pb-deploy.sudoers   /etc/sudoers.d/pb-deploy (the same check): deploys without a password
 #   ledmap/            /opt/projectboard/ledmap/ (the LED mapping tool: installed, never enabled)
@@ -82,7 +82,7 @@ put ops/board-cam.sh /opt/projectboard/ops/board-cam.sh 0755
 # The Wi-Fi watchdog (v2, 28 Oct 2026): kicks Hangout, the rescue hotspot, guarded reboots.
 # The hotspot's profile (pb-rescue) holds a password, so setup.sh writes it from secrets.env.
 put ops/pb-netwatch.sh /usr/local/sbin/pb-netwatch.sh 0755
-for f in pb-health pb-mode pb-status pb-idle pb-ledmap pb-bootcheck pb-weekly-reboot; do put "ops/$f" "/usr/local/bin/$f" 0755; done
+for f in pb-health pb-mode pb-status pb-idle pb-ledmap pb-bootcheck pb-weekly-reboot pb-touchwatch; do put "ops/$f" "/usr/local/bin/$f" 0755; done
 # PB Console's root helper, and the sudoers rule that lets pi run it (only it) without
 # a password. The rule goes in only if visudo accepts it: a broken file would lock sudo.
 put ops/pb-console-helper /usr/local/sbin/pb-console-helper 0755
@@ -257,6 +257,12 @@ if [ "$(systemctl is-enabled pb-netwatch 2>/dev/null)" != enabled ] || [ "$(syst
     run systemctl enable --now pb-netwatch.service
 elif changed /usr/local/sbin/pb-netwatch.sh /etc/systemd/system/pb-netwatch.service; then
     run systemctl restart pb-netwatch
+fi
+# The wall screen's last touch, for the deploy busy check (10 Nov 2026): runs as pi, never grabs input.
+if [ "$(systemctl is-enabled pb-touchwatch 2>/dev/null)" != enabled ] || [ "$(systemctl is-active pb-touchwatch 2>/dev/null)" != active ]; then
+    run systemctl enable --now pb-touchwatch.service
+elif changed /usr/local/bin/pb-touchwatch /etc/systemd/system/pb-touchwatch.service; then
+    run systemctl restart pb-touchwatch
 fi
 # Enabled only: it fires 3 min after the next boot (starting it now would log a misleading boot line).
 [ "$(systemctl is-enabled pb-bootcheck.timer 2>/dev/null)" = enabled ] || run systemctl enable pb-bootcheck.timer

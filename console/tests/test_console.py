@@ -257,7 +257,7 @@ class ServerTests(ServerBase):
         body = {'action': 'reboot', 'args': {}, 'confirm': True}
         status, out, _ = self.req('POST', '/api/action', body)
         self.assertEqual(status, 409)
-        self.assertIn('cast', json.loads(out)['error'])
+        self.assertIn('used the board', json.loads(out)['error'])
         self.assertEqual(self.remote.cmds, [])
         self.remote.busy_result = None             # the Pi didn't answer: also refused without the override
         self.assertEqual(self.req('POST', '/api/action', body)[0], 409)

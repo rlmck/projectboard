@@ -22,6 +22,7 @@ Everything that runs on the Pi 4 behind the board: the cast listener that lights
 | `pb-netlog` | 60 s after each boot, a network report to `/boot/firmware/netlog.txt`, readable from the SD card when SSH is down. |
 | `pb-ledmap` | **Not enabled; started by hand.** The LED mapping tool (below): a web page on `http://projectboard:8081/` (Tailscale only) for finding LEDs that don't sit under their holds. It pauses `pb-listener` while it runs. |
 | `pb-netwatch` | The Wi-Fi watchdog (`ops/pb-netwatch.sh`, v2; see "Wi-Fi"). In the repo and installed by `install.sh` since 31 Oct 2026. |
+| `pb-touchwatch` | When the wall screen was last touched (`ops/pb-touchwatch`, 10 Nov 2026): reads the touchscreen's input events alongside the kiosk (never grabbing them) and writes the time of the latest touch to `/run/projectboard/touch` (RAM), at most every 5 s. Only the time: not where, not what, never who. The deploy busy check reads it. |
 | `kiosk` | cage + Chromium showing the app's wall-screen mode (`https://symmetryboard.co.uk/?wall`) on the touchscreen. Installed 26 Oct 2026; `?wall` and `--deny-permission-prompts` added 27 Oct (deploy, then `sudo systemctl restart kiosk`: install.sh doesn't restart the screen itself). |
 
 Also installed:
@@ -130,14 +131,16 @@ Every self-healing action is a journal line starting `ACTION <name>:`, and `pb-s
 
 ## Deploying
 
-From the repo root in Git Bash. Deploying restarts the listener, which clears the board, so do it when the gym is closed:
+**Automatic (10 Nov 2026).** The laptop keeps the Pi on main by itself: `console/autodeploy.py`, run every 10 minutes and at logon by a Windows scheduled task (`\ProjectBoard\Pi autodeploy`; `python console/autodeploy.py --install` makes it), and by `/ship` straight after a push. Each run fetches `origin/main` (the working tree is never touched) and compares a fingerprint of main's `pi/`, `app/hold_map.json`, `app/board-fallback.jpg` and the laptop's `pi/config.env` with the last one deployed; the same means no ssh at all. Otherwise, the **busy check** (`console/probe.py busy`, the one `/pi-deploy` and PB Console use): inside the opening hours (or a stay-on) it waits until nobody has used the board for **15 minutes** (casts, circuits, circuit views and stops from the journal and the listener's status, live LEDs while setting, a circuit running, a wall-screen touch from `pb-touchwatch`); outside them it goes straight away; a running `pb-ledmap` session always waits. Busy: the next run tries again. Then it refuses if the laptop's and the Pi's `config.env` differ (Ross picks one in PB Console → Config), exports `origin/main` to a temp folder (local edits never reach the Pi), adds the laptop's `pi/config.env`, runs `pi/tests`, checks busy again and runs `deploy.sh` from there. State in `console/data/autodeploy.json`, a line a run in `autodeploy.log`, the last deploy's output in `autodeploy-last.txt`, deploys in the console's audit log. PB Console's sidebar shows only what needs Ross: settings that differ, tests failing on main, the Pi asking for its password, two failed deploys in a row, an update still not on the Pi after a day, or the scheduled task missing. `--status` prints the state, `--force` deploys even when the fingerprint matches (still busy-checked).
+
+**By hand**, from the repo root in Git Bash (this deploys the working tree, not main). Deploying restarts the listener if its files or config changed, which clears the board, so use `/pi-deploy`'s busy check first:
 
 ```
 bash pi/deploy.sh --dry-run    # lists what would change
 bash pi/deploy.sh              # installs; no password since pb-deploy (30 Oct 2026), else sudo asks once
 ```
 
-PB Console's Deploy tab runs the same script, with no password (the `pb-deploy` rule). The old `--sudo-stdin` mode was removed on 30 Oct 2026.
+PB Console's Deploy tab runs the same script (the working tree, by hand), with no password (the `pb-deploy` rule). The old `--sudo-stdin` mode was removed on 30 Oct 2026.
 
 `deploy.sh` copies `pi/` to `~/pb-deploy` on the Pi with scp and runs `install.sh` there. `install.sh` only installs files that differ, and restarts only what those files affect. (The 26 Oct stopgap `cast-listener` went with the first card; there's no stopgap to roll back to now: roll back with `git revert` and a deploy.)
 

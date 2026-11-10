@@ -6,7 +6,7 @@ which can read the journal (the adm group), so it needs no sudo. It never
 changes anything.
 
     python3 - < probe.py          everything the overview shows
-    python3 - busy < probe.py     only the casts in the last 5 minutes (the busy guard)
+    python3 - busy < probe.py     the busy guard: was the board used in the last 15 minutes, in opening hours?
     python3 - history 0 < probe.py   the activity lines since a Unix time (0: all), for Activity
 """
 import json
@@ -20,7 +20,9 @@ RUN = '/run/projectboard'
 STATUS = RUN + '/listener.json'
 SERVICES = ('pb-listener', 'kiosk', 'pb-netwatch', 'board-cam', 'pb-ledmap', 'tailscaled', 'NetworkManager')
 TIMERS = ('pb-health', 'pb-mode', 'pb-weekly-reboot', 'pb-bootcheck')
-BUSY_S = 300
+BUSY_S = 300                 # the overview's "casts in the last 5 minutes"
+QUIET_S = 900                # the busy guard: 15 minutes with nobody using the board (10 Nov 2026)
+TOUCH = RUN + '/touch'       # pb-touchwatch: the wall screen's last touch (Unix time)
 NETWATCH_LOG = '/boot/firmware/netwatch.txt'
 
 
@@ -77,18 +79,58 @@ def casts_since(seconds):
     return casts
 
 
-def busy():
+def board_mode():
+    """('day' | 'night', reason) from the listener's own mode.py, so the busy guard and the board
+    always agree on the opening hours. Anything doubtful is 'day' (open): wait rather than interrupt."""
+    try:
+        sys.path.insert(0, '/opt/projectboard/listener')
+        import mode as m
+        return m.mode_now(m.load_config())
+    except Exception as e:
+        return 'day', 'mode unknown (%s): treated as open' % type(e).__name__
+
+
+def last_touch():
+    try:
+        return float((read(TOUCH) or '').strip())
+    except ValueError:
+        return None
+
+
+def used_since(seconds):
+    """How many listener messages from people ('... received: ...': casts, circuits, circuit views, stops)."""
+    out = sh('journalctl', '-u', 'pb-listener', '--since', '-%ds' % seconds, '-o', 'cat',
+             '--no-pager', '-q', '--grep', 'received: ')
+    return len([l for l in out.splitlines() if l.strip()])
+
+
+def busy(window=QUIET_S):
+    """The busy guard (PB Console's actions, /pi-deploy and the automatic Pi deploy all use it).
+    In opening hours (or a stay-on): busy if anyone used the board in the last `window` seconds:
+    a cast, circuit or circuit view (the journal, which survives a listener restart, and the
+    listener's status), live LEDs while setting, a circuit running, or a touch on the wall screen.
+    Outside them: never busy (the board is off and casts are ignored), so deploys go straight away.
+    A running pb-ledmap session is busy at any hour (someone is mapping LEDs)."""
     s = {}
     try:
         s = json.loads(read(STATUS) or '{}')
     except ValueError:
         pass
-    casts = casts_since(BUSY_S)
-    last = s.get('last_cast_at')
-    recent = bool(casts) or bool(last and time.time() - last < BUSY_S)
-    recent = recent or s.get('leds') in ('circuit', 'preview')   # a circuit run, or someone setting with live LEDs
-    return {'busy': recent, 'casts': casts, 'last_cast_at': last, 'last_cast_name': s.get('last_cast_name'),
-            'pb_ledmap': sh('systemctl', 'is-active', 'pb-ledmap'), 'now': time.time()}
+    now = time.time()
+    touch = last_touch()
+    times = [t for t in (s.get('last_cast_at'), s.get('last_preview_at'), touch) if t]
+    last_use = max(times) if times else None
+    messages = used_since(window)
+    running = s.get('leds') in ('circuit', 'preview')     # a circuit run, or someone setting with live LEDs
+    recent = bool(messages) or running or bool(last_use and now - last_use < window)
+    mode, reason = board_mode()
+    ledmap = sh('systemctl', 'is-active', 'pb-ledmap')
+    return {'busy': (recent and mode != 'night') or ledmap == 'active', 'used_recently': recent,
+            'mode': mode, 'mode_reason': reason, 'window': window, 'messages': messages, 'running': running,
+            'casts': casts_since(window), 'last_use_at': last_use, 'last_touch_at': touch,
+            'quiet_at': last_use + window if last_use else None,
+            'last_cast_at': s.get('last_cast_at'), 'last_cast_name': s.get('last_cast_name'),
+            'pb_ledmap': ledmap, 'now': now}
 
 
 def journal_json(*args):

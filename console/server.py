@@ -39,6 +39,7 @@ REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 import actions  # noqa: E402
+import autodeploy  # noqa: E402
 import castlog  # noqa: E402
 import checks  # noqa: E402
 import drift  # noqa: E402
@@ -117,6 +118,7 @@ class Console:
         self.httpd = None                  # set by main(): /api/shutdown stops it
         self._pi, self._pi_at, self._pi_lock = None, 0.0, threading.Lock()
         self._lap, self._lap_at, self._rt_at, self._lap_lock = None, 0.0, 0.0, threading.Lock()
+        self._task_ok, self._task_at, self._kick_at = None, 0.0, 0.0
 
     def pi(self, refresh=False):
         with self._pi_lock:
@@ -140,6 +142,26 @@ class Console:
                 self._lap, self._lap_at = c, now
             return self._lap
 
+    def attention(self, config_drift):
+        """What needs Ross (the banner): only real problems, each with what to do (autodeploy.attention).
+        If automatic Pi updates are set up but haven't run for 30 minutes (the laptop was asleep),
+        start one now rather than raising an alarm."""
+        now = time.time()
+        if now - self._task_at > 600:
+            self._task_ok, self._task_at = autodeploy.task_installed(), now
+        state = autodeploy.load_state()
+        try:
+            age = now - datetime.datetime.fromisoformat(state['checked_at']).timestamp()
+        except (KeyError, TypeError, ValueError):
+            age = None
+        if self._task_ok and (age is None or age > 1800) and now - self._kick_at > 1800:
+            self._kick_at = now
+            try:
+                autodeploy.start_background()
+            except OSError:
+                pass
+        return autodeploy.attention(state, config_drift, self._task_ok)
+
     def overview(self, refresh=False):
         result = {}
         t = threading.Thread(target=lambda: result.setdefault('lap', self.laptop_checks(refresh)))
@@ -154,6 +176,7 @@ class Console:
         units.update({t + '.timer': s.get('ActiveState') for t, s in (p.get('timers') or {}).items()})
         return {'at': time.time(), 'units': units, 'tiles': pi_tiles[:1] + tiles.laptop_tiles(lap) + pi_tiles[1:],
                 'pi_ok': bool(p.get('ok')), 'helper': p.get('helper'), 'config_drift': drift,
+                'attention': self.attention(drift), 'autodeploy': autodeploy.load_state(),
                 'board': {'leds': listener.get('leds'), 'pattern': listener.get('idle_pattern'),
                           'plan': listener.get('idle_plan'), 'override': listener.get('idle_override'),
                           'scale': listener.get('brightness_scale', 1.0), 'mode': p.get('mode'),
@@ -201,6 +224,7 @@ def r_drift(app, q):
     rcode, root, _ = app.remote.run(helper_cmd('hashes'), timeout=30)
     out = drift.compare(text, root if rcode == 0 else '')
     out['config_drift'] = actions.config_drift(app.pi().get('config_env'))
+    out['autodeploy'] = autodeploy.load_state()
     return out
 
 
@@ -470,7 +494,7 @@ def make_handler(app):
                 if a.busy and body.get('override_busy') is not True:
                     b = app.remote.busy()
                     if b is None or b.get('busy'):
-                        why = 'the Pi did not answer the busy check' if b is None else 'a cast came in during the last 5 minutes'
+                        why = 'the Pi did not answer the busy check' if b is None else 'someone used the board in the last 15 minutes'
                         actions.audit(a.name, 'refused', why)
                         return self._json(409, {'error': why, 'busy': b})
                 if a.config == 'keep':

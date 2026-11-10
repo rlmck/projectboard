@@ -142,6 +142,17 @@ function renderBoard() {
   }
 }
 
+// Things that need Ross, in the sidebar (never above the page, so no screen is pushed down):
+// only real problems, each in plain English with what to do and a button to the right section.
+const TAB_NAMES = { config: 'Config', deploy: 'Deploy', overview: 'Overview', services: 'Services' };
+function renderAttention(items) {
+  const box = $('attention');
+  box.hidden = !items.length;
+  box.innerHTML = items.map((a) => '<div class="att-item"><strong>' + esc(a.title) + '</strong><p>' + esc(a.todo) + '</p>' +
+    (a.tab && TAB_NAMES[a.tab] ? '<button class="btn small" data-att-goto="' + esc(a.tab) + '">Open ' + TAB_NAMES[a.tab] + '</button>' : '') +
+    '</div>').join('');
+}
+
 async function loadOverview(refresh) {
   $('updated').textContent = 'checking…';
   try {
@@ -151,13 +162,7 @@ async function loadOverview(refresh) {
     $('stale').hidden = !!(window.PB.dash && data.metrics);
     if (window.PB.dash) window.PB.dash.render(data);
     $('no-helper').hidden = !(data.pi_ok && data.helper === false);
-    const d = $('drift');
-    d.hidden = !data.config_drift;
-    if (data.config_drift) {
-      d.innerHTML = "<strong>pi/config.env on the laptop differs from the Pi's config.env.</strong> " +
-        'A deploy would put the laptop\'s copy on the Pi; night-mode changes are refused until they match.' +
-        '<pre class="out">' + esc(data.config_drift) + '</pre>';
-    }
+    renderAttention(data.attention || []);
     renderServices();
     renderBoard();
     $('updated').textContent = 'updated ' + new Date().toLocaleTimeString('en-GB');
@@ -203,7 +208,8 @@ function confirmDialog(pre, title) {
     } else if (busy && busy.busy) {
       bb.hidden = false;
       const names = (busy.casts || []).map((c) => c.at.slice(11, 19) + ' ' + c.name + (c.mirror ? ' (mirrored)' : ''));
-      bb.textContent = 'Someone cast in the last 5 minutes' + (names.length ? ': ' + names.join(', ') : '') + '. The board may be in use.';
+      bb.textContent = (busy.pb_ledmap === 'active' ? 'An LED mapping session is running.' : 'Someone used the board in the last 15 minutes' +
+        (names.length ? ': ' + names.join(', ') : busy.last_touch_at && busy.last_touch_at === busy.last_use_at ? ' (the wall screen was touched)' : '') + '.') + ' Going ahead may cut them off.';
     }
     const diff = $('confirm-diff');
     const extra = [pre.shown ? '$ ' + pre.shown : '', (pre.warnings || []).map((w) => '! ' + w).join('\n'),
@@ -329,6 +335,10 @@ async function boot() {
     if (a) runAction(...a);
   });
   $('refresh').addEventListener('click', () => loadOverview(true));
+  $('attention').addEventListener('click', (ev) => {
+    const go = ev.target.closest('[data-att-goto]');
+    if (go) showTab(go.dataset.attGoto);
+  });
   $('output-close').addEventListener('click', () => { $('output').hidden = true; });
   $('brightness').addEventListener('input', () => { $('brightness-out').textContent = $('brightness').value + '%'; });
   $('brightness-apply').addEventListener('click', () => {

@@ -65,7 +65,7 @@ class Remote:
         return data
 
     def busy(self):
-        """The busy guard: casts in the last 5 minutes. None if the Pi can't be asked."""
+        """The busy guard (probe.py busy): anyone using the board in the last 15 minutes, in opening hours. None if the Pi can't be asked."""
         b = self.probe('busy')
         return b if b.get('ok') else None
 

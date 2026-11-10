@@ -56,6 +56,13 @@ a { color: var(--accent-hover); }
 .nav-dot.ok { background: var(--lvl-ok); }
 .nav-dot.warn { background: var(--lvl-warn); }
 .nav-dot.bad { background: var(--lvl-bad); }
+/* Needs Ross: in the sidebar, so it never pushes a page down (10 Nov 2026) */
+.attention { display: grid; gap: 8px; }
+.att-item {
+  padding: 10px 11px; border: 1px solid var(--lvl-warn); border-radius: var(--radius-md);
+  background: var(--feet-a12); font-size: 12.5px; line-height: 1.4;
+}
+.att-item p { margin: 4px 0 8px; color: var(--text-soft); }
 .side-foot { display: grid; gap: 8px; padding: 10px 6px 0; border-top: 1px solid var(--border); }
 .side-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .kbd-hint {
@@ -416,6 +423,9 @@ summary { cursor: pointer; color: var(--text-soft); }
   .nav button { white-space: nowrap; width: auto; }
   .side-foot { display: flex; border: 0; padding: 0; flex: none; }
   .kbd-hint, #updated { display: none; }
+  .attention { flex: none; display: flex; }
+  .att-item { display: flex; align-items: center; gap: 8px; white-space: nowrap; padding: 4px 8px; }
+  .att-item p { display: none; }
   .output { left: 16px; right: 16px; }
   main { padding: 16px 16px 120px; }
   .banner { margin: 12px 16px 0; }
