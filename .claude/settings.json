@@ -16,6 +16,7 @@
       "Bash(git push origin HEAD:dev)",
       "Bash(bash build.sh*)",
       "Bash(bash .githooks/test-pre-commit.sh)",
+      "Bash(bash tools/wait-live.sh*)",
       "Bash(python -m unittest discover -s console/tests*)",
       "Bash(python -m unittest discover -s pi/tests*)",
       "Bash(cd app && cat state.js core.js problems.js admin.js account.js authoring.js circuits.js challenge.js leaderboard.js wall.js app.js > ../all.js && node --check ../all.js*)",
