@@ -1535,6 +1535,18 @@
       background: var(--finish-a55); border: 2px solid var(--finish);
     }
     .bs-miss.sel { background: var(--ol-edit-a90); border-color: var(--white); color: var(--ol-vertex-ring); }
+    /* the line-up (first run): today's hand holds as dots, the picked four numbered */
+    .bs-ludot { position: absolute; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--ol-edit); box-shadow: 0 0 0 1px var(--bg-a55); }
+    .bs-lu {
+      position: absolute; transform: translate(-50%, -50%); white-space: nowrap;
+      min-width: 26px; height: 26px; padding: 0 6px; border-radius: var(--radius-pill);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; color: var(--ol-vertex-ring);
+      background: var(--ol-edit-a90); border: 2px solid var(--white);
+    }
+    .bs-lu.sel, .bs-corner.sel { border-color: var(--finish); }
+    .bs-lu.sel { background: var(--finish-a55); color: var(--on-accent); }
+    .bs-corner span { white-space: nowrap; }
     .bs-label {
       position: absolute; transform: translate(-50%, calc(-100% - 6px));
       padding: 2px 8px; border-radius: var(--radius-pill); white-space: nowrap;
@@ -1549,6 +1561,8 @@
     .bs-panel .ol-btn { flex: 1 1 auto; }
     .bs-hint { font-size: 13px; line-height: 1.4; color: var(--text-muted); margin: 0 auto 8px; max-width: 680px; }
     .bs-hint b { color: var(--text); }
+    .bs-hint.bad { color: var(--error-text); }
+    .bs-lu-list .on { color: var(--ol-edit); }
     .bs-status {
       display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
       max-width: 680px; margin: 0 auto 8px; font-size: 13px; font-weight: 600; color: var(--text-soft);

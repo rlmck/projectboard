@@ -8,11 +8,16 @@
 //            on with, and Undo for the last publish (db/42 admin_undo_board)
 //   photos   the straight-on photo and the cartoon (same framing), scaled down and
 //            uploaded to the 'board' bucket (admin-only writes) under setup/
-//   corners  the board's four corners on the cartoon, the photo, and (the first time
-//            only, while board_config has none) the current board image
+//   corners  the board's four corners on the cartoon and the photo (the trace's area,
+//            saved to board_config.corners)
+//   lineup   the first time only (board_config has no corners yet): four hand holds
+//            tapped on today's board image (it's cropped, so its corners can't be
+//            marked), then the same four on the cartoon, in the same order
 //   trace    the holds auto-traced on the cartoon (trace.js), then matched to today's
-//            holds through the corners (a homography, refined by an affine fit to the
-//            first matches): each hand hold keeps its id, name and LED
+//            holds: a first guess through a homography (the line-up's four point pairs,
+//            or on a later run today's corners -> board -> the cartoon's corners),
+//            refined by an affine fit to the first matches: each hand hold keeps its
+//            id, name and LED
 //   review   every shape: a hand hold (fix its match), a foothold, or deleted; add,
 //            move or redraw any outline. Every hand hold needs exactly one shape.
 //   mirror   pairs by reflecting about the board's centre line, nearest hold of the
@@ -30,8 +35,9 @@ const BS_CARTOON_MAX = 2000;     // the cartoon is stored (and shown in the app)
 const BS_PHOTO_MAX = 3000;       // the photo, for camera LED mapping (2b)
 const BS_MATCH = 0.025;          // a shape matches a hold within this share of the board's width
 const BS_PAIR = 0.03;            // a reflection finds its partner within this share of the board's width
-const BS_STEPS = ['start', 'photos', 'corners', 'trace', 'review', 'mirror', 'publish'];
-const BS_STEP_NAMES = { photos: 'Photos', corners: 'Corners', trace: 'Trace', review: 'Review', mirror: 'Mirror pairs', publish: 'Publish' };
+const BS_STEPS = ['start', 'photos', 'corners', 'lineup', 'trace', 'review', 'mirror', 'publish'];
+const BS_STEP_NAMES = { photos: 'Photos', corners: 'Corners', lineup: 'Line up', trace: 'Trace', review: 'Review', mirror: 'Mirror pairs', publish: 'Publish' };
+const BS_LU_SPREAD = 0.08;       // line-up: the smallest triangle of the four holds, as a share of the hand holds' box
 const BS_CORNER_NAMES = ['top left', 'top right', 'bottom right', 'bottom left'];
 
 const BS = {
@@ -41,6 +47,9 @@ const BS = {
   img: {},             // kind ('cartoon' | 'photo' | 'current') -> { bmp, w, h, path, file }
   corners: {},         // kind -> [[x%, y%] × 4]  (TL, TR, BR, BL)
   cornerKind: 'cartoon',
+  lineup: { cur: [null, null, null, null], cart: [null, null, null, null] },  // hold ids on today's image; [x%, y%] on the cartoon
+  luKind: 'current',   // the line-up's picture: 'current' (today's board) | 'cartoon'
+  luSel: 0,            // the line-up slot the next tap fills (0-3), or null
   shapes: [],          // [{ key, pts: [[x%, y%]…], kind: 'hand'|'foot'|'extra', id }]
   seq: 0,
   pred: {},            // hold id -> predicted [x%, y%] on the cartoon (from today's board)
@@ -61,7 +70,8 @@ const BS = {
 const bsEl = id => document.getElementById(id);
 const bsR2 = v => Math.round(v * 100) / 100;
 const bsClamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const bsCur = () => BS.img[BS.step === 'corners' ? BS.cornerKind : 'cartoon'];
+const bsImgKind = () => (BS.step === 'corners' ? BS.cornerKind : BS.step === 'lineup' ? BS.luKind : 'cartoon');
+const bsCur = () => BS.img[bsImgKind()];
 const bsShape = key => BS.shapes.find(s => s.key === key) || null;
 const bsShapeOf = id => BS.shapes.find(s => s.id === id) || null;
 const bsLiveHand = () => (BS.live ? BS.live.holds.filter(h => h.kind === 'hand') : []);
@@ -91,9 +101,10 @@ function bsSolve(A, b) {
   return M.map((r, i) => r[n] / r[i]);
 }
 
-// The homography taking the unit square (0,0) (1,0) (1,1) (0,1) to a quad (TL, TR, BR, BL).
-function bsHom(q) {
-  const src = [[0, 0], [1, 0], [1, 1], [0, 1]], A = [], b = [];
+// The homography taking four points `src` to four points `q`; src defaults to the unit
+// square (0,0) (1,0) (1,1) (0,1), so a quad (TL, TR, BR, BL) gives board (u, v) -> image.
+function bsHom(q, src = [[0, 0], [1, 0], [1, 1], [0, 1]]) {
+  const A = [], b = [];
   for (let i = 0; i < 4; i++) {
     const [u, v] = src[i], [x, y] = q[i];
     A.push([u, v, 1, 0, 0, 0, -u * x, -v * x]); b.push(x);
@@ -138,7 +149,7 @@ function bsSave() {
     Object.keys(BS.img).forEach(k => { const m = BS.img[k]; if (m && m.path) img[k] = { path: m.path, w: m.w, h: m.h }; });
     localStorage.setItem(BS_DRAFT, JSON.stringify({
       t: Date.now(), step: BS.step, img, corners: BS.corners, shapes: BS.shapes, seq: BS.seq,
-      pred: BS.pred, mirror: BS.mirror, flags: BS.flags, traced: BS.traced,
+      pred: BS.pred, mirror: BS.mirror, flags: BS.flags, traced: BS.traced, lineup: BS.lineup,
       version: BS.live && BS.live.version,
     }));
   } catch (e) { /* full or blocked: the draft lives in memory */ }
@@ -214,7 +225,10 @@ function bsGo(step) {
   bsRender();
   if (bsBoardStep()) requestAnimationFrame(() => bsLayout(false));
 }
-const bsBoardStep = () => ['corners', 'trace', 'review', 'mirror', 'publish'].includes(BS.step);
+const bsBoardStep = () => ['corners', 'lineup', 'trace', 'review', 'mirror', 'publish'].includes(BS.step);
+// The line-up is needed only while today's board has no corners (the first run).
+const bsNeedLineup = () => !!(BS.live && !BS.live.corners);
+const bsSteps = () => BS_STEPS.filter(s => s !== 'lineup' || bsNeedLineup());
 
 // ── rendering: the frame ──────────────────────────────────────────────────────
 function bsRender() {
@@ -222,9 +236,9 @@ function bsRender() {
   if (!view) return;
   const board = bsBoardStep();
   view.classList.toggle('bs-board', board);
-  const i = BS_STEPS.indexOf(BS.step);
+  const steps = bsSteps(), i = steps.indexOf(BS.step);
   bsEl('bs-title').textContent = BS.step === 'start' ? 'Board setup' : BS_STEP_NAMES[BS.step];
-  bsEl('bs-stepno').textContent = BS.step === 'start' ? '' : `${i} of ${BS_STEPS.length - 1}`;
+  bsEl('bs-stepno').textContent = BS.step === 'start' ? '' : `${i} of ${steps.length - 1}`;
   if (!board) { bsRenderPage(); bsEl('bs-panel').innerHTML = ''; return; }
   bsEl('bs-page').innerHTML = '';
   bsDrawImage();
@@ -311,10 +325,11 @@ function bsThumbs() {
 function bsDrawImage() {
   const m = bsCur(), c = bsEl('bs-img');
   if (!m || !m.bmp) { c.width = 1; c.height = 1; return; }
-  if (c.dataset.src === (m.path || m.w + 'x' + m.h) + BS.step + BS.cornerKind && c.width === m.w) return;
+  const key = (m.path || m.w + 'x' + m.h) + BS.step + bsImgKind();
+  if (c.dataset.src === key && c.width === m.w) return;
   c.width = m.w; c.height = m.h;
   c.getContext('2d').drawImage(m.bmp, 0, 0);
-  c.dataset.src = (m.path || m.w + 'x' + m.h) + BS.step + BS.cornerKind;
+  c.dataset.src = key;
   bsLayout(false);
 }
 
@@ -381,6 +396,7 @@ function bsRenderBoard() {
     bsRenderOver();
     return;
   }
+  if (BS.step === 'lineup') { svg.innerHTML = ''; bsRenderOver(); return; }
   let out = '';
   const partner = BS.step === 'mirror' && BS.sel ? bsPartnerOf(bsShape(BS.sel)) : null;
   BS.shapes.forEach(s => {
@@ -413,6 +429,8 @@ function bsRenderOver() {
       const [x, y] = bsScreen(p[0], p[1]);
       html += `<div class="bs-corner" style="left:${x}px;top:${y}px"><span>${i + 1}</span></div>`;
     });
+  } else if (BS.step === 'lineup') {
+    html = bsLuOver();
   } else if (BS.step === 'review') {
     bsMissing().forEach(id => {
       const p = BS.pred[id];
@@ -422,7 +440,7 @@ function bsRenderOver() {
     });
   }
   const s = BS.sel && bsShape(BS.sel);
-  if (s && s.pts.length && BS.step !== 'corners') {
+  if (s && s.pts.length && BS.step !== 'corners' && BS.step !== 'lineup') {
     const c = bsCentre(s.pts), top = Math.min(...s.pts.map(p => p[1]));
     const [x, y] = bsScreen(c[0], top);
     const label = s.kind === 'extra' ? 'Extra shape' : s.kind === 'foot' ? (s.name || 'Foothold') : bsName(s.id);
@@ -451,16 +469,15 @@ function bsRenderPanel() {
   const p = bsEl('bs-panel');
   const back = `<button class="ol-btn" data-act="prev">Back</button>`;
   if (BS.step === 'corners') {
-    const kinds = ['cartoon', 'photo'].concat(BS.live && !BS.live.corners ? ['current'] : []);
-    const names = { cartoon: 'Cartoon', photo: 'Photo', current: 'Today’s board' };
+    const kinds = ['cartoon', 'photo'];
+    const names = { cartoon: 'Cartoon', photo: 'Photo' };
     p.innerHTML = `
       <div class="bs-tabs">${kinds.map(k => `<button class="bs-tab ${k === BS.cornerKind ? 'on' : ''} ${BS.corners[k] ? 'done' : ''}" data-act="ckind" data-kind="${k}">${names[k]}</button>`).join('')}</div>
-      <p class="bs-hint">${BS.cornerKind === 'current'
-        ? 'Today’s board image, so today’s holds can be lined up with the new ones: drag each numbered corner onto the same board corner as on the cartoon.'
-        : 'Drag the four numbered corners onto the corners of the board (1 top left, then clockwise). Pinch to zoom.'}</p>
-      <div class="ol-row">${back}<button class="ol-btn ol-publish" data-act="next" ${kinds.every(k => BS.corners[k]) ? '' : 'disabled'}>Next</button></div>`;
+      <p class="bs-hint">Drag the four numbered corners onto the corners of the board, footholds included (1 top left, then clockwise). Pinch to zoom.</p>
+      <div class="ol-row">${back}<button class="ol-btn ol-publish" data-act="next" ${kinds.every(k => BS.corners[k]) && !BS.busy ? '' : 'disabled'}>Next</button></div>`;
     return;
   }
+  if (BS.step === 'lineup') { p.innerHTML = bsLuPanel(); return; }
   if (BS.step === 'trace') {
     p.innerHTML = `
       <p class="bs-hint">${BS.busy ? 'Tracing the holds… this takes a few seconds.' : BS.traced
@@ -608,21 +625,176 @@ function bsDefaultCorners() {
   const inset = [[4, 4], [96, 4], [96, 96], [4, 96]];
   ['cartoon', 'photo'].forEach(k => { if (!BS.corners[k]) BS.corners[k] = inset.map(p => p.slice()); });
 }
-async function bsCornerKind(kind) {
+function bsCornerKind(kind) {
   BS.cornerKind = kind;
-  if (kind === 'current' && !BS.img.current) {
-    try {
-      const bmp = await bsBitmapFromUrl(BOARD_IMG);
-      BS.img.current = { bmp, w: bmp.width, h: bmp.height, path: null };
-    } catch (e) {
-      showToast('Couldn’t load today’s board image', 'error');
-      BS.cornerKind = 'cartoon';
-    }
-  }
-  if (kind === 'current' && !BS.corners.current) {
-    BS.corners.current = (BS.live.corners && BS.live.corners.image) || (BS.corners.cartoon || []).map(p => p.slice());
-  }
   bsRender();
+}
+
+// ── steps: line up (the first run only) ───────────────────────────────────────
+// Today's board image is cropped (no footholds section), so its corners aren't the
+// board's. Instead: four hand holds tapped on it (snapped to the nearest hand hold),
+// then the same four on the cartoon, in the same order. Their four point pairs give
+// the homography (today's image % -> cartoon %) behind bsMatch()'s first guess.
+const bsLuEmpty = () => ({ cur: [null, null, null, null], cart: [null, null, null, null] });
+const bsLuHold = id => (BS.live && id ? BS.live.holds.find(h => h.id === id) : null) || null;
+const bsLuFirstFree = arr => { const i = arr.indexOf(null); return i < 0 ? null : i; };
+const bsLuCurDone = () => BS.lineup.cur.every(Boolean);
+const bsLuReady = () => bsLuCurDone() && BS.lineup.cart.every(Boolean);
+const bsLuOnImage = h => h.x != null && h.y != null && +h.x >= 0 && +h.x <= 100 && +h.y >= 0 && +h.y <= 100;
+
+// Today's board image, loaded once (the app's current BOARD_IMG: the holds' x, y are % of it).
+async function bsLuLoad() {
+  if (BS.img.current) return true;
+  try {
+    const bmp = await bsBitmapFromUrl(BOARD_IMG);
+    BS.img.current = { bmp, w: bmp.width, h: bmp.height, path: null };
+    return true;
+  } catch (e) {
+    console.warn('board setup: today’s image', e);
+    showToast('Couldn’t load today’s board image', 'error');
+    return false;
+  }
+}
+// The four today's-board points ([x%, y%]) of the picked holds.
+const bsLuCurPts = () => BS.lineup.cur.map(id => { const h = bsLuHold(id); return h ? [+h.x, +h.y] : null; });
+
+// Why these four won't do, or null. pts in % of an image w × h; ref = the area (px²) they
+// should spread over. Too close, nearly in a line, or one inside the other three's
+// triangle: a homography from them would swing wildly away from them.
+function bsLuSpreadProblem(pts, w, h, ref) {
+  const P = pts.map(p => [p[0] / 100 * w, p[1] / 100 * h]);
+  const tri = (a, b, c) => ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2;
+  const T = [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]];
+  const areas = T.map(([a, b, c]) => Math.abs(tri(P[a], P[b], P[c])));
+  if (Math.min(...areas) < BS_LU_SPREAD * ref) return 'spread';
+  // convex: no point inside the triangle of the other three
+  for (let k = 0; k < 4; k++) {
+    const o = [0, 1, 2, 3].filter(i => i !== k), whole = areas[T.findIndex(t => !t.includes(k))];
+    const parts = Math.abs(tri(P[k], P[o[0]], P[o[1]])) + Math.abs(tri(P[k], P[o[1]], P[o[2]])) + Math.abs(tri(P[k], P[o[2]], P[o[0]]));
+    if (parts <= whole * 1.0001) return 'spread';
+  }
+  return null;
+}
+// The orientation of each triple: the same four holds tapped in the same order turn the same way.
+function bsLuTurns(pts, w, h) {
+  const P = pts.map(p => [p[0] / 100 * w, p[1] / 100 * h]);
+  return [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]].map(([a, b, c]) =>
+    Math.sign((P[b][0] - P[a][0]) * (P[c][1] - P[a][1]) - (P[b][1] - P[a][1]) * (P[c][0] - P[a][0])));
+}
+// What's wrong with the line-up so far: 'spread' (today's four), 'cspread' / 'order'
+// (the cartoon's), or null.
+function bsLuProblem() {
+  if (!bsLuCurDone()) return null;
+  const cur = BS.img.current || { w: 100, h: 100 }, hands = bsLiveHand().filter(h => h.x != null);
+  const xs = hands.map(h => +h.x / 100 * cur.w), ys = hands.map(h => +h.y / 100 * cur.h);
+  const box = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
+  if (bsLuSpreadProblem(bsLuCurPts(), cur.w, cur.h, box)) return 'spread';
+  if (!BS.lineup.cart.every(Boolean)) return null;
+  const im = BS.img.cartoon, bp = bsBoardPx();
+  if (bsLuSpreadProblem(BS.lineup.cart, im.w, im.h, bp.w * bp.h * 0.25)) return 'cspread';
+  const a = bsLuTurns(bsLuCurPts(), cur.w, cur.h), b = bsLuTurns(BS.lineup.cart, im.w, im.h);
+  if (a.some((t, i) => t !== b[i])) return 'order';
+  return null;
+}
+// today's image % -> cartoon %, from the four pairs (null until they're all there).
+function bsLuHom() {
+  if (!bsLuReady()) return null;
+  return bsHom(BS.lineup.cart, bsLuCurPts());
+}
+
+function bsLuKind(kind) {
+  if (kind === 'cartoon' && (!bsLuCurDone() || bsLuProblem() === 'spread')) return;
+  BS.luKind = kind;
+  BS.luSel = bsLuFirstFree(kind === 'current' ? BS.lineup.cur : BS.lineup.cart);
+  bsRender();
+}
+function bsLuClear() {
+  BS.lineup = bsLuEmpty();
+  BS.luKind = 'current'; BS.luSel = 0;
+  bsSave(); bsRender();
+}
+// The slot whose marker is under the finger, or -1.
+function bsLuHit(cx, cy) {
+  const [sx, sy] = bsStageXY(cx, cy);
+  const pts = BS.luKind === 'current' ? bsLuCurPts() : BS.lineup.cart;
+  let best = -1, bd = 22;
+  pts.forEach((p, i) => { if (!p) return; const [x, y] = bsScreen(p[0], p[1]); const d = Math.hypot(x - sx, y - sy); if (d < bd) { bd = d; best = i; } });
+  return best;
+}
+function bsLuTap(g) {
+  const L = BS.lineup, hit = bsLuHit(g.sx, g.sy);
+  if (hit >= 0) { BS.luSel = hit; bsRenderOver(); bsRenderPanel(); return; }
+  if (BS.luSel == null) { showToast('Tap a numbered hold first to change it', 'error'); return; }
+  if (BS.luKind === 'current') {
+    // snap to the nearest hand hold on today's image
+    const [sx, sy] = bsStageXY(g.sx, g.sy);
+    let best = null, bd = 44;
+    bsLiveHand().forEach(h => {
+      if (!bsLuOnImage(h)) return;
+      const [x, y] = bsScreen(+h.x, +h.y), d = Math.hypot(x - sx, y - sy);
+      if (d < bd) { bd = d; best = h; }
+    });
+    if (!best) { showToast('Tap on a hand hold', 'error'); return; }
+    if (L.cur.includes(best.id)) { showToast(`${best.name} is already picked`, 'error'); return; }
+    L.cart[BS.luSel] = null;                                   // a new hold: its cartoon spot goes
+    L.cur[BS.luSel] = best.id;
+    BS.luSel = bsLuFirstFree(L.cur);
+    if (BS.luSel == null && !bsLuProblem() && !L.cart.every(Boolean)) {
+      BS.luKind = 'cartoon';                                   // all four: on to the cartoon
+      BS.luSel = bsLuFirstFree(L.cart);
+      bsSave(); bsRender();
+      return;
+    }
+  } else {
+    L.cart[BS.luSel] = [bsR2(bsClamp(g.x, 0, 100)), bsR2(bsClamp(g.y, 0, 100))];
+    BS.luSel = bsLuFirstFree(L.cart);
+  }
+  bsSave(); bsRenderOver(); bsRenderPanel();
+}
+// The overlay: today's hand holds as dots, the picked four numbered (and named).
+function bsLuOver() {
+  let html = '';
+  const L = BS.lineup, cur = BS.luKind === 'current';
+  if (cur) {
+    bsLiveHand().forEach(h => {
+      if (!bsLuOnImage(h) || L.cur.includes(h.id)) return;
+      const [x, y] = bsScreen(+h.x, +h.y);
+      html += `<div class="bs-ludot" style="left:${x}px;top:${y}px"></div>`;
+    });
+  }
+  const pts = cur ? bsLuCurPts() : L.cart;
+  pts.forEach((p, i) => {
+    if (!p) return;
+    const [x, y] = bsScreen(p[0], p[1]), h = bsLuHold(L.cur[i]);
+    html += cur
+      ? `<div class="bs-lu ${BS.luSel === i ? 'sel' : ''}" style="left:${x}px;top:${y}px">${i + 1} ${escHtml(h ? h.name : '')}</div>`
+      : `<div class="bs-corner ${BS.luSel === i ? 'sel' : ''}" style="left:${x}px;top:${y}px"><span>${i + 1} ${escHtml(h ? h.name : '')}</span></div>`;
+  });
+  return html;
+}
+function bsLuPanel() {
+  const L = BS.lineup, prob = bsLuProblem(), cur = BS.luKind === 'current';
+  const back = `<button class="ol-btn" data-act="prev">Back</button>`;
+  const curOk = bsLuCurDone() && prob !== 'spread';
+  const sel = BS.luSel, selName = sel != null && L.cur[sel] ? escHtml(bsName(L.cur[sel])) : '';
+  const names = L.cur.map((id, i) => `<span class="${sel === i ? 'on' : ''}">${i + 1}: ${id ? escHtml(bsName(id)) : '–'}${!cur && id && !L.cart[i] ? ' (to tap)' : ''}</span>`).join('');
+  let hint;
+  if (prob === 'spread') hint = `<p class="bs-hint bad">These four are too close together or nearly in a line. Pick four hand holds spread out, as near the board’s four corners as you can: tap a numbered hold, then the hold to use instead.</p>`;
+  else if (cur && sel != null) hint = `<p class="bs-hint">Today’s board: tap <b>hold ${sel + 1} of 4</b>${selName ? ` (instead of ${selName})` : ''}. Pick four hand holds spread out, as near the board’s corners as you can; a tap snaps to the nearest hold.</p>`;
+  else if (cur) hint = `<p class="bs-hint">Four holds picked. Tap a numbered hold to change it, or go on to the cartoon.</p>`;
+  else if (prob === 'order') hint = `<p class="bs-hint bad">The cartoon’s four aren’t in the same order as today’s (or one is on the wrong hold). Tap a number, then where that hold is.</p>`;
+  else if (prob === 'cspread') hint = `<p class="bs-hint bad">These four are bunched together on the cartoon: check each is on the right hold.</p>`;
+  else if (sel != null) hint = `<p class="bs-hint">Cartoon: tap the middle of <b>${selName}</b> (hold ${sel + 1} of 4). Drag a number to fine-tune it.</p>`;
+  else hint = `<p class="bs-hint">All four lined up. Drag a number to fine-tune it, or tap it and then where it should be.</p>`;
+  return `
+    <div class="bs-tabs">
+      <button class="bs-tab ${cur ? 'on' : ''} ${curOk ? 'done' : ''}" data-act="lukind" data-kind="current">Today’s board</button>
+      <button class="bs-tab ${cur ? '' : 'on'} ${bsLuReady() && !prob ? 'done' : ''}" data-act="lukind" data-kind="cartoon" ${curOk ? '' : 'disabled'}>Cartoon</button>
+    </div>
+    <div class="bs-status bs-lu-list">${names}</div>
+    ${hint}
+    <div class="ol-row">${back}<button class="ol-btn" data-act="luclear" ${L.cur.some(Boolean) ? '' : 'disabled'}>Start again</button>
+      <button class="ol-btn ol-publish" data-act="next" ${bsLuReady() && !prob ? '' : 'disabled'}>Next</button></div>`;
 }
 
 // ── steps: trace + match ──────────────────────────────────────────────────────
@@ -669,14 +841,17 @@ function bsGrowQuad(q, f) {
 
 // Today's holds (hand and foot) onto the cartoon, then each to its nearest shape.
 function bsMatch() {
-  // today's board corners: marked in this flow, else the ones stored with it
-  const curQ = BS.corners.current || (BS.live.corners && BS.live.corners.image) || null;
+  // first guess: a later run goes through the corners stored with today's board (today's
+  // image -> board -> cartoon); the first run through the line-up's four holds (today's
+  // image -> cartoon directly)
+  const curQ = (BS.live.corners && BS.live.corners.image) || null;
   const Hn = bsHom(BS.corners.cartoon);
   const Hc = curQ ? bsHomInv(bsHom(curQ)) : null;
+  const Hl = curQ ? null : bsLuHom();
   const old = BS.live.holds.filter(h => (h.kind === 'hand' || h.kind === 'foot') && h.x != null);
-  // first guess: through the corners (today's image -> board -> cartoon)
   let pred = {};
   old.forEach(h => {
+    if (Hl) { pred[h.id] = bsHomApply(Hl, +h.x, +h.y); return; }
     const uv = Hc ? bsHomApply(Hc, +h.x, +h.y) : [+h.x / 100, +h.y / 100];
     pred[h.id] = bsHomApply(Hn, uv[0], uv[1]);
   });
@@ -955,6 +1130,7 @@ async function bsPublish() {
     console.info('board setup: published, board version', data);
     bsDropDraft();
     BS.img = {}; BS.corners = {}; BS.shapes = []; BS.mirror = null; BS.flags = []; BS.traced = false; BS.pred = {};
+    BS.lineup = bsLuEmpty(); BS.luKind = 'current'; BS.luSel = 0;
     BS.busy = false;
     showToast('Published: the new board is live on everyone’s next load', 'success');
     await bsAfterBoardChange();
@@ -1017,6 +1193,9 @@ function bsDown(e) {
   if (BS.step === 'corners') {
     const i = bsHitCorner(e.clientX, e.clientY);
     if (i >= 0) Object.assign(g, { type: 'corner', i, start: BS.corners[BS.cornerKind][i].slice() });
+  } else if (BS.step === 'lineup' && BS.luKind === 'cartoon') {
+    const i = bsLuHit(e.clientX, e.clientY);
+    if (i >= 0) Object.assign(g, { type: 'lumark', i, start: BS.lineup.cart[i].slice() });
   } else if (BS.step === 'review' && (BS.tool === 'draw' || BS.tool === 'redraw')) {
     Object.assign(g, { type: 'lasso', pts: [[bsR2(x), bsR2(y)]] });
   } else if (BS.step === 'review' && BS.tool === 'move' && BS.sel && bsShape(BS.sel)) {
@@ -1056,6 +1235,11 @@ function bsMove(e) {
     BS.corners[BS.cornerKind][g.i] = p;
     bsRenderBoard();
     if (g.touch) bsLoupe(e.clientX, e.clientY, p);
+  } else if (g.type === 'lumark') {
+    const p = [bsR2(bsClamp(g.start[0] + ddx, 0, 100)), bsR2(bsClamp(g.start[1] + ddy, 0, 100))];
+    BS.lineup.cart[g.i] = p;
+    bsRenderOver();
+    if (g.touch) bsLoupe(e.clientX, e.clientY, p);
   } else if (g.type === 'lasso') {
     const [x, y] = bsPct(e.clientX, e.clientY), last = g.pts[g.pts.length - 1];
     if (Math.hypot((x - last[0]) * BS.v.aspect, y - last[1]) > 0.12) { g.pts.push([bsR2(x), bsR2(y)]); bsRenderBoard(); }
@@ -1078,6 +1262,7 @@ function bsUp(e) {
   BS.g = null;
   bsLoupe(null);
   if (g.type === 'corner') { bsSave(); bsRenderPanel(); return; }
+  if (g.type === 'lumark') { if (!g.moved) BS.luSel = g.i; bsSave(); bsRenderOver(); bsRenderPanel(); return; }
   if (g.type === 'move') { if (!g.moved) BS.undo.pop(); BS.mirror = null; bsSave(); bsRenderBoard(); return; }
   if (g.type === 'lasso') {
     const pts = bsLassoDone(g.pts);
@@ -1125,6 +1310,7 @@ function bsShapeAt(x, y) {
   return bd < 2.5 ? best : null;
 }
 function bsTap(g) {
+  if (BS.step === 'lineup') { bsLuTap(g); return; }
   if (BS.step === 'review') {
     // a hand hold with no shape (its marker)
     const [sx, sy] = bsStageXY(g.sx, g.sy);
@@ -1172,7 +1358,7 @@ function bsLoupe(cx, cy, p) {
 function bsWire() {
   bsEl('bs-back').addEventListener('click', () => {
     if (BS.step === 'start' || BS.step === 'photos') { if (BS.step === 'photos') bsGo('start'); else goBack(); return; }
-    bsGo(BS_STEPS[BS_STEPS.indexOf(BS.step) - 1]);
+    bsGo(bsSteps()[bsSteps().indexOf(BS.step) - 1]);
   });
   bsEl('bs-fit').addEventListener('click', bsFit);
   const page = bsEl('bs-page'), panel = bsEl('bs-panel');
@@ -1181,14 +1367,16 @@ function bsWire() {
     if (!b || b.disabled || b.tagName === 'SELECT') return;
     const act = b.dataset.act;
     if (act === 'reload') { BS.live = null; initSetup(); }
-    else if (act === 'new') { bsDropDraft(); Object.assign(BS, { img: {}, corners: {}, shapes: [], mirror: null, flags: [], traced: false, pred: {}, undo: [] }); bsGo('photos'); }
+    else if (act === 'new') { bsDropDraft(); Object.assign(BS, { img: {}, corners: {}, shapes: [], mirror: null, flags: [], traced: false, pred: {}, undo: [], lineup: bsLuEmpty(), luKind: 'current', luSel: 0 }); bsGo('photos'); }
     else if (act === 'discard') { bsDropDraft(); bsRender(); }
     else if (act === 'resume') await bsResume();
     else if (act === 'undo') bsUndoPublish();
     else if (act === 'upload') bsUpload();
-    else if (act === 'prev') bsGo(BS_STEPS[BS_STEPS.indexOf(BS.step) - 1]);
+    else if (act === 'prev') bsGo(bsSteps()[bsSteps().indexOf(BS.step) - 1]);
     else if (act === 'next') bsNext();
     else if (act === 'ckind') bsCornerKind(b.dataset.kind);
+    else if (act === 'lukind') bsLuKind(b.dataset.kind);
+    else if (act === 'luclear') bsLuClear();
     else if (act === 'trace') bsTrace();
     else if (act === 'nextissue') bsNextIssue();
     else if (act === 'draw') { BS.tool = 'draw'; BS.sel = null; bsRenderBoard(); bsRenderPanel(); }
@@ -1223,8 +1411,19 @@ function bsWire() {
   window.addEventListener('resize', () => { if (currentView === 'setup' && bsBoardStep()) bsLayout(true); });
 }
 
-function bsNext() {
-  if (BS.step === 'corners') { bsGo('trace'); return; }
+async function bsNext() {
+  if (BS.step === 'corners') {
+    if (!bsNeedLineup()) { bsGo('trace'); return; }
+    BS.busy = true; bsRenderPanel();
+    const ok = await bsLuLoad();
+    BS.busy = false;
+    if (!ok) { bsRenderPanel(); return; }
+    BS.luKind = bsLuCurDone() && bsLuProblem() !== 'spread' ? 'cartoon' : 'current';
+    BS.luSel = bsLuFirstFree(BS.luKind === 'current' ? BS.lineup.cur : BS.lineup.cart);
+    bsGo('lineup');
+    return;
+  }
+  if (BS.step === 'lineup') { if (bsLuReady() && !bsLuProblem()) bsGo('trace'); return; }
   if (BS.step === 'trace') { bsGo('review'); return; }
   if (BS.step === 'review') {
     if (!BS.mirror) bsMakeMirror();
@@ -1247,15 +1446,20 @@ async function bsResume() {
       const bmp = await bsBitmapFromUrl(bsUrl(d.img[k].path));
       img[k] = { bmp, w: bmp.width, h: bmp.height, path: d.img[k].path };
     }
-    if (d.corners && d.corners.current) {
+    const lineup = d.lineup && Array.isArray(d.lineup.cur) && Array.isArray(d.lineup.cart) ? d.lineup : bsLuEmpty();
+    if (bsNeedLineup() && (lineup.cur.some(Boolean) || d.step === 'lineup')) {
       const bmp = await bsBitmapFromUrl(BOARD_IMG);
       img.current = { bmp, w: bmp.width, h: bmp.height, path: null };
     }
+    if (d.corners) delete d.corners.current;               // drafts from before the line-up
     Object.assign(BS, { img, corners: d.corners || {}, shapes: d.shapes || [], seq: d.seq || 0, pred: d.pred || {},
-                        mirror: d.mirror || null, flags: d.flags || [], traced: !!d.traced, undo: [] });
+                        mirror: d.mirror || null, flags: d.flags || [], traced: !!d.traced, undo: [], lineup });
+    BS.luKind = lineup.cur.every(Boolean) ? 'cartoon' : 'current';
+    BS.luSel = bsLuFirstFree(BS.luKind === 'current' ? lineup.cur : lineup.cart);
     BS.busy = false;
     if (d.version && BS.live && d.version !== BS.live.version) showToast('The board changed since this draft: check the matches', 'error');
-    bsGo(BS_STEPS.includes(d.step) && d.step !== 'start' ? (img.cartoon || d.step === 'photos' ? d.step : 'photos') : 'photos');
+    const step = d.step === 'lineup' && !bsNeedLineup() ? 'corners' : d.step;
+    bsGo(BS_STEPS.includes(step) && step !== 'start' ? (img.cartoon || step === 'photos' ? step : 'photos') : 'photos');
   } catch (e) {
     console.warn('board setup: resume', e);
     BS.busy = false;
