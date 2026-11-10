@@ -3,7 +3,7 @@
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 15 KB: the 5 newest session entries live here, older ones in `docs/log/` (`docs/log/2026-10.md`, `docs/log/2026-11.md`).
 
 ## Current state (as of 2026-11-10)
-- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-6305d7e765` since 10 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
+- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh`: `pb-360d13ebdc` since 10 Nov. Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
 - **Sorting and filtering (4 Nov 2026):** the Filter sheet (phone) or panel (wall): Sort, Grade slider, quick filters, pick Holds; `✕ Clear` (overview §4.2a).
 - **Deploying:** ship by default, end to end (Decisions); `build.sh` is the build gate, a pre-commit hook scans for secrets; `/start`, `/ship`, `/staging`, `/rollback`, `/wrap`, `/pi-deploy`.
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs, about 0.25–0.45 s) and is used daily. Every hold's LED is checked on the wall (28 Oct, `pb-ledmap`; db/32 fixed three labels); mirrored casts and the feet rule are checked too (Ross, by 7 Nov), and the geofence centre on site.
@@ -60,7 +60,7 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Found:** the final cartoon is a fresh drawing, not an edit of today's image; blind, 31 hand holds got no shape. **F6, N6 turned; D6, P5 not on the cartoon.**
   - **Changed:** the trace fits today's outlines onto the cartoon (`tracePriorFit`); Review shows only exceptions: Looks right, Accept all unflagged, **Tap to trace**, Use fitted shape, a turn handle. Old drafts: Start again. Trace 3.5× faster. Plan, overview §4.8d.
   - **Tested:** final cartoon 181 auto-accepted, 7 to check, 50 footholds (~156 actions → ~13); `tools/trace_prior_score.js` passes; Chrome 390 px (stubbed); pi + console tests.
-  - **Live:** CACHE_TBD.
+  - **Live:** `27ca236`, CACHE `pb-360d13ebdc`.
   - **Left:** Ross: Start again with the final cartoon (plan's Next steps); decide D6/P5.
 - **2026-11-10, Claude Code (board setup: line up by four holds; TODO 13).**
   - **Changed:** today's image is cropped, so the first run's "Today's board" corners tab became a **Line up** step: four hand holds tapped on today's image, then on the cartoon; their homography is `bsMatch()`'s first guess (plan, overview §4.8d).
