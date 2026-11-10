@@ -46,7 +46,7 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 6. **Don't change the Supabase schema** (tables, policies, grants, functions) without being asked. Flag the need and wait.
 7. **Check what already exists before writing new code.** Read the relevant script(s) and `index.html` fully. The scripts share one global scope, so a symbol may be defined in a file you don't expect: grep across all `.js` files.
 8. **The Supabase anon key is safe to commit.** It's a public key. Don't replace it with an environment variable.
-9. **Keep the structure:** `app/index.html` (markup) + `app/tokens.css` + `app/styles.css` + thirteen ordered classic scripts, all flat in `app/`. **Not ES modules**, and don't convert them without being asked. Don't add subfolders inside `app/`: it's copied to the site one-to-one, so a subfolder changes live URLs (`build.sh` refuses one).
+9. **Keep the structure:** `app/index.html` (markup) + `app/tokens.css` + `app/styles.css` + fourteen ordered classic scripts, all flat in `app/`. **Not ES modules**, and don't convert them without being asked. Don't add subfolders inside `app/`: it's copied to the site one-to-one, so a subfolder changes live URLs (`build.sh` refuses one).
 10. **When in doubt about behaviour, ask.** Don't invent product decisions.
 11. **Styling values (colours, fonts, radii, shadows, sizes) live only in `app/tokens.css`.** Components in `styles.css` use `var(--token)`, never a literal. Any change to `tokens.css` must be checked in both the phone views and the wall-screen mode (`/?wall`).
 
@@ -97,7 +97,7 @@ docs/      the committed docs (overview, rollout, cast contract, console plan, c
 build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs them from there
 ```
 
-**App logic: thirteen classic scripts in `app/`, sharing one global scope**, loaded by `index.html` in this order, after the vendored `supabase-js-2.116.0.js`. Every top-level `let`/`const`/`function` is visible everywhere, so **a name may be declared only once across all thirteen**, and top-level code can't use later files. `bash build.sh --check` joins them in `index.html`'s order and runs `node --check` (by hand: `cd app && cat state.js core.js problems.js admin.js account.js authoring.js circuits.js challenge.js leaderboard.js wall.js trace.js setup.js app.js > ../all.js && node --check ../all.js`, then delete `all.js`).
+**App logic: fourteen classic scripts in `app/`, sharing one global scope**, loaded by `index.html` in this order, after the vendored `supabase-js-2.116.0.js`. Every top-level `let`/`const`/`function` is visible everywhere, so **a name may be declared only once across all fourteen**, and top-level code can't use later files. `bash build.sh --check` joins them in `index.html`'s order and runs `node --check` (by hand: `cd app && cat state.js core.js problems.js admin.js account.js authoring.js circuits.js challenge.js leaderboard.js wall.js trace.js setup.js holdedit.js app.js > ../all.js && node --check ../all.js`, then delete `all.js`).
 
 | File | Owns |
 |---|---|
@@ -113,6 +113,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 | `wall.js` | The **wall-screen mode** (`/?wall`, the kiosk): list + board + cast, circuits (a tap lights all its holds, `show_circuit`; Start circuit opens the same Cast sheet), **Create** (on-screen keyboard, `wall_create_problem`), read-only Ranks, Get the app QR, idle slides, offline note (overview §4.7a; no night screen: outside the opening hours the Pi turns the screen off). Off unless `WALL` (`state.js`) |
 | `trace.js` | Auto-tracing holds on a cartoon (`traceHolds()`), fitting today's outlines onto it (`tracePriorFit()`) and Tap to trace (`traceTap()`); pure, no DOM; `tools/trace_score.js` and `tools/trace_prior_score.js` score it in Node |
 | `setup.js` | **Board setup** (`#setup`, admins; db/42): photo + cartoon upload, corners, trace, match to today's holds, review, footholds, mirror pairs, publish, undo (overview §4.8d) |
+| `holdedit.js` | **Edit holds** (Board setup → Edit holds; 10 Nov 2026): the live board edited in place: add/delete/pair footholds, turn a hold with its mirror partner (the board image's pixels too), one publish through `admin_publish_board()` (overview §4.8d); pure image work scored by `tools/holdedit_score.js` |
 | `app.js` | **Loaded last:** event wiring, service worker, install flow, boot |
 
 What each view does in detail (fullscreen viewer, create, the outline editor, circuits, challenges, the wall mode): overview §4.

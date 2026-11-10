@@ -44,6 +44,7 @@ const ASSETS = [
   './wall.js',
   './trace.js',
   './setup.js',
+  './holdedit.js',
   './app.js',
   './manifest.json',
   './icon.svg',

@@ -1,7 +1,8 @@
 // ProjectBoard - ordered classic <script>s sharing ONE global scope (no ES modules, no
 // build step). Order: state, core, problems, admin, account, authoring, circuits,
-// challenge, leaderboard, wall, trace, setup, app. This file: Board setup (#setup,
-// admins), session 2a of docs/board-setup-plan.md.
+// challenge, leaderboard, wall, trace, setup, holdedit, app. This file: Board setup
+// (#setup, admins), session 2a of docs/board-setup-plan.md. The hold editor (Edit holds,
+// the step 'edit') lives in holdedit.js and uses this file's stage and gestures.
 //
 // The flow, one step at a time, on a phone:
 //   start    the board as it is (holds, footholds, its corners), a saved draft to carry
@@ -79,7 +80,7 @@ const BS = {
 const bsEl = id => document.getElementById(id);
 const bsR2 = v => Math.round(v * 100) / 100;
 const bsClamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const bsImgKind = () => (BS.step === 'corners' ? BS.cornerKind : BS.step === 'lineup' ? BS.luKind : 'cartoon');
+const bsImgKind = () => (BS.step === 'corners' ? BS.cornerKind : BS.step === 'lineup' ? BS.luKind : BS.step === 'edit' ? 'edit' : 'cartoon');
 const bsCur = () => BS.img[bsImgKind()];
 const bsShape = key => BS.shapes.find(s => s.key === key) || null;
 const bsShapeOf = id => BS.shapes.find(s => s.id === id) || null;
@@ -144,7 +145,11 @@ function bsToBoard(kind, x, y) {
 function bsBoardPx() {
   const q = BS.corners.cartoon, im = BS.img.cartoon;
   if (!q || !im) return { w: 1, h: 1 };
-  const px = p => [p[0] / 100 * im.w, p[1] / 100 * im.h];
+  return bsQuadPx(q, im.w, im.h);
+}
+// The pixel size of the board inside corners q (%) of an image w × h.
+function bsQuadPx(q, w, h) {
+  const px = p => [p[0] / 100 * w, p[1] / 100 * h];
   const [a, b, c, d] = q.map(px);
   return { w: (Math.hypot(b[0] - a[0], b[1] - a[1]) + Math.hypot(c[0] - d[0], c[1] - d[1])) / 2,
            h: (Math.hypot(d[0] - a[0], d[1] - a[1]) + Math.hypot(c[0] - b[0], c[1] - b[1])) / 2 };
@@ -152,7 +157,7 @@ function bsBoardPx() {
 
 // ── the draft (this device) ───────────────────────────────────────────────────
 function bsSave() {
-  if (BS.step === 'start') return;
+  if (BS.step === 'start' || BS.step === 'edit') return;   // the hold editor keeps its own draft (holdedit.js)
   try {
     const img = {};
     Object.keys(BS.img).forEach(k => { const m = BS.img[k]; if (m && m.path) img[k] = { path: m.path, w: m.w, h: m.h }; });
@@ -235,7 +240,7 @@ function bsGo(step) {
   bsRender();
   if (bsBoardStep()) requestAnimationFrame(() => bsLayout(false));
 }
-const bsBoardStep = () => ['corners', 'lineup', 'trace', 'review', 'mirror', 'publish'].includes(BS.step);
+const bsBoardStep = () => ['corners', 'lineup', 'trace', 'review', 'mirror', 'publish', 'edit'].includes(BS.step);
 // The line-up is needed only while today's board has no corners (the first run).
 const bsNeedLineup = () => !!(BS.live && !BS.live.corners);
 const bsSteps = () => BS_STEPS.filter(s => s !== 'lineup' || bsNeedLineup());
@@ -247,8 +252,8 @@ function bsRender() {
   const board = bsBoardStep();
   view.classList.toggle('bs-board', board);
   const steps = bsSteps(), i = steps.indexOf(BS.step);
-  bsEl('bs-title').textContent = BS.step === 'start' ? 'Board setup' : BS_STEP_NAMES[BS.step];
-  bsEl('bs-stepno').textContent = BS.step === 'start' ? '' : `${i} of ${steps.length - 1}`;
+  bsEl('bs-title').textContent = BS.step === 'start' ? 'Board setup' : BS.step === 'edit' ? 'Edit holds' : BS_STEP_NAMES[BS.step];
+  bsEl('bs-stepno').textContent = BS.step === 'start' || BS.step === 'edit' ? '' : `${i} of ${steps.length - 1}`;
   if (!board) { bsRenderPage(); bsEl('bs-panel').innerHTML = ''; return; }
   bsEl('bs-page').innerHTML = '';
   bsDrawImage();
@@ -279,6 +284,7 @@ function bsRenderPage() {
       </div>
       <p class="bs-muted">Publishing a new board keeps every hand hold’s name, LED and problems: only its position, outline and mirror partner change. Footholds come from the new photo.</p>
     </div>
+    ${L.image && hands ? heStartCard() : ''}
     ${draft && draft.v !== BS_DRAFT_V ? `
     <div class="bs-card">
       <div class="bs-card-title">Your draft is from an older version</div>
@@ -341,6 +347,7 @@ function bsThumbs() {
 
 // ── the board stage ───────────────────────────────────────────────────────────
 function bsDrawImage() {
+  if (BS.step === 'edit') { heDrawImage(); return; }
   const m = bsCur(), c = bsEl('bs-img');
   if (!m || !m.bmp) { c.width = 1; c.height = 1; return; }
   const key = (m.path || m.w + 'x' + m.h) + BS.step + bsImgKind();
@@ -415,6 +422,7 @@ function bsRenderBoard() {
     return;
   }
   if (BS.step === 'lineup') { svg.innerHTML = ''; bsRenderOver(); return; }
+  if (BS.step === 'edit') { heRenderBoard(); return; }
   let out = '';
   const partner = BS.step === 'mirror' && BS.sel ? bsPartnerOf(bsShape(BS.sel)) : null;
   BS.shapes.forEach(s => {
@@ -451,6 +459,9 @@ function bsRenderOver() {
     });
   } else if (BS.step === 'lineup') {
     html = bsLuOver();
+  } else if (BS.step === 'edit') {
+    over.innerHTML = heOverHtml();
+    return;
   } else if (BS.step === 'review') {
     bsMissing().forEach(id => {
       const p = BS.pred[id];
@@ -526,6 +537,7 @@ function bsRenderPanel() {
   if (BS.step === 'review') { p.innerHTML = bsReviewPanel(); return; }
   if (BS.step === 'mirror') { p.innerHTML = bsMirrorPanel(); return; }
   if (BS.step === 'publish') { p.innerHTML = bsPublishPanel(); return; }
+  if (BS.step === 'edit') { p.innerHTML = hePanel(); return; }
 }
 
 function bsReviewPanel() {
@@ -1269,7 +1281,7 @@ function bsRotHandle() {
 // A finished lasso -> a smoothed, simplified outline in %.
 function bsLassoDone(pts) {
   if (pts.length < 6) return null;
-  const m = BS.img.cartoon, px = pts.map(p => [p[0] / 100 * m.w, p[1] / 100 * m.h]);
+  const m = bsCur(), px = pts.map(p => [p[0] / 100 * m.w, p[1] / 100 * m.h]);
   if (tracePolyArea(px) < 20) return null;
   const sm = traceSimplify(traceSmoothRing(px, 2), 0.8);
   return sm.map(p => [bsR2(bsClamp(p[0] / m.w * 100, -5, 105)), bsR2(bsClamp(p[1] / m.h * 100, -5, 105))]);
@@ -1381,13 +1393,21 @@ function bsPublishProblems() {
 
 // Footholds: FT1, FT2… left to right, bottom row first (rows by the board's own up).
 function bsNameFeet() {
-  const Hi = bsHomInv(bsHom(BS.corners.cartoon)), bp = bsBoardPx();
-  const feet = BS.shapes.filter(s => s.kind === 'foot').map(s => {
-    const c = bsCentre(s.pts), uv = bsHomApply(Hi, c[0], c[1]);
-    const ys = s.pts.map(p => bsHomApply(Hi, p[0], p[1])[1] * bp.h);
-    return { s, u: uv[0], v: uv[1] * bp.h, ht: Math.max(...ys) - Math.min(...ys) };
+  const feet = BS.shapes.filter(s => s.kind === 'foot');
+  const names = bsFootNameList(feet.map(s => s.pts), BS.corners.cartoon, BS.img.cartoon.w, BS.img.cartoon.h);
+  feet.forEach((s, i) => { s.name = names[i]; });
+}
+// The names (FT1, FT2…) of footholds given as outlines (% of an image w × h whose board
+// corners are q), in the list's order. The hold editor (holdedit.js) uses it too.
+function bsFootNameList(list, q, w, h) {
+  const Hi = bsHomInv(bsHom(q)), bp = bsQuadPx(q, w, h);
+  const names = list.map(() => null);
+  const feet = list.map((pts, i) => {
+    const c = bsCentre(pts), uv = bsHomApply(Hi, c[0], c[1]);
+    const ys = pts.map(p => bsHomApply(Hi, p[0], p[1])[1] * bp.h);
+    return { i, u: uv[0], v: uv[1] * bp.h, ht: Math.max(...ys) - Math.min(...ys) };
   });
-  if (!feet.length) return;
+  if (!feet.length) return names;
   const hts = feet.map(f => f.ht).sort((a, b) => a - b);
   const tol = Math.max(hts[Math.floor(hts.length / 2)] * 0.6, bp.h * 0.01);
   feet.sort((a, b) => b.v - a.v);                      // bottom first
@@ -1398,7 +1418,8 @@ function bsNameFeet() {
     else rows.push({ v: f.v, items: [f] });
   });
   let n = 0;
-  rows.forEach(r => r.items.sort((a, b) => a.u - b.u).forEach(f => { f.s.name = 'FT' + (++n); }));
+  rows.forEach(r => r.items.sort((a, b) => a.u - b.u).forEach(f => { names[f.i] = 'FT' + (++n); }));
+  return names;
 }
 
 // ── publish + undo ────────────────────────────────────────────────────────────
@@ -1491,6 +1512,8 @@ function bsDown(e) {
   if (BS.step === 'corners') {
     const i = bsHitCorner(e.clientX, e.clientY);
     if (i >= 0) Object.assign(g, { type: 'corner', i, start: BS.corners[BS.cornerKind][i].slice() });
+  } else if (BS.step === 'edit') {
+    heDown(g, e.clientX, e.clientY);
   } else if (BS.step === 'lineup' && BS.luKind === 'cartoon') {
     const i = bsLuHit(e.clientX, e.clientY);
     if (i >= 0) Object.assign(g, { type: 'lumark', i, start: BS.lineup.cart[i].slice() });
@@ -1549,6 +1572,8 @@ function bsMove(e) {
   } else if (g.type === 'move') {
     bsShape(BS.sel).pts = g.startPts.map(p => [bsR2(p[0] + ddx), bsR2(p[1] + ddy)]);
     bsRenderBoard();
+  } else if (g.type === 'herot') {
+    heRotMove(g, e.clientX, e.clientY);
   } else if (g.type === 'rotate') {
     const [sx, sy] = bsStageXY(e.clientX, e.clientY);
     bsShape(BS.sel).pts = bsTurn(g.startPts, (Math.atan2(sy - g.cy, sx - g.cx) - g.a0) * 180 / Math.PI);
@@ -1574,6 +1599,8 @@ function bsUp(e) {
     else { const s = bsShape(BS.sel); if (s && s.chk !== 'cand') delete s.chk; }
     BS.mirror = null; bsSave(); bsRenderBoard(); bsRenderPanel(); return;
   }
+  if (g.type === 'herot') { heRotEnd(g); return; }
+  if (g.type === 'lasso' && BS.step === 'edit') { heLasso(g.pts); return; }
   if (g.type === 'lasso') {
     const pts = bsLassoDone(g.pts);
     if (!pts) { bsRenderBoard(); if (g.moved) showToast('Too small: draw all the way round the hold', 'error'); return; }
@@ -1622,6 +1649,7 @@ function bsShapeAt(x, y) {
   return bd < 2.5 ? best : null;
 }
 function bsTap(g) {
+  if (BS.step === 'edit') { heTap(g); return; }
   if (BS.step === 'lineup') { bsLuTap(g); return; }
   if (BS.step === 'review' && BS.tool === 'tap') { bsTapTrace(g.x, g.y); return; }
   if (BS.step === 'review') {
@@ -1670,6 +1698,7 @@ function bsLoupe(cx, cy, p) {
 // ── wiring (app.js calls this once) ───────────────────────────────────────────
 function bsWire() {
   bsEl('bs-back').addEventListener('click', () => {
+    if (BS.step === 'edit') { if (HE.tool) heAct('he-tool-off'); else heClose(); return; }
     if (BS.step === 'start' || BS.step === 'photos') { if (BS.step === 'photos') bsGo('start'); else goBack(); return; }
     bsGo(bsSteps()[bsSteps().indexOf(BS.step) - 1]);
   });
@@ -1679,6 +1708,7 @@ function bsWire() {
     const b = e.target.closest('[data-act]');
     if (!b || b.disabled || b.tagName === 'SELECT') return;
     const act = b.dataset.act;
+    if (act.startsWith('he-')) { heAct(act, b); return; }
     if (act === 'reload') { BS.live = null; initSetup(); }
     else if (act === 'new') { bsDropDraft(); Object.assign(BS, { img: {}, corners: {}, shapes: [], mirror: null, flags: [], traced: false, pred: {}, undo: [], lineup: bsLuEmpty(), luKind: 'current', luSel: 0, xf: null, fits: {}, stats: null, masks: null }); bsGo('photos'); }
     else if (act === 'discard') { bsDropDraft(); bsRender(); }

@@ -1563,6 +1563,15 @@
     }
     .bs-loupe canvas { display: block; width: 100%; height: 100%; }
     #bs-loupe[hidden] { display: none; }
+    /* Edit holds (holdedit.js): turned and new holds, overlaps, the partner's label, the angle */
+    .bs-s.he-rot { stroke: var(--gold); stroke-width: 2px; }
+    .bs-s.he-new { stroke: var(--feet); stroke-width: 2.4px; }
+    .bs-s.he-warn { stroke: var(--error-text); stroke-dasharray: 3 2; stroke-width: 2.2px; }
+    .bs-s.sel.he-warn, .bs-s.partner.he-warn { stroke-dasharray: none; }
+    .bs-label.he-plabel { color: var(--text); background: var(--start-a28); border: 1px solid var(--start); }
+    .he-kind { font-size: 12px; color: var(--text-muted); align-self: center; }
+    .he-angle { margin-left: auto; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--gold); align-self: center; }
+    .he-turns .ol-btn { min-width: 52px; }
 
     /* the panel */
     .bs-panel { max-height: 48vh; overflow-y: auto; }

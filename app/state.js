@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, trace, setup, app. This file: Supabase client + channel, grade ladders, and all shared mutable state.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, trace, setup, holdedit, app. This file: Supabase client + channel, grade ladders, and all shared mutable state.
 
   // ── Supabase client ──────────────────────────────────────────────────────────
   const { createClient } = supabase;

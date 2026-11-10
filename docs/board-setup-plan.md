@@ -2,7 +2,7 @@
 
 Planned in the claude.ai project chat on 7 Nov 2026; narrowed on 9 Nov 2026. TODO 13. The repo is public: nothing personal, nothing secret.
 
-**Built so far:** session 1 (9 Nov 2026): the holds table and the backend for Specific feet (db/41). Session 2a (9 Nov 2026): the admin setup flow without camera LED mapping (db/42, `#setup`), with the line-up (10 Nov) and the prior-guided trace and tap-to-fix (10 Nov, below). Not built: 3 (Specific feet in Create and on the problem view). **Session 2b (camera LED mapping) is dropped for now** (Ross, 10 Nov 2026; below).
+**Built so far:** session 1 (9 Nov 2026): the holds table and the backend for Specific feet (db/41). Session 2a (9 Nov 2026): the admin setup flow without camera LED mapping (db/42, `#setup`), with the line-up (10 Nov) and the prior-guided trace and tap-to-fix (10 Nov, below). The hold editor (10 Nov 2026, Board Setup → Edit holds, below). Not built: 3 (Specific feet in Create and on the problem view; its decisions are below). **Session 2b (camera LED mapping) is dropped for now** (Ross, 10 Nov 2026; below).
 
 ## Why
 - **The holds will be rearranged** one day. Some LEDs sit at fixed positions (which dictate where holds go), some go through the board into the hold itself, so LEDs move with holds. After a rearrange: a new photo, a new cartoon board image, and the holds re-mapped to LEDs.
@@ -69,6 +69,30 @@ Ross's first run on the new photo and cartoon left a lot of manual work in Revie
 - **Still as they were, not blocking:** the feet signs hard-coded as `hold2`/`hold21`; the Pi's idle patterns, teaser and pb-ledmap cell tools on the 19 × 13 grid through the formula (fine while hand holds keep their LEDs); the outline editor sorts by the id's number; `holdName()` falls back to the grid name; PB Console's test cast reads `board_config.mirror_map` (a copy now, so right).
 - **The offline snapshot** (`app/hold_map.json` etc.) is hand holds only and must be re-taken after a real publish (`python tools/snapshot_board.py`, then ship). Footholds reach the app from the `holds` table (session 3 draws them).
 
+## The hold editor (10 Nov 2026, `app/holdedit.js`, TODO 13)
+Ross published the board with the final cartoon on 10 Nov 2026 (188 hand holds, 50 footholds). He wants to change the live board from his phone without running Board Setup again: add footholds the trace missed, and turn a hold to match one he has turned on the wall.
+
+**Decisions (Ross, 10 Nov 2026):**
+- **Admin → Board Setup → Edit holds**, beside Start and Undo. It works on the live board directly: no photo, cartoon upload or line-up.
+- **Mirror rotation:** turning a hold turns its mirror partner by the same angle the other way (live, in the preview). A hold with no partner (a centre-line hand hold, an unpaired foothold) turns alone. Hand holds and footholds alike.
+- **The drawing turns too:** the hold's pixels in the board image, cut by its outline grown to take in its dark outline line, are turned and pasted back, and the uncovered area is filled with the background around it (pink stays pink, white stays white, stripe edges stay straight). The outline turns with it; the position (`x`, `y`) stays. The image keeps its size and format (JPEG, quality 0.95).
+- **Footholds are added in the editor**, by Tap to trace (it never spreads into a neighbouring hold) or Draw, named by the FTn rule (left to right, bottom row up). **Keeping the rule renames other footholds' names when one is added in between: their ids never change**, and nothing stores a foothold's name (`problems.feet_holds` stores ids; the Pi never sees footholds), so this is safe. A partner is suggested by the board's reflection, foot ↔ foot only; Ross can keep it, clear it or pick another.
+- **Delete a foothold** only if no problem uses it (the editor checks first; the publish refuses it anyway).
+- A rotated or new hold that overlaps a neighbour is **warned about, never blocked**.
+- **Several edits, one publish:** a draft on the phone with Undo/Redo; **Publish changes** shows a summary, uploads the new image (only when a hold turned) and publishes through `admin_publish_board()`, so `board_versions` and **Undo the last publish** work as before. No migration was needed: the RPC already takes an image and the whole hold list.
+- Added on the way (not asked for, needed by one of the missing footholds): when a foothold sits inside a hand hold's outline (J1 had swallowed one), the editor offers **Cut it out of J1's outline**.
+
+**What it does:** overview §4.8d ("Edit holds"). Tests: `node tools/holdedit_score.js` (bundled board) and `--image/--holds` on the live board (local); results in the 10 Nov session log.
+
+**The missing footholds** (found 10 Nov 2026; Ross adds them in the editor): five grey chips right beside hand holds: beside **F3** (left, on pink) and **M2** (right, on pink; a pair), beside **G1** and **N1** (on the black, low down; a pair), and one on top of **J1** (on the centre line, inside J1's outline: add it, then Cut it out of J1). They were merged into the neighbour's traced shape (F3, N1, M2) or dropped as a stray (G1's).
+
+## Session 3: Specific feet in Create and on the problem view (next)
+**Decisions (Ross, 10 Nov 2026):**
+- **There's no separate Specific feet button.** Tapping a foothold in Create gives it a **yellow outline** and makes the problem Specific feet; tapping it again removes it; with none left the problem goes back to **Any feet**.
+- If **Orange only** or **Black only** was picked, tapping a foothold switches the problem to Specific feet.
+- **Footholds are never lit, and no feet sign lights for Specific feet.**
+- This applies on **both the phone and the wall screen** (Create there too), and the problem view shows the picked footholds (mirrored foot ↔ foot in the mirrored view).
+
 ## Session 2b: camera LED mapping (dropped for now)
 **Ross, 10 Nov 2026: not needed at this scale.** Every LED on the board is already verified (28 Oct, `pb-ledmap`), rotating a hold doesn't move its LED, and footholds have none; `pb-ledmap` (`pi/README.md`) covers LED checks. The setup flow keeps every hand hold's LED.
 - The unfinished work (written 9 Nov 2026: `ledmap.js`, the step and Check mode, the Pi's `map_leds`/`map_state`/`holds_changed`, cast contract §11, `tools/ledmap_score.js`) is **parked on the branch `parked/2b-camera-led-mapping`**, never shipped, never tested at the gym. Only for a full rearrange or another gym (`TODO.md` → Not now); rebase it onto `main` first.
@@ -113,6 +137,11 @@ The current 188 hand-traced outlines are the pass mark for auto-tracing.
 The full prompt gets written once the new photo exists.
 
 ## Next steps (Ross)
+**Now (10 Nov 2026, the hold editor):**
+1. Board Setup → **Edit holds**: add the five missing footholds (above), cut the J1 one out of J1, turn any hold he has turned on the wall; **Publish changes**.
+2. Then tell Claude Code to snapshot the board (`python tools/snapshot_board.py` + ship), so the offline copy (`board-fallback.jpg` and the three JSON files) matches. The snapshot is still the board before the 10 Nov publish.
+
+**Done (the setup flow, 10 Nov 2026):**
 1. The full-board photo of the current board, footholds included: straight on, even light.
 2. The cartoon from it, with the prompt (written in the chat when the photo exists).
 3. **Run the flow** (Admin → Board Setup, on a phone). **Your old draft (with the first cartoon) shows "Your draft is from an older version": tap Start again** → pick the photo and **the final cartoon** → Upload → drag the four corners on the Cartoon and the Photo onto the real board corners, footholds included → Next → **Line up** (this first time only): on Today's board tap four hand holds spread out, as near its four corners as you can (each snaps to the nearest hold and shows its name; tap a number, then another hold, to change one); it then switches to the Cartoon: tap the middle of each hold it names, in the same order (drag a number to fine-tune) → Next → Trace the holds (it starts from today's holds) → Next → Review: the status line says how many matched and how many to check. Tap **Accept all unflagged** (keeps the new footholds), then **Next to fix ›** for each hold left: **Looks right** if its outline fits the cartoon, otherwise **Tap to trace** and tap inside the hold, or **Use fitted shape**, **Move** (drag; the ↻ handle turns it) or **Redraw**. Expect F6 and N6 (turned) and D6 and P5 (not on the cartoon: accept the outline where the hold is, or draw it) → Next → Mirror pairs: check any listed holds (today's pair is kept unless you choose the reflection) → Next → Publish the board. If anything looks wrong afterwards: Board Setup → Undo the last publish.
