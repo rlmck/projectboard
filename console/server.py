@@ -17,6 +17,8 @@ action at a time (a lock); every action goes to console/audit.log.
     POST /api/preview {action, args}                 what a confirm would say, and the busy check
     POST /api/action  {action, args, confirm, override_busy}   streamed output, then '@@result {...}'
     GET  /api/tracks                 circuits with their led_track (direct Postgres) and the board's cell positions
+    GET  /api/holds                  the live holds, board version, image path, feet in use (holds.py, public reads)
+    GET  /api/holds-image?path=      the live board image's bytes (the public bucket, through here: the CSP)
     GET  /api/whoami                 pid, code stamp, busy: a new launch reuses or replaces this one (session.py)
     POST /api/shutdown               stop, for a newer launch (refused mid-action)
 """
@@ -62,6 +64,10 @@ STATIC = {
     '/static/dash.js': ('static/dash.js', 'text/javascript; charset=utf-8'),
     '/static/tracks.js': ('static/tracks.js', 'text/javascript; charset=utf-8'),
     '/static/activity.js': ('static/activity.js', 'text/javascript; charset=utf-8'),
+    '/static/holds.js': ('static/holds.js', 'text/javascript; charset=utf-8'),
+    # the app's own pure geometry for the Holds tab: outlines, simplify, footholds' FTn names
+    '/app/trace.js': ('../app/trace.js', 'text/javascript; charset=utf-8'),
+    '/app/setup.js': ('../app/setup.js', 'text/javascript; charset=utf-8'),
     '/board.jpg': ('../app/board-fallback.jpg', 'image/jpeg'),         # the app's board photo (Circuit tracks)
     '/static/icon.svg': ('static/icon.svg', 'image/svg+xml'),
     '/tokens.css': ('../app/tokens.css', 'text/css; charset=utf-8'),   # the app's own design tokens
@@ -319,6 +325,11 @@ def r_tracks(app, q):
 TRACE_PREVIEW = {'lap': 2.8, 'step_min': 0.034, 'step_max': 0.15, 'fade': 0.3, 'dim': 0.12}
 
 
+def r_holds(app, q):
+    import holds
+    return holds.board(app.env)
+
+
 def r_backups(app, q):
     return {'backups': reports.backups_list()}
 
@@ -330,7 +341,8 @@ def r_runbook(app, q):
 GET_ROUTES = {'/api/config': r_config, '/api/drift': r_drift, '/api/git': r_git, '/api/git-diff': r_git_diff,
               '/api/live': r_live, '/api/ledmap': r_ledmap, '/api/problems': r_problems, '/api/problem': r_problem,
               '/api/activity': r_activity, '/api/activity-history': r_activity_history, '/api/acceptance': r_acceptance, '/api/last-night': r_last_night,
-              '/api/backups': r_backups, '/api/runbook': r_runbook, '/api/tracks': r_tracks}
+              '/api/backups': r_backups, '/api/runbook': r_runbook, '/api/tracks': r_tracks,
+              '/api/holds': r_holds}
 
 
 class ConsoleServer(ThreadingHTTPServer):
@@ -408,6 +420,17 @@ def make_handler(app):
                                         'units': actions.UNITS})
             if path == '/api/logs':
                 return self.logs(q)
+            if path == '/api/holds-image':
+                import holds
+                try:
+                    data = holds.image(q.get('path'), app.env)
+                except ValueError as e:
+                    return self._json(400, {'error': str(e)})
+                except Exception as e:
+                    return self._json(502, {'error': '%s: %s' % (type(e).__name__, e)})
+                self._headers(200, 'image/jpeg' if q.get('path', '').lower().endswith(('.jpg', '.jpeg')) else
+                              'application/octet-stream', {'Content-Length': str(len(data))})
+                return self.wfile.write(data)
             route = GET_ROUTES.get(path)
             if route:
                 try:

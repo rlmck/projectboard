@@ -517,6 +517,88 @@ def build(kind, args):
             return 0
         return func_action('backup supabase', backup, 'Export the public tables (problems, circuits, board_config, '
                            'challenges) into backups/ (gitignored).')
+    # -- holds: outlines, footholds, foothold pairs (db/42, db/44; console/holds.py) ---------------------
+    if kind == 'holds-publish':
+        import holds
+        edits, version = args.get('edits'), args.get('version')
+        if not isinstance(version, str) or not 10 <= len(version) <= 40:
+            raise Invalid('holds-publish: version, the board version the page loaded')
+        try:
+            lines, live = holds.preview(edits)
+        except holds.Refused as e:
+            raise Invalid('holds-publish: %s' % e)
+        except (OSError, RuntimeError, ValueError) as e:
+            raise Invalid('holds-publish: reading the live board: %s' % e)
+        if not holds.same_version(live, version):
+            raise Invalid('holds-publish: the board changed since this page loaded it (a publish from the phone?). '
+                          'Reload, check your draft, and publish again.')
+        if not lines:
+            raise Invalid('holds-publish: nothing to publish (the draft matches the live board)')
+
+        def publish(app, out):
+            holds.publish(edits, version, out)
+            out('phones and the wall show it on their next load; the Pi reads holds at each cast.')
+            out('Next: Ship the snapshot (the app\'s offline copy of the board), here on the Holds tab.')
+            return 0
+        return func_action('holds publish', publish,
+                           'Publish %d change(s) to the LIVE board through admin_publish_board(), as the super admin '
+                           '(a new board version: everyone sees it on their next load). The old rows go to '
+                           'console/data/undo/, and "Undo the last publish" puts the board back.' % len(lines),
+                           shown='admin_publish_board() over direct Postgres (db/.env)', confirm=True, timeout=120,
+                           preview={'diff': '\n'.join(lines)})
+    if kind == 'holds-undo-publish':
+        import holds
+
+        def undo(app, out):
+            holds.undo_last(out)
+            out('Next: Ship the snapshot, so the app\'s offline copy matches.')
+            return 0
+        return func_action('holds undo publish', undo,
+                           'Undo the last board publish (from the phone or here): admin_undo_board() puts the board '
+                           'saved before it back (outlines, footholds, pairs, image), as the super admin. The board '
+                           'it replaces is kept too, so this can be undone the same way.',
+                           shown='admin_undo_board() over direct Postgres (db/.env)', confirm=True, timeout=120)
+    if kind == 'holds-ship-snapshot':
+        import holds
+        st = gitops.status()
+        if st['branch'] != 'main':
+            raise Invalid('holds-ship-snapshot: work on main (on %s)' % st['branch'])
+
+        def ship_snapshot(app, out):
+            if not _fetch_ok(out):
+                return 1
+            if gitops.count('HEAD', 'origin/main'):
+                out('main on GitHub has commits this copy lacks: Pull (Release) first, then ship the snapshot.')
+                return 1
+            out('$ python tools/snapshot_board.py')
+            if holds.run_tool(['tools/snapshot_board.py'], out):
+                return 1
+            out('$ python tools/check_holds.py')
+            if holds.run_tool(['tools/check_holds.py'], out):
+                out('! the hold check found a mismatch (above): the snapshot is still shipped, since it is a copy of live')
+            changed = [f for f in holds.SNAPSHOT_FILES if gitops.git('diff', '--quiet', '--', f)[0]]
+            if not changed:
+                out('the snapshot already matches the live board: nothing to ship')
+                return 0
+            if not _gate(out):
+                return 1
+            if _commit(changed, 'Board snapshot after a holds publish (PB Console)\n\n'
+                       'tools/snapshot_board.py: the app\'s offline copy of the live board.\n', out):
+                return 1
+            code = _push(['git', 'push', 'origin', 'HEAD:main'], out)
+            if code:
+                return code
+            import autodeploy
+            autodeploy.start_background()
+            out('pushed: Cloudflare builds it (a new CACHE); the Pi gets hold_map.json from the automatic deploy '
+                '(started now; it waits for a quiet board in the opening hours).')
+            return 0
+        return func_action('holds ship snapshot', ship_snapshot,
+                           'Copy the live board into the app (tools/snapshot_board.py: the board image, hold map, '
+                           'mirror map and outlines the app falls back to offline), check it (tools/check_holds.py), '
+                           'commit those files alone and push main: THIS DEPLOYS TO REAL USERS. Then the Pi\'s '
+                           'automatic deploy.', shown='python tools/snapshot_board.py && bash build.sh --check && '
+                           'git commit -- app/<4 snapshot files> && git push origin HEAD:main', confirm=True, timeout=600)
     # -- circuit tracks (contract 8.6, db/37) --------------------------------------------------------
     if kind in ('circuit-track-save', 'circuit-track-remove', 'circuit-test-cast'):
         name = args.get('circuit')

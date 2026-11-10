@@ -12,6 +12,9 @@
 <script src="/static/dash.js" defer></script>
 <script src="/static/tracks.js" defer></script>
 <script src="/static/activity.js" defer></script>
+<script src="/app/trace.js" defer></script>
+<script src="/app/setup.js" defer></script>
+<script src="/static/holds.js" defer></script>
 </head>
 <body>
 <div class="shell">
@@ -22,6 +25,7 @@
     <button role="tab" data-tab="overview" aria-selected="true"><span class="nav-dot" id="nav-dot-overview"></span>Overview</button>
     <div class="nav-group">Board</div>
     <button role="tab" data-tab="board"><span class="nav-dot" id="nav-dot-board"></span>Board</button>
+    <button role="tab" data-tab="holds"><span class="nav-dot" id="nav-dot-holds"></span>Holds</button>
     <button role="tab" data-tab="cast"><span class="nav-dot" id="nav-dot-cast"></span>Test cast</button>
     <button role="tab" data-tab="tracks"><span class="nav-dot" id="nav-dot-tracks"></span>Circuit tracks</button>
     <button role="tab" data-tab="ledmap"><span class="nav-dot" id="nav-dot-ledmap"></span>LED map</button>
@@ -261,6 +265,58 @@
       <p class="note">Export JSON on the mapping page, then add the file here to keep it in <code>console/data/ledmap/</code>.</p>
       <input type="file" id="ledmap-file" accept="application/json,.json">
       <ul id="ledmap-history"></ul>
+    </div>
+  </section>
+
+  <section id="tab-holds" class="tab" hidden>
+    <header class="page-head"><h1>Holds</h1><p>Outlines, footholds and foothold mirror pairs on the live board, published exactly as the app's Edit holds publishes (<code>admin_publish_board()</code>, the super admin). Turning a hold and a new photo or cartoon stay in the app's Board Setup: they upload a new board image.</p></header>
+    <div id="hl-msg" class="banner warn" hidden></div>
+    <div class="hl-grid">
+      <div class="hl-list card">
+        <input id="hl-search" type="search" placeholder="Jump to a hold: E6, FT12…  ( / )" aria-label="Jump to a hold" autocomplete="off" spellcheck="false">
+        <div class="hl-filters">
+          <div class="seg" role="group" aria-label="Show">
+            <button class="btn small on" data-hlf="all">All</button><button class="btn small" data-hlf="hand">Hand</button><button class="btn small" data-hlf="foot">Feet</button><button class="btn small" data-hlf="changed">Changed</button>
+          </div>
+          <select id="hl-sort" aria-label="Order"><option value="board">Board order</option><option value="points">Most points first</option></select>
+        </div>
+        <p id="hl-counts" class="note"></p>
+        <div id="hl-rows" class="hl-rows" role="listbox" aria-label="Holds"></div>
+      </div>
+      <div class="hl-stage card" id="hl-stage">
+        <canvas id="hl-board" aria-label="The board: click a hold to pick it; wheel to zoom, drag to move"></canvas>
+        <div class="hl-toolbar">
+          <label class="check"><input type="checkbox" id="hl-smooth" checked> Smoothed (as the app draws it)</label>
+          <label class="check"><input type="checkbox" id="hl-names"> Names</label>
+          <label class="check"><input type="checkbox" id="hl-all"> Every outline</label>
+          <button class="btn small" id="hl-fit" title="F">Whole board</button>
+          <button class="btn small" id="hl-zoom" title="Z">Zoom to hold</button>
+        </div>
+        <p id="hl-hint" class="hl-hint"></p>
+      </div>
+      <div class="hl-side">
+        <div class="card" id="hl-panel"></div>
+        <div class="card">
+          <h2>Publish</h2>
+          <div id="hl-changes" class="note"></div>
+          <div class="btn-row">
+            <button class="btn primary" id="hl-publish">Publish</button>
+            <button class="btn small" id="hl-undo" title="Ctrl+Z">Undo</button>
+            <button class="btn small" id="hl-redo" title="Ctrl+Y">Redo</button>
+            <button class="btn small danger" id="hl-discard">Discard draft</button>
+          </div>
+          <p class="note">The draft is kept in this browser until you publish. Publish shows every change first, checks the board version and publishes over direct Postgres (<code>db/.env</code>); the old rows go to <code>console/data/undo/</code>.</p>
+          <div class="btn-row"><button class="btn small" id="hl-new-foot" title="N">New foothold</button><button class="btn small" id="hl-reload">Reload</button><button class="btn small danger" id="hl-undo-publish">Undo the last publish</button></div>
+        </div>
+        <div class="card">
+          <h2>App snapshot</h2>
+          <p id="hl-snap" class="note"></p>
+          <div class="btn-row"><button class="btn small" id="hl-ship-snap">Ship the snapshot</button></div>
+        </div>
+        <details class="card hl-keys"><summary>Keys</summary>
+          <p class="note"><kbd>↑</kbd> <kbd>↓</kbd> (or <kbd>J</kbd> <kbd>K</kbd>) previous / next in the list · <kbd>/</kbd> jump to a hold · <kbd>C</kbd> clear and draw · <kbd>Enter</kbd> finish drawing · <kbd>Backspace</kbd> remove the last point · <kbd>Esc</kbd> stop drawing · <kbd>Ctrl Z</kbd> / <kbd>Ctrl Y</kbd> undo / redo · <kbd>R</kbd> revert the hold · <kbd>N</kbd> new foothold · <kbd>P</kbd> pair a foothold · <kbd>F</kbd> whole board · <kbd>Z</kbd> zoom to the hold. On the board: drag a point to move it, Shift+click a point to remove it, double-click an edge to add one; drag anywhere else to move the view, wheel to zoom.</p>
+        </details>
+      </div>
     </div>
   </section>
 

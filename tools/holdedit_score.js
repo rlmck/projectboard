@@ -244,7 +244,9 @@ if (!feetAt.length) {
   const res = traceHolds(big, {});
   res.shapes.forEach(s => {
     const c = [s.cx / k, s.cy / k];
-    if (s.area / k / k < 80 || s.area / k / k > 900) return;
+    // 200 px²: the smallest of the 53 real footholds on the 10 Nov 2026 board is about 300 px² on the
+    // bundled image; a smaller blob is a speck (a bolt hole, a dark hold's tip), not a foothold
+    if (s.area / k / k < 200 || s.area / k / k > 900) return;
     if (M0.list.some(h => tracePointInPoly(c[0], c[1], h.curve))) return;
     const nearHand = M0.list.some(h => h.kind === 'hand' && Math.min(...h.curve.map(p => Math.hypot(p[0] - c[0], p[1] - c[1]))) < 18);
     if (nearHand) feetAt.push(c);

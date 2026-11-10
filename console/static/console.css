@@ -454,6 +454,46 @@ summary { cursor: pointer; color: var(--text-soft); }
 .warn-text { color: var(--error-text); }
 #trk-circuit { flex: 1; min-width: 0; }
 
+/* Holds (outlines, footholds, foothold pairs; static/holds.js). Laptop-first: the list, the
+   board and the panel side by side, filling the window; the list scrolls inside its card. */
+main:has(#tab-holds:not([hidden])) { max-width: none; padding-bottom: 16px; }
+.hl-grid { display: grid; grid-template-columns: 240px minmax(0, 1fr) 300px; gap: 14px; height: calc(100vh - 150px); min-height: 520px; }
+@media (max-width: 1150px) { .hl-grid { grid-template-columns: 210px minmax(0, 1fr); height: auto; } .hl-side { grid-column: 1 / -1; } .hl-stage { height: 70vh; } }
+.hl-list { display: flex; flex-direction: column; min-height: 0; padding: 12px; }
+.hl-list input[type=search] { width: 100%; }
+.hl-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.hl-rows { flex: 1; min-height: 0; overflow-y: auto; margin-top: 6px; border-top: 1px solid var(--border); }
+.hl-row { display: grid; grid-template-columns: 14px 1fr auto; gap: 8px; align-items: center; width: 100%; padding: 5px 6px; border: 0; border-bottom: 1px solid var(--border); background: none; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.hl-row:hover { background: var(--surface2); }
+.hl-row[aria-selected=true] { background: var(--badge-pink-fill); color: var(--badge-pink-text); }
+.hl-row .hl-kind { width: 10px; height: 10px; border-radius: var(--radius-pill); background: var(--int); }
+.hl-row .hl-kind.foot { background: var(--feet); }
+.hl-row .hl-n { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+.hl-row .hl-n.mid { color: var(--lvl-warn); font-weight: 600; }
+.hl-row .hl-n.hi { color: var(--lvl-bad); font-weight: 700; }
+.hl-row .hl-tag { font-size: 11px; color: var(--accent); margin-left: 6px; }
+.hl-stage { position: relative; display: flex; flex-direction: column; min-height: 0; padding: 8px; }
+.hl-stage canvas { flex: 1; min-height: 0; width: 100%; border-radius: var(--radius-sm); background: var(--board-backdrop); cursor: default; touch-action: none; }
+.hl-stage canvas.drawing { cursor: crosshair; }
+.hl-stage canvas.panning { cursor: grabbing; }
+.hl-toolbar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin-top: 8px; font-size: 12.5px; color: var(--text-soft); }
+.hl-toolbar .check { display: inline-flex; gap: 5px; align-items: center; }
+.hl-hint { margin: 6px 0 0; min-height: 1.3em; font-size: 12.5px; color: var(--text-soft); }
+.hl-side { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; }
+.hl-side .card { margin: 0; }
+.hl-facts { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 8px 0; font-size: 13px; }
+.hl-facts dt { color: var(--text-muted); }
+.hl-facts dd { margin: 0; }
+.hl-facts .hl-link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
+.hl-big { font-family: var(--font-mono); font-weight: 700; }
+.hl-big.mid { color: var(--lvl-warn); }
+.hl-big.hi { color: var(--lvl-bad); }
+.hl-simplify { display: flex; gap: 8px; align-items: center; margin-top: 10px; font-size: 12.5px; color: var(--text-soft); }
+.hl-simplify input { flex: 1; }
+#hl-changes ul { margin: 6px 0; padding-left: 18px; max-height: 160px; overflow-y: auto; }
+.hl-keys summary { cursor: pointer; font-weight: 600; }
+.hl-keys kbd { font-family: var(--font-mono); font-size: 11px; padding: 0 4px; border: 1px solid var(--border); border-radius: var(--radius-2xs); }
+
 /* Activity (phase 10): the dashboard, ported from tools/activity-dashboard-prototype.html.
    Every class starts ad- (the console already has .tiles, .chips, .seg, .tag). The page fits
    the window (activity.js sets #ad's height); the log scrolls inside its panel. */

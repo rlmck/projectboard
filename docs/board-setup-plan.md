@@ -86,6 +86,8 @@ Ross published the board with the final cartoon on 10 Nov 2026 (188 hand holds, 
 
 **The missing footholds** (found 10 Nov 2026; Ross adds them in the editor): five grey chips right beside hand holds: beside **F3** (left, on pink) and **M2** (right, on pink; a pair), beside **G1** and **N1** (on the black, low down; a pair), and one on top of **J1** (on the centre line, inside J1's outline: add it, then Cut it out of J1). They were merged into the neighbour's traced shape (F3, N1, M2) or dropped as a stray (G1's).
 
+**On the laptop (10 Nov 2026):** PB Console's **Holds** tab does the outline work at a desk: any hold or foothold, Clear and draw point by point (a rectangle in 4), point counts to find the over-traced, Simplify, footholds added/deleted/paired by the same rules (FTn, the reflection, foot ↔ foot), published through the same `admin_publish_board()`. Turning a hold and the photo and cartoon steps stay here on the phone: they upload a board image (`docs/console-plan.md` phase 17).
+
 ## Session 3: Specific feet in Create and on the problem view (built 10 Nov 2026)
 **Decisions (Ross, 9 and 10 Nov 2026):**
 - **There's no separate Specific feet button.** Tapping a foothold in Create gives it a **yellow outline** and makes the problem Specific feet; tapping it again removes it; with none left the problem goes back to **Any feet**.
