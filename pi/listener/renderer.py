@@ -16,6 +16,12 @@ Five states (night always wins):
          and its messages are ignored until one says `show` (the app's Show on
          board). A circuit cast wins too, but the preview waits and comes back
          when the run ends, if it's still going;
+         LED mapping (map_leds, contract 11) is a preview too: the same takeover
+         rules, time-out and end, with LEDs instead of holds and a sequence
+         number. After each of its messages, and when it's taken over or comes
+         back after a circuit, on_map(session, seq, state) says what the board
+         did with it ('lit', 'taken', 'waiting', 'night', 'ended'): the listener
+         broadcasts it back to the phone as map_state;
 - idle:  an idle pattern (patterns/: IDLE_PATTERN, one pattern or a cycle),
          from IDLE_AFTER_S after the last cast, and at start and at the end
          of the night; it fades in over 1.5 s. With IDLE_ANIMATION=off the
@@ -84,6 +90,7 @@ class Renderer:
         self.pv = None              # the preview going: {'token', 'frame', 'last'} (shown, or waiting on a circuit)
         self.pv_taken = {}          # token -> when: sessions a cast or another preview took the board from
         self.pv_night = set()       # sessions already logged as not shown at night
+        self.on_map = None          # LED mapping: on_map(session, seq, state), called from this thread
         self.idle_args = dict(brightness=float(cfg.get('IDLE_BRIGHTNESS') or 1.0),
                               max_ma=float(cfg.get('IDLE_MAX_AMPS') or 2.0) * 1000,
                               ma_per_channel=float(cfg.get('MA_PER_CHANNEL') or 20))
@@ -132,10 +139,11 @@ class Renderer:
         """End the running circuit: the one with this run token, or any with None."""
         self._post(('stop', token))
 
-    def preview(self, token, frame, show=False):
+    def preview(self, token, frame, show=False, seq=None):
         """preview_holds: session `token` is setting these LEDs ({led: rgb}, already scaled).
-        show: the app's Show on board, which takes the board back after a takeover."""
-        self._post(('preview', (token, frame, bool(show))))
+        show: the app's Show on board, which takes the board back after a takeover.
+        seq: map_leds (LED mapping, contract 11): the message's number, said back through on_map."""
+        self._post(('preview', (token, frame, bool(show), seq)))
 
     def preview_end(self, token):
         self._post(('preview_end', token))
@@ -260,7 +268,8 @@ class Renderer:
                     continue
                 self._end_circuit(now, 'replaced')
                 if self.state == PREVIEW and self.pv:
-                    self.log('LEDs: preview %s waits for the circuit' % self.pv['token'])
+                    self.log('LEDs: %s %s waits for the circuit' % (self._what(self.pv.get('seq')), self.pv['token']))
+                    self._notify(self.pv['token'], self.pv.get('seq'), 'waiting')
                 self.state, self.fade, self.circ, self.run_t0, self.run_full = RUN, None, arg, now, True
                 self.next_frame = now
             elif kind == 'stop':
@@ -277,7 +286,8 @@ class Renderer:
                 if arg and self.state != NIGHT:
                     self._end_circuit(now, 'night')
                     if self.pv:
-                        self.log('LEDs: preview %s ended: night' % self.pv['token'])
+                        self.log('LEDs: %s %s ended: night' % (self._what(self.pv.get('seq')), self.pv['token']))
+                        self._notify(self.pv['token'], self.pv.get('seq'), 'night')
                         self.pv = None
                     self.state = NIGHT
                     self.log('LEDs: night, fading out')
@@ -292,7 +302,8 @@ class Renderer:
             elif kind == 'idle' and self.state not in (NIGHT, IDLE):
                 self._end_circuit(now, 'sent to idle')
                 if self.pv:
-                    self.log('LEDs: preview %s ended: sent to idle' % self.pv['token'])
+                    self.log('LEDs: %s %s ended: sent to idle' % (self._what(self.pv.get('seq')), self.pv['token']))
+                    self._notify(self.pv['token'], self.pv.get('seq'), 'ended')
                     self.pv = None
                 self._go_idle(now, 'asked for')
             elif kind == 'pattern':
@@ -304,7 +315,9 @@ class Renderer:
         if self.state == CAST and now - self.cast_at >= self.idle_after:
             self._go_idle(now, '%d s since the last cast' % self.idle_after)
         if self.pv and now - self.pv['last'] >= self.pv_timeout:
-            self.log('LEDs: preview %s ended: no message for %d s' % (self.pv['token'], self.pv_timeout))
+            self.log('LEDs: %s %s ended: no message for %d s' % (self._what(self.pv.get('seq')), self.pv['token'],
+                                                                  self.pv_timeout))
+            self._notify(self.pv['token'], self.pv.get('seq'), 'ended')
             self.pv = None
             if self.state == PREVIEW:
                 self._go_idle(now, 'the preview timed out')
@@ -321,59 +334,80 @@ class Renderer:
 
     # -- the preview (contract 9) ---------------------------------------------
 
-    def _preview(self, now, token, frame, show):
+    def _notify(self, token, seq, state):
+        """LED mapping: tell the phone what the board did with message `seq` (contract 11)."""
+        if seq is None or not self.on_map:
+            return
+        try:
+            self.on_map(token, seq, state)
+        except Exception as e:      # the board must carry on whatever the socket does
+            self.err('LED mapping reply failed: %s: %s' % (type(e).__name__, e))
+
+    @staticmethod
+    def _what(seq):
+        return 'preview' if seq is None else 'LED mapping'
+
+    def _preview(self, now, token, frame, show, seq=None):
+        what = self._what(seq)
         if self.state == NIGHT:
             if token not in self.pv_night:
                 self.pv_night.add(token)
-                self.log('LEDs: preview %s not shown, night' % token)
+                self.log('LEDs: %s %s not shown, night' % (what, token))
+            self._notify(token, seq, 'night')
             return
         for t in [t for t, at in self.pv_taken.items() if now - at > TAKEN_KEEP]:
             del self.pv_taken[t]
         if token in self.pv_taken:
             if not show:
+                self._notify(token, seq, 'taken')
                 return                      # taken over: only Show on board brings it back
             del self.pv_taken[token]
         mine = bool(self.pv) and self.pv['token'] == token
         if self.pv and not mine:
-            self._take(self.pv['token'], now, 'another preview')
-        self.pv = {'token': token, 'frame': frame, 'last': now}
+            self._take(self.pv['token'], now, 'another %s' % what, self.pv.get('seq'))
+        self.pv = {'token': token, 'frame': frame, 'last': now, 'seq': seq}
         if self.state == RUN:
             if not mine:
-                self.log('LEDs: preview %s waits for the circuit' % token)
+                self.log('LEDs: %s %s waits for the circuit' % (what, token))
+            self._notify(token, seq, 'waiting')
             return
         if not mine or self.state != PREVIEW:
-            self.log('LEDs: preview %s%s: %d LEDs' % (token, ', shown again' if show else '', len(frame)))
+            self.log('LEDs: %s %s%s: %d LEDs' % (what, token, ', shown again' if show else '', len(frame)))
         if self.state != PREVIEW or frame != self.shown:
             self.state, self.fade, self.circ = PREVIEW, None, None
             self._write(frame, True)
+        self._notify(token, seq, 'lit')
 
     def _preview_end(self, now, token):
         self.pv_taken.pop(token, None)
         if not self.pv or self.pv['token'] != token:
             return
+        what = self._what(self.pv.get('seq'))
         self.pv = None
-        self.log('LEDs: preview %s ended' % token)
+        self.log('LEDs: %s %s ended' % (what, token))
         if self.state == PREVIEW:
             self._go_idle(now, 'the preview ended')
 
-    def _take(self, token, now, why):
+    def _take(self, token, now, why, seq=None):
         """A session loses the board: its messages are ignored until one says `show`."""
         self.pv_taken[token] = now
         while len(self.pv_taken) > TAKEN_MAX:
             del self.pv_taken[min(self.pv_taken, key=self.pv_taken.get)]
-        self.log('LEDs: preview %s taken over by %s' % (token, why))
+        self.log('LEDs: %s %s taken over by %s' % (self._what(seq), token, why))
+        self._notify(token, seq, 'taken')
 
     def _take_preview(self, now, why):
         if self.pv:
-            self._take(self.pv['token'], now, why)
+            self._take(self.pv['token'], now, why, self.pv.get('seq'))
             self.pv = None
 
     def _after_run(self, now, why):
         """A circuit run ended: back to the preview that waited for it, if it's still going, else idle."""
         if self.pv and now - self.pv['last'] < self.pv_timeout:
             self.state, self.fade = PREVIEW, None
-            self.log('LEDs: preview %s back (%s)' % (self.pv['token'], why))
+            self.log('LEDs: %s %s back (%s)' % (self._what(self.pv.get('seq')), self.pv['token'], why))
             self._write(self.pv['frame'], True)
+            self._notify(self.pv['token'], self.pv.get('seq'), 'lit')
         else:
             self._go_idle(now, why)
 

@@ -1,7 +1,7 @@
 // ProjectBoard - ordered classic <script>s sharing ONE global scope (no ES modules, no
 // build step). Order: state, core, problems, admin, account, authoring, circuits,
-// challenge, leaderboard, wall, trace, setup, app. This file: Board setup (#setup,
-// admins), session 2a of docs/board-setup-plan.md.
+// challenge, leaderboard, wall, trace, ledmap, setup, app. This file: Board setup (#setup,
+// admins), sessions 2a and 2b of docs/board-setup-plan.md.
 //
 // The flow, one step at a time, on a phone:
 //   start    the board as it is (holds, footholds, its corners), a saved draft to carry
@@ -24,6 +24,9 @@
 //            shape: a hand hold (fix its match), a foothold, or deleted; Tap to trace,
 //            use the fitted shape, add, move, turn or redraw any outline. Every hand hold
 //            needs exactly one shape.
+//   leds     keep today's LEDs (the default), or map them: the camera on a tripod, or
+//            by tapping (ledmap.js, session 2b). Check mode (from the start page) runs
+//            the same mapping on today's board and compares, publishing nothing.
 //   mirror   pairs by reflecting about the board's centre line, nearest hold of the
 //            same kind (never hand <-> foot); hand pairs that differ from today's are
 //            flagged and keep today's unless changed
@@ -40,8 +43,8 @@ const BS_CARTOON_MAX = 2000;     // the cartoon is stored (and shown in the app)
 const BS_PHOTO_MAX = 3000;       // the photo, for camera LED mapping (2b)
 const BS_MATCH = 0.025;          // a shape matches a hold within this share of the board's width
 const BS_PAIR = 0.03;            // a reflection finds its partner within this share of the board's width
-const BS_STEPS = ['start', 'photos', 'corners', 'lineup', 'trace', 'review', 'mirror', 'publish'];
-const BS_STEP_NAMES = { photos: 'Photos', corners: 'Corners', lineup: 'Line up', trace: 'Trace', review: 'Review', mirror: 'Mirror pairs', publish: 'Publish' };
+const BS_STEPS = ['start', 'photos', 'corners', 'lineup', 'trace', 'review', 'leds', 'mirror', 'publish'];
+const BS_STEP_NAMES = { photos: 'Photos', corners: 'Corners', lineup: 'Line up', trace: 'Trace', review: 'Review', leds: 'LEDs', mirror: 'Mirror pairs', publish: 'Publish' };
 const BS_LU_SPREAD = 0.08;       // line-up: the smallest triangle of the four holds, as a share of the hand holds' box
 const BS_CORNER_NAMES = ['top left', 'top right', 'bottom right', 'bottom left'];
 
@@ -79,7 +82,14 @@ const BS = {
 const bsEl = id => document.getElementById(id);
 const bsR2 = v => Math.round(v * 100) / 100;
 const bsClamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const bsImgKind = () => (BS.step === 'corners' ? BS.cornerKind : BS.step === 'lineup' ? BS.luKind : 'cartoon');
+// The corners being dragged now: a picture kind, or null.
+function bsQuadKind() {
+  if (BS.step === 'corners') return BS.cornerKind;
+  if (BS.step === 'leds' && LM.phase === 'corners') return 'camera';
+  if (BS.step === 'leds' && LM.phase === 'tcorners') return 'current';
+  return null;
+}
+const bsImgKind = () => bsQuadKind() || (BS.step === 'lineup' ? BS.luKind : BS.step === 'leds' && LM.check ? 'current' : 'cartoon');
 const bsCur = () => BS.img[bsImgKind()];
 const bsShape = key => BS.shapes.find(s => s.key === key) || null;
 const bsShapeOf = id => BS.shapes.find(s => s.id === id) || null;
@@ -152,6 +162,7 @@ function bsBoardPx() {
 
 // ── the draft (this device) ───────────────────────────────────────────────────
 function bsSave() {
+  if (LM.check) { lmSaveCheck(); return; }
   if (BS.step === 'start') return;
   try {
     const img = {};
@@ -160,7 +171,7 @@ function bsSave() {
       v: BS_DRAFT_V, t: Date.now(), step: BS.step, img, corners: BS.corners, shapes: BS.shapes, seq: BS.seq,
       xf: BS.xf, fits: BS.fits, stats: BS.stats,
       pred: BS.pred, mirror: BS.mirror, flags: BS.flags, traced: BS.traced, lineup: BS.lineup,
-      version: BS.live && BS.live.version,
+      version: BS.live && BS.live.version, lm: lmDraftData(),
     }));
   } catch (e) { /* full or blocked: the draft lives in memory */ }
 }
@@ -229,13 +240,14 @@ async function initSetup() {
 }
 
 function bsGo(step) {
+  if (BS.step === 'leds' && step !== 'leds') lmLeave();
   BS.step = step;
   BS.sel = null; BS.tool = null; BS.g = null;
   bsSave();
   bsRender();
   if (bsBoardStep()) requestAnimationFrame(() => bsLayout(false));
 }
-const bsBoardStep = () => ['corners', 'lineup', 'trace', 'review', 'mirror', 'publish'].includes(BS.step);
+const bsBoardStep = () => ['corners', 'lineup', 'trace', 'review', 'leds', 'mirror', 'publish'].includes(BS.step);
 // The line-up is needed only while today's board has no corners (the first run).
 const bsNeedLineup = () => !!(BS.live && !BS.live.corners);
 const bsSteps = () => BS_STEPS.filter(s => s !== 'lineup' || bsNeedLineup());
@@ -246,9 +258,11 @@ function bsRender() {
   if (!view) return;
   const board = bsBoardStep();
   view.classList.toggle('bs-board', board);
+  lmVideo();
   const steps = bsSteps(), i = steps.indexOf(BS.step);
-  bsEl('bs-title').textContent = BS.step === 'start' ? 'Board setup' : BS_STEP_NAMES[BS.step];
-  bsEl('bs-stepno').textContent = BS.step === 'start' ? '' : `${i} of ${steps.length - 1}`;
+  const check = BS.step === 'leds' && LM.check;
+  bsEl('bs-title').textContent = BS.step === 'start' ? 'Board setup' : check ? 'Check the LEDs' : BS_STEP_NAMES[BS.step];
+  bsEl('bs-stepno').textContent = BS.step === 'start' || check ? '' : `${i} of ${steps.length - 1}`;
   if (!board) { bsRenderPage(); bsEl('bs-panel').innerHTML = ''; return; }
   bsEl('bs-page').innerHTML = '';
   bsDrawImage();
@@ -297,6 +311,11 @@ function bsRenderPage() {
       </div>
     </div>` : ''}
     <div class="bs-card">
+      <div class="bs-card-title">Check the LEDs</div>
+      <p class="bs-muted">Phone on a tripod facing the board: the board lights every LED in turn, the camera finds each one, and you see how many hand holds get the LED they have now. Nothing is published.</p>
+      <button class="ol-btn bs-wide" data-act="check">Check the LEDs</button>
+    </div>
+    <div class="bs-card">
       <div class="bs-card-title">Set up a new board</div>
       <p class="bs-muted">You’ll need a straight-on photo of the whole board, footholds included, and the cartoon made from it (same framing).</p>
       <button class="ol-btn ${draft ? '' : 'ol-publish'} bs-wide" data-act="new">${draft ? 'Start again (drops the draft)' : 'Start'}</button>
@@ -343,7 +362,7 @@ function bsThumbs() {
 function bsDrawImage() {
   const m = bsCur(), c = bsEl('bs-img');
   if (!m || !m.bmp) { c.width = 1; c.height = 1; return; }
-  const key = (m.path || m.w + 'x' + m.h) + BS.step + bsImgKind();
+  const key = (m.path || m.id || m.w + 'x' + m.h) + BS.step + bsImgKind() + (LM.check ? 'check' : '');
   if (c.dataset.src === key && c.width === m.w) return;
   c.width = m.w; c.height = m.h;
   c.getContext('2d').drawImage(m.bmp, 0, 0);
@@ -408,13 +427,18 @@ const bsPath = pts => pts.length ? 'M' + pts.map(p => `${bsR2(p[0])},${bsR2(p[1]
 function bsRenderBoard() {
   const svg = bsEl('bs-svg');
   if (!svg) return;
-  if (BS.step === 'corners') {
-    const q = BS.corners[BS.cornerKind];
+  if (bsQuadKind()) {
+    const q = BS.corners[bsQuadKind()];
     svg.innerHTML = q ? `<path class="bs-quad" d="${bsPath(q)}"/>` : '';
     bsRenderOver();
     return;
   }
   if (BS.step === 'lineup') { svg.innerHTML = ''; bsRenderOver(); return; }
+  if (BS.step === 'leds') {
+    svg.innerHTML = lmSvg();
+    bsRenderOver();
+    return;
+  }
   let out = '';
   const partner = BS.step === 'mirror' && BS.sel ? bsPartnerOf(bsShape(BS.sel)) : null;
   BS.shapes.forEach(s => {
@@ -443,14 +467,17 @@ function bsRenderOver() {
   const over = bsEl('bs-over');
   if (!over || !bsBoardStep()) return;
   let html = '';
-  if (BS.step === 'corners') {
-    const q = BS.corners[BS.cornerKind] || [];
+  if (bsQuadKind()) {
+    const q = BS.corners[bsQuadKind()] || [];
     q.forEach((p, i) => {
       const [x, y] = bsScreen(p[0], p[1]);
       html += `<div class="bs-corner" style="left:${x}px;top:${y}px"><span>${i + 1}</span></div>`;
     });
   } else if (BS.step === 'lineup') {
     html = bsLuOver();
+  } else if (BS.step === 'leds') {
+    over.innerHTML = lmOver();
+    return;
   } else if (BS.step === 'review') {
     bsMissing().forEach(id => {
       const p = BS.pred[id];
@@ -524,6 +551,7 @@ function bsRenderPanel() {
     return;
   }
   if (BS.step === 'review') { p.innerHTML = bsReviewPanel(); return; }
+  if (BS.step === 'leds') { p.innerHTML = lmPanel(); return; }
   if (BS.step === 'mirror') { p.innerHTML = bsMirrorPanel(); return; }
   if (BS.step === 'publish') { p.innerHTML = bsPublishPanel(); return; }
 }
@@ -623,20 +651,31 @@ function bsMirrorPanel() {
   return html;
 }
 
+function bsLedChanges() {
+  const leds = lmPublishLeds();
+  if (!leds) return null;
+  return bsLiveHand().filter(h => leds[h.id] !== h.led).length;
+}
 function bsPublishPanel() {
   const c = bsCounts(), problems = bsPublishProblems();
+  const ledsBad = lmMapped() && !lmPublishLeds(), changed = bsLedChanges();
+  const ledsText = ledsBad ? 'LEDs: the mapping isn’t finished (every hand hold needs exactly one)'
+    : changed == null ? 'LEDs: every hand hold keeps the LED it has'
+    : changed ? `LEDs: ${changed} hand hold${changed === 1 ? '' : 's'} get${changed === 1 ? 's' : ''} a new LED from the mapping`
+    : 'LEDs: the mapping matches today’s: no LED changes';
   const back = `<button class="ol-btn" data-act="prev">Back</button>`;
   const dropped = BS.live ? BS.live.holds.filter(h => h.kind === 'foot' && !bsShapeOf(h.id)).length : 0;
   return `
     <ul class="bs-checks">
-      <li class="${c.missing ? 'bad' : 'ok'}">${c.matched} of ${c.hands} hand holds have one outline each (names and LEDs unchanged)</li>
+      <li class="${c.missing ? 'bad' : 'ok'}">${c.matched} of ${c.hands} hand holds have one outline each (names unchanged)</li>
       <li class="${c.extra ? 'bad' : 'ok'}">${c.extra ? c.extra + ' extra shapes left' : 'No extra shapes'}</li>
       ${c.check || c.cand ? `<li class="bad">${c.check + c.cand} shapes still to check in Review</li>` : ''}
       <li class="ok">${c.feet} footholds${c.feet ? `, FT1–FT${c.feet}` : ''}${dropped ? ` (${dropped} of today’s footholds weren’t found and will go)` : ''}</li>
       <li class="${problems.length ? 'bad' : 'ok'}">${problems.length ? escHtml(problems[0]) : 'Mirror pairs: every pair is two holds of the same kind'}</li>
+      <li class="${ledsBad ? 'bad' : 'ok'}">${escHtml(ledsText)}</li>
       <li class="ok">The cartoon becomes the app’s board picture. Undo puts today’s back.</li>
     </ul>
-    <div class="ol-row">${back}<button class="ol-btn ol-publish" data-act="publish" ${bsOpen(c) || problems.length || BS.busy ? 'disabled' : ''}>${BS.busy ? 'Publishing…' : 'Publish the board'}</button></div>`;
+    <div class="ol-row">${back}<button class="ol-btn ol-publish" data-act="publish" ${bsOpen(c) || problems.length || ledsBad || BS.busy ? 'disabled' : ''}>${BS.busy ? 'Publishing…' : 'Publish the board'}</button></div>`;
 }
 
 // ── steps: photos ─────────────────────────────────────────────────────────────
@@ -1405,11 +1444,13 @@ function bsNameFeet() {
 function bsPayload() {
   bsNameFeet();
   const r = pts => pts.map(p => [bsR2(bsClamp(p[0], -5, 105)), bsR2(bsClamp(p[1], -5, 105))]);
+  const leds = lmPublishLeds();         // null: every hand hold keeps its LED
   return BS.shapes.filter(s => s.kind === 'hand' || s.kind === 'foot').map(s => {
     const c = bsCentre(s.pts);
     const o = { id: s.id, kind: s.kind, x: bsR2(bsClamp(c[0], 0, 100)), y: bsR2(bsClamp(c[1], 0, 100)), outline: r(s.pts),
                 mirror: BS.mirror[s.id] != null ? BS.mirror[s.id] : null };
     if (s.kind === 'foot') o.name = s.name;
+    if (s.kind === 'hand' && leds && leds[s.id] != null) o.led = leds[s.id];
     return o;
   });
 }
@@ -1429,6 +1470,7 @@ async function bsPublish() {
     BS.img = {}; BS.corners = {}; BS.shapes = []; BS.mirror = null; BS.flags = []; BS.traced = false; BS.pred = {};
     BS.xf = null; BS.fits = {}; BS.stats = null; BS.masks = null;
     BS.lineup = bsLuEmpty(); BS.luKind = 'current'; BS.luSel = 0;
+    lmRestore(null);
     BS.busy = false;
     showToast('Published: the new board is live on everyone’s next load', 'success');
     await bsAfterBoardChange();
@@ -1463,6 +1505,7 @@ async function bsUndoPublish() {
 }
 // The app picks up the new (or restored) board at once on this phone.
 async function bsAfterBoardChange() {
+  lmHoldsChanged();                     // the Pi reads the holds (their LEDs) now
   BS.live = null;
   await Promise.all([bsLoadLive(), loadBoardConfig(), loadHolds()]);
   applyBoardImage();
@@ -1488,9 +1531,9 @@ function bsDown(e) {
   const [x, y] = bsPct(e.clientX, e.clientY);
   const g = { type: 'tap', id: e.pointerId, sx: e.clientX, sy: e.clientY, tx: BS.v.tx, ty: BS.v.ty, x, y, moved: false,
               touch: e.pointerType !== 'mouse' };
-  if (BS.step === 'corners') {
+  if (bsQuadKind()) {
     const i = bsHitCorner(e.clientX, e.clientY);
-    if (i >= 0) Object.assign(g, { type: 'corner', i, start: BS.corners[BS.cornerKind][i].slice() });
+    if (i >= 0) Object.assign(g, { type: 'corner', i, kind: bsQuadKind(), start: BS.corners[bsQuadKind()][i].slice() });
   } else if (BS.step === 'lineup' && BS.luKind === 'cartoon') {
     const i = bsLuHit(e.clientX, e.clientY);
     if (i >= 0) Object.assign(g, { type: 'lumark', i, start: BS.lineup.cart[i].slice() });
@@ -1534,7 +1577,7 @@ function bsMove(e) {
     bsClampView(); bsApply();
   } else if (g.type === 'corner') {
     const p = [bsR2(bsClamp(g.start[0] + ddx, 0, 100)), bsR2(bsClamp(g.start[1] + ddy, 0, 100))];
-    BS.corners[BS.cornerKind][g.i] = p;
+    BS.corners[g.kind][g.i] = p;
     bsRenderBoard();
     if (g.touch) bsLoupe(e.clientX, e.clientY, p);
   } else if (g.type === 'lumark') {
@@ -1602,7 +1645,7 @@ function bsWheel(e) {
   bsApply();
 }
 function bsHitCorner(cx, cy) {
-  const q = BS.corners[BS.cornerKind] || [], [sx, sy] = bsStageXY(cx, cy);
+  const q = BS.corners[bsQuadKind()] || [], [sx, sy] = bsStageXY(cx, cy);
   let best = -1, bd = 36;
   q.forEach((p, i) => { const [x, y] = bsScreen(p[0], p[1]); const d = Math.hypot(x - sx, y - sy); if (d < bd) { bd = d; best = i; } });
   return best;
@@ -1624,6 +1667,7 @@ function bsShapeAt(x, y) {
 function bsTap(g) {
   if (BS.step === 'lineup') { bsLuTap(g); return; }
   if (BS.step === 'review' && BS.tool === 'tap') { bsTapTrace(g.x, g.y); return; }
+  if (BS.step === 'leds') { lmTap(g); return; }
   if (BS.step === 'review') {
     // a hand hold with no shape (its marker)
     const [sx, sy] = bsStageXY(g.sx, g.sy);
@@ -1671,6 +1715,7 @@ function bsLoupe(cx, cy, p) {
 function bsWire() {
   bsEl('bs-back').addEventListener('click', () => {
     if (BS.step === 'start' || BS.step === 'photos') { if (BS.step === 'photos') bsGo('start'); else goBack(); return; }
+    if (BS.step === 'leds' && LM.check) { lmExitCheck(); return; }
     bsGo(bsSteps()[bsSteps().indexOf(BS.step) - 1]);
   });
   bsEl('bs-fit').addEventListener('click', bsFit);
@@ -1679,8 +1724,10 @@ function bsWire() {
     const b = e.target.closest('[data-act]');
     if (!b || b.disabled || b.tagName === 'SELECT') return;
     const act = b.dataset.act;
+    if (act.startsWith('lm-')) { await lmAct(act, b); return; }
     if (act === 'reload') { BS.live = null; initSetup(); }
-    else if (act === 'new') { bsDropDraft(); Object.assign(BS, { img: {}, corners: {}, shapes: [], mirror: null, flags: [], traced: false, pred: {}, undo: [], lineup: bsLuEmpty(), luKind: 'current', luSel: 0, xf: null, fits: {}, stats: null, masks: null }); bsGo('photos'); }
+    else if (act === 'check') await lmStartCheck();
+    else if (act === 'new') { bsDropDraft(); Object.assign(BS, { img: {}, corners: {}, shapes: [], mirror: null, flags: [], traced: false, pred: {}, undo: [], lineup: bsLuEmpty(), luKind: 'current', luSel: 0, xf: null, fits: {}, stats: null, masks: null }); lmRestore(null); bsGo('photos'); }
     else if (act === 'discard') { bsDropDraft(); bsRender(); }
     else if (act === 'resume') await bsResume();
     else if (act === 'undo') bsUndoPublish();
@@ -1726,6 +1773,7 @@ function bsWire() {
   st.addEventListener('wheel', bsWheel, { passive: false });
   st.addEventListener('contextmenu', e => e.preventDefault());
   window.addEventListener('resize', () => { if (currentView === 'setup' && bsBoardStep()) bsLayout(true); });
+  lmWire();
 }
 
 async function bsNext() {
@@ -1742,7 +1790,8 @@ async function bsNext() {
   }
   if (BS.step === 'lineup') { if (bsLuReady() && !bsLuProblem()) bsGo('trace'); return; }
   if (BS.step === 'trace') { bsGo('review'); return; }
-  if (BS.step === 'review') {
+  if (BS.step === 'review') { LM.tgt = null; bsGo('leds'); return; }
+  if (BS.step === 'leds') {
     if (!BS.mirror) bsMakeMirror();
     bsNameFeet();
     bsGo('mirror');
@@ -1776,6 +1825,8 @@ async function bsResume() {
                         stats: d.v === BS_DRAFT_V ? d.stats || null : null, masks: null });
     BS.luKind = lineup.cur.every(Boolean) ? 'cartoon' : 'current';
     BS.luSel = bsLuFirstFree(BS.luKind === 'current' ? lineup.cur : lineup.cart);
+    LM.check = false;
+    lmRestore(d.lm);
     BS.busy = false;
     if (d.version && BS.live && d.version !== BS.live.version) showToast('The board changed since this draft: check the matches', 'error');
     const step = d.step === 'lineup' && !bsNeedLineup() ? 'corners' : d.step;

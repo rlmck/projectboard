@@ -42,6 +42,7 @@ DEFAULTS = {
     'BOARD_WALL': 'HangoutPortland',
     'BRIGHTNESS': '0.5',
     'STRIP_PIXELS': '1200',
+    'STRIP_LEDS': '248',            # the LEDs on the strip (0 to N-1): what LED mapping steps through
     'POWER_BUDGET_MA': '8000',
     'MA_PER_CHANNEL': '20',
     'IDLE_ANIMATION': 'on',

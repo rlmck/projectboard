@@ -84,6 +84,7 @@
   --feet-a16: rgba(245,158,11,0.16);
   --feet-a50: rgba(245,158,11,0.5);
   --gold-a95: rgba(251,191,36,0.95);
+  --gold-a20: rgba(251,191,36,0.20);  /* LED mapping: a hold whose LED differs (Check mode) or needs a look */
   --fave-a14: rgba(244,63,94,0.14);
   --mirror-a16: rgba(96,165,250,0.16);
   --success-a12: rgba(74,222,128,0.12);

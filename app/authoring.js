@@ -1,6 +1,6 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, trace, setup, app. This file: create-a-problem, the hold outlines editor (#outlines), and circuit helpers.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, trace, ledmap, setup, app. This file: create-a-problem, the hold outlines editor (#outlines), and circuit helpers.
 
   // ── Create a problem ──────────────────────────────────────────────────────────
   // The create view is laid out like the problem view: pinned, the same title
@@ -608,6 +608,11 @@
         const b = msg && msg.payload;
         // Only a session starting, or one taking the board back, takes it from us (contract §9).
         if (b && b.session !== p.token && !b.end && (b.first || b.show)) taken();
+      })
+      .on('broadcast', { event: 'map_leds' }, msg => {
+        // board setup's LED mapping takes the board the same way (contract §11)
+        const b = msg && msg.payload;
+        if (b && !b.end && (b.first || b.show)) taken();
       })
       .subscribe();
     p.listen = ch;

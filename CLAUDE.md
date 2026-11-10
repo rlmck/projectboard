@@ -46,7 +46,7 @@ A PWA for the symmetry board at The Hangout climbing gym, Portland (near Weymout
 6. **Don't change the Supabase schema** (tables, policies, grants, functions) without being asked. Flag the need and wait.
 7. **Check what already exists before writing new code.** Read the relevant script(s) and `index.html` fully. The scripts share one global scope, so a symbol may be defined in a file you don't expect: grep across all `.js` files.
 8. **The Supabase anon key is safe to commit.** It's a public key. Don't replace it with an environment variable.
-9. **Keep the structure:** `app/index.html` (markup) + `app/tokens.css` + `app/styles.css` + thirteen ordered classic scripts, all flat in `app/`. **Not ES modules**, and don't convert them without being asked. Don't add subfolders inside `app/`: it's copied to the site one-to-one, so a subfolder changes live URLs (`build.sh` refuses one).
+9. **Keep the structure:** `app/index.html` (markup) + `app/tokens.css` + `app/styles.css` + fourteen ordered classic scripts, all flat in `app/`. **Not ES modules**, and don't convert them without being asked. Don't add subfolders inside `app/`: it's copied to the site one-to-one, so a subfolder changes live URLs (`build.sh` refuses one).
 10. **When in doubt about behaviour, ask.** Don't invent product decisions.
 11. **Styling values (colours, fonts, radii, shadows, sizes) live only in `app/tokens.css`.** Components in `styles.css` use `var(--token)`, never a literal. Any change to `tokens.css` must be checked in both the phone views and the wall-screen mode (`/?wall`).
 
@@ -96,7 +96,7 @@ docs/      the committed docs (overview, rollout, cast contract, console plan, c
 build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs them from there
 ```
 
-**App logic: thirteen classic scripts in `app/`, sharing one global scope**, loaded by `index.html` in this order, after the vendored `supabase-js-2.116.0.js`. Every top-level `let`/`const`/`function` is visible everywhere, so **a name may be declared only once across all thirteen**, and top-level code can't use later files. `bash build.sh --check` joins them in `index.html`'s order and runs `node --check` (by hand: `cd app && cat state.js core.js problems.js admin.js account.js authoring.js circuits.js challenge.js leaderboard.js wall.js trace.js setup.js app.js > ../all.js && node --check ../all.js`, then delete `all.js`).
+**App logic: fourteen classic scripts in `app/`, sharing one global scope**, loaded by `index.html` in this order, after the vendored `supabase-js-2.116.0.js`. Every top-level `let`/`const`/`function` is visible everywhere, so **a name may be declared only once across all fourteen**, and top-level code can't use later files. `bash build.sh --check` joins them in `index.html`'s order and runs `node --check` (by hand: `cd app && cat state.js core.js problems.js admin.js account.js authoring.js circuits.js challenge.js leaderboard.js wall.js trace.js ledmap.js setup.js app.js > ../all.js && node --check ../all.js`, then delete `all.js`).
 
 | File | Owns |
 |---|---|
@@ -111,6 +111,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 | `leaderboard.js` | `#leaderboard` (Points, or a challenge board via the tabs) |
 | `wall.js` | The **wall-screen mode** (`/?wall`, the kiosk): list + board + cast, circuits (a tap lights all its holds, `show_circuit`; Start circuit opens the same Cast sheet), **Create** (on-screen keyboard, `wall_create_problem`), read-only Ranks, Get the app QR, idle slides, offline note (overview §4.7a; no night screen: outside the opening hours the Pi turns the screen off). Off unless `WALL` (`state.js`) |
 | `trace.js` | Auto-tracing holds on a cartoon (`traceHolds()`), fitting today's outlines onto it (`tracePriorFit()`) and Tap to trace (`traceTap()`); pure, no DOM; `tools/trace_score.js` and `tools/trace_prior_score.js` score it in Node |
+| `ledmap.js` | **Camera LED mapping** (board setup step 4 + Check mode; db/43): spot finding and matching (pure, scored by `tools/ledmap_score.js`), the camera, `map_leds`/`map_state` with the Pi (contract §11), manual mode, review |
 | `setup.js` | **Board setup** (`#setup`, admins; db/42): photo + cartoon upload, corners, trace, match to today's holds, review, footholds, mirror pairs, publish, undo (overview §4.8d) |
 | `app.js` | **Loaded last:** event wiring, service worker, install flow, boot |
 
@@ -167,7 +168,7 @@ What each view does in detail (fullscreen viewer, create, the outline editor, ci
 | Anon key | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA` |
 
 - **Tables, policies and functions:** overview §5. RLS is on everywhere and is the real gate; the app's admin-only UI is just UX.
-- **DB scripts** live in local `db/`, numbered and idempotent. Since 30 Oct 2026 Claude applies them with `python db/apply.py` (dry run first; working rule 2). 01–42 are applied. The index and warnings are in `db/README.md`. A new script takes the next number.
+- **DB scripts** live in local `db/`, numbered and idempotent. Since 30 Oct 2026 Claude applies them with `python db/apply.py` (dry run first; working rule 2). 01–43 are applied. The index and warnings are in `db/README.md`. A new script takes the next number.
 - **Admin** = `profiles.is_admin`. It's set in the Supabase dashboard or in-app through `admin_set_admin()`, which only an existing admin can call and which refuses changing your own flag. **Nobody can promote themselves.**
 - **Who can do what:** browsing and casting need no login. Ticking, favourites and creating need sign-in. Admins edit and delete any problem or circuit. One **Edit** (the Create screen, pre-filled: holds, name, grade, feet rule; never the setter) is also open to the owner while nobody else has ticked it (a circuit: nobody else's run) and it isn't a benchmark or a challenge's circuit (db/39); an owner can delete their own problem only while nobody else has ticked it. Details: overview §5–6.
 - **Who cast is never in a broadcast** (the channel is public). A signed-in member's cast is recorded privately in `cast_log` (db/34: insert-only, no API reads) by `logCast()` in `problems.js`; only PB Console reads it, over direct Postgres. Keep `privacy.html` in step.

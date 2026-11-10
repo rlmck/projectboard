@@ -1,6 +1,6 @@
 # Cast contract
 
-How a cast gets from the app to the LEDs. **This describes what the code does** (first written 19 Oct 2026; circuits added 30 Oct 2026, §8; the live preview while setting 30 Oct 2026, §9; a circuit's static view 2 Nov 2026, §8.7). Anything the code doesn't settle is under "Open questions"; nothing there is decided. Any change to the channel, event or payload must update this file in the same commit. The repo is public: no secrets here.
+How a cast gets from the app to the LEDs. **This describes what the code does** (first written 19 Oct 2026; circuits added 30 Oct 2026, §8; the live preview while setting 30 Oct 2026, §9; a circuit's static view 2 Nov 2026, §8.7; LED mapping, and the first message the Pi sends, 9 Nov 2026, §11). Anything the code doesn't settle is under "Open questions"; nothing there is decided. Any change to the channel, event or payload must update this file in the same commit. The repo is public: no secrets here.
 
 ## 1. Overview
 
@@ -17,7 +17,7 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
 | Mechanism | Realtime **Broadcast** (not Postgres Changes, not Presence) |
 | Channel topic | `board:HangoutPortland` (`HangoutPortland` is also `board_config.wall`) |
 | Channel type | public: no `config.private`, no Realtime Authorization policies |
-| Events | `cast_problem` (a problem, §3), `cast_circuit` and `stop` (a circuit run, §8), `show_circuit` (a circuit's holds, all lit at once, §8.7), `preview_holds` (the holds being set, lit live, §9) |
+| Events | `cast_problem` (a problem, §3), `cast_circuit` and `stop` (a circuit run, §8), `show_circuit` (a circuit's holds, all lit at once, §8.7), `preview_holds` (the holds being set, lit live, §9), `map_leds` (board setup's LED mapping, §11), `holds_changed` (re-read the holds now, §11.4); and the one event **the Pi sends**: `map_state` (§11.2) |
 | Persistence | none. Only listeners connected at that moment receive it; nothing is stored or replayed |
 | Database writes per cast | none (a signed-in climber's circuit run is logged by the app, §8.5, not by the cast) |
 
@@ -65,7 +65,8 @@ PWA (phone, later the wall kiosk) ──HTTPS POST──▶ Supabase Realtime �
   - on `cast_circuit` and `stop`, runs and ends a circuit (§8);
   - on `show_circuit`, lights a circuit's holds all at once, shown as a problem cast (§8.7);
   - on `preview_holds`, lights the holds someone is setting, live (§9);
-  - clears the strip on stop. It sends no reply, so a cast at night or with the Pi down still shows "Cast: X" in the app (§7 item 2);
+  - on `map_leds`, lights single LEDs for board setup's LED mapping and **sends `map_state` back** (§11), the only thing it ever sends; on `holds_changed`, re-reads the holds table at once (§11.4);
+  - clears the strip on stop. It sends no reply to a cast (only `map_leds` gets one, §11.2), so a cast at night or with the Pi down still shows "Cast: X" in the app (§7 item 2);
   - health checks, watchdogs and deploy are in `pi/README.md`.
 
   The June 2026 Pi 3 listener and the stopgap are kept locally for reference only.
@@ -352,7 +353,69 @@ Since 8 Nov 2026 one **Edit** (the phone only; not the wall screen) changes a pr
 
 Names stay clean (no grade), trimmed, 1–60 characters, unique ignoring case in the app (the database's UNIQUE is exact, and a clash there is refused as `23505` too).
 
+## 11. LED mapping (built 9 Nov 2026)
+
+Board setup's step 4 (Admin → Board Setup → LEDs) and its Check mode (`app/ledmap.js`, `docs/board-setup-plan.md` → session 2b) find which LED is in which hand hold: the board lights one LED at a time, and the phone (on a tripod, its camera) finds the spot, or the admin taps the hold. That needs the board to light **an LED, not a hold**, and the phone to know **when** it's lit, so for the first time the Pi answers (the plan's open question 1; §7 items 2 and 3 stay open for casts).
+
+### 11.1 `map_leds` (app → Pi)
+
+```json
+{ "session": "4be1c0a9d2f37e65", "seq": 57, "leds": [57], "first": true, "source": "phone", "signed_in": true }
+{ "session": "4be1c0a9d2f37e65", "seq": 58, "leds": [] }
+{ "session": "4be1c0a9d2f37e65", "seq": 59, "leds": [57], "show": true }
+{ "session": "4be1c0a9d2f37e65", "end": true }
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `session` | string, 1–64 characters | yes | A token naming this mapping session (16 random hex characters). |
+| `seq` | integer, 0 to 2^31−1 | yes (not with `end`) | The message's number. The Pi says it back in `map_state`, so the phone knows which LED is on the board. |
+| `leds` | array of LED indices | no (empty when absent) | The LEDs to light, **white** at full brightness (with the current cap): at most 16, all different, each 1 to `STRIP_LEDS`−1 (LED 0 is never lit). `[]` = the board dark, still held by the session (the camera's all-off frame). |
+| `first` | `true` | no | The session's first message: other apps take it as a takeover (as §9.4). |
+| `show` | `true` | no | Take the board back after a takeover (as §9). |
+| `ping` | `true` | no | A keep-alive (every 20 s while the step is open), with the LEDs lit now. |
+| `end` | `true` | no | The session is over (leaving the step, the app going to the background): the board goes to idle. |
+| `source`, `signed_in` | | no | As §3. |
+
+A message with a bad session is logged and ignored. One with a good session and `seq` but bad `leds` (out of range, LED 0, repeated, more than 16, not whole numbers) is logged and answered `bad`.
+
+**On the Pi it's a preview session** (§9.3, `renderer.py`): the same takeover rules, with LEDs instead of holds. A problem cast (or `show_circuit`) and another preview or mapping session take the board until it says `show`; a circuit run makes it wait and it comes back after the run; night shows nothing; 60 s with no message (`PREVIEW_TIMEOUT_S`), `end` or SIGUSR1 send it to idle. The journal logs `LEDs: LED mapping <token>: 1 LEDs` when it starts, then `… taken over by …`, `… back …`, `… ended`, never a line per LED. `listener.json` shows `leds: preview`, so the deploy busy check counts it.
+
+**Who may send it:** the app offers it to admins only (Board Setup is admin-only), but like every event on this public channel it isn't authenticated (§7 item 15): anyone with the anon key could light single LEDs, as `preview_holds` already lets them light holds. Night, the cast precedence and the time-out limit it the same way.
+
+### 11.2 `map_state` (Pi → app): the Pi's reply
+
+```json
+{ "session": "4be1c0a9d2f37e65", "seq": 57, "state": "lit", "count": 248 }
+```
+
+| `state` | When |
+|---|---|
+| `lit` | The LEDs are on the strip (sent right after the SPI write), or the session came back after a circuit run. |
+| `taken` | A cast or another session has the board: the message was ignored. Send `show` to take it back. Also sent unprompted the moment the takeover happens. |
+| `waiting` | A circuit run is going: the frame is kept, and `lit` follows (same `seq`) when the run ends. |
+| `night` | Outside the opening hours: nothing shown. |
+| `ended` | The session timed out or was sent to idle (unprompted). |
+| `bad` | The message was refused (with `error`, the reason). |
+
+`count` is `STRIP_LEDS` from the Pi's `config.env` (default 248: LEDs 0–247), so the phone steps through the strip's real LEDs. The listener sends it on its joined socket (`pb_listener.py`: a queue drained by a sender task; replies queued before a reconnect are dropped). **Only `map_leds` gets replies; casts still get none.** The app subscribes to the channel only while the LEDs step is open, and no reply within 5 s reads as "the board isn't answering".
+
+### 11.3 The app (`app/ledmap.js`)
+
+- **Camera mode:** the rear camera (`getUserMedia`; exposure, white balance and focus held where the browser allows; the screen kept awake). The four board corners are marked on a still from the camera. For each LED: `map_leds` with `[n]`, wait for `lit`, wait 0.3 s, average 3 frames, compare with an all-off frame (`leds: []`, refreshed every 25 LEDs and whenever something moved), find the spot, map it through the camera's corners to the board picture, and give the LED to the hand hold under it. Anything unsure is flagged (no spot, two spots, a spot far from every hold or between two, the picture kept changing, two LEDs on one hold, a hold with none). About 1–1.5 s an LED.
+- **Manual mode** (no camera, or the camera can't be used): the board lights each LED, the admin taps its hold (or Nothing lit / Not a hand hold).
+- The feet signs' LEDs (the `feet_sign` holds: 25 and 26) are never lit or mapped.
+
+### 11.4 `holds_changed` (app → Pi)
+
+```json
+{ "wall": "HangoutPortland", "source": "phone", "signed_in": true }
+```
+
+Sent by the app after a board publish or undo (`bsAfterBoardChange()` in `setup.js`). The listener re-reads the holds table at once (at most once every 5 s) instead of at its 10-minute refresh, so **new LEDs light from the next cast, a couple of seconds after the publish**. A `wall` other than the Pi's is ignored. If the Pi misses it (offline), it re-reads the table when it next joins, and every 10 minutes anyway. Harmless if anyone sends it.
+
 ## Change history
+- **2026-11-09, Claude Code (session 2b):** §1, §2, §5 and a new §11: **LED mapping.** Three new events on the same channel: `map_leds` (app → Pi: light up to 16 LEDs white, as a preview session with a sequence number), **`map_state` (Pi → app, the first message the Pi ever sends: `lit` / `taken` / `waiting` / `night` / `ended` / `bad`, plus the strip's LED count)**, and `holds_changed` (app → Pi: re-read the holds table now). New Pi setting `STRIP_LEDS` (248). The app's Create also treats another phone's `map_leds` with `first`/`show` as a takeover (§9.4). `cast_problem`, `cast_circuit`, `stop`, `show_circuit` and `preview_holds` are unchanged; a listener from before this ignores the new events (the app then says the board isn't answering).
 - **2026-11-09, Claude Code (later):** §5, §6.3: **board setup** (db/42). The holds table becomes the source of positions, outlines and mirror pairs (`board_config`'s are copies); footholds can be added (no LED, foot ↔ foot pairs only). LEDs unchanged. **No change to the channel, events or payloads, and no Pi change.**
 - **2026-11-09, Claude Code:** §5, §6.1, §6.3, §6.4, §6.5, §9.1: **holds in the database** (db/41). The listener reads each hold's LED and mirror partner from the new `holds` table (cached on the Pi for a boot with no network; the formula only as a last resort) instead of the formula and `board_config.mirror_map`; the seeded values are the formula's, checked by `tools/check_holds.py`, so every cast lights the same LEDs. **`feet_mode` gains `specific`** with `problems.feet_holds` (footholds only); the board lights nothing for it, and `preview_holds` accepts `feet: "specific"`. **No change to the channel, events or payloads.**
 - **2026-11-08, Claude Code:** §7 item 5 and a new §10: **names are editable** (one Edit for problems and circuits, db/39), and the name stays the cast key: the listener reads every cast by name when it arrives, so a rename works from the next cast. **No change to the channel, events, payloads or the Pi.**

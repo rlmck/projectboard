@@ -64,6 +64,7 @@ FILES=(
   leaderboard.js
   wall.js
   trace.js
+  ledmap.js
   setup.js
   app.js
 

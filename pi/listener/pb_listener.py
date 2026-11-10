@@ -4,7 +4,10 @@
 Supabase Realtime broadcasts on board:<wall> -> the WS2801 strip: `cast_problem`
 lights a problem, `cast_circuit` runs a circuit (circuit.py), `stop` ends it,
 `show_circuit` lights a circuit's holds all at once, as a problem (contract 8.7),
-`preview_holds` lights the holds someone is setting on Create/Edit (contract 9).
+`preview_holds` lights the holds someone is setting on Create/Edit (contract 9),
+`map_leds` lights single LEDs for board setup's LED mapping and says back what
+the board did with each message as `map_state` (contract 11: the one event the
+Pi sends), and `holds_changed` re-reads the holds table now (contract 11.4).
 Built to docs/cast-contract.md; the resilience rules are in the local
 docs/pi4-listener-kiosk-plan.md, section R1:
 
@@ -31,6 +34,7 @@ docs/pi4-listener-kiosk-plan.md, section R1:
     pb_listener.py [--dry-run] [--config FILE] [--status FILE]
 """
 import asyncio
+import collections
 import json
 import os
 import random
@@ -61,6 +65,8 @@ HOLDS_EVERY = 600           # the holds table (each hold's LED and mirror partne
 BENCHMARKS_EVERY = 1800    # the teaser's problems: one small read
 IDLE_FILE = 'idle-pattern'  # pb-idle writes it next to the status file, then sends SIGUSR2
 LED_STALL = 20             # the LED thread silent this long = stuck: exit, systemd restarts us
+HOLDS_ASK_MIN = 5          # holds_changed: at most one re-read of the holds table this often (s)
+OUTBOX_MAX = 100           # map_state replies waiting for the socket (older ones are dropped)
 
 
 def log(msg, level=6):
@@ -117,6 +123,13 @@ class Listener:
         self.holds_source = None      # where the LEDs come from: supabase | cache | formula
         self.mode, self.mode_reason = modelib.mode_now(self.cfg)
         self.leds = renderer.Renderer(self.strip, self.cfg, self.mode == 'night', log, warn, err)
+        self.leds.on_map = self.map_reply
+        self.strip_leds = board.strip_leds(self.cfg)    # LED mapping steps through 1..STRIP_LEDS-1
+        self.loop = None
+        self.outbox = collections.deque(maxlen=OUTBOX_MAX)
+        self.out_ready = asyncio.Event()
+        self.send_lock = asyncio.Lock()
+        self.holds_asked_at = -HOLDS_ASK_MIN
         self.circuit_opts = circuit.options(self.cfg, warn)     # the map and finish levels (contract 8.3)
         now = time.time()
         self.status = {
@@ -505,8 +518,85 @@ class Listener:
         self.leds.preview(token, out, body.get('show') is True)
         self.status['last_preview_at'] = time.time()
 
+    def on_map(self, body):
+        """map_leds (contract 11): board setup's LED mapping lights these LEDs (white, at most
+        MAP_MAX_LEDS; [] = dark), as a preview session (the same takeover rules, time-out and end).
+        Every message with a good session and seq gets a map_state reply: from the LED thread
+        once it has done something with it (lit, taken, waiting, night), or 'bad' from here.
+        Not logged per message: the LED thread logs a session starting, being taken over and ending."""
+        if not isinstance(body, dict):
+            warn('map_leds with a non-object payload ignored')
+            return
+        token = body.get('session')
+        if not isinstance(token, str) or not 1 <= len(token) <= 64:
+            warn('map_leds with a bad session ignored')
+            return
+        if body.get('end') is True:
+            self.leds.preview_end(token)
+            return
+        try:
+            seq, leds = board.check_map(body, self.strip_leds)
+        except ValueError as e:
+            warn('map_leds %s ignored: %s' % (token, e))
+            seq = body.get('seq')
+            if isinstance(seq, int) and not isinstance(seq, bool) and 0 <= seq <= board.MAP_SEQ_MAX:
+                self.send('map_state', {'session': token, 'seq': seq, 'state': 'bad', 'error': str(e)[:120],
+                                        'count': self.strip_leds})
+            return
+        if self.mode == 'night':
+            self.leds.preview(token, {}, False, seq)   # the LED thread says 'night' (and logs it once)
+            return
+        out, _, _ = board.scale(board.map_frame(leds), 1.0, float(self.cfg['POWER_BUDGET_MA']),
+                                float(self.cfg['MA_PER_CHANNEL']))
+        self.leds.preview(token, out, body.get('show') is True, seq)
+        self.status['last_preview_at'] = time.time()
+
+    def map_reply(self, token, seq, state):
+        """From the LED thread: what the board did with map_leds message `seq`."""
+        loop = self.loop
+        if loop is not None:
+            loop.call_soon_threadsafe(self.send, 'map_state',
+                                      {'session': token, 'seq': seq, 'state': state, 'count': self.strip_leds})
+
+    def on_holds_changed(self, body):
+        """holds_changed (contract 11.4): a board was published or undone; read the holds table now
+        instead of at the next 10-minute refresh. At most once every HOLDS_ASK_MIN s."""
+        body = body if isinstance(body, dict) else {}
+        wall = body.get('wall')
+        if wall is not None and wall != self.cfg['BOARD_WALL']:
+            warn('holds_changed for another board (%r) ignored' % (wall,))
+            return
+        now = time.monotonic()
+        if now - self.holds_asked_at < HOLDS_ASK_MIN:
+            return
+        self.holds_asked_at = now
+        log('holds_changed received%s: reading the holds table now' % board.origin(body))
+        self.holds_wanted.set()
+
     EVENTS = {'cast_problem': on_cast, 'cast_circuit': on_circuit, 'stop': on_stop, 'preview_holds': on_preview,
-              'show_circuit': on_show_circuit}
+              'show_circuit': on_show_circuit, 'map_leds': on_map, 'holds_changed': on_holds_changed}
+
+    # -- what the Pi sends (map_state, contract 11) ---------------------------------
+
+    def send(self, event, payload):
+        """Queue a broadcast for the socket (dropped if it isn't joined by the time it's sent)."""
+        self.outbox.append((event, payload))
+        self.out_ready.set()
+
+    async def ws_send(self, ws, msg):
+        async with self.send_lock:
+            await ws.send(json.dumps(msg))
+
+    async def sender(self, ws):
+        ref = 0
+        while True:
+            await self.out_ready.wait()
+            self.out_ready.clear()
+            while self.outbox:
+                event, payload = self.outbox.popleft()
+                ref += 1
+                await self.ws_send(ws, {'topic': self.topic, 'event': 'broadcast', 'ref': 'm%d' % ref,
+                                        'payload': {'type': 'broadcast', 'event': event, 'payload': payload}})
 
     # -- the socket ---------------------------------------------------------
 
@@ -569,7 +659,7 @@ class Listener:
                 raise DeadSocket('no heartbeat reply for %d s' % (now - replied))
             if now - sent >= HEARTBEAT_EVERY:
                 ref += 1
-                await ws.send(json.dumps({'topic': 'phoenix', 'event': 'heartbeat', 'payload': {}, 'ref': str(ref)}))
+                await self.ws_send(ws, {'topic': 'phoenix', 'event': 'heartbeat', 'payload': {}, 'ref': str(ref)})
                 sent = now
 
     async def connection(self):
@@ -587,7 +677,13 @@ class Listener:
                     self.holds_wanted.set()
                     if self.status['benchmarks'] is None:
                         self.benchmarks_wanted.set()
-                    await self.pump(ws)
+                    self.outbox.clear()           # replies from before this socket are stale
+                    sender = asyncio.create_task(self.sender(ws))
+                    try:
+                        await self.pump(ws)
+                    finally:
+                        sender.cancel()
+                        await asyncio.gather(sender, return_exceptions=True)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -603,7 +699,7 @@ class Listener:
     # -- main ---------------------------------------------------------------
 
     async def run(self):
-        loop = asyncio.get_running_loop()
+        loop = self.loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
             try:
                 loop.add_signal_handler(sig, self.stop.set)

@@ -232,6 +232,48 @@ def preview_frame(start, hold, finish, feet='any'):
     return leds, dropped
 
 
+MAP_MAX_LEDS = 16                  # map_leds: at most this many LEDs lit at once (contract 11)
+MAP_COLOUR = (255, 255, 255)       # white: the brightest spot for the phone's camera
+MAP_SEQ_MAX = 2 ** 31 - 1
+
+
+def strip_leds(cfg):
+    """STRIP_LEDS: the LEDs on the strip (0 to N-1), what LED mapping steps through (2-STRIP_PIXELS)."""
+    pixels = int(cfg.get('STRIP_PIXELS') or 1200)
+    try:
+        n = int(cfg.get('STRIP_LEDS') or 248)
+    except ValueError:
+        n = 248
+    return max(2, min(n, pixels))
+
+
+def check_map(body, count):
+    """A map_leds payload (contract 11) -> (seq, [LED indices]).
+
+    Raises ValueError for a malformed one: seq not a whole number 0-2^31-1, leds not a
+    list of different whole numbers 1 to count-1 (LED 0 is never lit), more than
+    MAP_MAX_LEDS of them. An empty list clears the board (the session keeps it)."""
+    seq = body.get('seq')
+    if isinstance(seq, bool) or not isinstance(seq, int) or not 0 <= seq <= MAP_SEQ_MAX:
+        raise ValueError('seq %r' % (seq,))
+    leds = body.get('leds', [])
+    if not isinstance(leds, list) or any(isinstance(i, bool) or not isinstance(i, int) for i in leds):
+        raise ValueError('leds is not a list of LED numbers')
+    if len(leds) > MAP_MAX_LEDS:
+        raise ValueError('%d LEDs (at most %d)' % (len(leds), MAP_MAX_LEDS))
+    if len(set(leds)) != len(leds):
+        raise ValueError('an LED listed twice')
+    bad = [i for i in leds if not 1 <= i < count]
+    if bad:
+        raise ValueError('LED %d is not 1-%d' % (bad[0], count - 1))
+    return seq, leds
+
+
+def map_frame(leds):
+    """The LEDs being mapped -> {led: white}, before brightness (board.scale)."""
+    return {i: MAP_COLOUR for i in leds}
+
+
 def scale(leds, brightness, budget_ma, ma_per_channel):
     """Apply the cast brightness, then cap the whole frame's estimated current.
 

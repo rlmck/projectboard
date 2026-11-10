@@ -1606,6 +1606,50 @@
     .bs-checks li::before { position: absolute; left: 0; font-weight: 700; }
     .bs-checks li.ok::before { content: "✓"; color: var(--success-text); }
     .bs-checks li.bad::before { content: "✕"; color: var(--error-text); }
+    /* LED mapping (board setup step 4, ledmap.js) */
+    .bs-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--black); z-index: 2; }
+    .bs-video.thumb { inset: auto; right: 8px; top: 8px; width: 34%; max-width: 200px; height: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+    #bs-video[hidden] { display: none; }
+    .bs-s.lm-h { fill: none; stroke: var(--ol-other-line); stroke-width: 1.2px; }
+    .bs-s.lm-wait { stroke-dasharray: 3 3; }
+    .bs-s.lm-ok { fill: var(--start-a14); stroke: var(--start); }
+    .bs-s.lm-diff { fill: var(--gold-a20); stroke: var(--gold); stroke-width: 2px; }
+    .bs-s.lm-none { fill: var(--finish-a10); stroke: var(--finish); stroke-dasharray: 4 3; stroke-width: 1.8px; }
+    .bs-s.lm-clash { fill: var(--finish-a30); stroke: var(--finish); stroke-width: 2.2px; }
+    .bs-s.lm-now { fill: var(--int-a40); stroke: var(--int); stroke-width: 2.6px; }
+    .bs-s.lm-h.sel { stroke: var(--ol-edit); stroke-width: 2.8px; stroke-dasharray: none; }
+    .lm-spot {
+      position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+      border: 2px solid var(--white); outline: 2px solid var(--int); pointer-events: none;
+    }
+    .lm-spot.sel { outline-color: var(--ol-edit); }
+    .lm-opt {
+      display: flex; flex-direction: column; gap: 2px; width: 100%; max-width: 680px; margin: 0 auto 8px; padding: 10px 12px;
+      text-align: left; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--btn-radius);
+      color: var(--text); font-size: 14px; cursor: pointer;
+    }
+    .lm-opt span { font-size: 12px; color: var(--text-muted); }
+    .lm-opt.on { border-color: var(--ol-edit); background: var(--ol-edit-a12); }
+    .lm-opt:disabled { opacity: 0.4; cursor: default; }
+    .lm-note { max-width: 680px; margin: 0 auto 8px; padding: 8px 10px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.4; background: var(--surface2); color: var(--text-soft); }
+    .lm-note.warn { background: var(--gold-a20); color: var(--text); }
+    .lm-prog { max-width: 680px; height: 6px; margin: 0 auto 8px; border-radius: var(--radius-xs); background: var(--surface2); overflow: hidden; }
+    .lm-prog span { display: block; height: 100%; background: var(--accent); }
+    .lm-score { max-width: 680px; margin: 0 auto 8px; font-size: 14px; color: var(--text-soft); }
+    .lm-score b { color: var(--text); }
+    .lm-list { display: flex; flex-wrap: wrap; gap: 6px; max-width: 680px; margin: 0 auto 8px; }
+    .lm-item {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 10px; cursor: pointer;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: var(--btn-radius); color: var(--text); font-size: 13px;
+    }
+    .lm-item span { font-size: 11px; color: var(--text-muted); }
+    .lm-item.bad { border-color: var(--finish); }
+    .lm-item.warn { border-color: var(--gold); }
+    .lm-sel { max-width: 680px; margin: 0 auto 8px; font-size: 14px; color: var(--text-soft); }
+    .lm-sel b { color: var(--text); }
+    .lm-more { max-width: 680px; margin: 0 auto 8px; font-size: 13px; color: var(--text-muted); }
+    .lm-more summary { cursor: pointer; padding: 4px 0; }
+    .lm-chips { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 6px; }
     #view-setup.active ~ #toast {
       bottom: calc(180px + env(safe-area-inset-bottom));
       transform: translateX(-50%) translateY(calc(100% + 220px));
