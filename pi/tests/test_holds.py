@@ -153,6 +153,28 @@ class SameLeds(WithTable):
         self.assertEqual(len(leds), 4)                    # the four hand holds, no sign
         self.assertEqual(dropped, ['F1'])                 # a foothold in a hand list lights nothing
 
+    def test_specific_feet_as_the_app_saves_it(self):
+        # Session 3 (10 Nov 2026): the app saves Specific feet as feet_mode 'specific'
+        # plus feet_holds (footholds, foot <-> foot partners); the hand lists never
+        # hold a foothold. Cast either way, it lights exactly the hand holds an Any
+        # feet problem lights (mirrored: the mirrored hand holds), and no sign.
+        board.set_holds(board.check_holds(seed_rows(('foot1', 'foot2', 'foot3')))[0])
+        base = {'finish_hold': 'hold243', 'intermediate_holds': ['hold100', 'hold120'],
+                'start_holds': ['hold41', 'hold43']}
+        mm = dict(MIRROR, foot1='foot2', foot2='foot1')
+        for mirror in (False, True):
+            want, _ = board.frame(dict(base, feet_mode='any'), mirror, mm)
+            got, dropped = board.frame(dict(base, feet_mode='specific', feet_holds=['foot1', 'foot2', 'foot3']), mirror, mm)
+            self.assertEqual(got, want, mirror)
+            self.assertEqual(dropped, [])
+            self.assertFalse({25, 26} & set(got))
+            hands = {board.hold_led(MIRROR.get(h, h) if mirror else h) for h in
+                     ['hold243', 'hold100', 'hold120', 'hold41', 'hold43']}
+            self.assertEqual(set(got), hands)
+        # The live preview while setting: feet 'specific' lights the same as 'any'.
+        sel = (['hold41', 'hold43'], ['hold100'], ['hold243'])
+        self.assertEqual(board.preview_frame(*sel, 'specific'), board.preview_frame(*sel, 'any'))
+
     def test_preview(self):
         sel = (['hold41', 'hold43'], ['hold100', 'hold120'], ['hold243'])
         for feet in board.FEET_MODES:

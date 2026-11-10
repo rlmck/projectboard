@@ -952,6 +952,8 @@
     .feet-badge i { width: 8px; height: 8px; }
     .feet-badge.orange { background: var(--feet-a16); border: 1px solid var(--feet-a50); color: var(--feet); }
     .feet-badge.black { background: var(--surface2); border: 1px solid var(--text-muted); color: var(--text); }
+    .feet-badge.specific { background: var(--specific-a16); border: 1px solid var(--specific-a50); color: var(--specific); }
+    .feet-badge.specific i { border: 2px solid var(--specific); box-sizing: border-box; }
 
     /* ── Leaderboard ─────────────────────────────────────────────────── */
     .leaderboard-row {
@@ -1280,6 +1282,9 @@
     .feet-opt.black i, .feet-badge.black i { background: var(--black); border: 1px solid var(--text-muted); }
 
     .create-next { font-size: 13px; color: var(--text-muted); text-align: center; }
+    /* Specific feet: how many footholds are picked (none of the three rules is chosen). */
+    .create-feet-note { color: var(--specific); font-size: 12px; font-weight: 700; text-align: center; }
+    .create-feet-note[hidden] { display: none; }
     /* Live LEDs while setting: lit as you tap / only at the gym / Show on board. */
     .create-lights {
       display: flex; align-items: center; gap: 8px;
@@ -1645,6 +1650,7 @@
     .hold-dot.start  { border-color: var(--start); background: var(--start-a28); }
     .hold-dot.int    { border-color: var(--int); background: var(--int-a24); }
     .hold-dot.finish { border-color: var(--finish); background: var(--finish-a30); }
+    .hold-dot.foot   { width: 2.6%; border-color: var(--specific); background: var(--specific-a28); }
 
     /* Hold-shape overlay (problems only): real traced outlines + dim-the-rest.
        viewBox is 0..100 in both axes with preserveAspectRatio:none, so points map
@@ -1659,6 +1665,7 @@
     .hs.start  { stroke: var(--start); }
     .hs.int    { stroke: var(--int); }
     .hs.finish { stroke: var(--finish); }
+    .hs.foot   { stroke: var(--specific); }   /* Specific feet */
 
     /* Create/edit (problem and circuit) has no dim to supply contrast, so an
        assigned hold gets the same translucent fill and chunky edge the .hold-dot
@@ -1668,6 +1675,7 @@
     #view-create .hs.start, #view-circuit-create .hs.start   { fill: var(--start-a28); }
     #view-create .hs.int, #view-circuit-create .hs.int       { fill: var(--int-a24); }
     #view-create .hs.finish, #view-circuit-create .hs.finish { fill: var(--finish-a30); }
+    #view-create .hs.foot, .wall-create .hs.foot             { fill: var(--specific-a28); }
 
     /* ── Fullscreen board viewer ─────────────────────────────────────────
        A camera over the board (core.js "Fullscreen board viewer"): it opens
@@ -2842,6 +2850,7 @@
     .wall-c-steps { justify-content: center; }
     .wall-c-steps .create-step { padding: 7px 14px; font-size: 16px; }
     .wall-c-next { color: var(--text-muted); font-size: 17px; text-align: center; }
+    .wall-c-feet-note { font-size: 16px; }
     .wall-c-next.ready { color: var(--accent-hover); font-weight: 700; }
     .wall-c-lights { justify-content: center; font-size: 15px; }
     .wall-c-actions { margin-top: auto; display: grid; grid-template-columns: 1fr 1fr 1fr 1.3fr; gap: 8px; }

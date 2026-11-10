@@ -44,13 +44,13 @@
   // The board's layer: the holds' outlines (or dots). The phone's create view and
   // the wall screen's Create page both draw it.
   function createLayerHtml() {
-    const svg = holdShapeLayerHtml(createRoles, { mirror: false, dim: true, lightAll: true });
+    const svg = holdShapeLayerHtml(createRoles, { mirror: false, dim: true, lightAll: true, feet: createFeetHolds });
     // Without traced outlines (an old board version), fall back to dots.
     return (svg != null) ? svg : Object.keys(createRoles).map(h => {
       const pos = HOLD_MAP && HOLD_MAP[h];
       if (!pos) return '';
       return `<div class="hold-dot ${createRoles[h]}" style="left:${pos.x}%;top:${pos.y}%"></div>`;
-    }).join('');
+    }).join('') + footDotsHtml(createFeetHolds);
   }
 
   function applyCreateRoles() {
@@ -113,16 +113,101 @@
     return Math.sqrt(bestD) <= w * 0.06 ? best : null;   // ~half a hold spacing
   }
 
-  // Remember the holds as they are, for Undo (capped; it's a phone).
-  function pushCreateUndo() {
-    createUndo.push({ ...createRoles });
+  // What a tap on Create's board picks: { id, foot } or null. Hand holds behave
+  // exactly as nearestHold() always has; a foothold (Specific feet) is picked
+  // instead only when the tap is inside its outline (and no smaller hand outline),
+  // or, outside every outline, when its centre is the nearest of all (within 4%
+  // of the board's width). So a small foothold right beside a hand hold can be
+  // picked without touching the hand hold. Footholds are never in the finish
+  // zone or the start/finish logic (cycleHold).
+  function createPick(clientX, clientY, boardEl = document.getElementById('create-board')) {
+    const hand = nearestHold(clientX, clientY, boardEl);
+    const handPick = hand ? { id: hand, foot: false } : null;
+    if (!feetUsable() || !Object.keys(FOOT_HOLDS).length) return handPick;
+    const { x: px, y: py, w, h: bh } = boardPct(boardEl, clientX, clientY);
+    // Inside outlines: the smallest one containing the tap wins.
+    let inside = null, insideA = Infinity;
+    const test = (id, pts, foot) => {
+      if (!pts || pts.length < 3 || !pointInPoly(px, py, pts)) return;
+      const a = Math.abs(polyArea(pts));
+      if (a < insideA) { insideA = a; inside = { id, foot }; }
+    };
+    if (shapesUsable()) {
+      for (const h in HOLD_SHAPES) if (h !== '__meta' && HOLD_MAP[h] && isHandHold(h)) test(h, HOLD_SHAPES[h], false);
+    }
+    for (const f in FOOT_HOLDS) test(f, FOOT_HOLDS[f].pts, true);
+    if (inside) return inside.foot ? inside : handPick;
+    // Outside every outline: the nearest centre, footholds and hand holds alike.
+    let best = null, bestD = Infinity;
+    const near = (id, pos, foot) => {
+      const dx = (pos.x - px) / 100 * w, dy = (pos.y - py) / 100 * bh, d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = { id, foot }; }
+    };
+    for (const h in HOLD_MAP) if (isHandHold(h)) near(h, HOLD_MAP[h], false);
+    for (const f in FOOT_HOLDS) near(f, FOOT_HOLDS[f], true);
+    if (best && best.foot && Math.sqrt(bestD) <= w * 0.04) return best;
+    return handPick;
+  }
+  // Ray casting, in board percentages (the stretch to pixels keeps inside inside).
+  function pointInPoly(x, y, pts) {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const xi = pts[i][0], yi = pts[i][1], xj = pts[j][0], yj = pts[j][1];
+      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  function polyArea(pts) {
+    let a = 0;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += (pts[j][0] + pts[i][0]) * (pts[j][1] - pts[i][1]);
+    return a / 2;
+  }
+
+  // A tap on Create's board (the phone's, in or out of the viewer, or the wall's).
+  function createTap(clientX, clientY, boardEl) {
+    const pick = createPick(clientX, clientY, boardEl);
+    if (!pick) return;
+    if (pick.foot) toggleFootHold(pick.id);
+    else cycleHold(pick.id);
+  }
+
+  // Remember the holds and the feet as they are, for Undo (capped; it's a phone).
+  const createSnap = () => ({ roles: { ...createRoles }, feet: createFeet, feetHolds: createFeetHolds.slice() });
+  function pushCreateUndo(snap = createSnap()) {
+    createUndo.push(snap);
     if (createUndo.length > 60) createUndo.shift();
   }
   function undoCreate() {
     if (!createUndo.length) return;
-    createRoles = createUndo.pop();
+    const snap = createUndo.pop();
+    createRoles = snap.roles;
+    createFeet = snap.feet;
+    createFeetHolds = snap.feetHolds;
+    updateCreateFeet();
     applyCreateRoles();
     previewEdited();
+  }
+
+  // Specific feet: a tap on a foothold adds it (yellow outline) or takes it off.
+  // The first one makes the problem Specific feet (dropping Orange or Black only);
+  // taking the last one off makes it Any feet again. Footholds are never lit and
+  // Specific feet lights no sign, so the board only hears about it when a sign
+  // goes off (Orange or Black only -> Specific feet).
+  function toggleFootHold(f) {
+    const i = createFeetHolds.indexOf(f);
+    if (i < 0 && createFeetHolds.length >= FEET_MAX) {
+      showToast(`Specific feet: ${FEET_MAX} footholds at most`, 'error');
+      return;
+    }
+    const before = createFeet;
+    pushCreateUndo();
+    createFeetHolds = i >= 0 ? createFeetHolds.filter(x => x !== f) : createFeetHolds.concat(f);
+    createFeet = createFeetHolds.length ? 'specific' : 'any';
+    const signOff = before === 'orange' || before === 'black';
+    if (signOff) showToast(`Specific feet now: ${feetLabel(before)} is off`, 'success');
+    updateCreateFeet();
+    applyCreateRoles();
+    if (signOff) previewEdited();
   }
 
   // Tap to cycle a hold's role:
@@ -192,13 +277,34 @@
 
   // The feet rule: three options side by side (under the phone's board, in the
   // wall's panel).
+  // With Specific feet none of the three is chosen, and a line under them says
+  // how many footholds are picked (or that the limit is reached).
   function updateCreateFeet() {
     document.querySelectorAll('#create-feet .feet-opt, #wall-c-feet .feet-opt').forEach(b =>
       b.setAttribute('aria-checked', b.dataset.feet === createFeet ? 'true' : 'false'));
+    const n = createFeetHolds.length;
+    const text = !n ? ''
+      : n >= FEET_MAX ? `Specific feet (${n}): that’s the most a problem can have`
+      : `Specific feet (${n}): tap a yellow one again to drop it`;
+    let moved = false;
+    document.querySelectorAll('#create-feet-note, #wall-c-feet-note').forEach(el => {
+      el.textContent = text;
+      if (el.hidden !== !n) { el.hidden = !n; moved = true; }
+    });
+    if (moved && currentView === 'create') requestAnimationFrame(fitCreateStatus);   // the strip grew or shrank
   }
+  // Any, Orange only or Black only. With footholds picked (Specific feet) it
+  // clears them, with a note; Undo brings them back.
   function setCreateFeet(k) {
     if (!FEET_RULES.some(r => r.key === k)) return;
     const changed = k !== createFeet;
+    if (createFeetHolds.length) {
+      const n = createFeetHolds.length;
+      pushCreateUndo();
+      createFeetHolds = [];
+      applyCreateRoles();
+      showToast(`${n} foothold${n === 1 ? '' : 's'} cleared · Undo brings ${n === 1 ? 'it' : 'them'} back`, 'success');
+    }
     createFeet = k;
     updateCreateFeet();
     if (changed) previewEdited();   // the feet sign lights with the holds
@@ -218,7 +324,7 @@
 
   function resetCreate() {
     createRoles = {}; createGrade = ''; editingProblemId = null; createUndo = []; createEditBase = '';
-    createFeet = 'any'; updateCreateFeet();
+    createFeet = 'any'; createFeetHolds = []; updateCreateFeet();
     const nameEl = document.getElementById('create-name');
     if (nameEl) nameEl.value = '';
     setCreateMode(null);
@@ -230,7 +336,8 @@
   function problemEditKey() {
     const nameEl = document.getElementById('create-name');
     const roles = Object.keys(createRoles).sort().map(h => h + ':' + createRoles[h]).join(',');
-    return JSON.stringify([((nameEl && nameEl.value) || '').trim(), createGrade, createFeet, roles]);
+    return JSON.stringify([((nameEl && nameEl.value) || '').trim(), createGrade, createFeet, roles,
+                           createFeetHolds.slice().sort().join(',')]);
   }
   const problemEditDirty = () => !!editingProblemId && problemEditKey() !== createEditBase;
 
@@ -250,7 +357,9 @@
     // db/33; they're the feet rule now, never holds.
     order.forEach(h => { if (!FEET_LIGHT_HOLDS.has(h)) createRoles[h] = cls[h]; });
     createGrade = p.grade || '';
-    createFeet = feetRule(p); updateCreateFeet();
+    createFeet = feetRule(p);
+    createFeetHolds = problemFeetHolds(p);
+    updateCreateFeet();
     const nameEl = document.getElementById('create-name');
     if (nameEl) nameEl.value = p.name || '';
     setCreateMode(p);
@@ -310,8 +419,9 @@
   // The header bin. In edit mode it reverts to the problem as saved (holds, name,
   // grade, feet rule: discard your edits); in create mode it clears the holds.
   // Either way Undo brings the holds back.
+  // Specific feet's footholds go with the holds (and come back with Undo).
   function onCreateReset() {
-    const before = { ...createRoles };
+    const before = createSnap();
     if (editingProblemId) {
       const p = allProblems.find(x => String(x.id) === String(editingProblemId));
       if (p) {
@@ -320,9 +430,10 @@
         buildCreateGrades(); applyCreateRoles(); return;
       }
     }
-    if (!Object.keys(createRoles).length) return;
-    pushCreateUndo();
+    if (!Object.keys(createRoles).length && !createFeetHolds.length) return;
+    pushCreateUndo(before);
     createRoles = {};
+    if (createFeetHolds.length) { createFeetHolds = []; createFeet = 'any'; updateCreateFeet(); }
     applyCreateRoles();
     previewEdited();
   }
@@ -350,6 +461,10 @@
     }
     return null;
   }
+
+  // problems.feet_holds for a save: Specific feet's footholds, else empty
+  // (problems_guard_feet empties it for any other rule anyway).
+  const createFeetCol = () => createFeet === 'specific' ? createFeetHolds.slice() : [];
 
   async function saveProblem() {
     if (!session) { location.hash = '#auth'; return; }
@@ -398,7 +513,7 @@
       // else has ticked it (RLS, db/39; its guard refuses any other column). Same
       // invert-on-save scheme as create. A rename changes the cast key: the Pi
       // looks a cast's name up when it arrives, so the next cast uses the new one.
-      const update = { name, grade: createGrade, feet_mode: createFeet, ...holdCols };
+      const update = { name, grade: createGrade, feet_mode: createFeet, feet_holds: createFeetCol(), ...holdCols };
       // .select() so a write RLS silently refused (no error, 0 rows) isn't
       // mistaken for success.
       const { data, error } = await sb.from('problems').update(update).eq('id', editing.id).select('id');
@@ -438,6 +553,7 @@
       setter_id: session.user.id,                      // owner — drives the live setter name
       ...holdCols,
       feet_mode: createFeet,
+      feet_holds: createFeetCol(),
       is_benchmark: false
     };
 

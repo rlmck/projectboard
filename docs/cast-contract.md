@@ -147,10 +147,10 @@ led = x*13 + (13 - y)     if x is odd    (B, D, F … run down)
 
 - The lit sign is **blue** `(0,0,255)`, the colour Gareth's code gave it (it lit the signs as intermediates).
 - **The listener reads `feet_mode`** with the problem (`pi/listener/board.py`, `FEET_LIGHTS`). `hold2`/`hold21` in a hold list are skipped, never lit. The payload doesn't change: the rule travels with the problem row, like its holds.
-- **Specific feet** (db/41; the app's UI comes in session 3): `problems.feet_holds` lists 1–30 footholds, each a `foot` hold of this board (`problems_guard_feet` checks it; any other rule empties the list). The board never lights them and lights no sign; the listener treats `specific` like `any`. The payload doesn't change.
+- **Specific feet** (db/41; the app's UI since 10 Nov 2026): `problems.feet_holds` lists 1–30 footholds, each a `foot` hold of this board (`problems_guard_feet` checks it; any other rule empties the list). The board never lights them and lights no sign; the listener treats `specific` like `any`, mirrored or not (`pi/tests/test_holds.py`, `test_specific_feet_as_the_app_saves_it`). The app never puts a foothold in a hand hold list. The payload doesn't change.
 - **Never mirrored:** the signs are fixed to the wall, so a mirrored cast lights the same sign. Neither id is in `board_config.mirror_map`, and no hold mirrors onto them (`pi/tests/test_board.py`, `Feet`).
 - **Data:** before db/33 the rule lived only in migrated problems' hold lists (Gareth's lists carried the signs just before the finish; the old notes say both on = any feet). db/33 set `feet_mode` from them (only `hold2` → `black`, only `hold21` → `orange`, both or neither → `any`: 26, 19 and 220 problems on 30 Oct 2026) and took `hold2`/`hold21` out of every hold list. Neither was ever a start or the finish, so no problem's roles changed.
-- **The app:** Create and admin Edit offer the rule as three options (Any feet by default); the problem view shows a badge when it isn't Any, and the info sheet always shows it. The app never draws the signs on the board.
+- **The app:** Create and Edit offer the rule as three options (Any feet by default); tapping a foothold makes the problem Specific feet (no fourth option; overview §4.8a). The problem view (phone and the wall's chosen problem) shows a badge when it isn't Any ("Specific feet (4)"), the info sheet always shows it, and Specific feet's footholds are outlined in yellow (as their foot partners when mirrored). The app never draws the signs on the board.
 
 ## 7. Open questions
 
@@ -296,7 +296,7 @@ While someone sets a problem (the phone's Create, an admin's Edit, or the wall s
 |---|---|---|---|
 | `session` | string, 1–64 characters | yes | A token naming this setting session (the app sends 16 random hex characters). |
 | `start`, `hold`, `finish` | arrays of hold ids | no (empty when absent) | The **whole current selection**, as set: start (at most 2), intermediate, finish (at most 1); at most 100 holds in all. **Not stored inverted** (unlike a problem row, §6.2) and never mirrored. Never a diff, so a lost message is corrected by the next. Ids off the grid and the feet signs (`hold2`/`hold21`) light nothing. |
-| `feet` | `"any"`, `"orange"`, `"black"` or `"specific"` | no (`any`) | The feet rule being set: lights the sign as §6.5 (`specific` lights none; the listener before 9 Nov 2026 ignored a message with it). |
+| `feet` | `"any"`, `"orange"`, `"black"` or `"specific"` | no (`any`) | The feet rule being set: lights the sign as §6.5 (`specific` lights none; the listener before 9 Nov 2026 ignored a message with it). The app sends `specific` since 10 Nov 2026 while footholds are picked; the footholds themselves are never sent, and tapping one sends nothing unless it turns a sign off. |
 | `end` | `true` | no | The session is over (Save, Cancel, leaving the screen, the app going to the background). Nothing else is read. |
 | `first` | `true` | no | The session's first message. For other apps listening (§9.4); the Pi doesn't need it. |
 | `show` | `true` | no | **Show on board**: take the board back after a takeover (§9.3). |
@@ -353,6 +353,8 @@ Since 8 Nov 2026 one **Edit** (the phone only; not the wall screen) changes a pr
 Names stay clean (no grade), trimmed, 1–60 characters, unique ignoring case in the app (the database's UNIQUE is exact, and a clash there is refused as `23505` too).
 
 ## Change history
+
+- **2026-11-10, Claude Code:** §6.5, §9.1: Specific feet in the app (board setup session 3): Create/Edit save `feet_mode: 'specific'` + `feet_holds`; previews carry `feet: "specific"` (already accepted since 9 Nov). No change to the channel, events or payloads; the Pi unchanged (a new test).
 - **2026-11-09, Claude Code (later):** §5, §6.3: **board setup** (db/42). The holds table becomes the source of positions, outlines and mirror pairs (`board_config`'s are copies); footholds can be added (no LED, foot ↔ foot pairs only). LEDs unchanged. **No change to the channel, events or payloads, and no Pi change.**
 - **2026-11-09, Claude Code:** §5, §6.1, §6.3, §6.4, §6.5, §9.1: **holds in the database** (db/41). The listener reads each hold's LED and mirror partner from the new `holds` table (cached on the Pi for a boot with no network; the formula only as a last resort) instead of the formula and `board_config.mirror_map`; the seeded values are the formula's, checked by `tools/check_holds.py`, so every cast lights the same LEDs. **`feet_mode` gains `specific`** with `problems.feet_holds` (footholds only); the board lights nothing for it, and `preview_holds` accepts `feet: "specific"`. **No change to the channel, events or payloads.**
 - **2026-11-08, Claude Code:** §7 item 5 and a new §10: **names are editable** (one Edit for problems and circuits, db/39), and the name stays the cast key: the listener reads every cast by name when it arrives, so a rename works from the next cast. **No change to the channel, events, payloads or the Pi.**

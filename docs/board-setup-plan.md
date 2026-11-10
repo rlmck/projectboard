@@ -2,7 +2,7 @@
 
 Planned in the claude.ai project chat on 7 Nov 2026; narrowed on 9 Nov 2026. TODO 13. The repo is public: nothing personal, nothing secret.
 
-**Built so far:** session 1 (9 Nov 2026): the holds table and the backend for Specific feet (db/41). Session 2a (9 Nov 2026): the admin setup flow without camera LED mapping (db/42, `#setup`), with the line-up (10 Nov) and the prior-guided trace and tap-to-fix (10 Nov, below). The hold editor (10 Nov 2026, Board Setup → Edit holds, below). Not built: 3 (Specific feet in Create and on the problem view; its decisions are below). **Session 2b (camera LED mapping) is dropped for now** (Ross, 10 Nov 2026; below).
+**Built so far:** session 1 (9 Nov 2026): the holds table and the backend for Specific feet (db/41). Session 2a (9 Nov 2026): the admin setup flow without camera LED mapping (db/42, `#setup`), with the line-up (10 Nov) and the prior-guided trace and tap-to-fix (10 Nov, below). The hold editor (10 Nov 2026, Board Setup → Edit holds, below). Session 3 (10 Nov 2026): Specific feet in Create, Edit and on the problem view, phones and the wall screen (below). **Session 2b (camera LED mapping) is dropped for now** (Ross, 10 Nov 2026; below).
 
 ## Why
 - **The holds will be rearranged** one day. Some LEDs sit at fixed positions (which dictate where holds go), some go through the board into the hold itself, so LEDs move with holds. After a rearrange: a new photo, a new cartoon board image, and the holds re-mapped to LEDs.
@@ -86,12 +86,15 @@ Ross published the board with the final cartoon on 10 Nov 2026 (188 hand holds, 
 
 **The missing footholds** (found 10 Nov 2026; Ross adds them in the editor): five grey chips right beside hand holds: beside **F3** (left, on pink) and **M2** (right, on pink; a pair), beside **G1** and **N1** (on the black, low down; a pair), and one on top of **J1** (on the centre line, inside J1's outline: add it, then Cut it out of J1). They were merged into the neighbour's traced shape (F3, N1, M2) or dropped as a stray (G1's).
 
-## Session 3: Specific feet in Create and on the problem view (next)
-**Decisions (Ross, 10 Nov 2026):**
+## Session 3: Specific feet in Create and on the problem view (built 10 Nov 2026)
+**Decisions (Ross, 9 and 10 Nov 2026):**
 - **There's no separate Specific feet button.** Tapping a foothold in Create gives it a **yellow outline** and makes the problem Specific feet; tapping it again removes it; with none left the problem goes back to **Any feet**.
 - If **Orange only** or **Black only** was picked, tapping a foothold switches the problem to Specific feet.
 - **Footholds are never lit, and no feet sign lights for Specific feet.**
 - This applies on **both the phone and the wall screen** (Create there too), and the problem view shows the picked footholds (mirrored foot ↔ foot in the mirrored view).
+- Picking Any, Orange only or Black only while footholds are picked clears them (Undo brings them back), with a short note. 1–30 footholds (the database's rule); the UI says so at 30. Owners change them under db/39's Edit rules. Move to Circuits says the footholds won't carry over.
+
+**What was built** (overview §4.4 and §4.8a): footholds' positions and outlines come from the holds table (`loadHolds()` → `FOOT_HOLDS`, saved for offline); `createPick()` picks a foothold only inside its outline or, outside every outline, when its centre is nearest (hand-hold taps are exactly `nearestHold()`'s); yellow outlines (`--specific`) on Create, the problem view, the fullscreen viewer and the wall; "Specific feet (4)" as the badge, in the info sheet, under the feet rule while setting and in the wall's chosen-problem bar; the mirrored view draws each foothold's foot partner. No migration; the Pi is unchanged (it already lit nothing for `specific`; a new Pi test casts one both ways). Tests: a Chrome run at phone width and on `/?wall` (writes stubbed), the app's payloads through the real RLS, guards and `wall_create_problem` in a rolled-back transaction (`db/specific_feet_app_test.sql`, local), and a webcam check of a real cast (10 Nov session log).
 
 ## Session 2b: camera LED mapping (dropped for now)
 **Ross, 10 Nov 2026: not needed at this scale.** Every LED on the board is already verified (28 Oct, `pb-ledmap`), rotating a hold doesn't move its LED, and footholds have none; `pb-ledmap` (`pi/README.md`) covers LED checks. The setup flow keeps every hand hold's LED.

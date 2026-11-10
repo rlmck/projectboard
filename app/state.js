@@ -71,6 +71,7 @@
   let HOLD_SHAPES = null; // hold id -> [[x,y],…] % polygon, from board_config (admin) or bundled hold_shapes.json (problem + circuit overlays, and the #outlines editor)
   let MIRROR_MAP = null; // hold id -> mirror-partner hold id (bundled mirror_map.json); self = centre/no-partner
   let HOLD_INFO = null;  // hold id -> {name, kind, mirror}, from the holds table (db/41): kind hand | foot | feet_sign
+  let FOOT_HOLDS = null; // foothold id -> {x, y, pts}, from the holds table (db/42): Specific feet's positions and outlines (footholds aren't in board_config's copies)
   let holdsHaveMirror = false;          // true once the holds table supplied the mirror partners (board_config's then step aside)
   let detailMirror = false; // detail view is showing the left/right-mirrored problem
   let BOARD_IMG = 'board-fallback.jpg'; // resolved board image URL (Supabase upload, else the bundled fallback: a snapshot of the live photo)
@@ -115,10 +116,11 @@
   // ── Create-a-problem state ───────────────────────────────────────────────────
   let createRoles = {};        // hold id -> 'start' | 'int' | 'finish'
   let createGrade = '';        // selected grade
-  let createFeet = 'any';      // the feet rule: 'any' | 'orange' | 'black' (FEET_RULES in core.js)
+  let createFeet = 'any';      // the feet rule: 'any' | 'orange' | 'black' | 'specific' (FEET_RULES in core.js)
+  let createFeetHolds = [];    // Specific feet: the footholds picked, in the order tapped (1–30; createFeet is 'specific' exactly while it's not empty)
   let editingProblemId = null; // when set, the create view is editing this problem (#create/<id>: an admin, or its owner) instead of creating
   let createEditBase = '';     // the edit's starting point (problemEditKey()), to tell whether anything changed
-  let createUndo = [];         // earlier createRoles snapshots, newest last (the create view's Undo)
+  let createUndo = [];         // earlier snapshots { roles, feet, feetHolds }, newest last (the create view's Undo)
 
   // ── Circuits ──────────────────────────────────────────────────────────────────
   // Sport grades (lowercase French), a different ladder from boulder problems.

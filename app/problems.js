@@ -847,7 +847,7 @@
       </div>
       <div class="info-row">
         <div class="info-label">Feet</div>
-        <div class="info-value">${feetLabel(feetRule(p))}</div>
+        <div class="info-value">${escHtml(feetText(p))}</div>
       </div>
     `;
     document.getElementById('info-modal').classList.add('show');
@@ -1133,18 +1133,26 @@
 
   // ── Load the holds table (db/41): each hold's name, kind and mirror partner ──
   // Names label the hold chips and the outline editor; the mirror partners replace
-  // board_config.mirror_map (a trigger keeps the two the same until the setup flow,
-  // session 2). Positions and outlines still come from board_config. The saved copy
-  // is used at once, so a phone offline keeps the names. Read-only, public.
+  // board_config.mirror_map (a trigger keeps the two the same). Hand holds'
+  // positions and outlines come from board_config's copies; footholds are only
+  // here, so their position and outline (Specific feet) come with them: a second,
+  // small read of the footholds' outlines (all the hand outlines would be ~10x the
+  // size). The saved copy is used at once, so a phone offline keeps the names and
+  // the footholds. Read-only, public.
   function useHolds(rows) {
     if (!Array.isArray(rows) || !rows.length) return false;
-    const info = {}, mirror = {};
+    const info = {}, mirror = {}, feet = {};
     rows.forEach(r => {
       if (!r || typeof r.id !== 'string') return;
       info[r.id] = { name: r.name, kind: r.kind, mirror: r.mirror || null };
       if (r.kind === 'hand' && r.mirror) mirror[r.id] = r.mirror;
+      const x = Number(r.x), y = Number(r.y);
+      if (r.kind === 'foot' && r.x != null && r.y != null && Number.isFinite(x) && Number.isFinite(y)) {
+        feet[r.id] = { x, y, pts: Array.isArray(r.outline) && r.outline.length >= 3 ? r.outline : null };
+      }
     });
     HOLD_INFO = info;
+    FOOT_HOLDS = feet;
     if (Object.keys(mirror).length) {
       MIRROR_MAP = mirror;
       holdsHaveMirror = configHasMirror = true;
@@ -1157,14 +1165,24 @@
       if (saved) useHolds(saved.rows);
     }
     try {
-      const { data, error } = await sb.from('holds').select('id,name,kind,mirror')
-        .eq('wall', 'HangoutPortland').order('id').limit(2000);
-      if (error) { console.warn('holds load failed', error); return; }
-      if (useHolds(data)) saveList('holds', data);
+      const [all, outlines] = await Promise.all([
+        sb.from('holds').select('id,name,kind,mirror,x,y').eq('wall', 'HangoutPortland').order('id').limit(2000),
+        sb.from('holds').select('id,outline').eq('wall', 'HangoutPortland').eq('kind', 'foot').limit(2000)
+      ]);
+      if (all.error) { console.warn('holds load failed', all.error); return; }
+      const rows = all.data || [];
+      if (!outlines.error && outlines.data) {
+        const o = Object.fromEntries(outlines.data.map(r => [r.id, r.outline]));
+        rows.forEach(r => { if (r.kind === 'foot' && o[r.id]) r.outline = o[r.id]; });
+      }
+      if (useHolds(rows)) saveList('holds', rows);
     } catch (err) {
       console.warn('holds load failed', err);
     }
-    if (currentView === 'detail' && detailMirror) router();
+    // Redraw what shows the mirror partners or footholds.
+    if (currentView === 'detail' && currentProblem && (detailMirror || feetRule(currentProblem) === 'specific')) router();
+    else if (currentView === 'create') applyCreateRoles();
+    if (WALL) wallRefreshBoard();
   }
 
   // ── Load the id -> nickname map (so setters show the live nickname) ───────────

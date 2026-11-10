@@ -83,18 +83,45 @@
   // The feet rule (problems.feet_mode, db/33): Any feet (the default, not shown),
   // Orange feet only or Black feet only. The Pi lights the matching sign's LED by
   // B1/B2 from feet_mode; hold2/hold21 (those signs) are never holds in a list.
+  // A fourth rule, Specific feet (db/41; the UI 10 Nov 2026), isn't one of the
+  // picker's options: tapping a foothold in Create makes a problem Specific feet,
+  // and its footholds (problems.feet_holds, 1-30) are drawn in yellow. The board
+  // never lights them, and no sign (contract 6.5).
   const FEET_RULES = [
     { key: 'any', label: 'Any feet', short: 'Any feet' },
     { key: 'orange', label: 'Orange feet only', short: 'Orange only' },
     { key: 'black', label: 'Black feet only', short: 'Black only' }
   ];
+  const FEET_MAX = 30;                      // problems_guard_feet's limit (db/41)
   const FEET_LIGHT_HOLDS = new Set(['hold2', 'hold21']);
-  const feetRule = p => (p && (p.feet_mode === 'orange' || p.feet_mode === 'black')) ? p.feet_mode : 'any';
-  const feetLabel = k => (FEET_RULES.find(r => r.key === k) || FEET_RULES[0]).label;
+  const feetRule = p => !p ? 'any'
+    : (p.feet_mode === 'orange' || p.feet_mode === 'black') ? p.feet_mode
+    : (p.feet_mode === 'specific' && Array.isArray(p.feet_holds) && p.feet_holds.length) ? 'specific'
+    : 'any';
+  const feetLabel = k => k === 'specific' ? 'Specific feet' : (FEET_RULES.find(r => r.key === k) || FEET_RULES[0]).label;
+  // A problem's Specific feet footholds (ids), or [] for any other rule.
+  const problemFeetHolds = p => feetRule(p) === 'specific' ? p.feet_holds.filter(f => typeof f === 'string') : [];
+  // The rule as words, with the count for Specific feet: "Specific feet (4)".
+  function feetText(p) {
+    const k = feetRule(p);
+    return k === 'specific' ? `Specific feet (${problemFeetHolds(p).length})` : feetLabel(k);
+  }
   function feetBadgeHtml(p) {
     const k = feetRule(p);
     if (k === 'any') return '';
+    if (k === 'specific') return `<span class="feet-badge specific" title="Use only the footholds outlined in yellow"><i></i>${escHtml(feetText(p))}</span>`;
     return `<span class="feet-badge ${k}" title="${feetLabel(k)}"><i></i>${k === 'orange' ? 'Orange feet' : 'Black feet'}</span>`;
+  }
+  // A foothold (kind 'foot', db/42) with a known position.
+  const isFootHold = h => !!(FOOT_HOLDS && FOOT_HOLDS[h]) && !!(HOLD_INFO && HOLD_INFO[h] && HOLD_INFO[h].kind === 'foot');
+  // Footholds come from the holds table, which is always the live board. Draw them
+  // over the live map, or offline when the bundled board's outlines fit (the
+  // saved holds are the board's as last seen online).
+  const feetUsable = () => !!FOOT_HOLDS && (configHasMap || shapesUsable());
+  // A foothold's mirror partner: always a foothold (never hand <-> foot), else itself.
+  function mirrorFoot(f) {
+    const m = HOLD_INFO && HOLD_INFO[f] && HOLD_INFO[f].mirror;
+    return (m && isFootHold(m)) ? m : f;
   }
 
   // "New" badge: shown for NEW_DAYS after a row's created_at. The migrated
@@ -210,7 +237,16 @@
       if (!pos) return '';   // hold has no mapped dot (board gap) — skip
       return `<div class="hold-dot ${cls[h]}" style="left:${pos.x}%;top:${pos.y}%"></div>`;
     }).join('');
-    return `<div class="hold-layer">${dots}</div>`;
+    return `<div class="hold-layer">${dots}${footDotsHtml(problemFeetHolds(p), mirror)}</div>`;
+  }
+
+  // Specific feet as dots (no usable outlines): a small yellow ring on each.
+  function footDotsHtml(feet, mirror = false) {
+    if (!feet.length || !feetUsable()) return '';
+    return feet.map(f => {
+      const pos = FOOT_HOLDS[mirror ? mirrorFoot(f) : f];
+      return pos ? `<div class="hold-dot foot" style="left:${pos.x}%;top:${pos.y}%"></div>` : '';
+    }).join('');
   }
 
   // ── Hold-shape overlay (problems and circuits) ───────────────────────────────
@@ -273,7 +309,9 @@
   // The mask lives in its OWN svg so the outline svg can carry a plain CSS
   // drop-shadow: a CSS filter on an svg *child* resolves its lengths in the
   // stretched viewBox units, but on the outermost svg it resolves in CSS pixels.
-  function holdShapeLayerHtml(roles, { mirror = false, dim = false, lightAll = false } = {}) {
+  // `feet`: Specific feet's footholds, outlined in yellow (cut out of the dim too);
+  // mirrored, each is drawn as its foot partner (an unpaired one stays put).
+  function holdShapeLayerHtml(roles, { mirror = false, dim = false, lightAll = false, feet = [] } = {}) {
     if (!shapesUsable()) return null;
     const maskId = 'hsmask-' + (++hsMaskSeq);
     // viewBox is 0..100 on both axes with preserveAspectRatio:none, so a <circle>
@@ -296,6 +334,19 @@
         outlines.push(`<ellipse ${e} class="hs ${role}"/>`);
       }
     });
+    const footHole = (f, attrs) => {
+      const fh = FOOT_HOLDS[f];
+      if (!fh) return '';
+      if (fh.pts && fh.pts.length >= 3) return `<path d="${smoothShapePath(fh.pts)}" ${attrs}/>`;
+      return `<ellipse cx="${fh.x}" cy="${fh.y}" rx="${+(rx / 2).toFixed(2)}" ry="${+(ry / 2).toFixed(2)}" ${attrs}/>`;
+    };
+    if (feet.length && feetUsable()) {
+      feet.forEach(f => {
+        const key = mirror ? mirrorFoot(f) : f;
+        holes.push(footHole(key, 'fill="#000"'));
+        outlines.push(footHole(key, 'class="hs foot"'));
+      });
+    }
     if (dim && lightAll) {
       holes.length = 0;
       Object.keys(HOLD_MAP).forEach(key => {
@@ -304,6 +355,8 @@
         if (pts && pts.length >= 3) holes.push(`<path d="${smoothShapePath(pts)}" fill="#000"/>`);
         else if (pos && typeof pos.x === 'number') holes.push(`<ellipse cx="${pos.x}" cy="${pos.y}" rx="${rx}" ry="${ry}" fill="#000"/>`);
       });
+      // Create: the footholds stay bright too, so Specific feet can be tapped.
+      if (feetUsable()) Object.keys(FOOT_HOLDS).forEach(f => holes.push(footHole(f, 'fill="#000"')));
     }
     const dimSvg = dim
       ? `<svg class="hold-shape-layer hs-dim" viewBox="0 0 100 100" preserveAspectRatio="none">`
@@ -350,7 +403,7 @@
   function boardShapeOverlayHtml(p, opts = {}) {
     const order = problemHoldOrder(p);
     if (!order.length) return null;
-    return holdShapeLayerHtml(classifyHolds(order), opts);
+    return holdShapeLayerHtml(classifyHolds(order), { ...opts, feet: problemFeetHolds(p) });
   }
 
   // Map a pointer's client coords to board-relative percentages. Returns { x, y }
@@ -484,10 +537,12 @@
     let holds = [];
     if (currentView === 'detail' && currentProblem) {
       holds = problemHoldOrder(currentProblem).map(h => detailMirror ? mirrorHold(h) : h);
+      // Specific feet are part of the route's framing.
+      if (feetUsable()) holds = holds.concat(problemFeetHolds(currentProblem).map(f => detailMirror ? mirrorFoot(f) : f));
     } else if (currentView === 'circuit-detail' && currentCircuit) {
       holds = circuitSeq(currentCircuit);
     }
-    const pts = holds.map(h => HOLD_MAP[h]).filter(Boolean);
+    const pts = holds.map(h => HOLD_MAP[h] || (FOOT_HOLDS && FOOT_HOLDS[h])).filter(Boolean);
     if (!pts.length) return null;
     const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
     return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
@@ -637,7 +692,8 @@
       const typed = (document.getElementById('create-name').value || '').trim();
       const n = role => Object.values(createRoles).filter(r => r === role).length;
       name.textContent = typed || (editingProblemId ? 'Edit problem' : 'New problem');
-      meta.textContent = `${n('start')} start · ${n('int')} holds · ${n('finish')} finish`;
+      meta.textContent = `${n('start')} start · ${n('int')} holds · ${n('finish')} finish`
+        + (createFeetHolds.length ? ` · ${createFeetHolds.length} feet` : '');
     } else {
       name.textContent = 'Tap holds to set them';
       meta.textContent = 'Pinch or drag to look around';
@@ -794,7 +850,7 @@
   // hold of the board as it settles back on the page).
   let fsCreateEmptyTap = null;  // { t, x, y } of the last tap that missed every hold
   function fsCreateTap(p) {
-    const empty = !nearestHold(p.x, p.y, fsWrap);
+    const empty = fsView() === 'create' ? !createPick(p.x, p.y, fsWrap) : !nearestHold(p.x, p.y, fsWrap);
     const now = Date.now(), prev = fsCreateEmptyTap;
     fsCreateEmptyTap = empty ? { t: now, x: p.x, y: p.y } : null;
     if (!empty || !prev || now - prev.t >= 300 || Math.hypot(p.x - prev.x, p.y - prev.y) > 40) return;

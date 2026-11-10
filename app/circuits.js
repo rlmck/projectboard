@@ -759,9 +759,16 @@
     document.getElementById('cc-reset').setAttribute('aria-label',
       editing || moving ? 'Undo all changes' : 'Clear all holds');
     document.getElementById('cc-move-note').hidden = !moving;
+    // Circuits have no feet: say what the problem's rule loses.
     const feet = moving ? feetRule(moving) : 'any';
-    document.getElementById('cc-move-feet').hidden = feet === 'any';
-    document.getElementById('cc-move-feet-rule').textContent = feetLabel(feet);
+    const feetEl = document.getElementById('cc-move-feet');
+    feetEl.hidden = feet === 'any';
+    if (feet === 'specific') {
+      const n = problemFeetHolds(moving).length;
+      feetEl.innerHTML = `Circuits have no feet rule, so this problem’s <b>Specific feet</b> won’t carry over: its ${n} foothold${n === 1 ? '' : 's'} will be dropped.`;
+    } else if (feet !== 'any') {
+      feetEl.innerHTML = `Circuits have no feet rule, so this problem’s <b>${escHtml(feetLabel(feet))}</b> rule will be dropped.`;
+    }
     updateCcMoveGrade();
   }
 

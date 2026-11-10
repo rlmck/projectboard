@@ -298,11 +298,9 @@
   document.getElementById('create-back').addEventListener('click', () => confirmLeaveEdit(goBack));
   document.getElementById('create-reset').addEventListener('click', onCreateReset);
 
-  // Tap the board: cycle the nearest hold's role.
-  document.getElementById('create-board').addEventListener('click', e => {
-    const h = nearestHold(e.clientX, e.clientY);
-    if (h) cycleHold(h);
-  });
+  // Tap the board: cycle the nearest hand hold's role, or pick or drop a
+  // foothold (Specific feet; createPick in authoring.js says which).
+  document.getElementById('create-board').addEventListener('click', e => createTap(e.clientX, e.clientY));
 
   // Two fingers on the Create board belong to the viewer's pinch (core.js), not
   // to the browser's scrolling, which would cancel the pointers. One finger still
@@ -628,7 +626,7 @@
     if (chRunning() || (currentView === 'challenge' && challengeRun)) return true;
     if (currentView === 'create') {
       if (editingProblemId) return problemEditDirty();   // an Edit: only if something changed
-      if (Object.keys(createRoles).length) return true;
+      if (Object.keys(createRoles).length || createFeetHolds.length) return true;
       if (createGrade) return true;
       const n = document.getElementById('create-name');
       if (n && n.value.trim()) return true;

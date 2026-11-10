@@ -110,9 +110,11 @@
   // ── Problems page ─────────────────────────────────────────────────────────────
   const wallSelected = () => (wallSelId === null ? null : allProblems.find(p => String(p.id) === String(wallSelId)) || null);
 
-  function wallMetaHtml(p) {
+  // feet: the chosen problem's bar also shows its feet rule (not the list's cards).
+  function wallMetaHtml(p, feet = false) {
     return `
       <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
+      ${feet ? feetBadgeHtml(p) : ''}
       ${p.is_benchmark ? benchMarkSvg() : ''}
       ${newBadgeHtml(p)}
       <span class="meta-setter">${escHtml(setterName(p))}</span>`;
@@ -205,7 +207,7 @@
     if (wallPicking('problems')) wallRenderPickBar('problems');
     else wallEl('wall-sel').innerHTML = p
       ? `<h1 class="wall-name">${escHtml(displayName(p))}</h1>
-         <div class="problem-meta wall-meta">${wallMetaHtml(p)}</div>`
+         <div class="problem-meta wall-meta">${wallMetaHtml(p, true)}</div>`
       : `<h1 class="wall-name wall-name-empty">Pick a problem</h1>
          <p class="wall-hint">Tap one in the list to light it up on the wall.</p>`;
     const mirror = wallEl('wall-mirror');
@@ -561,10 +563,10 @@
     offensive: 'Please pick a different name.',
     grade: 'Pick a grade.',
     holds: 'Those holds don’t make a problem yet: check the start, holds and finish.',
-    feet: 'Pick a feet rule.'
+    feet: 'The feet didn’t save: pick the feet rule or the footholds again.'
   };
 
-  const wallCreateDirty = () => !!(Object.keys(createRoles).length || createGrade
+  const wallCreateDirty = () => !!(Object.keys(createRoles).length || createFeetHolds.length || createGrade
     || wallCreateName.trim() || createFeet !== 'any');
 
   // Create is offered only once the database says the wall key works.
@@ -628,8 +630,9 @@
   }
 
   function wallCreateTap(e) {
-    const h = nearestHold(e.clientX, e.clientY, wallEl('wall-c-board'));
-    if (h) cycleHold(h);               // redraws (applyCreateRoles) and lights the board (previewEdited)
+    // A hand hold cycles (cycleHold redraws and lights the board); a foothold is
+    // picked or dropped (Specific feet, never lit): createPick in authoring.js.
+    createTap(e.clientX, e.clientY, wallEl('wall-c-board'));
   }
 
   function wallPickGrade(g) {
@@ -795,7 +798,7 @@
     const { data, error } = await sb.rpc('wall_create_problem', {
       p_key: WALL_KEY, p_name: name, p_grade: createGrade,
       p_starts: holdsWithRole('start'), p_ints: holdsWithRole('int'),
-      p_finish: holdsWithRole('finish')[0], p_feet: createFeet });
+      p_finish: holdsWithRole('finish')[0], p_feet: createFeet, p_feet_holds: createFeetCol() });
     btn.classList.remove('casting'); btn.textContent = 'Save';
     wallCreateNet();
     if (error || !data || !data.id) {
