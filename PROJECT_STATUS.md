@@ -41,7 +41,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
-- **Ross:** the db/41 checks (9 Nov report); run Board Setup with the final cartoon: **Start again** on the old draft (plan → Next steps); decide D6 and P5.
+- **Ross:** the db/41 checks (9 Nov report); run Board Setup with the final cartoon: **Start again** on the old draft (plan → Next steps); D6/P5 call.
 - **Ross:** the uncommitted session 2b work on the laptop (db/43, Pi): ship it or not.
 - **Ross: test the opening hours** (live 7 Nov): see the 2026-11-07 session entry's checklist.
 - Ross (low priority): delete the local passphrase hand-out file (and empty the Recycle Bin) once all 7 migrated accounts have signed in.
@@ -61,7 +61,7 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Changed:** the trace fits today's outlines onto the cartoon (`tracePriorFit`); Review shows only exceptions: Looks right, Accept all unflagged, **Tap to trace**, Use fitted shape, a turn handle. Old drafts: Start again. Trace 3.5× faster. Plan, overview §4.8d.
   - **Tested:** final cartoon 181 auto-accepted, 7 to check, 50 footholds (~156 actions → ~13); `tools/trace_prior_score.js` passes; Chrome 390 px (stubbed); pi + console tests.
   - **Live:** `27ca236`, CACHE `pb-360d13ebdc`.
-  - **Left:** Ross: Start again with the final cartoon (plan); decide D6/P5.
+  - **Left:** Ross: Start again, final cartoon (plan); D6/P5.
 - **2026-11-10, Claude Code (board setup: line up by four holds; TODO 13).**
   - **Changed:** today's image is cropped, so the first run's "Today's board" corners tab became a **Line up** step: four hand holds tapped on today's image, then on the cartoon; their homography is `bsMatch()`'s first guess (plan, overview §4.8d).
   - **Tested:** Chrome, phone width, writes stubbed, today's = fallback minus its bottom 30%: 188/188 holds matched their own shape; refusals; draft.
