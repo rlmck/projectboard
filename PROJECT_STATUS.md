@@ -15,6 +15,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **Opening hours (7 Nov 2026):** per day in the Pi's `config.env` (Mon–Thu 15:30–22:00, Fri closed, Sat–Sun 09:30–15:00); outside them the LEDs and wall screen are off and casts ignored. PB Console edits them and has Stay on until (`pi/README.md` → Opening hours).
 - **Holds in the database (db/41, db/42):** the `holds` table is the source of each hold's name, kind, LED, position, outline and mirror partner (`board_config` copies it); checked by `tools/check_holds.py`. **Board setup** (Admin → Board Setup) publishes a whole board with Undo; Ross published the new board on 10 Nov (188 hand holds, 50 footholds). **Edit holds** adds/deletes/pairs footholds and turns holds. **Specific feet** (10 Nov): footholds picked in Create/Edit, yellow, never lit (overview §4.8a, §4.8d).
 - **Hardware:** temporary wiring (`pi/README.md` → "Wiring"); the Pi is in the junction box. Two YU0510 5 V 10 A supplies (both needed). No relays or level shifter fitted yet (3.3 V data works; both parts have arrived). A USB webcam shows the back of the board (Tailscale only).
+- **Pi deploys are automatic (10 Nov 2026):** `console/autodeploy.py` keeps the Pi on main (a scheduled task every 10 min, and `/ship`): 15 quiet minutes in opening hours, straight away outside them (`pi/README.md` → Deploying).
 - **PB Console** (`console/`, `bash console/start.sh`): health, services, board controls, logs, config, Pi deploy, release, LED map, test cast, circuit tracks, Activity, the R8 checklist, backups, runbook (`console/README.md`). Phase 13 (Data) isn't built; phase 14 (Power) waits for the relays.
 
 ## Decisions
@@ -38,6 +39,7 @@ The ordered to-do list (next steps, backlog, and what not to build yet) lives in
 
 ## Waiting on
 - **Ross:** Edit holds: 3 of the 5 missing footholds are in (beside F3 and M2, a pair, and on J1); the pair beside **G1 and N1** isn't yet; after the next publish, Claude snapshots + ships (the 10 Nov board is snapshotted, `c669ae8`). Sign in as Pablo with the new PIN once (reset 10 Nov). The db/41 checks (9 Nov report). **Try Specific feet** (plan → Session 3 → "Try it").
+- **Ross: run `python console/autodeploy.py --install` once** in Git Bash at the repo root (the scheduled task; Claude's session may not create one). Until then only `/ship` deploys.
 - **Claude (next session): re-baseline two score tools on the new bundled board.** Since the 10 Nov snapshot, `tools/trace_prior_score.js` scores 179 unchanged holds (bar 180) and `tools/holdedit_score.js` finds one tap spot that isn't a foothold (it auto-picks spots that were the missing footholds on the old board). Both pass at `b98c121` and fail at `c669ae8` (the snapshot alone); no app code they load changed. Thresholds left as they are until then.
 - **Parked branch `parked/2b-camera-led-mapping`:** camera LED mapping (2b), unfinished, never shipped; only for a full rearrange or another gym (`TODO.md` → Not now). Its db/43 is live and harmless.
 - **Ross: test the opening hours** (live 7 Nov): see the 2026-11-07 session entry's checklist.
@@ -53,10 +55,16 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-10, Claude Code (automatic Pi deploys; the console banner).**
+  - **Cause:** the yellow banner was the config.env drift check: the laptop's `pi/config.env` had `STRIP_LEDS` from the parked 2b work (nothing on main reads it); removed. The Pi was also behind main (pb-ledmap, the 10 Nov snapshot).
+  - **Changed:** `console/autodeploy.py` (clean export of main, pi tests, busy check, deploy); busy = 15 min, opening-hours aware, counts wall touches (`pb-touchwatch`); the banner is now a sidebar notice for real problems only. CLAUDE.md rule 2, `/ship`, `/pi-deploy`, both READMEs.
+  - **Live:** console + Pi only, CACHE unchanged. Pi deployed by autodeploy at 20:29 (open, 54 min quiet); no listener restart.
+  - **Left:** Ross: `--install` (Waiting on).
+
 - **2026-11-10, Claude Code (token audit).**
   - **Changed:** `/start` reads only the status and TODO (not CLAUDE.md again, not the 131 KB overview whole); big docs are read by section (CLAUDE.md rule 1); `tools/wait-live.sh` waits for a deploy in one command (`/ship`, `/staging`, `/rollback`); status keeps 3 entries under 800 bytes, cap 12 KB; Decisions no longer repeat CLAUDE.md; memory index trimmed. `docs/token-audit.md`.
   - **Live:** docs and tooling only; CACHE unchanged. No safety gate touched.
-  - **Left:** Ross: add `Bash(bash tools/wait-live.sh*)` to `.claude/settings.json` (Claude can't edit its own permissions). Bigger ideas in the audit.
+  - **Left:** done (Ross's `wait-live.sh` permission committed, `eff15d8`). Bigger ideas in the audit.
 
 - **2026-11-10, Claude Code (Specific feet in Create, Edit and the problem view; board setup session 3; TODO 13 done).**
   - **Snapshot:** the 10 Nov board into the offline copy (`c669ae8`). Footholds: 3 of the 5 added by Ross (beside F3 and M2, a pair, and on J1); G1/N1's pair not yet.
@@ -65,11 +73,3 @@ Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which si
   - **Live:** `80e2e4e`, CACHE `pb-06484e4a19`.
   - **Left:** Ross: the checklist below; G1/N1 footholds. Claude: re-baseline two score tools (Waiting on). Older app versions show Specific feet as Any (overview §13).
   - **Ross's checklist:** `docs/board-setup-plan.md` → Session 3 → "Try it".
-
-- **2026-11-10, Claude Code (Edit holds; a sign-in reset; TODO 13).**
-  - **Sign-in:** an admin's own older account was made a PIN account at their request (the same password form and `pin` flag as a PIN sign-up; logged as `reset_passphrase`; sessions signed out); no other account changed.
-  - **Changed:** Admin → Board Setup → **Edit holds** (`app/holdedit.js`): add (Tap to trace / Draw), pair, delete footholds; turn a hold with its partner the other way, the drawing too (background filled, stripe edges straight); draft, Undo/Redo, one publish. No migration. `bsFootNameList()` shared with setup. Plan, overview §4.8d, CLAUDE.md (14 scripts).
-  - **Found:** 5 footholds missed beside F3, M2, G1, N1 and on J1 (inside its outline) (plan).
-  - **Tested:** `tools/holdedit_score.js` (live + bundled board); payload through the real publish + undo (rolled back); Chrome 390 px, writes stubbed; trace scores unchanged; pi + console tests.
-  - **Live:** `56c96c1`, CACHE `pb-fba4c8bea5`.
-  - **Left:** Ross: footholds, publish; then snapshot + ship. Next: Specific feet (plan).

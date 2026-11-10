@@ -185,7 +185,7 @@ def problem(kind, **kw):
     if kind == 'task':
         return {'kind': kind, 'tab': 'deploy',
                 'title': "Automatic Pi updates aren't set up on this laptop.",
-                'todo': 'In Git Bash at the repo root, run python console/autodeploy.py --install (or ask Claude).'}
+                'todo': 'In Git Bash at the repo root, run python console/autodeploy.py --install once.'}
     raise ValueError(kind)
 
 

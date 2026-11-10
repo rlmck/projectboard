@@ -115,6 +115,22 @@ class Run(unittest.TestCase):
         autodeploy.drop_lock()
 
 
+class ServerAttention(unittest.TestCase):
+    """server.Console.attention with a state file from a real run (a missing import broke the overview once)."""
+
+    def test_attention_reads_the_state(self):
+        import server
+        tmp = tempfile.mkdtemp()
+        state = os.path.join(tmp, 'state.json')
+        with open(state, 'w') as f:
+            json.dump({'checked_at': datetime.datetime.now().isoformat(timespec='seconds'), 'result': 'deployed'}, f)
+        fake = type('A', (), {'_task_ok': None, '_task_at': 0.0, '_kick_at': 0.0})()
+        with mock.patch.object(autodeploy, 'STATE', state), mock.patch.object(autodeploy, 'task_installed', lambda: True),                 mock.patch.object(autodeploy, 'start_background') as kick:
+            self.assertEqual(server.Console.attention(fake, None), [])
+            self.assertEqual(server.Console.attention(fake, 'diff')[0]['kind'], 'config')
+            kick.assert_not_called()                     # checked just now: no extra run
+
+
 class BusyRules(unittest.TestCase):
     """probe.busy: 15 quiet minutes in opening hours, never busy at night, LED mapping always busy."""
 

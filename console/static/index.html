@@ -17,6 +17,7 @@
 <div class="shell">
 <aside class="side">
   <div class="brand"><span class="mark" aria-hidden="true"></span>PB Console</div>
+  <div id="attention" class="attention" role="status" aria-live="polite" hidden></div>
   <nav class="nav" role="tablist" aria-label="Sections">
     <button role="tab" data-tab="overview" aria-selected="true"><span class="nav-dot" id="nav-dot-overview"></span>Overview</button>
     <div class="nav-group">Board</div>
@@ -40,7 +41,6 @@
     <div class="nav-group">Help</div>
     <button role="tab" data-tab="runbook"><span class="nav-dot" id="nav-dot-runbook"></span>Runbook</button>
   </nav>
-  <div id="attention" class="attention" role="status" aria-live="polite" hidden></div>
   <div class="side-foot">
     <button id="palette-open" class="kbd-hint" title="Every section and quick action">Search actions <kbd>Ctrl K</kbd></button>
     <div class="side-status"><span id="lock-state" class="pill">idle</span><button id="refresh" class="btn small" title="Probe the Pi and the site now">Refresh</button></div>

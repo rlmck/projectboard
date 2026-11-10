@@ -103,7 +103,8 @@ def compare(text, root_hashes=''):
     known_dirs = ('/opt/projectboard/ledmap/__pycache__', '/opt/projectboard/listener/__pycache__')
     extras = [p for p in extra if p not in placed and not p.startswith(known_dirs) and not p.endswith('.pyc')
               and not p.rstrip('/').endswith('__pycache__')
-              and p not in ('/opt/projectboard/listener/patterns', '/etc/systemd/system/pb-ledmap.service')]
+              and p not in ('/opt/projectboard/listener/patterns', '/etc/systemd/system/pb-ledmap.service',
+                            '/etc/systemd/system/pb-firstboot.service')]     # the card's first boot (pi/firstboot/)
     return {'files': rows, 'extra': [{'path': p, 'pull_to': pull_target(p)} for p in extras], 'nm': nm}
 
 
