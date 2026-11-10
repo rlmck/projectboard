@@ -18,8 +18,12 @@
 //            or on a later run today's corners -> board -> the cartoon's corners),
 //            refined by an affine fit to the first matches: each hand hold keeps its
 //            id, name and LED
-//   review   every shape: a hand hold (fix its match), a foothold, or deleted; add,
-//            move or redraw any outline. Every hand hold needs exactly one shape.
+//            With today's hand holds as a prior (bsPrior), every hold's outline is
+//            fitted where it is on the cartoon, and only the exceptions are left to check
+//   review   the exceptions first (flagged or turned hand holds, new footholds); any
+//            shape: a hand hold (fix its match), a foothold, or deleted; Tap to trace,
+//            use the fitted shape, add, move, turn or redraw any outline. Every hand hold
+//            needs exactly one shape.
 //   mirror   pairs by reflecting about the board's centre line, nearest hold of the
 //            same kind (never hand <-> foot); hand pairs that differ from today's are
 //            flagged and keep today's unless changed
@@ -31,6 +35,7 @@
 
 const BS_WALL = 'HangoutPortland';
 const BS_DRAFT = 'pb-board-setup';
+const BS_DRAFT_V = 2;            // the draft's format: 2 since the prior-guided trace (10 Nov 2026)
 const BS_CARTOON_MAX = 2000;     // the cartoon is stored (and shown in the app) at most this many px across
 const BS_PHOTO_MAX = 3000;       // the photo, for camera LED mapping (2b)
 const BS_MATCH = 0.025;          // a shape matches a hold within this share of the board's width
@@ -59,6 +64,10 @@ const BS = {
   tool: null,          // 'draw' | 'redraw' | 'move' | 'pair' | null
   undo: [],
   traced: false,
+  xf: null,            // today's image % -> cartoon % (bsMatch)
+  fits: {},            // hand hold id -> today's outline fitted on the cartoon [[x%, y%]…] (bsPrior)
+  stats: null,         // what the prior did: { traced, fitted, flag, changed, feet, dropped, ms }
+  masks: null,         // the trace's masks (Tap to trace), at the trace's size; not saved
   busy: false,
   confirmUndo: 0,
   v: { s: 1, tx: 0, ty: 0, fitW: 0, sw: 0, sh: 0 },
@@ -148,7 +157,8 @@ function bsSave() {
     const img = {};
     Object.keys(BS.img).forEach(k => { const m = BS.img[k]; if (m && m.path) img[k] = { path: m.path, w: m.w, h: m.h }; });
     localStorage.setItem(BS_DRAFT, JSON.stringify({
-      t: Date.now(), step: BS.step, img, corners: BS.corners, shapes: BS.shapes, seq: BS.seq,
+      v: BS_DRAFT_V, t: Date.now(), step: BS.step, img, corners: BS.corners, shapes: BS.shapes, seq: BS.seq,
+      xf: BS.xf, fits: BS.fits, stats: BS.stats,
       pred: BS.pred, mirror: BS.mirror, flags: BS.flags, traced: BS.traced, lineup: BS.lineup,
       version: BS.live && BS.live.version,
     }));
@@ -269,10 +279,18 @@ function bsRenderPage() {
       </div>
       <p class="bs-muted">Publishing a new board keeps every hand hold’s name, LED and problems: only its position, outline and mirror partner change. Footholds come from the new photo.</p>
     </div>
-    ${draft ? `
+    ${draft && draft.v !== BS_DRAFT_V ? `
+    <div class="bs-card">
+      <div class="bs-card-title">Your draft is from an older version</div>
+      <p class="bs-muted">Saved on this phone ${escHtml(when(draft.t))}, at <b>${escHtml(BS_STEP_NAMES[draft.step] || draft.step)}</b>, with the cartoon you uploaded then. Board setup now uses today’s holds to trace the cartoon, so only the holds that changed are left to check. <b>Start again</b> to pick the photo and your final cartoon.</p>
+      <div class="bs-row">
+        <button class="ol-btn ol-publish" data-act="new">Start again</button>
+        <button class="ol-btn" data-act="resume">Carry on with it</button>
+      </div>
+    </div>` : draft ? `
     <div class="bs-card">
       <div class="bs-card-title">Your draft</div>
-      <p class="bs-muted">Saved on this phone ${escHtml(when(draft.t))}, at <b>${escHtml(BS_STEP_NAMES[draft.step] || draft.step)}</b>.</p>
+      <p class="bs-muted">Saved on this phone ${escHtml(when(draft.t))}, at <b>${escHtml(BS_STEP_NAMES[draft.step] || draft.step)}</b>. To use a different cartoon, Start again below.</p>
       <div class="bs-row">
         <button class="ol-btn ol-publish" data-act="resume">Carry on</button>
         <button class="ol-btn" data-act="discard">Discard it</button>
@@ -281,7 +299,7 @@ function bsRenderPage() {
     <div class="bs-card">
       <div class="bs-card-title">Set up a new board</div>
       <p class="bs-muted">You’ll need a straight-on photo of the whole board, footholds included, and the cartoon made from it (same framing).</p>
-      <button class="ol-btn ${draft ? '' : 'ol-publish'} bs-wide" data-act="new">${draft ? 'Start again' : 'Start'}</button>
+      <button class="ol-btn ${draft ? '' : 'ol-publish'} bs-wide" data-act="new">${draft ? 'Start again (drops the draft)' : 'Start'}</button>
     </div>
     ${last ? `
     <div class="bs-card">
@@ -402,6 +420,8 @@ function bsRenderBoard() {
   BS.shapes.forEach(s => {
     if (!s.pts || s.pts.length < 3) return;
     let cls = 'bs-s ' + s.kind;
+    if (s.chk === 'cand') cls += ' cand';
+    else if (s.chk && BS.step === 'review') cls += ' chk';
     if (s.key === BS.sel) cls += ' sel';
     if (partner && s.key === partner.key) cls += ' partner';
     if (BS.step === 'mirror' && s.kind === 'hand' && BS.flags.some(f => f.id === s.id)) cls += ' flag';
@@ -438,6 +458,8 @@ function bsRenderOver() {
       const [x, y] = bsScreen(p[0], p[1]);
       html += `<div class="bs-miss ${BS.sel === 'hold:' + id ? 'sel' : ''}" style="left:${x}px;top:${y}px">${escHtml(bsName(id))}</div>`;
     });
+    const rh = bsRotHandle();
+    if (rh) html += `<div class="bs-rot" style="left:${rh[0]}px;top:${rh[1]}px">↻</div>`;
   }
   const s = BS.sel && bsShape(BS.sel);
   if (s && s.pts.length && BS.step !== 'corners' && BS.step !== 'lineup') {
@@ -458,7 +480,22 @@ function bsCounts() {
     missing: hands - matched,
     feet: BS.shapes.filter(s => s.kind === 'foot').length,
     extra: BS.shapes.filter(s => s.kind === 'extra').length,
+    check: BS.shapes.filter(s => s.kind === 'hand' && s.chk).length,       // flagged or turned: to confirm
+    cand: BS.shapes.filter(s => s.chk === 'cand').length,                   // new footholds not yet kept
+    ok: BS.shapes.filter(s => s.kind === 'hand' && !s.chk).length,
   };
+}
+// What Review still asks for, in the order Next to fix goes through it.
+function bsQueue() {
+  const order = { flag: 0, changed: 1, cand: 2 };
+  return BS.shapes.filter(s => s.chk).sort((a, b) => order[a.chk] - order[b.chk]);
+}
+const bsOpen = c => c.missing || c.extra || c.check || c.cand;
+function bsTraceSummary() {
+  const st = BS.stats;
+  if (!st) return `Traced ${BS.shapes.length} shapes. Next, check them.`;
+  const c = bsCounts();
+  return `Traced from today’s holds: <b>${c.ok}</b> matched, <b>${c.check}</b> to check, <b>${c.feet}</b> footholds. Next, check them.`;
 }
 function bsMissing() {
   const have = new Set(BS.shapes.filter(s => s.kind === 'hand').map(s => s.id));
@@ -481,7 +518,7 @@ function bsRenderPanel() {
   if (BS.step === 'trace') {
     p.innerHTML = `
       <p class="bs-hint">${BS.busy ? 'Tracing the holds… this takes a few seconds.' : BS.traced
-        ? `Traced ${BS.shapes.length} shapes. Next, check them.` : 'Find every hold’s outline on the cartoon. You can fix anything it gets wrong next.'}</p>
+        ? bsTraceSummary() : bsHasPriorHolds() ? 'Find every hold’s outline on the cartoon, starting from today’s holds. Only what changed is left to check.' : 'Find every hold’s outline on the cartoon. You can fix anything it gets wrong next.'}</p>
       <div class="ol-row">${back}<button class="ol-btn ol-publish" data-act="${BS.traced ? 'next' : 'trace'}" ${BS.busy ? 'disabled' : ''}>${BS.traced ? 'Next' : 'Trace the holds'}</button></div>
       ${BS.traced && !BS.busy ? '<div class="ol-row bs-mt"><button class="ol-btn" data-act="trace">Trace again (loses your fixes)</button></div>' : ''}`;
     return;
@@ -495,23 +532,30 @@ function bsReviewPanel() {
   const c = bsCounts();
   const back = `<button class="ol-btn" data-act="prev">Back</button>`;
   const status = `<div class="bs-status">
-      <span class="${c.missing ? 'bad' : 'ok'}">${c.matched}/${c.hands} hand holds</span>
-      <span>${c.feet} footholds</span>
-      <span class="${c.extra ? 'bad' : 'ok'}">${c.extra} extra</span>
-      <button class="bs-link-btn" data-act="nextissue" ${c.missing || c.extra ? '' : 'disabled'}>Next to fix ›</button>
+      ${BS.stats || c.check || c.cand
+        ? `<span class="ok">${c.ok} matched</span><span class="${c.check ? 'bad' : 'ok'}">${c.check} to check</span><span>${c.feet} footholds${c.cand ? ` (${c.cand} new)` : ''}</span>${c.missing ? `<span class="bad">${c.missing} with no outline</span>` : ''}`
+        : `<span class="${c.missing ? 'bad' : 'ok'}">${c.matched}/${c.hands} hand holds</span><span>${c.feet} footholds</span>`}
+      ${c.extra ? `<span class="bad">${c.extra} extra</span>` : ''}
+      <button class="bs-link-btn" data-act="nextissue" ${bsOpen(c) ? '' : 'disabled'}>Next to fix ›</button>
     </div>`;
+  if (BS.tool === 'tap') {
+    return status + `<p class="bs-hint">${BS.busy ? 'Getting the cartoon ready…' : 'Tap inside the hold to trace just that hold. Pinch to zoom first if it’s small.'}</p>
+      <div class="ol-row"><button class="ol-btn" data-act="tool-off">Cancel</button></div>`;
+  }
   if (BS.tool === 'draw' || BS.tool === 'redraw') {
     return status + `<p class="bs-hint">Draw round the hold with one finger (two fingers zoom).</p>
       <div class="ol-row"><button class="ol-btn" data-act="tool-off">Cancel</button></div>`;
   }
   if (BS.tool === 'move') {
-    return status + `<p class="bs-hint">Drag to move the outline.</p>
+    return status + `<p class="bs-hint">Drag the outline to move it; drag the ↻ handle to turn it.</p>
       <div class="ol-row"><button class="ol-btn ol-publish" data-act="tool-off">Done</button></div>`;
   }
+  const tapBtn = `<button class="ol-btn" data-act="tap">Tap to trace</button>`;
   if (BS.sel && BS.sel.startsWith('hold:')) {
-    const id = BS.sel.slice(5);
-    return status + `<p class="bs-hint"><b>${escHtml(bsName(id))}</b> has no outline yet. Draw it, or pick an extra shape and make it ${escHtml(bsName(id))}.</p>
-      <div class="ol-row"><button class="ol-btn" data-act="desel">Close</button><button class="ol-btn ol-publish" data-act="draw-for">Draw ${escHtml(bsName(id))}</button></div>`;
+    const id = BS.sel.slice(5), nm = escHtml(bsName(id));
+    return status + `<p class="bs-hint"><b>${nm}</b> has no outline yet. Tap to trace it, draw it, or pick an extra shape and make it ${nm}.</p>
+      <div class="ol-row">${tapBtn}${BS.fits[id] ? `<button class="ol-btn" data-act="usefit">Use fitted shape</button>` : ''}<button class="ol-btn" data-act="draw-for">Draw ${nm}</button></div>
+      <div class="ol-row"><button class="ol-btn" data-act="desel">Close</button></div>`;
   }
   const s = BS.sel && bsShape(BS.sel);
   if (s) {
@@ -520,17 +564,32 @@ function bsReviewPanel() {
       bsLiveHand().filter(h => h.id !== s.id && !bsMissing().includes(h.id))
         .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }))
         .map(h => `<option value="${escAttr(h.id)}">${escHtml(h.name)}</option>`));
-    return status + `
+    const fit = s.kind === 'hand' && BS.fits[s.id] && s.src !== 'fitted';
+    return status + bsCheckHint(s) + `
       <div class="ol-row"><select class="ol-jump" data-act="assign" aria-label="Make this shape a hand hold">${opts.join('')}</select>
-        <button class="ol-btn ${s.kind === 'foot' ? 'on' : ''}" data-act="foot">${s.kind === 'foot' ? 'Foothold ✓' : 'Foothold'}</button></div>
-      <div class="ol-row"><button class="ol-btn" data-act="move">Move</button><button class="ol-btn" data-act="redraw">Redraw</button>
-        <button class="ol-btn bs-danger" data-act="delete">Delete</button><button class="ol-btn" data-act="desel">Close</button></div>`;
+        ${s.chk === 'cand' ? '' : `<button class="ol-btn ${s.kind === 'foot' ? 'on' : ''}" data-act="foot">${s.kind === 'foot' ? 'Foothold ✓' : 'Foothold'}</button>`}</div>
+      <div class="ol-row">${tapBtn}${fit ? `<button class="ol-btn" data-act="usefit">Use fitted shape</button>` : ''}<button class="ol-btn" data-act="move">Move</button><button class="ol-btn" data-act="redraw">Redraw</button></div>
+      <div class="ol-row"><button class="ol-btn bs-danger" data-act="delete">Delete</button><button class="ol-btn" data-act="desel">Close</button></div>`;
   }
   return status + `
-    <div class="ol-row"><button class="ol-btn" data-act="draw">Add a shape</button>
-      <button class="ol-btn" data-act="extras-feet" ${c.extra ? '' : 'disabled'}>All extras → footholds</button>
+    <div class="ol-row">${c.cand ? `<button class="ol-btn ol-publish" data-act="acceptall">Accept all unflagged (${c.cand} footholds)</button>` : ''}
+      ${c.extra ? `<button class="ol-btn" data-act="extras-feet">All extras → footholds</button>` : ''}</div>
+    <div class="ol-row">${tapBtn}<button class="ol-btn" data-act="draw">Add a shape</button>
       <button class="ol-btn" data-act="undo-edit" ${BS.undo.length ? '' : 'disabled'}>Undo</button></div>
-    <div class="ol-row">${back}<button class="ol-btn ol-publish" data-act="next" ${c.missing || c.extra ? 'disabled' : ''}>Next</button></div>`;
+    ${c.check ? `<p class="bs-hint">${c.check} hand hold${c.check === 1 ? '' : 's'} to check: tap <b>Next to fix ›</b>.</p>` : ''}
+    <div class="ol-row">${back}<button class="ol-btn ol-publish" data-act="next" ${bsOpen(c) ? 'disabled' : ''}>Next</button></div>`;
+}
+
+// Why a shape is in the queue, and the button that settles it.
+function bsCheckHint(s) {
+  if (!s.chk) return '';
+  const f = s.fit || {};
+  let why;
+  if (s.chk === 'cand') why = `A new foothold, found where no hand hold is. Keep it, or Delete it if it isn’t one.`;
+  else if (s.chk === 'changed') why = `<b>${escHtml(bsName(s.id))}</b> looks turned (about ${Math.abs(f.turn || 0)}°)${f.grow && Math.abs(f.grow - 1) > 0.15 ? ' or resized' : ''} since today’s board. Check its outline${s.src === 'traced' ? ' (traced from the cartoon)' : ''}.`;
+  else if ((f.score || 0) < 0.5) why = `Nothing like <b>${escHtml(bsName(s.id))}</b> was found here: is it on the cartoon? Its old outline is shown where it should be. Tap to trace or Draw it, or Move it.`;
+  else why = `<b>${escHtml(bsName(s.id))}</b>: no clear outline on the cartoon, so today’s outline is shown fitted here. Check it, or Tap to trace it.`;
+  return `<p class="bs-hint">${why}</p><div class="ol-row"><button class="ol-btn ol-publish" data-act="ok">${s.chk === 'cand' ? 'Keep this foothold' : 'Looks right'}</button></div>`;
 }
 
 function bsMirrorPanel() {
@@ -572,11 +631,12 @@ function bsPublishPanel() {
     <ul class="bs-checks">
       <li class="${c.missing ? 'bad' : 'ok'}">${c.matched} of ${c.hands} hand holds have one outline each (names and LEDs unchanged)</li>
       <li class="${c.extra ? 'bad' : 'ok'}">${c.extra ? c.extra + ' extra shapes left' : 'No extra shapes'}</li>
+      ${c.check || c.cand ? `<li class="bad">${c.check + c.cand} shapes still to check in Review</li>` : ''}
       <li class="ok">${c.feet} footholds${c.feet ? `, FT1–FT${c.feet}` : ''}${dropped ? ` (${dropped} of today’s footholds weren’t found and will go)` : ''}</li>
       <li class="${problems.length ? 'bad' : 'ok'}">${problems.length ? escHtml(problems[0]) : 'Mirror pairs: every pair is two holds of the same kind'}</li>
       <li class="ok">The cartoon becomes the app’s board picture. Undo puts today’s back.</li>
     </ul>
-    <div class="ol-row">${back}<button class="ol-btn ol-publish" data-act="publish" ${c.missing || c.extra || problems.length || BS.busy ? 'disabled' : ''}>${BS.busy ? 'Publishing…' : 'Publish the board'}</button></div>`;
+    <div class="ol-row">${back}<button class="ol-btn ol-publish" data-act="publish" ${bsOpen(c) || problems.length || BS.busy ? 'disabled' : ''}>${BS.busy ? 'Publishing…' : 'Publish the board'}</button></div>`;
 }
 
 // ── steps: photos ─────────────────────────────────────────────────────────────
@@ -587,7 +647,7 @@ async function bsPickFile(input) {
     const m = await bsReadFile(f, kind === 'cartoon' ? BS_CARTOON_MAX : BS_PHOTO_MAX);
     BS.img[kind] = m;
     delete BS.corners[kind];
-    if (kind === 'cartoon') { BS.shapes = []; BS.traced = false; BS.mirror = null; }
+    if (kind === 'cartoon') { BS.shapes = []; BS.traced = false; BS.mirror = null; BS.xf = null; BS.fits = {}; BS.stats = null; BS.masks = null; }
   } catch (e) {
     console.warn('board setup: image', e);
     showToast('Couldn’t read that picture', 'error');
@@ -803,27 +863,11 @@ async function bsTrace() {
   BS.busy = true; bsRenderPanel();
   await new Promise(r => setTimeout(r, 60));            // let "Tracing…" paint first
   try {
-    const m = BS.img.cartoon;
-    const k = TRACE_WORK / Math.max(m.w, m.h);
-    const w = Math.round(m.w * k), h = Math.round(m.h * k);
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    const ctx = c.getContext('2d', { willReadFrequently: true });
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(m.bmp, 0, 0, w, h);
-    const data = ctx.getImageData(0, 0, w, h);
-    const roi = BS.corners.cartoon.map(p => [p[0] / 100 * w, p[1] / 100 * h]);
-    const res = traceHolds(data, { roi: bsGrowQuad(roi, 0.02) });
-    BS.seq = 0;
-    BS.shapes = res.shapes.map(s => ({
-      key: 's' + (++BS.seq), kind: 'extra', id: null,
-      pts: s.pts.map(p => [bsR2(bsClamp(p[0] / w * 100, -5, 105)), bsR2(bsClamp(p[1] / h * 100, -5, 105))]),
-    }));
-    BS.undo = [];
-    bsMatch();
+    const { data, w, h } = bsCartoonData();
+    const res = bsTraceData(data, w, h);
     BS.traced = true;
     BS.mirror = null;
-    console.info('board setup: traced %d shapes in %d ms', res.shapes.length, res.ms);
+    console.info('board setup: traced %d shapes in %d ms, prior %s', res.shapes.length, res.ms, BS.stats ? BS.stats.ms + ' ms' : 'none');
   } catch (e) {
     console.error('board setup: trace', e);
     showToast('Tracing failed', 'error');
@@ -833,6 +877,38 @@ async function bsTrace() {
   bsRender();
 }
 
+// The cartoon's pixels at the trace's size (TRACE_WORK across).
+function bsCartoonData() {
+  const m = BS.img.cartoon;
+  const k = TRACE_WORK / Math.max(m.w, m.h);
+  const w = Math.round(m.w * k), h = Math.round(m.h * k);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(m.bmp, 0, 0, w, h);
+  return { data: ctx.getImageData(0, 0, w, h), w, h };
+}
+
+// The trace, the match and (when the board has hand holds with outlines) the prior,
+// on the cartoon's pixels at the trace's size (w × h). Also run by tools/trace_prior_score.js.
+function bsTraceData(data, w, h) {
+  const roi = BS.corners.cartoon.map(p => [p[0] / 100 * w, p[1] / 100 * h]);
+  const res = traceHolds(data, { roi: bsGrowQuad(roi, 0.02), keepMasks: true });
+  BS.masks = res.masks;
+  BS.seq = 0;
+  BS.shapes = res.shapes.map(s => ({
+    key: 's' + (++BS.seq), kind: 'extra', id: null,
+    pts: s.pts.map(p => [bsR2(bsClamp(p[0] / w * 100, -5, 105)), bsR2(bsClamp(p[1] / h * 100, -5, 105))]),
+  }));
+  BS.undo = [];
+  BS.fits = {};
+  BS.stats = null;
+  bsMatch();
+  if (bsHasPrior()) bsPrior(res.masks, w, h, res.shapes);
+  return res;
+}
+
 // A quad grown about its centre by a share of its size (the corner marks are rough).
 function bsGrowQuad(q, f) {
   const cx = q.reduce((a, p) => a + p[0], 0) / 4, cy = q.reduce((a, p) => a + p[1], 0) / 4;
@@ -840,21 +916,19 @@ function bsGrowQuad(q, f) {
 }
 
 // Today's holds (hand and foot) onto the cartoon, then each to its nearest shape.
+// The mapping found (today's image % -> cartoon %: a homography, then an affine
+// correction) is kept in BS.xf, so today's outlines can be mapped too (the prior).
 function bsMatch() {
   // first guess: a later run goes through the corners stored with today's board (today's
   // image -> board -> cartoon); the first run through the line-up's four holds (today's
   // image -> cartoon directly)
   const curQ = (BS.live.corners && BS.live.corners.image) || null;
-  const Hn = bsHom(BS.corners.cartoon);
-  const Hc = curQ ? bsHomInv(bsHom(curQ)) : null;
   const Hl = curQ ? null : bsLuHom();
+  const Hg = Hl || bsMul3(bsHom(BS.corners.cartoon), curQ ? bsHomInv(bsHom(curQ)) : [0.01, 0, 0, 0, 0.01, 0, 0, 0, 1]);
+  let A = [1, 0, 0, 0, 1, 0];
   const old = BS.live.holds.filter(h => (h.kind === 'hand' || h.kind === 'foot') && h.x != null);
-  let pred = {};
-  old.forEach(h => {
-    if (Hl) { pred[h.id] = bsHomApply(Hl, +h.x, +h.y); return; }
-    const uv = Hc ? bsHomApply(Hc, +h.x, +h.y) : [+h.x / 100, +h.y / 100];
-    pred[h.id] = bsHomApply(Hn, uv[0], uv[1]);
-  });
+  const predOf = () => { const p = {}; old.forEach(h => { p[h.id] = bsXfApply({ H: Hg, A }, +h.x, +h.y); }); return p; };
+  let pred = predOf();
   const im = BS.img.cartoon, bw = bsBoardPx().w;
   const px = p => [p[0] / 100 * im.w, p[1] / 100 * im.h];
   const cents = BS.shapes.map(s => px(bsCentre(s.pts)));
@@ -879,19 +953,16 @@ function bsMatch() {
   for (let it = 0; it < 2; it++) {
     const pairs = assign(bw * BS_MATCH * (it ? 1 : 2));
     if (pairs.length < 6) break;
-    const A = [], bx = [], by = [];
-    pairs.forEach(([h, j]) => { const p = pred[h.id]; A.push([p[0], p[1], 1]); const c = bsCentre(BS.shapes[j].pts); bx.push(c[0]); by.push(c[1]); });
-    const fit = rhs => {
-      const AtA = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], Atb = [0, 0, 0];
-      A.forEach((r, i) => { for (let a = 0; a < 3; a++) { Atb[a] += r[a] * rhs[i]; for (let b = 0; b < 3; b++) AtA[a][b] += r[a] * r[b]; } });
-      return bsSolve(AtA, Atb);
-    };
-    const fx = fit(bx), fy = fit(by);
+    const rows = [], bx = [], by = [];
+    pairs.forEach(([h, j]) => { const p = pred[h.id]; rows.push([p[0], p[1], 1]); const c = bsCentre(BS.shapes[j].pts); bx.push(c[0]); by.push(c[1]); });
+    const fx = bsLsq(rows, bx), fy = bsLsq(rows, by);
     if (!fx || !fy) break;
-    const next = {};
-    Object.keys(pred).forEach(id => { const p = pred[id]; next[id] = [fx[0] * p[0] + fx[1] * p[1] + fx[2], fy[0] * p[0] + fy[1] * p[1] + fy[2]]; });
-    pred = next;
+    // compose: the new fit after the old one
+    A = [fx[0] * A[0] + fx[1] * A[3], fx[0] * A[1] + fx[1] * A[4], fx[0] * A[2] + fx[1] * A[5] + fx[2],
+         fy[0] * A[0] + fy[1] * A[3], fy[0] * A[1] + fy[1] * A[4], fy[0] * A[2] + fy[1] * A[5] + fy[2]];
+    pred = predOf();
   }
+  BS.xf = { H: Hg, A };
   BS.pred = {};
   Object.keys(pred).forEach(id => { BS.pred[id] = [bsR2(pred[id][0]), bsR2(pred[id][1])]; });
   BS.shapes.forEach(s => { s.kind = 'extra'; s.id = null; delete s.name; });
@@ -899,6 +970,122 @@ function bsMatch() {
     BS.shapes[j].kind = h.kind;
     BS.shapes[j].id = h.id;
   });
+}
+// Least squares: rows [a, b, 1] -> the 3 coefficients best giving rhs.
+function bsLsq(rows, rhs) {
+  const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], v = [0, 0, 0];
+  rows.forEach((r, i) => { for (let a = 0; a < 3; a++) { v[a] += r[a] * rhs[i]; for (let b = 0; b < 3; b++) M[a][b] += r[a] * r[b]; } });
+  return bsSolve(M, v);
+}
+function bsMul3(P, Q) {
+  const C = [];
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) C.push(P[i * 3] * Q[j] + P[i * 3 + 1] * Q[3 + j] + P[i * 3 + 2] * Q[6 + j]);
+  return C;
+}
+// today's image % -> cartoon %, through BS.xf
+function bsXfApply(xf, x, y) {
+  const [u, v] = bsHomApply(xf.H, x, y), A = xf.A;
+  return [A[0] * u + A[1] * v + A[2], A[3] * u + A[4] * v + A[5]];
+}
+
+// ── the prior: today's outlines guide the trace ──────────────────────────────
+// Every hand hold of today's board has an outline. Mapped through BS.xf onto the
+// cartoon, each is fitted where its hold is (tracePriorFit: a band round the mapped
+// spot, ±45°, a little scale), then:
+//  (a) the traced shape agreeing with the fitted outline (IoU >= iouTraced) is used:
+//      it follows the cartoon exactly;
+//  (b) otherwise the fitted outline itself, if it scores >= fitOk;
+//  (c) otherwise the fitted outline, flagged for a fix.
+// A hold whose fit needed more turn or scale than the board's unchanged holds show is
+// "changed": flagged too, so it's confirmed. Footholds: traced shapes no hand hold's
+// outline covers. Review then shows only the exceptions (shape.chk).
+const BS_PRIOR = {
+  band: 0.025,       // the search band round the mapped spot, a share of the board's width
+  iouTraced: 0.75,   // (a) a traced shape this close to the fitted outline is used...
+  perTraced: 1.35,   //     ... unless its outline is this much longer (a leak along an edge)
+  fitOk: 0.8,        // (b) the fitted outline's score (0..1) needed to accept it
+  turnGain: 0.1,     // changed: turning bought this much score...
+  turnShape: 0.2,    //     ... and changed the outline's shape this much (1 - IoU with it unturned)
+  grow: 0.2,         // changed: scaled this much more or less than the board's holds are (median)
+  cover: 0.35,       // a traced shape this much inside a hand hold's outline is part of it
+  footMin: 0.25,     // a foothold: at least this share of the median candidate's area,
+  footMax: 4,        //     at most this many times it,
+  footRound: 3,      //     and no stringier than this (perimeter² / 4π area: a circle is 1)
+};
+// Measured on Ross's final cartoon (10 Nov 2026), unchanged holds: turn gain p90 0.012,
+// largest 0.07; turn shape p90 0.08; traced IoU with the fit median 0.90; scale median
+// 1.04, p90 1.13. The two turned holds: gain 0.30-0.33, shape 0.47-0.50.
+const bsHasPriorHolds = () => bsLiveHand().filter(h => Array.isArray(h.outline) && h.outline.length >= 3).length >= 6;
+const bsHasPrior = () => !!(BS.xf && bsHasPriorHolds());
+const bsSmooth = () => (typeof shapeSmooth === 'function' ? shapeSmooth() : 0.7);
+
+function bsPrior(masks, w, h) {
+  const t0 = Date.now();
+  const P = BS_PRIOR, scale = w / BS.img.cartoon.w;
+  const band = bsBoardPx().w * scale * P.band;
+  const toPx = p => [p[0] / 100 * w, p[1] / 100 * h];
+  const toPct = p => [bsR2(bsClamp(p[0] / w * 100, -5, 105)), bsR2(bsClamp(p[1] / h * 100, -5, 105))];
+  const traced = BS.shapes.map(s => { const pts = s.pts.map(toPx); return { s, pts, bb: traceBBox(pts), area: tracePolyArea(pts) }; });
+  const hands = bsLiveHand().filter(h => Array.isArray(h.outline) && h.outline.length >= 3);
+  const sm = bsSmooth(), rows = [];
+  hands.forEach(h => {
+    const mapped = traceCurve(h.outline, sm).map(p => toPx(bsXfApply(BS.xf, +p[0], +p[1])));
+    const f = tracePriorFit(masks, mapped, band);
+    const fb = traceBBox(f.pts), pad = band * 0.5;
+    let best = null, bi = 0;
+    traced.forEach(t => {
+      if (t.bb[2] < fb[0] - pad || t.bb[0] > fb[2] + pad || t.bb[3] < fb[1] - pad || t.bb[1] > fb[3] + pad) return;
+      const v = tracePolyIoU(t.pts, f.pts);
+      if (v > bi) { bi = v; best = t; }
+    });
+    if (best && bsPerim(best.pts) > P.perTraced * bsPerim(f.pts)) bi = Math.min(bi, P.iouTraced - 0.01);
+    rows.push({ h, f, best, iou: bi });
+  });
+  // a traced shape goes to one hold at most: the one it agrees with best
+  const owner = new Map();
+  rows.forEach(r => { if (r.best && r.iou >= P.iouTraced && (!owner.has(r.best) || owner.get(r.best).iou < r.iou)) owner.set(r.best, r); });
+  const shapes = [], fits = {}, used = new Set();
+  let nT = 0, nF = 0, nFlag = 0, nChg = 0;
+  const scales = rows.map(r => r.f.scale).sort((a, b) => a - b), mScale = scales[Math.floor(scales.length / 2)] || 1;
+  rows.forEach(r => {
+    const changed = (r.f.turnGain >= P.turnGain && r.f.turnShape >= P.turnShape) || Math.abs(r.f.scale / mScale - 1) > P.grow;
+    fits[r.h.id] = r.f.pts.map(toPct);
+    const s = { key: 's' + (++BS.seq), kind: 'hand', id: r.h.id };
+    if (r.best && owner.get(r.best) === r) { s.pts = r.best.s.pts; s.src = 'traced'; used.add(r.best); nT++; }
+    else { s.pts = fits[r.h.id]; s.src = 'fitted'; if (r.f.score >= P.fitOk) nF++; else { s.chk = 'flag'; nFlag++; } }
+    if (changed && !s.chk) { s.chk = 'changed'; nChg++; }
+    s.fit = { turn: Math.round(r.f.rot), grow: +r.f.scale.toFixed(2), score: +r.f.score.toFixed(2), iou: +r.iou.toFixed(2),
+              gain: +r.f.turnGain.toFixed(3), shape: +r.f.turnShape.toFixed(2) };
+    shapes.push(s);
+  });
+  // footholds: traced shapes left over that no hand hold's outline covers
+  const handPx = shapes.map(s => ({ pts: s.pts.map(toPx) })).map(o => ({ pts: o.pts, bb: traceBBox(o.pts) }));
+  const left = traced.filter(t => !used.has(t) && t.s.kind !== 'foot').filter(t => !handPx.some(o =>
+    !(o.bb[2] < t.bb[0] || o.bb[0] > t.bb[2] || o.bb[3] < t.bb[1] || o.bb[1] > t.bb[3]) && tracePolyCover(t.pts, o.pts) >= P.cover));
+  const areas = left.map(t => t.area).sort((a, b) => a - b), med = areas.length ? areas[Math.floor(areas.length / 2)] : 0;
+  let nFeet = 0, nDrop = traced.length - used.size - left.length;
+  traced.filter(t => t.s.kind === 'foot').forEach(t => { shapes.push(t.s); nFeet++; nDrop--; });   // today's footholds
+  left.forEach(t => {
+    const per = bsPerim(t.pts);
+    if (t.area < P.footMin * med || t.area > P.footMax * med || per * per / (4 * Math.PI * t.area) > P.footRound) { nDrop++; return; }
+    shapes.push({ key: t.s.key, kind: 'foot', id: bsNextFootIdIn(shapes), pts: t.s.pts, chk: 'cand' });
+    nFeet++;
+  });
+  BS.shapes = shapes;
+  BS.fits = fits;
+  BS.stats = { traced: nT, fitted: nF, flag: nFlag, changed: nChg, feet: nFeet, dropped: nDrop, ms: Date.now() - t0 };
+}
+function bsPerim(pts) {
+  let p = 0;
+  for (let i = 0, n = pts.length; i < n; i++) { const a = pts[i], b = pts[(i + 1) % n]; p += Math.hypot(b[0] - a[0], b[1] - a[1]); }
+  return p;
+}
+function bsNextFootIdIn(list) {
+  let n = 0;
+  const seen = id => { const m = /^foot(\d+)$/.exec(id || ''); if (m) n = Math.max(n, +m[1]); };
+  (BS.live ? BS.live.holds : []).forEach(h => seen(h.id));
+  list.forEach(s => seen(s.id));
+  return 'foot' + (n + 1);
 }
 
 // ── review edits ──────────────────────────────────────────────────────────────
@@ -925,7 +1112,7 @@ function bsAssign(key, id) {
   bsPushUndo();
   const prev = bsShapeOf(id);
   if (prev && prev !== s) { prev.kind = 'extra'; prev.id = null; }
-  s.kind = 'hand'; s.id = id; delete s.name;
+  s.kind = 'hand'; s.id = id; delete s.name; delete s.chk;
   BS.mirror = null;
   bsSave(); bsRenderBoard(); bsRenderPanel();
 }
@@ -933,6 +1120,7 @@ function bsToggleFoot(key) {
   const s = bsShape(key);
   if (!s) return;
   bsPushUndo();
+  delete s.chk;
   if (s.kind === 'foot') { s.kind = 'extra'; s.id = null; delete s.name; }
   else { s.kind = 'foot'; s.id = bsNextFootId(); }
   BS.mirror = null;
@@ -965,8 +1153,117 @@ function bsNextIssue() {
     BS.sel = extra[0].key;
     const c = bsCentre(extra[0].pts);
     bsZoomTo(c[0], c[1], 4);
+  } else {
+    const q = bsQueue();
+    if (q.length) {
+      // the next one after the selected one, so Next to fix moves on even without a decision
+      const i = q.findIndex(x => x.key === BS.sel), s = q[(i + 1) % q.length];
+      BS.sel = s.key;
+      const c = bsCentre(s.pts);
+      bsZoomTo(c[0], c[1], 4);
+    }
   }
   bsRenderBoard(); bsRenderPanel();
+}
+
+// Settle a shape in the queue (Looks right / Keep this foothold).
+function bsAccept(key) {
+  const s = bsShape(key);
+  if (!s || !s.chk) return;
+  bsPushUndo();
+  delete s.chk;
+  bsSave();
+  const q = bsQueue();
+  if (q.length) bsNextIssue(); else { BS.sel = null; bsRenderBoard(); bsRenderPanel(); }
+}
+// Accept all unflagged: every new foothold kept (flagged and turned hand holds still wait).
+function bsAcceptAll() {
+  const c = BS.shapes.filter(s => s.chk === 'cand');
+  if (!c.length) return;
+  bsPushUndo();
+  c.forEach(s => { delete s.chk; });
+  BS.mirror = null;
+  showToast(`${c.length} footholds kept`, 'success');
+  bsSave(); bsRenderBoard(); bsRenderPanel();
+}
+// The hold's outline as fitted from today's (for the selected shape, or a hold with none).
+function bsUseFit() {
+  const id = BS.sel && BS.sel.startsWith('hold:') ? BS.sel.slice(5) : (bsShape(BS.sel) || {}).id;
+  const pts = id && BS.fits[id];
+  if (!pts) return;
+  bsPushUndo();
+  let s = bsShapeOf(id);
+  if (!s) { s = { key: 's' + (++BS.seq), kind: 'hand', id }; BS.shapes.push(s); }
+  s.pts = pts.map(p => p.slice()); s.src = 'fitted'; delete s.chk;
+  BS.sel = s.key; BS.mirror = null;
+  bsSave(); bsRenderBoard(); bsRenderPanel();
+}
+// The trace's masks for Tap to trace (after a reload they're traced again, once).
+async function bsEnsureMasks() {
+  if (BS.masks) return BS.masks;
+  if (!BS.img.cartoon || !BS.img.cartoon.bmp) return null;
+  BS.busy = true; bsRenderPanel();
+  await new Promise(r => setTimeout(r, 60));
+  try {
+    const { data } = bsCartoonData();
+    BS.masks = traceHolds(data, { keepMasks: true }).masks;
+  } catch (e) { console.error('board setup: masks', e); }
+  BS.busy = false;
+  return BS.masks;
+}
+// Tap to trace at (x, y) % of the cartoon: just the hold there. It replaces the selected
+// shape's outline (or gives the selected hold with no outline one); with nothing
+// selected, the shape under the tap, or the hand hold whose fitted outline is there; or
+// else it's a new shape (make it a foothold or a hand hold).
+async function bsTapTrace(x, y) {
+  if (BS.busy) return;
+  const masks = await bsEnsureMasks();
+  if (!masks) { showToast('Couldn’t read the cartoon', 'error'); return; }
+  let target = null, holdId = null;
+  if (BS.sel && BS.sel.startsWith('hold:')) holdId = BS.sel.slice(5);
+  else if (BS.sel && bsShape(BS.sel)) target = bsShape(BS.sel);
+  else {
+    const under = bsShapeAt(x, y);
+    if (under && tracePointInPoly(x, y, under.pts)) target = under;
+    else {
+      holdId = Object.keys(BS.fits).find(id => tracePointInPoly(x, y, BS.fits[id])) || null;
+      if (holdId && bsShapeOf(holdId)) { target = bsShapeOf(holdId); holdId = null; }
+    }
+  }
+  const px = p => [p[0] / 100 * masks.W, p[1] / 100 * masks.H];
+  const ref = target ? target.pts : holdId ? BS.fits[holdId] : null;
+  const pts = traceTap(masks, x / 100 * masks.W, y / 100 * masks.H, ref ? { maxArea: tracePolyArea(ref.map(px)) * 3 } : {});
+  if (!pts) { showToast('No hold found there: try Draw', 'error'); bsRenderPanel(); return; }
+  const pct = pts.map(p => [bsR2(bsClamp(p[0] / masks.W * 100, -5, 105)), bsR2(bsClamp(p[1] / masks.H * 100, -5, 105))]);
+  bsPushUndo();
+  if (target) {
+    target.pts = pct; target.src = 'tapped';
+    if (target.chk !== 'cand') delete target.chk;
+    BS.sel = target.key;
+  } else {
+    const s = { key: 's' + (++BS.seq), kind: holdId ? 'hand' : 'extra', id: holdId, pts: pct, src: 'tapped' };
+    BS.shapes.push(s);
+    BS.sel = s.key;
+  }
+  BS.tool = null; BS.mirror = null;
+  bsSave(); bsRenderBoard(); bsRenderPanel();
+}
+// Turn a shape's outline by `deg` about its centre (in pixels, so it doesn't skew).
+function bsTurn(pts, deg) {
+  const m = BS.img.cartoon, sx = m.w / 100, sy = m.h / 100;
+  const c = bsCentre(pts), cs = Math.cos(deg * Math.PI / 180), sn = Math.sin(deg * Math.PI / 180);
+  return pts.map(p => {
+    const ux = (p[0] - c[0]) * sx, uy = (p[1] - c[1]) * sy;
+    return [bsR2(c[0] + (cs * ux - sn * uy) / sx), bsR2(c[1] + (sn * ux + cs * uy) / sy)];
+  });
+}
+// Where the turn handle of the selected shape is (stage px), in Move.
+function bsRotHandle() {
+  const s = BS.step === 'review' && BS.tool === 'move' && BS.sel && bsShape(BS.sel);
+  if (!s || !s.pts.length) return null;
+  const c = bsCentre(s.pts), top = Math.min(...s.pts.map(p => p[1]));
+  const [x, y] = bsScreen(c[0], top);
+  return [x, y - 34];
 }
 
 // A finished lasso -> a smoothed, simplified outline in %.
@@ -1130,6 +1427,7 @@ async function bsPublish() {
     console.info('board setup: published, board version', data);
     bsDropDraft();
     BS.img = {}; BS.corners = {}; BS.shapes = []; BS.mirror = null; BS.flags = []; BS.traced = false; BS.pred = {};
+    BS.xf = null; BS.fits = {}; BS.stats = null; BS.masks = null;
     BS.lineup = bsLuEmpty(); BS.luKind = 'current'; BS.luSel = 0;
     BS.busy = false;
     showToast('Published: the new board is live on everyone’s next load', 'success');
@@ -1200,7 +1498,11 @@ function bsDown(e) {
     Object.assign(g, { type: 'lasso', pts: [[bsR2(x), bsR2(y)]] });
   } else if (BS.step === 'review' && BS.tool === 'move' && BS.sel && bsShape(BS.sel)) {
     bsPushUndo();
-    Object.assign(g, { type: 'move', startPts: bsShape(BS.sel).pts.map(p => p.slice()) });
+    const rh = bsRotHandle(), [sx, sy] = bsStageXY(e.clientX, e.clientY), s = bsShape(BS.sel);
+    if (rh && Math.hypot(rh[0] - sx, rh[1] - sy) < 26) {
+      const c = bsCentre(s.pts), [cx, cy] = bsScreen(c[0], c[1]);
+      Object.assign(g, { type: 'rotate', startPts: s.pts.map(p => p.slice()), cx, cy, a0: Math.atan2(sy - cy, sx - cx) });
+    } else Object.assign(g, { type: 'move', startPts: s.pts.map(p => p.slice()) });
   }
   BS.g = g;
 }
@@ -1247,6 +1549,10 @@ function bsMove(e) {
   } else if (g.type === 'move') {
     bsShape(BS.sel).pts = g.startPts.map(p => [bsR2(p[0] + ddx), bsR2(p[1] + ddy)]);
     bsRenderBoard();
+  } else if (g.type === 'rotate') {
+    const [sx, sy] = bsStageXY(e.clientX, e.clientY);
+    bsShape(BS.sel).pts = bsTurn(g.startPts, (Math.atan2(sy - g.cy, sx - g.cx) - g.a0) * 180 / Math.PI);
+    bsRenderBoard();
   }
 }
 function bsUp(e) {
@@ -1263,13 +1569,19 @@ function bsUp(e) {
   bsLoupe(null);
   if (g.type === 'corner') { bsSave(); bsRenderPanel(); return; }
   if (g.type === 'lumark') { if (!g.moved) BS.luSel = g.i; bsSave(); bsRenderOver(); bsRenderPanel(); return; }
-  if (g.type === 'move') { if (!g.moved) BS.undo.pop(); BS.mirror = null; bsSave(); bsRenderBoard(); return; }
+  if (g.type === 'move' || g.type === 'rotate') {
+    if (!g.moved) BS.undo.pop();
+    else { const s = bsShape(BS.sel); if (s && s.chk !== 'cand') delete s.chk; }
+    BS.mirror = null; bsSave(); bsRenderBoard(); bsRenderPanel(); return;
+  }
   if (g.type === 'lasso') {
     const pts = bsLassoDone(g.pts);
     if (!pts) { bsRenderBoard(); if (g.moved) showToast('Too small: draw all the way round the hold', 'error'); return; }
     bsPushUndo();
     if (BS.tool === 'redraw' && bsShape(BS.sel)) {
-      bsShape(BS.sel).pts = pts;
+      const t = bsShape(BS.sel);
+      t.pts = pts; t.src = 'drawn';
+      if (t.chk !== 'cand') delete t.chk;
     } else {
       const s = { key: 's' + (++BS.seq), kind: 'extra', id: null, pts };
       if (BS.sel && BS.sel.startsWith('hold:')) { s.kind = 'hand'; s.id = BS.sel.slice(5); }
@@ -1311,6 +1623,7 @@ function bsShapeAt(x, y) {
 }
 function bsTap(g) {
   if (BS.step === 'lineup') { bsLuTap(g); return; }
+  if (BS.step === 'review' && BS.tool === 'tap') { bsTapTrace(g.x, g.y); return; }
   if (BS.step === 'review') {
     // a hand hold with no shape (its marker)
     const [sx, sy] = bsStageXY(g.sx, g.sy);
@@ -1367,7 +1680,7 @@ function bsWire() {
     if (!b || b.disabled || b.tagName === 'SELECT') return;
     const act = b.dataset.act;
     if (act === 'reload') { BS.live = null; initSetup(); }
-    else if (act === 'new') { bsDropDraft(); Object.assign(BS, { img: {}, corners: {}, shapes: [], mirror: null, flags: [], traced: false, pred: {}, undo: [], lineup: bsLuEmpty(), luKind: 'current', luSel: 0 }); bsGo('photos'); }
+    else if (act === 'new') { bsDropDraft(); Object.assign(BS, { img: {}, corners: {}, shapes: [], mirror: null, flags: [], traced: false, pred: {}, undo: [], lineup: bsLuEmpty(), luKind: 'current', luSel: 0, xf: null, fits: {}, stats: null, masks: null }); bsGo('photos'); }
     else if (act === 'discard') { bsDropDraft(); bsRender(); }
     else if (act === 'resume') await bsResume();
     else if (act === 'undo') bsUndoPublish();
@@ -1382,12 +1695,16 @@ function bsWire() {
     else if (act === 'draw') { BS.tool = 'draw'; BS.sel = null; bsRenderBoard(); bsRenderPanel(); }
     else if (act === 'draw-for') { BS.tool = 'draw'; bsRenderPanel(); }
     else if (act === 'redraw') { BS.tool = 'redraw'; bsRenderPanel(); }
-    else if (act === 'move') { BS.tool = 'move'; bsRenderPanel(); }
+    else if (act === 'move') { BS.tool = 'move'; bsRenderPanel(); bsRenderOver(); }
     else if (act === 'tool-off') { BS.tool = null; bsRenderBoard(); bsRenderPanel(); }
     else if (act === 'desel') { BS.sel = null; BS.tool = null; bsRenderBoard(); bsRenderPanel(); }
     else if (act === 'foot') bsToggleFoot(BS.sel);
     else if (act === 'delete') bsDelete(BS.sel);
     else if (act === 'extras-feet') bsExtrasToFeet();
+    else if (act === 'tap') { BS.tool = 'tap'; bsRenderPanel(); bsEnsureMasks().then(() => { if (BS.tool === 'tap') bsRenderPanel(); }); }
+    else if (act === 'usefit') bsUseFit();
+    else if (act === 'ok') bsAccept(BS.sel);
+    else if (act === 'acceptall') bsAcceptAll();
     else if (act === 'undo-edit') bsUndoEdit();
     else if (act === 'pair') { BS.tool = 'pair'; bsRenderPanel(); }
     else if (act === 'unpair') { const s = bsShape(BS.sel); if (s) { bsSetPair(s, null); bsSave(); bsRenderBoard(); bsRenderPanel(); } }
@@ -1452,8 +1769,11 @@ async function bsResume() {
       img.current = { bmp, w: bmp.width, h: bmp.height, path: null };
     }
     if (d.corners) delete d.corners.current;               // drafts from before the line-up
+    // an older (v1) draft has no prior: its shapes carry no checks and work as before
     Object.assign(BS, { img, corners: d.corners || {}, shapes: d.shapes || [], seq: d.seq || 0, pred: d.pred || {},
-                        mirror: d.mirror || null, flags: d.flags || [], traced: !!d.traced, undo: [], lineup });
+                        mirror: d.mirror || null, flags: d.flags || [], traced: !!d.traced, undo: [], lineup,
+                        xf: d.v === BS_DRAFT_V ? d.xf || null : null, fits: d.v === BS_DRAFT_V ? d.fits || {} : {},
+                        stats: d.v === BS_DRAFT_V ? d.stats || null : null, masks: null });
     BS.luKind = lineup.cur.every(Boolean) ? 'cartoon' : 'current';
     BS.luSel = bsLuFirstFree(BS.luKind === 'current' ? lineup.cur : lineup.cart);
     BS.busy = false;

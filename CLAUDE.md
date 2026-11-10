@@ -110,7 +110,7 @@ build.sh  wrangler.jsonc   at the root, because the Cloudflare dashboard runs th
 | `challenge.js` | Challenges (db/31): the `#challenge` view (rules, the phone-timed attempt, summary, save + retry), your best and history, the challenge boards on Ranks |
 | `leaderboard.js` | `#leaderboard` (Points, or a challenge board via the tabs) |
 | `wall.js` | The **wall-screen mode** (`/?wall`, the kiosk): list + board + cast, circuits (a tap lights all its holds, `show_circuit`; Start circuit opens the same Cast sheet), **Create** (on-screen keyboard, `wall_create_problem`), read-only Ranks, Get the app QR, idle slides, offline note (overview §4.7a; no night screen: outside the opening hours the Pi turns the screen off). Off unless `WALL` (`state.js`) |
-| `trace.js` | Auto-tracing holds on a cartoon (`traceHolds()`, pure, no DOM; `tools/trace_score.js` scores it in Node) |
+| `trace.js` | Auto-tracing holds on a cartoon (`traceHolds()`), fitting today's outlines onto it (`tracePriorFit()`) and Tap to trace (`traceTap()`); pure, no DOM; `tools/trace_score.js` and `tools/trace_prior_score.js` score it in Node |
 | `setup.js` | **Board setup** (`#setup`, admins; db/42): photo + cartoon upload, corners, trace, match to today's holds, review, footholds, mirror pairs, publish, undo (overview §4.8d) |
 | `app.js` | **Loaded last:** event wiring, service worker, install flow, boot |
 

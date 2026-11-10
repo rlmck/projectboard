@@ -14,7 +14,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **The wall kiosk** (`kiosk.service`: cage + Chromium on `HDMI-A-2`, opening `/?wall` with the wall key in the URL fragment) runs on the 1280×720 touchscreen and picks up a deploy at its next idle (within the hour) or each morning. **The touchscreen has a picture again** (the 4 Nov hardware fault is fixed; Ross, 7 Nov).
 - **Create on the wall, live LEDs while setting (30 Oct 2026):** the wall's Create saves as The Hangout (db/35, the wall key); taps on Create/Edit light the board (contract §9). Tried on the touchscreen and phones (Ross, 7 Nov).
 - **Opening hours (7 Nov 2026):** one per-day schedule in the Pi's `config.env` (`HOURS_MON`…`HOURS_SUN`, London time): Mon–Thu 15:30–22:00, Fri closed, Sat–Sun 09:30–15:00. Outside, the LEDs go dark, casts are ignored and the wall screen is off. PB Console: the hours table (Config), **Stay on until HH:MM** and End override (Board). `pi/README.md` → Opening hours.
-- **Holds in the database (9 Nov 2026, db/41, db/42):** the `holds` table holds each hold's name, kind, LED, position, outline and mirror partner (`board_config`'s are copies since db/42); the Pi and the app read it; `tools/check_holds.py` checks it. **Board setup** (Admin → Board Setup): photo + cartoon → corners → line up (first run) → trace → footholds → mirror pairs → publish, with Undo; not yet run on a new photo. Specific feet exists in the database only (UI: session 3, `docs/board-setup-plan.md`).
+- **Holds in the database (9 Nov 2026, db/41, db/42):** the `holds` table holds each hold's name, kind, LED, position, outline and mirror partner (`board_config`'s are copies since db/42); the Pi and the app read it; `tools/check_holds.py` checks it. **Board setup** (Admin → Board Setup): photo + cartoon → corners → line up → trace (from today's holds; Review shows only what changed) → mirror pairs → publish, with Undo; not yet published. Specific feet exists in the database only (UI: session 3, `docs/board-setup-plan.md`).
 - **Hardware:** temporary wiring (`pi/README.md` → "Wiring"); the Pi is in the junction box (31 Oct). Power in at six points, two YU0510 5 V 10 A supplies (both needed). No relays or level shifter fitted (3.3 V data works); the relay module and the 74AHCT125 have arrived. A USB webcam shows the back of the board on Tailscale only.
 - **PB Console** (`console/`, `bash console/start.sh`): health, services, board controls, logs, config, Pi deploy (drift check), release, LED map, test cast, **circuit tracks** (1 Nov, direct Postgres), Activity (4 Nov), the R8 checklist, backups, runbook; warnings can be dismissed until they change (`console/README.md`). Phase 13 (Data) isn't built; phase 14 (Power) waits for the relays.
 
@@ -41,7 +41,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
-- **Ross:** the db/41 checks (9 Nov report); the full-board photo and cartoon, then run Board Setup with them (`docs/board-setup-plan.md` → Next steps, now with the Line up step) and try the 2a checklist (9 Nov report).
+- **Ross:** the db/41 checks (9 Nov report); run Board Setup with the final cartoon: **Start again** on the old draft (plan → Next steps); decide D6 and P5.
 - **Ross:** the uncommitted session 2b work on the laptop (db/43, Pi): ship it or not.
 - **Ross: test the opening hours** (live 7 Nov): see the 2026-11-07 session entry's checklist.
 - Ross (low priority): delete the local passphrase hand-out file (and empty the Recycle Bin) once all 7 migrated accounts have signed in.
@@ -56,6 +56,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-10, Claude Code (board setup: prior-guided trace + Tap to trace; TODO 13).**
+  - **Found:** the final cartoon is a fresh drawing, not an edit of today's image; blind, 31 hand holds got no shape. **F6, N6 turned; D6, P5 not on the cartoon.**
+  - **Changed:** the trace fits today's outlines onto the cartoon (`tracePriorFit`); Review shows only exceptions: Looks right, Accept all unflagged, **Tap to trace**, Use fitted shape, a turn handle. Old drafts: Start again. Trace 3.5× faster. Plan, overview §4.8d.
+  - **Tested:** final cartoon 181 auto-accepted, 7 to check, 50 footholds (~156 actions → ~13); `tools/trace_prior_score.js` passes; Chrome 390 px (stubbed); pi + console tests.
+  - **Live:** CACHE_TBD.
+  - **Left:** Ross: Start again with the final cartoon (plan's Next steps); decide D6/P5.
 - **2026-11-10, Claude Code (board setup: line up by four holds; TODO 13).**
   - **Changed:** today's image is cropped, so the first run's "Today's board" corners tab became a **Line up** step: four hand holds tapped on today's image, then on the cartoon; their homography is `bsMatch()`'s first guess (plan, overview §4.8d).
   - **Tested:** Chrome, phone width, writes stubbed, today's = fallback minus its bottom 30%: 188/188 holds matched their own shape; refusals; draft.
@@ -78,8 +84,3 @@ Newest first, the 5 newest only (older: `docs/log/`). Each entry: date, which si
   - **Live:** db/40 applied 8 Nov; the app `eb6cac8`, CACHE `pb-f4b05cd6a2`.
   - **Left:** Ross: try it on a phone with a throwaway problem (the report's list).
 
-- **2026-11-08, Claude Code (no scroll bars on the wall screen).**
-  - **Changed:** one rule in `styles.css` under `body.wall` (`scrollbar-width: none` + `::-webkit-scrollbar` hidden, every element, plus the page) hides every scroll bar in wall mode (lists, panels, sheets, modals, new ones too); scrolling unchanged.
-  - **Tested:** build check; Chrome on `/?wall`: Problems list (with the keyboard open), Circuits list, Filter panel, Create: every scrollable area has no bar and no gutter, and the lists still scroll; the phone view unchanged (page bar still there). No real casts sent.
-  - **Live:** `26e2799`, CACHE `pb-3116114eba`.
-  - **Left:** Ross: check it on the touchscreen.

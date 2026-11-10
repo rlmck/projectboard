@@ -61,3 +61,8 @@ console/.env.local
 console/audit.log
 console/data/
 backups/
+
+# Ross's private board images for trace testing: never commit
+trace-input/
+trace_review.md
+review_output.md

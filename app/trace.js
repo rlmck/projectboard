@@ -42,13 +42,9 @@ const TRACE_DEFAULTS = {
 // img: { data: RGBA bytes, width, height }. opts.roi: optional quad [[x,y]×4] in pixels;
 // shapes whose centre falls outside it are dropped. -> { shapes: [{pts, area, cx, cy}], palette, ms }
 function traceHolds(img, opts) {
-  const o = Object.assign({}, TRACE_DEFAULTS, opts || {});
   const t0 = Date.now();
   const W = img.width, H = img.height, N = W * H, src = img.data;
-  // lengths in the defaults are for an image about TRACE_REF pixels across; scale them
-  const k = Math.max(W, H) / TRACE_REF;
-  ['smoothSigma', 'simplify', 'inset'].forEach(key => { o[key] *= k; });
-  ['lineRadius', 'edgeReach'].forEach(key => { o[key] = Math.max(1, Math.round(o[key] * k)); });
+  const o = traceOpts(W, H, opts);
 
   // 1 a light blur (3×3 box, twice) against JPEG noise
   let r = new Float32Array(N), g = new Float32Array(N), b = new Float32Array(N);
@@ -145,29 +141,44 @@ function traceHolds(img, opts) {
       shapes.push({ pts, area: part.area, cx: c[0], cy: c[1] });
     }
   }
-  return { shapes, palette, width: W, height: H, ms: Date.now() - t0 };
+  const out = { shapes, palette, width: W, height: H, ms: Date.now() - t0 };
+  if (o.keepMasks) out.masks = { fg, line, W, H };   // for tracePriorFit / traceTap
+  return out;
+}
+
+// The settings for an image W × H: the defaults' lengths are for an image about
+// TRACE_REF pixels across, so they're scaled.
+function traceOpts(W, H, opts) {
+  const o = Object.assign({}, TRACE_DEFAULTS, opts || {});
+  const k = Math.max(W, H) / TRACE_REF;
+  ['smoothSigma', 'simplify', 'inset'].forEach(key => { o[key] *= k; });
+  ['lineRadius', 'edgeReach'].forEach(key => { o[key] = Math.max(1, Math.round(o[key] * k)); });
+  return o;
 }
 
 // Grey-level max/min over a (2r+1)² square, separable.
 function traceMaxFilter(a, W, H, rad) { return traceRankFilter(a, W, H, rad, Math.max); }
 function traceMinFilter(a, W, H, rad) { return traceRankFilter(a, W, H, rad, Math.min); }
+// van Herk / Gil-Werman: O(1) a pixel whatever the radius (the window is clipped at the
+// image's edges). Min is the max of the negated values.
 function traceRankFilter(a, W, H, rad, f) {
+  const sgn = f === Math.min ? -1 : 1, k = 2 * rad + 1;
+  const L = Math.max(W, H) + 2 * rad + k;
+  const buf = new Float32Array(L), g = new Float32Array(L), h = new Float32Array(L);
   const t = new Float32Array(a.length), out = new Float32Array(a.length);
-  for (let y = 0; y < H; y++) {
-    const row = y * W;
-    for (let x = 0; x < W; x++) {
-      let v = a[row + x];
-      for (let k = Math.max(0, x - rad), e = Math.min(W - 1, x + rad); k <= e; k++) v = f(v, a[row + k]);
-      t[row + x] = v;
+  const pass = (src, dst, n, start, step) => {
+    const m = Math.ceil((n + 2 * rad) / k) * k;
+    for (let i = 0; i < m; i++) { const j = i - rad; buf[i] = j >= 0 && j < n ? sgn * src[start + j * step] : -Infinity; }
+    for (let b0 = 0; b0 < m; b0 += k) {
+      g[b0] = buf[b0];
+      for (let i = b0 + 1; i < b0 + k; i++) g[i] = g[i - 1] > buf[i] ? g[i - 1] : buf[i];
+      h[b0 + k - 1] = buf[b0 + k - 1];
+      for (let i = b0 + k - 2; i >= b0; i--) h[i] = h[i + 1] > buf[i] ? h[i + 1] : buf[i];
     }
-  }
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      let v = t[y * W + x];
-      for (let k = Math.max(0, y - rad), e = Math.min(H - 1, y + rad); k <= e; k++) v = f(v, t[k * W + x]);
-      out[y * W + x] = v;
-    }
-  }
+    for (let j = 0; j < n; j++) { const x = h[j], y = g[j + k - 1]; dst[start + j * step] = sgn * (x > y ? x : y); }
+  };
+  for (let y = 0; y < H; y++) pass(a, t, W, y * W, 1);
+  for (let x = 0; x < W; x++) pass(t, out, H, x, W);
   return out;
 }
 
@@ -545,4 +556,297 @@ function tracePointInPoly(x, y, poly) {
     if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
   }
   return inside;
+}
+
+// ── the prior: today's outlines as a guide (board setup on a board that has holds) ──
+// tracePriorFit() moves one known outline (today's, mapped onto the cartoon) to where
+// the cartoon's hold is: translation, a little scale and rotation (±45°), coarse then
+// fine, scored on the trace's masks: inside on the foreground, a ring just outside on
+// the background, the outline itself on a dark line. traceTap() traces just the hold
+// under a tap. Both are pure: tools/trace_prior_score.js scores them in Node.
+const TRACE_PRIOR = {
+  rot: 45,            // the rotation searched, degrees either way
+  scale: 0.25,        // the scale searched, either way
+  nIn: 140,           // about this many interior samples a shape
+  nEdge: 72,          // samples along the outline (and the ring outside it)
+  wIn: 0.45, wOut: 0.35, wEdge: 0.2,   // the score's weights
+  pull: 0.12,         // a penalty for straying from the mapped spot (at the band's edge)
+  tapWin: 0.06,       // traceTap's window, either side, as a share of the image's long side
+};
+
+// The masks' line pixels grown by two (the outline as drawn is a few pixels wide).
+function tracePriorLineNear(masks) {
+  if (!masks.lineNear) masks.lineNear = traceDilate(traceDilate(masks.line, masks.W, masks.H), masks.W, masks.H);
+  return masks.lineNear;
+}
+
+// Samples of a polygon, relative to its centre: inside (a grid), on the outline, and a
+// ring `ringD` px outside it.
+function tracePriorSamples(pts, ringD, nIn, nEdge) {
+  const c = tracePolyCentre(pts), bb = traceBBox(pts), area = Math.max(1, tracePolyArea(pts));
+  const step = Math.max(0.75, Math.sqrt(area / nIn));
+  const inn = [];
+  for (let y = bb[1] + step / 2; y < bb[3]; y += step) {
+    for (let x = bb[0] + step / 2; x < bb[2]; x += step) if (tracePointInPoly(x, y, pts)) inn.push(x - c[0], y - c[1]);
+  }
+  // the outline resampled evenly, with its outward normals
+  const n = pts.length, seg = [];
+  let per = 0, a2 = 0;
+  for (let i = 0; i < n; i++) {
+    const p = pts[i], q = pts[(i + 1) % n];
+    const L = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    seg.push(L); per += L; a2 += p[0] * q[1] - q[0] * p[1];
+  }
+  const sgn = a2 > 0 ? 1 : -1, edge = [], ring = [];
+  for (let k = 0, i = 0, acc = 0; k < nEdge; k++) {
+    const t = k / nEdge * per;
+    while (i < n - 1 && acc + seg[i] < t) { acc += seg[i]; i++; }
+    const p = pts[i], q = pts[(i + 1) % n], f = seg[i] ? (t - acc) / seg[i] : 0;
+    const x = p[0] + (q[0] - p[0]) * f, y = p[1] + (q[1] - p[1]) * f;
+    const L = seg[i] || 1, tx = (q[0] - p[0]) / L, ty = (q[1] - p[1]) / L;
+    edge.push(x - c[0], y - c[1]);
+    ring.push(x + sgn * ty * ringD - c[0], y - sgn * tx * ringD - c[1]);
+  }
+  return { c, inn: Float32Array.from(inn), edge: Float32Array.from(edge), ring: Float32Array.from(ring) };
+}
+
+// Agreement (0..1) of the samples placed at (cx, cy), rotated (cos, sin) and scaled.
+function tracePriorScore(S, masks, near, o, cx, cy, cs, sn, sc) {
+  const { fg, W, H } = masks;
+  let fi = 0, fo = 0, fe = 0;
+  const a = sc * cs, b = sc * sn;
+  for (let i = 0; i < S.inn.length; i += 2) {
+    const x = (cx + a * S.inn[i] - b * S.inn[i + 1]) | 0, y = (cy + b * S.inn[i] + a * S.inn[i + 1]) | 0;
+    if (x >= 0 && y >= 0 && x < W && y < H && fg[y * W + x]) fi++;
+  }
+  for (let i = 0; i < S.ring.length; i += 2) {
+    const x = (cx + a * S.ring[i] - b * S.ring[i + 1]) | 0, y = (cy + b * S.ring[i] + a * S.ring[i + 1]) | 0;
+    if (x < 0 || y < 0 || x >= W || y >= H || !fg[y * W + x]) fo++;
+  }
+  for (let i = 0; i < S.edge.length; i += 2) {
+    const x = (cx + a * S.edge[i] - b * S.edge[i + 1]) | 0, y = (cy + b * S.edge[i] + a * S.edge[i + 1]) | 0;
+    if (x >= 0 && y >= 0 && x < W && y < H && near[y * W + x]) fe++;
+  }
+  return o.wIn * fi / Math.max(1, S.inn.length / 2) + o.wOut * fo / Math.max(1, S.ring.length / 2)
+       + o.wEdge * fe / Math.max(1, S.edge.length / 2);
+}
+
+// pts: the outline mapped onto the image (px); band: how far (px) the hold may be from
+// it. -> { pts, score, score0 (as mapped), rot (deg), scale, dx, dy }
+function tracePriorFit(masks, pts, band, opts) {
+  const o = Object.assign({}, TRACE_PRIOR, opts || {});
+  const near = tracePriorLineNear(masks);
+  const k = Math.max(masks.W, masks.H) / TRACE_REF;
+  const S = tracePriorSamples(pts, 3 * k, o.nIn, o.nEdge);
+  const [c0x, c0y] = S.c;
+  const rad = d => d * Math.PI / 180;
+  const ev = (dx, dy, r, sc) => tracePriorScore(S, masks, near, o, c0x + dx, c0y + dy, Math.cos(rad(r)), Math.sin(rad(r)), sc)
+    - o.pull * (dx * dx + dy * dy) / (band * band);
+  const score0 = ev(0, 0, 0, 1);
+  // 1 where: translation only, on a grid over the band
+  const s1 = Math.max(2, band / 12), top = [];
+  for (let dy = -band; dy <= band + 1e-9; dy += s1) {
+    for (let dx = -band; dx <= band + 1e-9; dx += s1) {
+      if (dx * dx + dy * dy > band * band * 1.0001) continue;
+      top.push([ev(dx, dy, 0, 1), dx, dy]);
+    }
+  }
+  top.sort((a, b) => b[0] - a[0]);
+  // 2 how it's turned: rotation and scale, coarse, at the best two spots
+  let best = [top[0][0], top[0][1], top[0][2], 0, 1];
+  const scales = [1 - o.scale, 1 - o.scale / 2, 1, 1 + o.scale / 2, 1 + o.scale];
+  top.slice(0, 2).forEach(([, tx, ty]) => {
+    for (let r = -o.rot; r <= o.rot; r += 5) {
+      for (const sc of scales) { const v = ev(tx, ty, r, sc); if (v > best[0]) best = [v, tx, ty, r, sc]; }
+    }
+  });
+  // 3 fine: two pixels then one, a degree, 2% at a time, until nothing improves
+  for (let it = 0, st = 2; it < 12; it++) {
+    const [, bx, by, br, bs] = best;
+    let moved = false;
+    for (const dr of [-2, -1, 0, 1, 2]) {
+      for (const ds of [-0.02, 0, 0.02]) {
+        const sc = Math.max(1 - o.scale, Math.min(1 + o.scale, bs + ds)), r = Math.max(-o.rot - 5, Math.min(o.rot + 5, br + dr));
+        for (let jy = -1; jy <= 1; jy++) {
+          for (let jx = -1; jx <= 1; jx++) {
+            const v = ev(bx + jx * st, by + jy * st, r, sc);
+            if (v > best[0] + 1e-9) { best = [v, bx + jx * st, by + jy * st, r, sc]; moved = true; }
+          }
+        }
+      }
+    }
+    if (!moved) { if (st === 1) break; st = 1; }
+  }
+  const [score, dx, dy, rot, scale] = best;
+  // the same fit without turning (from the best spot): how much the turn bought
+  let flat = [ev(dx, dy, 0, scale), dx, dy, scale];
+  for (let it = 0; it < 8; it++) {
+    const [, bx, by, bs] = flat;
+    let moved = false;
+    for (const ds of [-0.02, 0, 0.02]) {
+      const sc = Math.max(1 - o.scale, Math.min(1 + o.scale, bs + ds));
+      for (let jy = -1; jy <= 1; jy++) {
+        for (let jx = -1; jx <= 1; jx++) {
+          const v = ev(bx + jx, by + jy, 0, sc);
+          if (v > flat[0] + 1e-9) { flat = [v, bx + jx, by + jy, sc]; moved = true; }
+        }
+      }
+    }
+    if (!moved) break;
+  }
+  const placed = tracePriorPlace(pts, S.c, dx, dy, rot, scale);
+  // turnShape: how different the turn makes the outline (1 - IoU with it unturned): a
+  // round hold turned 40° is the same shape
+  const turnShape = Math.abs(rot) < 1 ? 0 : 1 - tracePolyIoU(placed, tracePriorPlace(pts, S.c, dx, dy, 0, scale));
+  return { pts: placed, score, score0, rot, scale, dx, dy, turnGain: score - flat[0], turnShape };
+}
+
+// An outline moved by (dx, dy), turned by rot degrees and scaled about its centre c.
+function tracePriorPlace(pts, c, dx, dy, rot, scale) {
+  const cs = Math.cos(rot * Math.PI / 180) * scale, sn = Math.sin(rot * Math.PI / 180) * scale;
+  return pts.map(p => {
+    const ux = p[0] - c[0], uy = p[1] - c[1];
+    return [c[0] + dx + cs * ux - sn * uy, c[1] + dy + sn * ux + cs * uy];
+  });
+}
+
+function traceBBox(pts) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of pts) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
+  return [x0, y0, x1, y1];
+}
+
+// A polygon filled into a w × h grid whose top left is (x0, y0) (pixel centres, even-odd).
+function traceRaster(pts, x0, y0, w, h) {
+  const m = new Uint8Array(w * h), n = pts.length, xs = [];
+  for (let y = 0; y < h; y++) {
+    const py = y0 + y + 0.5;
+    xs.length = 0;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const a = pts[i], b = pts[j];
+      if ((a[1] > py) !== (b[1] > py)) xs.push(a[0] + (py - a[1]) / (b[1] - a[1]) * (b[0] - a[0]));
+    }
+    xs.sort((p, q) => p - q);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const s = Math.max(0, Math.ceil(xs[k] - x0 - 0.5)), e = Math.min(w - 1, Math.floor(xs[k + 1] - x0 - 0.5));
+      for (let x = s; x <= e; x++) m[y * w + x] = 1;
+    }
+  }
+  return m;
+}
+
+// Overlap of two polygons: intersection / union of their areas (pixels).
+function tracePolyIoU(a, b) {
+  const A = traceBBox(a), B = traceBBox(b);
+  if (A[2] < B[0] || B[2] < A[0] || A[3] < B[1] || B[3] < A[1]) return 0;
+  const x0 = Math.floor(Math.min(A[0], B[0])), y0 = Math.floor(Math.min(A[1], B[1]));
+  const w = Math.ceil(Math.max(A[2], B[2])) - x0 + 1, h = Math.ceil(Math.max(A[3], B[3])) - y0 + 1;
+  const ma = traceRaster(a, x0, y0, w, h), mb = traceRaster(b, x0, y0, w, h);
+  let i = 0, u = 0;
+  for (let k = 0; k < ma.length; k++) { if (ma[k] & mb[k]) i++; if (ma[k] | mb[k]) u++; }
+  return u ? i / u : 0;
+}
+
+// The share of polygon a's area that lies inside polygon b.
+function tracePolyCover(a, b) {
+  const A = traceBBox(a), B = traceBBox(b);
+  if (A[2] < B[0] || B[2] < A[0] || A[3] < B[1] || B[3] < A[1]) return 0;
+  const x0 = Math.floor(A[0]), y0 = Math.floor(A[1]), w = Math.ceil(A[2]) - x0 + 1, h = Math.ceil(A[3]) - y0 + 1;
+  const ma = traceRaster(a, x0, y0, w, h), mb = traceRaster(b, x0, y0, w, h);
+  let i = 0, n = 0;
+  for (let k = 0; k < ma.length; k++) { if (ma[k]) { n++; if (mb[k]) i++; } }
+  return n ? i / n : 0;
+}
+
+// Trace just the hold under a tap at (x, y) px, on the masks of a whole trace: the
+// foreground piece there (split from any hold touching it and trimmed to its own
+// outline, as the trace does), or, where that leaks into the background or is far
+// bigger than opts.maxArea, the area inside the dark outline grown out over it.
+// -> the outline (px), or null.
+function traceTap(masks, x, y, opts) {
+  const { fg, line, W, H } = masks, o = traceOpts(W, H, Object.assign({}, TRACE_PRIOR, opts || {}));
+  const maxA = Math.min(o.maxHold * W * H, o.maxArea || Infinity);
+  let half = Math.round(o.tapWin * Math.max(W, H));
+  const cx = Math.round(x), cy = Math.round(y);
+  for (let tries = 0; tries < 2; tries++, half *= 2) {
+    const x0 = Math.max(0, cx - half), y0 = Math.max(0, cy - half), x1 = Math.min(W, cx + half + 1), y1 = Math.min(H, cy + half + 1);
+    const w = x1 - x0, h = y1 - y0;
+    if (w < 3 || h < 3) return null;
+    const m = new Uint8Array(w * h), ln = new Uint8Array(w * h);
+    for (let yy = 0; yy < h; yy++) {
+      for (let xx = 0; xx < w; xx++) { const j = (y0 + yy) * W + x0 + xx; m[yy * w + xx] = fg[j]; ln[yy * w + xx] = line[j]; }
+    }
+    const seed = traceNearest(m, w, h, cx - x0, cy - y0, Math.max(3, o.lineRadius * 2));
+    if (seed < 0) return null;
+    const lab = traceLabel(m, w, h, 4), l = lab.lab[seed], bb = lab.box[l];
+    const edge = (bb[0] === 0 && x0 > 0) || (bb[1] === 0 && y0 > 0) || (bb[2] === w - 1 && x1 < W) || (bb[3] === h - 1 && y1 < H);
+    if (edge && tries === 0) continue;
+    if (!edge && lab.area[l] <= maxA * 1.5) {
+      const parts = traceSplit(lab.lab, w, l, bb, o, ln);
+      const sx = seed % w, sy = (seed - sx) / w;
+      let part = parts.find(p => { const px = sx - p.x0, py = sy - p.y0; return px >= 0 && py >= 0 && px < p.w && py < p.h && p.mask[py * p.w + px]; });
+      if (!part) part = parts.sort((a, b) => b.area - a.area)[0];
+      if (part && part.area <= maxA) {
+        const pts = traceOutline(part, o);
+        if (pts && pts.length >= 3) return pts.map(p => [p[0] + x0, p[1] + y0]);
+      }
+    }
+    // it leaks (or it's far too big): inside the outline only, then out over the line
+    const inner = new Uint8Array(w * h);
+    for (let i = 0; i < inner.length; i++) inner[i] = m[i] && !ln[i] ? 1 : 0;
+    // the piece with most pixels near the tap (a tap on a bolt hole's dark ring would
+    // otherwise pick the speck inside it), not leaking out of the window
+    const lab2 = traceLabel(inner, w, h, 4), R = Math.max(4, o.lineRadius * 4), cnt = new Map();
+    for (let yy = Math.max(0, cy - y0 - R); yy <= Math.min(h - 1, cy - y0 + R); yy++) {
+      for (let xx = Math.max(0, cx - x0 - R); xx <= Math.min(w - 1, cx - x0 + R); xx++) {
+        const l = lab2.lab[yy * w + xx];
+        if (l && (xx - cx + x0) ** 2 + (yy - cy + y0) ** 2 <= R * R) cnt.set(l, (cnt.get(l) || 0) + 1);
+      }
+    }
+    let l2 = 0, bc = 0;
+    cnt.forEach((c, l) => {
+      const b = lab2.box[l];
+      const out = (b[0] === 0 && x0 > 0) || (b[1] === 0 && y0 > 0) || (b[2] === w - 1 && x1 < W) || (b[3] === h - 1 && y1 < H);
+      if (!out && lab2.area[l] <= maxA && c > bc) { bc = c; l2 = l; }
+    });
+    if (!l2) { if (tries === 0) continue; return null; }
+    let mm = new Uint8Array(w * h);
+    for (let i = 0; i < mm.length; i++) mm[i] = lab2.lab[i] === l2 ? 1 : 0;
+    traceFillHoles(mm, w, h);
+    for (let k = 0; k <= o.lineRadius; k++) mm = traceDilate(mm, w, h);
+    const pts = traceOutline({ mask: mm, w, h, x0: 0, y0: 0 }, o);
+    return pts && pts.length >= 3 ? pts.map(p => [p[0] + x0, p[1] + y0]) : null;
+  }
+  return null;
+}
+
+// The index of the set pixel of m nearest (x, y), within r; -1 if none.
+function traceNearest(m, w, h, x, y, r) {
+  let best = -1, bd = Infinity;
+  for (let yy = Math.max(0, y - r); yy <= Math.min(h - 1, y + r); yy++) {
+    for (let xx = Math.max(0, x - r); xx <= Math.min(w - 1, x + r); xx++) {
+      if (!m[yy * w + xx]) continue;
+      const d = (xx - x) * (xx - x) + (yy - y) * (yy - y);
+      if (d < bd && d <= r * r) { bd = d; best = yy * w + xx; }
+    }
+  }
+  return best;
+}
+
+// A closed outline drawn as the app draws it (Catmull-Rom with tension s, as
+// smoothShapePath in core.js), sampled 8 points a segment.
+function traceCurve(pts, s) {
+  const n = pts.length, k = s / 6, out = [];
+  if (n < 3 || !s) return pts.map(p => [p[0], p[1]]);
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+    const c1 = [p1[0] + (p2[0] - p0[0]) * k, p1[1] + (p2[1] - p0[1]) * k];
+    const c2 = [p2[0] - (p3[0] - p1[0]) * k, p2[1] - (p3[1] - p1[1]) * k];
+    for (let t = 0; t < 1; t += 0.125) {
+      const u = 1 - t;
+      out.push([u * u * u * p1[0] + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t * t * t * p2[0],
+                u * u * u * p1[1] + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t * t * t * p2[1]]);
+    }
+  }
+  return out;
 }
