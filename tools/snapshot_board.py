@@ -16,7 +16,7 @@ The app strips hold_map.json's __meta when it loads it, and draws the bundled
 outlines offline only when both files carry the same board_updated_at.
 
 Run it after anything changes on the live board (a new photo or map, or newly
-published outlines), then bump CACHE in app/sw.js and deploy:
+published outlines), then ship it (build.sh stamps CACHE itself; never by hand):
 
     python tools/snapshot_board.py
 
@@ -84,7 +84,7 @@ def main():
                                  **hold_map})
     write_json("mirror_map.json", mirror_map)
     write_json("hold_shapes.json", shapes, indent=None)
-    print("Done. Bump CACHE in app/sw.js, then deploy.")
+    print("Done. Now ship it: commit these files and push main (build.sh stamps CACHE).")
 
 
 if __name__ == "__main__":

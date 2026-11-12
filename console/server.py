@@ -209,7 +209,7 @@ class Console:
         self.backup_if_due()
         b = backups.summary()
         return {'at': time.time(), 'units': units,
-                'tiles': pi_tiles[:1] + tiles.laptop_tiles(lap) + pi_tiles[1:] + [tiles.backup_tile(b)],
+                'tiles': pi_tiles[:1] + tiles.laptop_tiles(lap) + pi_tiles[1:] + [tiles.backup_tile(b), tiles.snapshot_tile(lap)],
                 'backup': dict(b, running=self._backup_running),
                 'pi_ok': bool(p.get('ok')), 'helper': p.get('helper'), 'config_drift': drift,
                 'attention': self.attention(drift), 'autodeploy': autodeploy.load_state(),

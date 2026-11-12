@@ -293,6 +293,21 @@ def backup_tile(b, now=None):
     return tile('backup', 'Backups', OK, 'backed up %s' % ago(now - b['ok_at']), lines, sig='ok')
 
 
+def snapshot_tile(c):
+    """The app's offline copy of the board (tools/snapshot_board.py, shipped in app/) against
+    the live board: amber while a publish (phone, console or Trace Holds) hasn't been
+    snapshotted and shipped (SEAM-05)."""
+    s = (c or {}).get('snapshot') or {}
+    lines = ['live board version: %s' % (s.get('live') or '?'),
+             'the snapshot in app/ (hold_map.json __meta): %s' % (s.get('snapshot') or 'none'),
+             'fix: PB Console → Holds → Ship the snapshot (or python tools/snapshot_board.py, then ship)']
+    if s.get('behind') is None:
+        return tile('snapshot', 'Board snapshot', UNKNOWN, 'not checked yet', lines)
+    if s['behind']:
+        return tile('snapshot', 'Board snapshot', WARN, 'behind the live board', lines, sig='behind|%s' % s.get('live'))
+    return tile('snapshot', 'Board snapshot', OK, 'matches the live board', lines, sig='ok')
+
+
 def laptop_tiles(c):
     if not c:
         return [tile('site', 'Live site', UNKNOWN, 'not checked yet'),

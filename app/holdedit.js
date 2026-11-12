@@ -21,6 +21,12 @@
 //   publish   every edit is kept in a draft on this device (Undo/Redo); Publish changes
 //             shows a summary, uploads the new board image (only when a hold turned) and
 //             publishes through admin_publish_board(), so Undo the last publish works.
+//             The edits are kept by hold id (turns, new and deleted footholds, pairs,
+//             trims), so when the board is published from somewhere else meanwhile they
+//             are laid over the board as it is now (heRebase), keeping whatever was
+//             published there; an edit that clashes with it is dropped and said so. The
+//             publish names the version it was built on and the server refuses any other
+//             (db/45), so nothing published elsewhere is ever overwritten.
 // The image work (heRegion, heComposite, heRotateImage) is pure, no DOM:
 // tools/holdedit_score.js runs it in Node.
 
@@ -49,6 +55,7 @@ const HE = {
   regions: new Map(), regionsKey: '',
   imgGen: 0, masks: null, masksGen: -1,
   busy: false, raf: 0, version: null,
+  baseRef: {},         // hold id -> { o: hash of its outline, m: its mirror } on the board the edits were made on
 };
 
 // ── the pure image work (Node-testable) ───────────────────────────────────────
@@ -510,7 +517,7 @@ function heSave() {
   try {
     if (!heDirty()) { localStorage.removeItem(HE_DRAFT); return; }
     localStorage.setItem(HE_DRAFT, JSON.stringify({
-      v: HE_DRAFT_V, t: Date.now(), version: HE.version, image: HE.img && HE.img.path,
+      v: HE_DRAFT_V, t: Date.now(), version: HE.version, image: HE.img && HE.img.path, ref: heTouchedRef(),
       state: JSON.parse(heState()), undo: HE.undo.slice(-HE_UNDO_MAX), redo: HE.redo.slice(-HE_UNDO_MAX),
     }));
   } catch (e) { /* full or blocked: the draft lives in memory */ }
@@ -549,6 +556,79 @@ function heRedo() {
   heChanged(true);
 }
 
+// ── the board the edits were made on, and laying them over a newer one ───────
+function heHash(v) {
+  const s = JSON.stringify(v == null ? null : v);
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(36) + ':' + s.length;
+}
+// Every hand hold and foothold of BS.live, as the edits' baseline.
+function heRefAll() {
+  const ref = {};
+  (BS.live ? BS.live.holds : []).forEach(h => {
+    if (h.kind === 'hand' || h.kind === 'foot') ref[h.id] = { o: heHash(h.outline), m: h.mirror || null };
+  });
+  return ref;
+}
+// Only the holds the edits touch (kept in the draft).
+function heTouchedRef() {
+  const ids = new Set([...Object.keys(HE.rot), ...Object.keys(HE.outlines), ...HE.removed, ...Object.keys(HE.pairs)]);
+  Object.values(HE.pairs).forEach(v => { if (v) ids.add(v); });
+  const ref = {};
+  ids.forEach(id => { if (HE.baseRef[id]) ref[id] = HE.baseRef[id]; });
+  return ref;
+}
+// Lay the edits over BS.live, a newer board than the one they were made on (`ref` says
+// how the touched holds were then). Kept: turns, deletions, new footholds (renumbered
+// above every id the board has used), trims and pairs whose holds haven't changed.
+// Dropped: anything on a hold that's gone, a trim of an outline redrawn since, a pair
+// whose foothold was re-paired since. Undo history starts again. -> how many were dropped.
+function heRebase(ref) {
+  const live = new Map((BS.live ? BS.live.holds : []).filter(h => h.kind === 'hand' || h.kind === 'foot').map(h => [h.id, h]));
+  let lost = 0;
+  const outlineMoved = id => !ref[id] || !live.has(id) || ref[id].o !== heHash(live.get(id).outline);
+  const pairMoved = id => !ref[id] || !live.has(id) || ref[id].m !== (live.get(id).mirror || null);
+  const num = id => { const m = /^foot(\d+)$/.exec(id || ''); return m ? +m[1] : 0; };
+  HE.removed = HE.removed.filter(id => live.has(id) && live.get(id).kind === 'foot');
+  Object.keys(HE.rot).forEach(id => { if (!live.has(id) && !HE.added.some(a => a.id === id)) { delete HE.rot[id]; lost++; } });
+  Object.keys(HE.outlines).forEach(id => { if (outlineMoved(id)) { delete HE.outlines[id]; lost++; } });
+  // new footholds: a fresh number when theirs is taken now or was used before
+  let n = BS.live ? BS.live.footMax || 0 : 0;
+  live.forEach((h, id) => { n = Math.max(n, num(id)); });
+  const floor = n, rename = {};
+  HE.added.forEach(a => { if (num(a.id) <= floor) rename[a.id] = true; else n = Math.max(n, num(a.id)); });
+  HE.added.forEach(a => { if (rename[a.id] === true) { rename[a.id] = 'foot' + (++n); a.id = rename[a.id]; } });
+  const re = id => (id && typeof rename[id] === 'string' ? rename[id] : id);
+  const rot = {};
+  Object.keys(HE.rot).forEach(id => { rot[re(id)] = HE.rot[id]; });
+  HE.rot = rot;
+  const pairs = {};
+  Object.keys(HE.pairs).forEach(id => { pairs[re(id)] = re(HE.pairs[id]); });
+  // pairs: both ends still there, and a live foothold's own pair unchanged since
+  const isNew = id => HE.added.some(a => a.id === id);
+  const there = id => isNew(id) || (live.has(id) && live.get(id).kind === 'foot' && !HE.removed.includes(id));
+  Object.keys(pairs).forEach(id => {
+    const v = pairs[id];
+    if (!there(id) || (v && !there(v)) || (!isNew(id) && pairMoved(id))) { delete pairs[id]; lost++; }
+  });
+  // a pair kept at one end only would never pair back: drop it
+  const partner = id => (id in pairs ? pairs[id] : live.has(id) ? live.get(id).mirror || null : null);
+  Object.keys(pairs).forEach(id => {
+    const v = pairs[id];
+    if (v && v !== id && partner(v) !== id) { delete pairs[id]; lost++; }
+  });
+  // entries equal to the board's own pair go
+  Object.keys(pairs).forEach(id => { if (live.has(id) && (live.get(id).mirror || null) === pairs[id]) delete pairs[id]; });
+  HE.pairs = pairs;
+  if (HE.sel) HE.sel = re(HE.sel);
+  HE.undo = []; HE.redo = [];
+  HE.regions.clear(); HE.regionsKey = '';
+  HE.masks = null; HE.masksGen = -1;
+  HE.gen++;
+  return lost;
+}
+
 // A summary of the draft for the start page: "2 holds turned, 1 foothold added".
 function heDraftSummary(d) {
   const s = d.state || {};
@@ -565,13 +645,15 @@ function heDraftSummary(d) {
 function heStartCard() {
   const d = heDraft();
   const when = t => new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  const stale = d && BS.live && (d.version !== BS.live.version || d.image !== BS.live.image);
+  const stale = d && BS.live && d.image !== BS.live.image;                // a new image: the edits can't be kept
+  const moved = d && BS.live && !stale && d.version !== BS.live.version;  // published since: laid over it
   return `
     <div class="bs-card">
       <div class="bs-card-title">Edit holds</div>
       <p class="bs-muted">Change today’s board directly: add or delete footholds, and turn a hold to match the wall (its mirror partner turns the other way). Nothing changes for climbers until you publish.</p>
       ${d && !stale ? `<p class="bs-muted"><b>Unpublished edits</b> (${escHtml(when(d.t))}): ${escHtml(heDraftSummary(d))}.</p>` : ''}
-      ${stale ? `<p class="bs-muted"><b>Your unpublished edits were made on an earlier board</b> (it’s been published since), so they’ll be dropped when you open the editor.</p>` : ''}
+      ${moved ? `<p class="bs-muted">The board has been published since, so your edits will be laid over it as it is now (anything that clashes is dropped, and you’re told).</p>` : ''}
+      ${stale ? `<p class="bs-muted"><b>Your unpublished edits were made on an earlier board image</b> (a new photo or a turn has been published since), so they’ll be dropped when you open the editor.</p>` : ''}
       <button class="ol-btn ${d && !stale ? 'ol-publish' : ''} bs-wide" data-act="he-open">${d && !stale ? 'Carry on editing' : 'Edit holds'}</button>
     </div>`;
 }
@@ -579,11 +661,21 @@ function heStartCard() {
 // ── open the editor ───────────────────────────────────────────────────────────
 async function heOpen() {
   if (HE.busy) return;
-  if (!BS.live) await bsLoadLive();
-  if (!BS.live || !BS.live.image) { showToast('Couldn’t load the board', 'error'); return; }
   HE.busy = true;
   bsEl('bs-page').innerHTML = '<div class="spinner"></div>';
+  await bsLoadLive();                        // always the board as it is now (BRD-01)
+  HE.busy = false;
+  if (!BS.live || !BS.live.image) { showToast('Couldn’t load the board', 'error'); bsRender(); return; }
+  HE.busy = true;
   try {
+    if (HE.img && HE.img.path === BS.live.image && HE.version !== BS.live.version) {
+      // edits still in memory, made on an earlier version of this same image
+      const lost = heRebase(HE.baseRef);
+      HE.version = BS.live.version;
+      HE.baseRef = heRefAll();
+      heSave();
+      if (heDirty()) heRebasedToast(lost);
+    }
     if (!HE.img || HE.img.path !== BS.live.image || HE.version !== BS.live.version) {
       const res = await fetch(bsUrl(BS.live.image), { cache: 'no-cache' });
       if (!res.ok) throw new Error('image ' + res.status);
@@ -600,15 +692,21 @@ async function heOpen() {
       HE.canvas = c;
       HE.palette = hePalette(orig, W, H);
       HE.version = BS.live.version;
+      HE.baseRef = heRefAll();
       HE.masks = null; HE.masksGen = -1;
       Object.assign(HE, { rot: {}, added: [], removed: [], pairs: {}, outlines: {}, undo: [], redo: [] });
       const d = heDraft();
       if (d && d.version === HE.version && d.image === HE.img.path) {
         heLoadState(JSON.stringify(d.state || {}));
         HE.undo = d.undo || []; HE.redo = d.redo || [];
+      } else if (d && d.image === HE.img.path) {
+        heLoadState(JSON.stringify(d.state || {}));
+        const lost = heRebase(d.ref || {});
+        heSave();
+        heRebasedToast(lost);
       } else if (d) {
         heDropDraft();
-        showToast('The board was published since your edits, so they were dropped', 'error');
+        showToast('A new board image was published since your edits, so they were dropped', 'error');
       }
     }
     HE.sel = null; HE.tool = null;
@@ -624,6 +722,9 @@ async function heOpen() {
     showToast('Couldn’t load the board image', 'error');
     bsRender();
   }
+}
+function heRebasedToast(lost) {
+  showToast(`The board was published from somewhere else since your edits: they’re laid over it as it is now${lost ? ` (${lost} that clashed with it ${lost === 1 ? 'was' : 'were'} dropped)` : ''}. Check them before you publish.`, lost ? 'error' : 'success');
 }
 function heClose() {
   HE.sel = null; HE.tool = null;
@@ -850,7 +951,7 @@ function heRotReset() {
   heChanged(true);
 }
 function heNextFootId() {
-  let n = 0;
+  let n = BS.live ? BS.live.footMax || 0 : 0;            // never an id an earlier foothold had (db/45)
   const seen = id => { const m = /^foot(\d+)$/.exec(id || ''); if (m) n = Math.max(n, +m[1]); };
   (BS.live ? BS.live.holds : []).forEach(h => seen(h.id));
   HE.added.forEach(a => seen(a.id));
@@ -1109,10 +1210,46 @@ function hePayload() {
 function heImageBlob() {
   return new Promise((res, rej) => HE.canvas.toBlob(b => (b ? res(b) : rej(new Error('encode'))), 'image/jpeg', HE_JPEG_Q));
 }
+// A hand hold or foothold of the board with no outline can't be published (the server
+// refuses the whole board): say which, before anything is uploaded (BRD-04).
+function heMissingOutlines() {
+  return (BS.live ? BS.live.holds : []).filter(h => (h.kind === 'hand' || (h.kind === 'foot' && !HE.removed.includes(h.id)))
+    && !HE.outlines[h.id] && !(Array.isArray(h.outline) && h.outline.length >= 3)).map(h => h.name || h.id);
+}
+// The board moved while editing: lay the edits over it as it is now (same image), or
+// drop them (a new image). Nothing is published; the user checks and publishes again.
+async function heStale() {
+  const keep = BS.live;
+  if (!(await bsLoadLive()) || !BS.live) { BS.live = keep; showToast('The board changed since you opened it, and it couldn’t be reloaded: try again', 'error'); bsRenderPanel(); return; }
+  if (BS.live.image !== HE.img.path) {
+    heDropDraft();
+    Object.assign(HE, { rot: {}, added: [], removed: [], pairs: {}, outlines: {}, undo: [], redo: [], sel: null, tool: null, img: null, canvas: null, masks: null, version: null });
+    HE.regions.clear(); HE.gen++;
+    delete BS.img.edit;
+    showToast('A new board image was published from somewhere else meanwhile, so your edits were dropped: open Edit holds again', 'error');
+    bsGo('start');
+    return;
+  }
+  const lost = heRebase(HE.baseRef);
+  HE.version = BS.live.version;
+  HE.baseRef = heRefAll();
+  HE.tool = null;
+  heChanged(true);
+  heRebasedToast(lost);
+}
 async function hePublish() {
   if (HE.busy) return;
+  const missing = heMissingOutlines();
+  if (missing.length) {
+    showToast(`${missing.slice(0, 3).join(', ')} ${missing.length === 1 ? 'has' : 'have'} no outline: draw ${missing.length === 1 ? 'one' : 'them'} (PB Console → Holds) before publishing here`, 'error');
+    return;
+  }
   HE.busy = true; bsRenderPanel();
   try {
+    // the cheap check first, so nothing is uploaded for a publish the server would refuse
+    const { data: cur, error: curErr } = await sb.from('board_config').select('updated_at').eq('wall', BS_WALL).maybeSingle();
+    if (curErr) throw curErr;
+    if (cur && cur.updated_at !== HE.version) { HE.busy = false; await heStale(); return; }
     let path = HE.img.path;
     if (heModel().list.some(h => h.deg)) {
       if (HE.raf) { cancelAnimationFrame(HE.raf); HE.raf = 0; }
@@ -1123,12 +1260,10 @@ async function hePublish() {
       const { error: upErr } = await sb.storage.from(BOARD_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false });
       if (upErr) throw upErr;
     }
-    const q = BS.live.corners || { image: heQuad() };
-    const corners = { image: q.image };
-    if (q.photo) corners.photo = q.photo;
+    // corners null = the board keeps its own (never a made-up full-image quad: BRD-13)
     const { data, error } = await sb.rpc('admin_publish_board', {
       p_wall: BS_WALL, p_image_path: path, p_photo_path: BS.live.photo || null,
-      p_corners: corners, p_holds: hePayload(), p_smooth: null,
+      p_corners: null, p_holds: hePayload(), p_smooth: null, p_expected_version: HE.version,
     });
     if (error) throw error;
     console.info('hold editor: published, board version', data);
@@ -1143,7 +1278,8 @@ async function hePublish() {
   } catch (e) {
     console.error('hold editor: publish', e);
     HE.busy = false;
-    showToast(e && e.code === '42501' ? 'Only the super admin can publish a board' : 'Publish failed: ' + ((e && (e.details || e.message)) || 'check the connection'), 'error');
+    if (bsIsStale(e)) { await heStale(); return; }
+    showToast(bsPublishError(e), 'error');
     bsRenderPanel();
   }
 }

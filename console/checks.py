@@ -76,9 +76,26 @@ def site(base):
 
 
 def supabase_rest(url, key):
-    status, body, ms = get(url + '/rest/v1/board_config?select=wall&limit=1',
+    """REST up or not, and the live board version (board_config.updated_at) on the way."""
+    status, body, ms = get(url + '/rest/v1/board_config?select=wall,updated_at&wall=eq.HangoutPortland&limit=1',
                            {'apikey': key, 'Authorization': 'Bearer ' + key})
-    return {'status': status, 'ms': ms, 'error': None if status == 200 else body[:200]}
+    version = None
+    if status == 200:
+        try:
+            version = (json.loads(body) or [{}])[0].get('updated_at')
+        except (ValueError, IndexError, AttributeError):
+            pass
+    return {'status': status, 'ms': ms, 'error': None if status == 200 else body[:200], 'board_version': version}
+
+
+def snapshot(sb):
+    """The app's bundled board snapshot (app/hold_map.json __meta, as shipped from this
+    checkout) against the live board version: behind = a publish hasn't been snapshotted."""
+    import holds
+    live = (sb or {}).get('board_version')
+    snap = holds.snapshot_version()
+    return {'live': live, 'snapshot': snap,
+            'behind': None if not live else not holds.same_version(snap, live)}
 
 
 # -- a minimal WebSocket client (RFC 6455), enough for one Phoenix join ---------
@@ -185,6 +202,7 @@ def realtime_join(url, key, topic=TOPIC, timeout=10):
 def laptop_checks(env=None, realtime=True):
     url, key = supabase_settings(env)
     out = {'at': time.time(), 'live': site(LIVE), 'repo_cache': repo_cache(), 'supabase': supabase_rest(url, key)}
+    out['snapshot'] = snapshot(out['supabase'])
     if realtime:
         out['realtime'] = realtime_join(url, key)
     return out

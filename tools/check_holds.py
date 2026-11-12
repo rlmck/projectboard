@@ -18,10 +18,22 @@ app/state.js) and checks, for every hold:
   - the 188 hand holds are exactly the live hold map's, the feet signs are B1 =
     hold2 = LED 26 and B2 = hold21 = LED 25, footholds have no LED, no LED is used
     twice, every partner is a hold;
-  - the bundled snapshot (app/hold_map.json, app/mirror_map.json) still matches
-    live (re-run tools/snapshot_board.py when it doesn't).
+  - every hand hold has an outline, and there are HAND_HOLDS of them; the outlines'
+    version tie (hold_shapes.__meta.board_updated_at = board_config.updated_at, or the
+    app draws dots); footholds are named FT1..FTn with no gaps; board_config.foot_id_max
+    (db/45) is at least every foothold's number;
+  - every problem's Specific feet are footholds of the board, and every problem and
+    circuit hold is a hand hold (never a feet sign, a foothold or an unknown id);
+  - the bundled snapshot (app/hold_map.json, app/mirror_map.json, app/hold_shapes.json,
+    their __meta.board_updated_at) still matches live. A snapshot behind live is a
+    WARNING, not a failure (the exit code stays 0): a publish hasn't been snapshotted
+    yet (re-run tools/snapshot_board.py and ship, or PB Console -> Holds -> Ship the
+    snapshot).
+Not checked: the footholds' FTn order (left to right, bottom row up) needs the board
+image's corners and size (bsFootNameList in app/setup.js); the publish tools set it.
 Prints counts and the first few mismatches, never anything about users.
 """
+import datetime
 import json
 import os
 import re
@@ -36,6 +48,7 @@ import board  # noqa: E402
 WALL = 'HangoutPortland'
 URL = 'https://uqirowyfqwiceyjznosl.supabase.co'
 FEET_SIGNS = {'hold2': ('B1', 26), 'hold21': ('B2', 25)}
+HAND_HOLDS = 188
 
 
 def anon_key():
@@ -131,32 +144,106 @@ def check(holds, bc, led_map, snap_map, snap_mirror):
     for i in FEET_SIGNS:
         if by_id.get(i, {}).get('kind') != 'feet_sign':
             bad.append('%s: missing or not a feet sign' % i)
-    if {k: v for k, v in snap_map.items() if k != '__meta'} != hold_map:
-        bad.append('app/hold_map.json differs from live: run tools/snapshot_board.py')
-    if snap_mirror != mirror_map:
-        bad.append('app/mirror_map.json differs from live: run tools/snapshot_board.py')
+    # every hand hold outlined, the right count, the outlines' version tie
+    hand_rows = [h for h in holds if h['kind'] == 'hand']
+    if len(hand_rows) != HAND_HOLDS:
+        bad.append('%d hand holds, expected %d' % (len(hand_rows), HAND_HOLDS))
+    for h in hand_rows:
+        if not isinstance(h.get('outline'), list) or len(h['outline']) < 3:
+            bad.append('%s (%s): a hand hold with no outline (every publish is refused until it has one)'
+                       % (h['name'], h['id']))
+    meta = shapes.get('__meta') or {}
+    if not same_version(meta.get('board_updated_at'), bc.get('updated_at')):
+        bad.append('hold_shapes.__meta.board_updated_at (%s) is not the board version (%s): the app draws dots'
+                   % (meta.get('board_updated_at'), bc.get('updated_at')))
+    # footholds: FT1..FTn with no gaps, numbers within foot_id_max
+    feet = [h for h in holds if h['kind'] == 'foot']
+    nums = sorted(int(h['name'][2:]) for h in feet if re.match(r'^FT[0-9]{1,3}$', h.get('name') or ''))
+    if nums != list(range(1, len(feet) + 1)):
+        bad.append('footholds are not named FT1..FT%d with no gaps' % len(feet))
+    top = max([int(h['id'][4:]) for h in feet if re.match(r'^foot[0-9]{1,4}$', h['id'])] or [0])
+    if bc.get('foot_id_max') is not None and top > int(bc['foot_id_max']):
+        bad.append('foothold number %d is above board_config.foot_id_max (%s)' % (top, bc['foot_id_max']))
     return bad
+
+
+def check_uses(holds, problems, circuits):
+    """Problems' and circuits' hold lists against the table. -> mismatch strings."""
+    bad = []
+    kind = {h['id']: h['kind'] for h in holds}
+    for p in problems:
+        ids = list(p.get('start_holds') or []) + list(p.get('intermediate_holds') or []) + [p.get('finish_hold')]
+        wrong = sorted({i for i in ids if i and kind.get(i) != 'hand'})
+        if wrong:
+            bad.append('problem %s: holds that are not hand holds: %s' % (p.get('id'), ', '.join(wrong)))
+        wrong = sorted({f for f in p.get('feet_holds') or [] if kind.get(f) != 'foot'})
+        if wrong:
+            bad.append('problem %s: Specific feet that are not footholds: %s' % (p.get('id'), ', '.join(wrong)))
+    for c in circuits:
+        wrong = sorted({i for i in c.get('hold_sequence') or [] if kind.get(i) != 'hand'})
+        if wrong:
+            bad.append('circuit %s: holds that are not hand holds: %s' % (c.get('id'), ', '.join(wrong)))
+    return bad
+
+
+def check_snapshot(bc, snap_map, snap_mirror, snap_shapes):
+    """The bundled snapshot against live. -> warning strings (a snapshot behind live is
+    expected right after a publish, until it's shipped)."""
+    warn = []
+    shapes = {k: v for k, v in (bc.get('hold_shapes') or {}).items() if k != '__meta'}
+    ver = (snap_map.get('__meta') or {}).get('board_updated_at')
+    if not same_version(ver, bc.get('updated_at')):
+        warn.append('the snapshot is of board %s, live is %s' % (ver, bc.get('updated_at')))
+    if {k: v for k, v in snap_map.items() if k != '__meta'} != (bc.get('hold_map') or {}):
+        warn.append('app/hold_map.json differs from live')
+    if snap_mirror != (bc.get('mirror_map') or {}):
+        warn.append('app/mirror_map.json differs from live')
+    if {k: v for k, v in snap_shapes.items() if k != '__meta'} != shapes:
+        warn.append('app/hold_shapes.json differs from live')
+    if not same_version((snap_shapes.get('__meta') or {}).get('board_updated_at'), ver):
+        warn.append('app/hold_shapes.json and app/hold_map.json are of different boards')
+    return warn
+
+
+def same_version(a, b):
+    """Two board versions (timestamps as text) the same instant? '...089+00:00' == '...089Z'."""
+    def t(v):
+        try:
+            return datetime.datetime.fromisoformat(str(v).replace('Z', '+00:00'))
+        except ValueError:
+            return None
+    ta, tb = t(a), t(b)
+    return ta is not None and ta == tb
 
 
 def main():
     key = anon_key()
     holds = get('holds?select=id,name,kind,led,x,y,outline,mirror&wall=eq.%s&order=id&limit=2000' % WALL, key)
-    rows = get('board_config?select=hold_map,mirror_map,hold_shapes&wall=eq.%s' % WALL, key)
+    rows = get('board_config?select=*&wall=eq.%s' % WALL, key)
     if not rows:
         raise SystemExit('no board_config row')
-    bad = check(holds, rows[0], load('tools', 'led_map.json'), load('app', 'hold_map.json'),
-                load('app', 'mirror_map.json'))
+    problems = get('problems?select=id,start_holds,intermediate_holds,finish_hold,feet_holds&limit=10000', key)
+    circuits = get('circuits?select=id,hold_sequence&limit=10000', key)
+    snap_map = load('app', 'hold_map.json')
+    bad = check(holds, rows[0], load('tools', 'led_map.json'), snap_map, load('app', 'mirror_map.json'))
+    bad += check_uses(holds, problems, circuits)
+    warn = check_snapshot(rows[0], snap_map, load('app', 'mirror_map.json'), load('app', 'hold_shapes.json'))
     kinds = {}
     for h in holds:
         kinds[h['kind']] = kinds.get(h['kind'], 0) + 1
-    print('holds: %d (%s)' % (len(holds), ', '.join('%s %d' % kv for kv in sorted(kinds.items()))))
+    print('holds: %d (%s); %d problems, %d circuits checked' % (
+        len(holds), ', '.join('%s %d' % kv for kv in sorted(kinds.items())), len(problems), len(circuits)))
+    for w in warn:
+        print('WARNING (the snapshot is behind live: run tools/snapshot_board.py and ship): ' + w)
     if bad:
         print('FAILED: %d mismatch%s' % (len(bad), '' if len(bad) == 1 else 'es'))
         for b in bad[:25]:
             print('  ' + b)
         return 1
     print('OK: every LED is the formula\'s (and led_map.json\'s), every partner, position and outline is '
-          'board_config\'s, the feet signs are B1/26 and B2/25, the snapshot matches live')
+          'board_config\'s, every hand hold is outlined, the feet signs are B1/26 and B2/25, the footholds are '
+          'FT1..FTn, every problem and circuit uses hand holds only%s'
+          % (', the snapshot matches live' if not warn else ' (the snapshot is behind: see above)'))
     return 0
 
 

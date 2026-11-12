@@ -15,10 +15,12 @@ console's side of the same thing:
   version moved since the page loaded it; the payload is rebuilt from the rows as they
   are then; the old rows go to console/data/undo/; then, as the super admin (the
   request's JWT claims set to that profile, role authenticated: what PostgREST does for
-  a signed-in phone), the very same admin_publish_board() call. Its checks (every hand
-  hold once, outlines 3-400 points, foot <-> foot pairs that point back, no foothold a
-  problem uses dropped, is_super_admin()) all apply unchanged. undo_last() is the app's
-  Undo the last publish (admin_undo_board).
+  a signed-in phone), the very same admin_publish_board() call, naming the version it
+  was built on (db/45: the server refuses any other). Its checks (every hand hold once,
+  outlines 3-400 points, foot <-> foot pairs that point back, no foothold a problem
+  uses dropped, a new foothold's number above every one ever used (foot_id_max),
+  is_super_admin()) all apply unchanged. The board's corners are sent as null (kept as
+  they are). undo_last() is the app's Undo the last publish (admin_undo_board).
 
 No board image is ever written here: Storage needs a signed-in session, which the console
 doesn't have (Turnstile guards sign-in). A turn (which re-draws the hold's pixels) and a
@@ -45,7 +47,6 @@ HOLD_ID = re.compile(r'^hold\d{1,3}$')
 FOOT_ID = re.compile(r'^foot\d{1,4}$')
 FOOT_NAME = re.compile(r'^FT\d{1,3}$')
 IMAGE_PATH = re.compile(r'^[A-Za-z0-9][A-Za-z0-9/_.-]{0,200}$')
-FULL_QUAD = [[0, 0], [100, 0], [100, 100], [0, 100]]
 UA = 'pb-console (laptop)'
 
 
@@ -109,7 +110,7 @@ def same_version(a, b):
 def board(env=None):
     """Everything the Holds tab draws: the board row, every hold, the feet in use, and whether
     the bundled snapshot and the database path are there."""
-    bc = _rest('board_config?select=image_path,photo_path,corners,updated_at,hold_shapes->__meta'
+    bc = _rest('board_config?select=image_path,photo_path,corners,updated_at,foot_id_max,hold_shapes->__meta'
                '&wall=eq.%s' % WALL, env)
     if not bc:
         raise RuntimeError('no board_config row for %s' % WALL)
@@ -121,6 +122,7 @@ def board(env=None):
     return {
         'board': {'version': bc.get('updated_at'), 'image_path': bc.get('image_path'),
                   'photo_path': bc.get('photo_path'), 'corners': bc.get('corners'),
+                  'foot_id_max': int(bc.get('foot_id_max') or 0),
                   'smooth': meta.get('smooth') if isinstance(meta.get('smooth'), (int, float)) else 0.7},
         'holds': [h for h in rows if h['kind'] in ('hand', 'foot')],
         'feet_used': feet_in_use(env),
@@ -382,18 +384,16 @@ def publish(edits, version, out=print):
             used[f] = used.get(f, 0) + 1
         payload, lines = apply_edits(rows, edits, used)
         undo = _undo_file('holds', {'table': 'holds', 'wall': WALL, 'board_version': str(cur), 'old': rows})
-        q = corners if isinstance(corners, dict) and isinstance(corners.get('image'), list) else {'image': FULL_QUAD}
-        c = {'image': q['image']}
-        if isinstance(q.get('photo'), list):
-            c['photo'] = q['photo']
         out('%d change(s):' % len(lines))
         for line in lines:
             out('  ' + line)
         out('publishing %d holds through admin_publish_board(), as the super admin, over direct Postgres (db/.env)'
             % len(payload))
         _as_super_admin(conn)
-        res = conn.run('select public.admin_publish_board(:w, :img, :photo, cast(:c as jsonb), cast(:h as jsonb), null)',
-                       w=WALL, img=image_path, photo=photo_path, c=json.dumps(c), h=json.dumps(payload))
+        # corners null = kept as they are (BRD-13); the expected version is the page's (db/45)
+        res = conn.run('select public.admin_publish_board(:w, :img, :photo, null::jsonb, cast(:h as jsonb), '
+                       'null::numeric, cast(:v as timestamptz))',
+                       w=WALL, img=image_path, photo=photo_path, h=json.dumps(payload), v=str(version))
         conn.run('reset role')
         conn.run('commit')
         out('published: board version %s (old rows: %s)' % (res[0][0], os.path.relpath(undo, REPO)))

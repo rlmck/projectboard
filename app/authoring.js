@@ -764,10 +764,13 @@
   // (shift ×10, alt ÷5), Delete removes a point, ctrl+Z / ctrl+Y, n / p, f, 0.
   //
   // Outlines are % of the LIVE board image, pinned to the board version in
-  // __meta.board_updated_at. Publishing writes hold_shapes ALONE — never updated_at,
-  // which is the version these outlines are pinned to (shapesUsable() in core.js).
-  // Hold positions (hold_map) are never changed here. Work in progress is kept as
-  // a draft in localStorage until it's published or discarded.
+  // __meta.board_updated_at. Publishing (admin_set_hold_outlines, db/45) moves
+  // updated_at and __meta.board_updated_at together to a new version, so the
+  // outlines stay usable (shapesUsable() in core.js) and every other board tool sees
+  // that the board changed; it's archived, so Undo the last publish puts it back.
+  // Hold positions (hold_map) are never changed here. Work in progress is kept as a
+  // draft in localStorage, pinned to the version it was started on: a draft from any
+  // other version is dropped (BRD-02).
   const isAdmin = () => !!(profile && profile.is_admin);
   // The super admin (db/44) alone works on the board: #outlines, #setup and Edit holds.
   // Always an admin too. RLS and the RPCs enforce it; this is only the UI.
@@ -850,7 +853,11 @@
     OL.undo = []; OL.redo = []; OL.sel = null; OL.staleDraft = false;
     if (!OL.ready) {                      // first seed this page: pick up a saved draft
       const d = olReadDraft();
-      if (d && d.version === boardConfigVersion && d.shapes && typeof d.shapes === 'object') {
+      if (d && d.version !== boardConfigVersion) {
+        // made on another board version: its outlines may not fit this one
+        try { localStorage.removeItem(OL_DRAFT_KEY); } catch (e) {}
+        showToast('The board was published since your outline draft, so it was dropped', 'error');
+      } else if (d && d.version === boardConfigVersion && d.shapes && typeof d.shapes === 'object') {
         OL.shapes = olStrip(d.shapes);
         if (olOkSmooth(d.smooth)) OL.smooth = d.smooth;
         if (Number.isInteger(d.cur)) OL.cur = d.cur;
@@ -869,10 +876,13 @@
     try { return JSON.parse(localStorage.getItem(OL_DRAFT_KEY) || 'null'); } catch (e) { return null; }
   }
   function olSaveDraft() {
+    // Stamped with the version of the outlines the edits were made on, never the board's
+    // current one: after a publish elsewhere the draft must not pass as the new board's.
+    if (!olVersionOk()) return;
     try {
       if (!olDirty()) { localStorage.removeItem(OL_DRAFT_KEY); return; }
       localStorage.setItem(OL_DRAFT_KEY, JSON.stringify({
-        version: boardConfigVersion, base: olHash(OL.baseline),
+        version: OL.meta.board_updated_at, base: olHash(OL.baseline),
         shapes: OL.shapes, smooth: OL.smooth, cur: OL.cur
       }));
     } catch (e) { /* storage blocked or full — the edits still live in memory */ }
@@ -1123,7 +1133,7 @@
   // One message at a time over the top of the board, most important first.
   function olNote() {
     const pts = olPts();
-    if (!olVersionOk()) return olSetNote('These outlines were traced against a different board, so the app ignores them. Publishing is off.');
+    if (!olVersionOk()) return olSetNote('The board was published from somewhere else since these outlines were loaded. Publishing is off: reload the page.');
     if (OL.staleDraft) return olSetNote('Someone published outlines since this draft was saved. Publishing overwrites theirs.', 'Discard my draft');
     if (OL.drawing) {
       return olSetNote(pts.length
@@ -1565,31 +1575,48 @@
     return out;
   }
 
+  // Holds left with fewer than 3 points (mid-redraw): publishing would skip them, so it waits.
+  const olUnfinished = () => OL.holds.filter(h => !(OL.shapes[h] && OL.shapes[h].length >= 3));
+
   async function olPublish() {
     if (OL.publishing || !olDirty()) return;
-    if (!olVersionOk()) { showToast('These outlines belong to a different board', 'error'); return; }
+    if (!olVersionOk()) { showToast('The board was published from somewhere else: reload the page', 'error'); return; }
+    const unfinished = olUnfinished();
+    if (unfinished.length) {
+      showToast(`Finish ${unfinished.slice(0, 3).map(holdName).join(', ')}${unfinished.length > 3 ? ` and ${unfinished.length - 3} more` : ''} first: every hold needs an outline of 3 points or more`, 'error');
+      return;
+    }
     const out = olPayload();
     const n = Object.keys(out).length - 1;
     if (n < 1) { showToast('Nothing to publish', 'error'); return; }
     OL.publishing = true; olStatus();
     try {
-      // Into the holds table (db/42): admin_set_hold_outlines() checks the set is
-      // pinned to this board's version, writes each hand hold's outline, and
-      // board_config.hold_shapes follows as the copy every client reads. It never
-      // moves updated_at, which would retire the very outlines being published.
-      const { error } = await sb.rpc('admin_set_hold_outlines', { p_wall: 'HangoutPortland', p_shapes: out });
+      // Into the holds table (db/42, db/45): admin_set_hold_outlines() checks the set is
+      // pinned to this board's version, writes each hand hold's outline it's sent (one
+      // it isn't sent is left as it is), archives the board for Undo and returns the
+      // new version, which updated_at and __meta.board_updated_at both move to.
+      const { data: ver, error } = await sb.rpc('admin_set_hold_outlines', { p_wall: 'HangoutPortland', p_shapes: out });
       if (error) throw error;
-      HOLD_SHAPES = olClone(out);
+      const meta = Object.assign({}, out.__meta, { board_updated_at: ver || boardConfigVersion, source: 'outline editor' });
+      HOLD_SHAPES = Object.assign(olClone(out), { __meta: meta });
       configHasShapes = true;
+      if (ver) boardConfigVersion = ver;
       OL.baseline = olStrip(olClone(out));
-      OL.meta = Object.assign({}, out.__meta);
+      OL.meta = Object.assign({}, meta);
       OL.publishedSmooth = OL.smooth;
       OL.staleDraft = false;
+      OL.srcKey = 'live|' + boardConfigVersion;
+      try { localStorage.removeItem(OL_DRAFT_KEY); } catch (e) {}
+      // the server's own copy (its version text is the one every other read sees)
+      await loadBoardConfig();
+      if (HOLD_SHAPES && HOLD_SHAPES.__meta) OL.meta = Object.assign({}, HOLD_SHAPES.__meta);
       OL.srcKey = 'live|' + boardConfigVersion;
       showToast(`Published ${n} outlines — live on everyone’s next load`, 'success');
     } catch (err) {
       console.error('outline publish failed', err);
-      showToast(err && err.code === '42501' ? 'Only the super admin can publish outlines' : 'Publish failed — check connection', 'error');
+      showToast(err && err.code === '42501' ? 'Only the super admin can publish outlines'
+        : err && err.message === 'version' ? 'The board was published from somewhere else: reload the page'
+        : 'Publish failed: ' + ((err && (err.details || err.message)) || 'check the connection'), 'error');
     }
     OL.publishing = false;
     olRenderStatic(); olRenderCur(); olStatus();

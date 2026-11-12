@@ -130,7 +130,7 @@
     gen++;
   }
   function nextFootId() {
-    let n = 0;
+    let n = (data.board && data.board.foot_id_max) || 0;     // never an id an earlier foothold had (db/45)
     const seen = (id) => { const m = /^foot(\d+)$/.exec(id || ''); if (m) n = Math.max(n, +m[1]); };
     data.holds.forEach((h) => seen(h.id));
     draft.added.forEach((a) => seen(a.id));

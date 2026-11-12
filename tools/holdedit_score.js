@@ -8,7 +8,10 @@
 //   3 the mirror rule: a hold's partner turns the other way; a centre-line hand hold and
 //     an unpaired foothold turn alone; a suggested partner is always a foothold;
 //   4 hit-testing and the bounded Tap to trace: a foothold right beside a hand hold can be
-//     traced and picked, and the trace never takes over the hand hold.
+//     traced and picked, and the trace never takes over the hand hold;
+//   5 laying a draft over a newer board (heRebase, db/45): turns, deletions and pairs kept;
+//     a trim of a redrawn outline, a pair re-made elsewhere and edits on holds that are gone
+//     dropped; new footholds renumbered above every id the board has used.
 //
 //   node tools/holdedit_score.js                      # app/board-fallback.jpg + app/hold_shapes.json
 //   node tools/holdedit_score.js --image <jpg> --holds <json>   # a board + its holds rows
@@ -340,6 +343,45 @@ if (cropDir) {
     execFileSync('python', ['-c', enc, path.join(cropDir, `fill-edge-${i + 1}.png`), String(ow), String(oh)], { input: buf });
   });
   console.log(`\ncrops (before | +30° | −60°, ×3; fill-edge-N: before | cut out | filled, ×4) in ${cropDir}`);
+}
+
+// ── 5 laying edits over a newer board ───────────────────────────────────────────
+{
+  const sq = (x, y) => [[x, y], [x + 1, y], [x + 1, y + 1], [x, y + 1]];
+  const row = (id, kind, name, x, y, mirror) => ({ id, kind, name, x, y, outline: sq(x, y), mirror: mirror || null });
+  const oldRows = [row('hold1', 'hand', 'A1', 10, 90, 'hold1'), row('hold3', 'hand', 'C1', 20, 90, 'hold3'),
+    row('foot1', 'foot', 'FT1', 10, 95, 'foot2'), row('foot2', 'foot', 'FT2', 90, 95, 'foot1'),
+    row('foot3', 'foot', 'FT3', 30, 95), row('foot4', 'foot', 'FT4', 70, 95), row('foot5', 'foot', 'FT5', 50, 95)];
+  const keepLive = BS.live, keepHE = JSON.stringify({ rot: HE.rot, added: HE.added, removed: HE.removed, pairs: HE.pairs, outlines: HE.outlines, baseRef: HE.baseRef, sel: HE.sel });
+  BS.live = { holds: oldRows, footMax: 5 };
+  HE.baseRef = heRefAll();
+  // the draft: turn hold1 and foot5, trim hold3, delete foot4, pair foot3 with a new
+  // foothold foot6, and a new unpaired foot7
+  Object.assign(HE, { rot: { hold1: 5, foot5: -3 }, outlines: { hold3: sq(20.2, 90) }, removed: ['foot4'],
+    added: [{ id: 'foot6', pts: sq(60, 96) }, { id: 'foot7', pts: sq(40, 96) }], pairs: { foot3: 'foot6', foot6: 'foot3' }, undo: ['x'], redo: [] });
+  const ref = heTouchedRef();
+  // meanwhile, published elsewhere: hold3 redrawn, foot5 deleted, foot6 + foot7 added there
+  // (foot_id_max now 7), foot1/foot2 untouched
+  BS.live = { holds: oldRows.filter(h => h.id !== 'foot5').map(h => (h.id === 'hold3' ? Object.assign({}, h, { outline: sq(21, 90) }) : h))
+    .concat([row('foot6', 'foot', 'FT6', 5, 97), row('foot7', 'foot', 'FT7', 95, 97)]), footMax: 7 };
+  const lost = heRebase(ref);
+  check(HE.rot.hold1 === 5 && !('foot5' in HE.rot), 'rebase: a turn kept, a turn of a foothold deleted elsewhere dropped');
+  check(!HE.outlines.hold3, 'rebase: a trim of an outline redrawn elsewhere dropped');
+  check(HE.removed.length === 1 && HE.removed[0] === 'foot4', 'rebase: a deletion kept');
+  const ids = HE.added.map(a => a.id);
+  check(ids.length === 2 && ids.every(id => +id.slice(4) > 7) && new Set(ids).size === 2, `rebase: new footholds renumbered above every id used (${ids.join(', ')})`);
+  check(HE.pairs.foot3 === ids[0] && HE.pairs[ids[0]] === 'foot3', 'rebase: a pair with a renumbered new foothold follows it');
+  check(lost === 2 && HE.undo.length === 0, `rebase: 2 clashes counted (${lost}), undo history cleared`);
+  // a pair re-made elsewhere wins over the draft's
+  BS.live = { holds: oldRows, footMax: 5 };
+  HE.baseRef = heRefAll();
+  Object.assign(HE, { rot: {}, outlines: {}, removed: [], added: [], pairs: { foot3: 'foot4', foot4: 'foot3' } });
+  const ref2 = heTouchedRef();
+  BS.live = { holds: oldRows.map(h => (h.id === 'foot3' ? Object.assign({}, h, { mirror: 'foot5' }) : h.id === 'foot5' ? Object.assign({}, h, { mirror: 'foot3' }) : h)), footMax: 5 };
+  heRebase(ref2);
+  check(!Object.keys(HE.pairs).length, 'rebase: a pair re-made elsewhere is kept, the draft\'s dropped at both ends');
+  BS.live = keepLive;
+  Object.assign(HE, JSON.parse(keepHE));
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nall checks passed');

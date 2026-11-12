@@ -48,7 +48,8 @@ const BS_CORNER_NAMES = ['top left', 'top right', 'bottom right', 'bottom left']
 
 const BS = {
   step: 'start',
-  live: null,          // { holds: rows, corners, photo, image, version, versions }
+  live: null,          // { holds: rows, corners, photo, image, version, footMax, versions }
+  base: null,          // the board version the trace was matched against (bsMatch): Publish's expected version
   loading: false,
   img: {},             // kind ('cartoon' | 'photo' | 'current') -> { bmp, w, h, path, file }
   corners: {},         // kind -> [[x%, y%] × 4]  (TL, TR, BR, BL)
@@ -165,7 +166,7 @@ function bsSave() {
       v: BS_DRAFT_V, t: Date.now(), step: BS.step, img, corners: BS.corners, shapes: BS.shapes, seq: BS.seq,
       xf: BS.xf, fits: BS.fits, stats: BS.stats,
       pred: BS.pred, mirror: BS.mirror, flags: BS.flags, traced: BS.traced, lineup: BS.lineup,
-      version: BS.live && BS.live.version,
+      version: BS.base,
     }));
   } catch (e) { /* full or blocked: the draft lives in memory */ }
 }
@@ -193,6 +194,7 @@ async function bsLoadLive() {
   BS.live = {
     holds: h.data || [], corners: bc.data.corners || null, photo: bc.data.photo_path || null,
     image: bc.data.image_path || null, version: bc.data.updated_at,
+    footMax: Number(bc.data.foot_id_max) || 0,       // db/45: a new foothold's number is above every one ever used
     versions: ver.error ? [] : (ver.data || []),
   };
   return true;
@@ -225,12 +227,22 @@ async function bsReadFile(file, max) {
 }
 
 // ── entry ─────────────────────────────────────────────────────────────────────
+// On the start page the live board is re-read on every visit, so nothing is ever built
+// on a copy that something else has published over since (BRD-01). Mid-flow it's kept:
+// the trace was matched against it, and Publish refuses if the board has moved since.
 async function initSetup() {
-  if (!BS.live && !BS.loading) {
-    bsRender();
+  if (!BS.loading && (!BS.live || BS.step === 'start')) {
+    if (!BS.live) bsRender();
     await bsLoadLive();
   }
   bsRender();
+}
+// The publish RPCs' refusals, in words (db/45: 'stale' = the board moved since it was loaded).
+const bsIsStale = e => !!(e && e.code === 'P0001' && e.message === 'stale');
+function bsPublishError(e) {
+  if (e && e.code === '42501') return 'Only the super admin can publish a board';
+  if (bsIsStale(e)) return 'The board was published from somewhere else since this was loaded';
+  return 'Publish failed: ' + ((e && (e.details || e.message)) || 'check the connection');
 }
 
 function bsGo(step) {
@@ -271,7 +283,7 @@ function bsRenderPage() {
     return;
   }
   const L = BS.live, hands = L.holds.filter(h => h.kind === 'hand').length, feet = L.holds.filter(h => h.kind === 'foot').length;
-  const last = L.versions.find(v => v.reason === 'publish' && !v.undone_at);
+  const last = L.versions.find(v => (v.reason === 'publish' || v.reason === 'outlines') && !v.undone_at);
   const draft = bsDraft();
   const when = t => new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   el.innerHTML = `
@@ -310,7 +322,7 @@ function bsRenderPage() {
     ${last ? `
     <div class="bs-card">
       <div class="bs-card-title">Undo the last publish</div>
-      <p class="bs-muted">Puts back the board as it was before ${escHtml(when(last.saved_at))}: its image, positions, outlines, mirror pairs and footholds.</p>
+      <p class="bs-muted">Puts back the board as it was before ${escHtml(when(last.saved_at))}${last.reason === 'outlines' ? ' (an outline publish from Trace Holds)' : ''}: its image, positions, outlines, mirror pairs and footholds.</p>
       <button class="ol-btn bs-wide bs-danger" data-act="undo" id="bs-undo-btn">${BS.confirmUndo > Date.now() ? 'Tap again to undo' : 'Undo the last publish'}</button>
     </div>` : ''}`;
 }
@@ -934,6 +946,7 @@ function bsMatch() {
   // first guess: a later run goes through the corners stored with today's board (today's
   // image -> board -> cartoon); the first run through the line-up's four holds (today's
   // image -> cartoon directly)
+  BS.base = BS.live.version;              // Publish refuses if the board moves after this
   const curQ = (BS.live.corners && BS.live.corners.image) || null;
   const Hl = curQ ? null : bsLuHom();
   const Hg = Hl || bsMul3(bsHom(BS.corners.cartoon), curQ ? bsHomInv(bsHom(curQ)) : [0.01, 0, 0, 0, 0.01, 0, 0, 0, 1]);
@@ -1093,7 +1106,7 @@ function bsPerim(pts) {
   return p;
 }
 function bsNextFootIdIn(list) {
-  let n = 0;
+  let n = BS.live ? BS.live.footMax || 0 : 0;            // never an id an earlier foothold had (db/45)
   const seen = id => { const m = /^foot(\d+)$/.exec(id || ''); if (m) n = Math.max(n, +m[1]); };
   (BS.live ? BS.live.holds : []).forEach(h => seen(h.id));
   list.forEach(s => seen(s.id));
@@ -1112,7 +1125,7 @@ function bsUndoEdit() {
   bsSave(); bsRenderBoard(); bsRenderPanel();
 }
 function bsNextFootId() {
-  let n = 0;
+  let n = BS.live ? BS.live.footMax || 0 : 0;            // never an id an earlier foothold had (db/45)
   const seen = id => { const m = /^foot(\d+)$/.exec(id || ''); if (m) n = Math.max(n, +m[1]); };
   (BS.live ? BS.live.holds : []).forEach(h => seen(h.id));
   BS.shapes.forEach(s => seen(s.id));
@@ -1443,10 +1456,12 @@ async function bsPublish() {
     const { data, error } = await sb.rpc('admin_publish_board', {
       p_wall: BS_WALL, p_image_path: BS.img.cartoon.path, p_photo_path: BS.img.photo ? BS.img.photo.path : null,
       p_corners: corners, p_holds: bsPayload(), p_smooth: null,
+      p_expected_version: BS.base || BS.live.version,
     });
     if (error) throw error;
     console.info('board setup: published, board version', data);
     bsDropDraft();
+    BS.base = null;
     BS.img = {}; BS.corners = {}; BS.shapes = []; BS.mirror = null; BS.flags = []; BS.traced = false; BS.pred = {};
     BS.xf = null; BS.fits = {}; BS.stats = null; BS.masks = null;
     BS.lineup = bsLuEmpty(); BS.luKind = 'current'; BS.luSel = 0;
@@ -1457,7 +1472,13 @@ async function bsPublish() {
   } catch (e) {
     console.error('board setup: publish', e);
     BS.busy = false;
-    showToast(e && e.code === '42501' ? 'Only the super admin can publish a board' : 'Publish failed: ' + ((e && (e.details || e.message)) || 'check the connection'), 'error');
+    if (bsIsStale(e)) {
+      // the trace was matched against an older board: match again against today's, so
+      // nothing published since (outlines, footholds) is lost. The draft is kept.
+      showToast('The board was published from somewhere else since this was traced. Go back to Trace and run it again, then publish.', 'error');
+      const keep = BS.live;
+      if (!(await bsLoadLive())) BS.live = keep;          // a failed reload keeps the copy on screen
+    } else showToast(bsPublishError(e), 'error');
     bsRenderPanel();
   }
 }
@@ -1807,7 +1828,8 @@ async function bsResume() {
     BS.luKind = lineup.cur.every(Boolean) ? 'cartoon' : 'current';
     BS.luSel = bsLuFirstFree(BS.luKind === 'current' ? lineup.cur : lineup.cart);
     BS.busy = false;
-    if (d.version && BS.live && d.version !== BS.live.version) showToast('The board changed since this draft: check the matches', 'error');
+    BS.base = d.version || null;
+    if (d.version && BS.live && d.version !== BS.live.version) showToast('The board was published since this draft was traced: run Trace again before you publish', 'error');
     const step = d.step === 'lineup' && !bsNeedLineup() ? 'corners' : d.step;
     bsGo(BS_STEPS.includes(step) && step !== 'start' ? (img.cartoon || step === 'photos' ? step : 'photos') : 'photos');
   } catch (e) {

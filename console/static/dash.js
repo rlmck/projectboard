@@ -34,6 +34,7 @@
     health: { title: 'Health', ids: HEALTH_IDS, top: healthDetails },
     schedule: { title: 'Opening hours', ids: ['schedule', 'timers'], top: scheduleDetails },
     backup: { title: 'Backups', ids: ['backup'], top: backupDetails },
+    snapshot: { title: 'Board snapshot', ids: ['snapshot'], top: snapshotDetails },
   };
 
   let data = null;
@@ -531,6 +532,13 @@
     return '<section class="d-sec"><div class="t-head"><h3>The hours</h3></div><div data-hours-box="1" id="hours-box"></div></section>' +
       '<section class="d-sec"><div class="t-head"><h3>One evening</h3></div><p class="note">Stay on until a time (Board → Stay on): day mode until then, ' +
       'ending by itself. Force night / Force day (Board → Night) are for tests and stay until Auto.</p></section>';
+  }
+
+  function snapshotDetails() {
+    return '<section class="d-sec"><p>The app\'s offline copy of the board (the image, hold map and outlines in <code>app/</code>) ' +
+      'is from an earlier board than the live one: a publish (Edit holds, Board Setup, Trace Holds or here) hasn\'t been ' +
+      'snapshotted yet. Phones offline or on first load see the older board until it is.</p>' +
+      '<div class="btn-row"><button class="btn primary" data-goto="holds">Holds → Ship the snapshot</button></div></section>';
   }
 
   function backupDetails() {
