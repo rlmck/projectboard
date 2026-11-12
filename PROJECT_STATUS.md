@@ -39,11 +39,12 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
+- **Ross, on site: kiosk tests** (12 Nov): long-press and right-click open nothing; a killed renderer recovers by itself (`pi/README.md` → What runs).
 - **Ross: try the publish safety** (12 Nov): each board tool publishes and undoes as before; a publish from elsewhere in between is refused cleanly. **The snapshot is a publish behind live** (11 Nov): PB Console → Holds → Ship the snapshot (Home's tile stays amber till then).
 - **Ross:** Edit holds: 3 of the 5 missing footholds are in (beside F3 and M2, a pair, and on J1); the pair beside **G1 and N1** isn't yet. Sign in as Pablo with the new PIN once (reset 10 Nov). The db/41 checks (9 Nov report). **Try Specific feet** (plan → Session 3 → "Try it").
 - **Ross: try PB Console → Holds** (restart the console first; what it does: `console/README.md` → Holds): a redraw, a new foothold, a pair, Publish, Ship the snapshot. **Decide** whether turning a hold and new photos move to the console (they upload an image: a console sign-in as Pablo, or the service key there; the review recommends no). Until then they stay in the app.
 - **Parked branch `parked/2b-camera-led-mapping`:** camera LED mapping (2b), unfinished, never shipped; only for a full rearrange or another gym (`TODO.md` → Not now). Its db/43 is live and harmless.
-- **Ross: test the opening hours** (live 7 Nov): see the 2026-11-07 session entry's checklist.
+- **Ross: test the opening hours** (live 7 Nov): the 7 Nov checklist in `docs/log/2026-11.md`.
 - Ross (low priority): delete the local passphrase hand-out file (and empty the Recycle Bin) once all 7 migrated accounts have signed in.
 
 ## Open questions
@@ -56,6 +57,11 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-12, Claude Code (review fix session 2: kiosk hardening).**
+  - **Changed:** wall: no context menu, drag or selection; a forgotten Discard sheet times out; endless runs end at 30 min. Pi: Chromium policy (no DevTools, other sites); no "Restore pages?"; pb-health restarts the kiosk when the page's heartbeat stops.
+  - **Live:** app `pb-ea65354db3`; Pi deployed, kiosk checked under the policy.
+  - **Left:** Ross's on-screen tests. Next: fix session 3.
+
 - **2026-11-12, Claude Code (review fix session 1: board publish safety; db/45, db/46).**
   - **Changed:** every board publish names the version it was built on and the server refuses any other (`stale`); Trace Holds' publish is now a board version (archived, undoable, logged, never clears an outline); foothold ids never reused (`foot_id_max`); Edit holds re-reads the board and lays its edits over a newer one; Board Setup re-reads on its start page; `check_holds.py` extended; PB Console Home: Board snapshot tile.
   - **Live:** db/45 + db/46 applied (dry run, behaviour test); app `pb-4e7e6dfbf6`; console on restart.
@@ -66,8 +72,3 @@ Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which si
   - **Result:** 101 findings: 0 Critical, 3 High, 33 Medium, 65 Low. Details, the consolidation design and a 13-session fix plan are in the local, gitignored `review_output.md` (never committed: the repo is public).
   - **Tested:** `build.sh --check`, 183 Pi tests, 128 console tests and the three score tools all pass.
   - **Left:** act on the fix plan, one session each (`TODO.md` → Bugs). The 11 Nov board publish still needs its snapshot shipped.
-
-- **2026-11-10, Claude Code (PB Console: a simpler layout).**
-  - **Changed:** sidebar Home · Holds · Activity · ⚙ Advanced (+ Runbook when the Pi is offline). Home: Board (controls, stay-on, Light a problem), Health (temperature, power, Wi-Fi, disk with 7-day charts; restarts), Activity, Opening hours (edited there). Release, Circuit tracks, Power deleted. New `pb-healthlog` on the Pi (5-min lines, 7 days). Backups weekly via the autodeploy task; Home warns if failed or >8 days.
-  - **Live:** console + Pi (autodeploy); CACHE unchanged. First automatic backup ran 22:07.
-  - **Left:** Ross: restart the console and try it.
