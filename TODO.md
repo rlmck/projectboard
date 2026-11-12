@@ -33,7 +33,7 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 13. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
 
 ## Bugs
-14. **Known bugs to triage:** `docs/codebase-overview.md` §13.
+14. **Act on the code review** (local `review_output.md` → fix plan).
 
 ## Not now
 Don't build yet: Circuits Phase 3 (PBs, leaderboards), mirrored circuits, a Done filter for circuits ("done" = done both sides, problems only), tags, session/logbook tracking beyond ticks, the Flutter migration; **the release workflow** (parked 8 Nov 2026, revisit later; ship straight to `main` until then): features on `dev`, bundled releases tested on staging, a "What's new" popup on phones for new features only (never bug fixes), a PB Console switch pointing the kiosk at staging that reverts itself; **camera LED mapping** (board setup 2b, dropped 10 Nov 2026): parked on `parked/2b-camera-led-mapping`, only for a full rearrange or another gym; **board sets and the archive** (board setup), only for a real rearrange.

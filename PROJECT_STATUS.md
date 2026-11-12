@@ -2,7 +2,7 @@
 
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 12 KB: the 3 newest session entries live here, older ones in `docs/log/` (`docs/log/2026-10.md`, `docs/log/2026-11.md`).
 
-## Current state (as of 2026-11-10)
+## Current state (as of 2026-11-12)
 - **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh` (see the newest session entry for the current stamp). Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
 - **Sorting and filtering (4 Nov 2026):** the Filter sheet (phone) or panel (wall): Sort, Grade slider, quick filters, pick Holds; `✕ Clear` (overview §4.2a).
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs, about 0.25–0.45 s) and is used daily. Every hold's LED, mirrored casts, the feet rule and the geofence centre are checked on site.
@@ -55,6 +55,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-12, Claude Code (full codebase review, read-only).**
+  - **Changed:** nothing in the code, database or Pi. A multi-agent review of every layer (database, app, wall and kiosk, board tooling, Pi, PB Console, build) plus the seams between them, a consolidation proposal for the hold tools, and overview §13 triaged.
+  - **Result:** 101 findings: 0 Critical, 3 High, 33 Medium, 65 Low. Details, the consolidation design and a 13-session fix plan are in the local, gitignored `review_output.md` (never committed: the repo is public).
+  - **Tested:** `build.sh --check`, 183 Pi tests, 128 console tests and the three score tools all pass.
+  - **Left:** act on the fix plan, one session each (`TODO.md` → Bugs). The 11 Nov board publish still needs its snapshot shipped.
+
 - **2026-11-10, Claude Code (PB Console: a simpler layout).**
   - **Changed:** sidebar Home · Holds · Activity · ⚙ Advanced (+ Runbook when the Pi is offline). Home: Board (controls, stay-on, Light a problem), Health (temperature, power, Wi-Fi, disk with 7-day charts; restarts), Activity, Opening hours (edited there). Release, Circuit tracks, Power deleted. New `pb-healthlog` on the Pi (5-min lines, 7 days). Backups weekly via the autodeploy task; Home warns if failed or >8 days.
   - **Live:** console + Pi (autodeploy); CACHE unchanged. First automatic backup ran 22:07.
@@ -64,8 +70,3 @@ Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which si
   - **Changed:** a laptop tab for outlines (point counts, Clear and draw, Simplify, drag/add/remove points), footholds (add, delete, pair) and Undo the last publish, publishing via `admin_publish_board()` as the super admin over `db/.env`; Ship the snapshot. Console plan phase 17. `trace_prior_score` bar 178; `holdedit_score` skips specks.
   - **Tested:** 13 console tests; headless Chrome on the live board; publish and undo run live, rolled back. Hold checks pass.
   - **Left:** Ross: try it (Waiting on). Turns and new photos stay in the app.
-
-- **2026-11-10, Claude Code (super admin; db/44).**
-  - **Changed:** `profiles.is_super_admin` (Pablo only), `is_super_admin()`. Board work is super admin only in RLS/RPCs (`board_config`, the `board` bucket, `holds`, `board_versions`, publish, undo, outlines) and in the app (Trace Holds, Board Setup, Edit holds; phone too). Admins can't rename, demote, delete or reset the super admin (RPCs + Edge Function, redeployed). CLAUDE.md, overview §4.8d, §5, §6.
-  - **Live:** db/44 applied (dry run first), Edge Function v3, app shipped (see the commit).
-  - **Left:** Ross: try it as Pablo (Board Setup, Edit holds, Trace Holds still work) and as another admin (no board cards; deep links bounce; Pablo's account locked). A lost super admin PIN is reset in the Supabase dashboard.
