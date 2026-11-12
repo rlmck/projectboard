@@ -1,0 +1,23 @@
+{
+  "DeveloperToolsAvailability": 2,
+  "URLBlocklist": ["*"],
+  "URLAllowlist": [
+    "https://symmetryboard.co.uk",
+    "https://uqirowyfqwiceyjznosl.supabase.co",
+    "https://challenges.cloudflare.com",
+    "https://static.cloudflareinsights.com",
+    "https://cloudflareinsights.com"
+  ],
+  "DownloadRestrictions": 3,
+  "PrintingEnabled": false,
+  "AllowFileSelectionDialogs": false,
+  "IncognitoModeAvailability": 1,
+  "BrowserGuestModeEnabled": false,
+  "BrowserAddPersonEnabled": false,
+  "BrowserSignin": 0,
+  "SyncDisabled": true,
+  "PasswordManagerEnabled": false,
+  "TranslateEnabled": false,
+  "EditBookmarksEnabled": false,
+  "TaskManagerEndProcessEnabled": false
+}

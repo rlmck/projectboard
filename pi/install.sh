@@ -15,6 +15,8 @@
 #   systemd/*          /etc/systemd/system/ (kiosk.service as installed 26 Oct)
 #   conf/              journald + system.conf.d drop-ins, NetworkManager conf, tmpfiles.d
 #   conf/kiosk.pam     /etc/pam.d/kiosk (the kiosk's login session)
+#   conf/chromium-kiosk.json  /etc/chromium/policies/managed/projectboard-kiosk.json (the kiosk's
+#                      Chromium policy: no DevTools, no other sites, no downloads; 12 Nov 2026)
 #
 # Also, when missing (a fresh card, 31 Oct 2026): the kiosk's packages (cage, chromium),
 # the kiosk user and its blank cursor theme; and the SD-card wear settings (the apt
@@ -79,6 +81,7 @@ if [ -f /opt/projectboard/listener/glisten.py ]; then
 fi
 for f in pb_listener.py leds.py mode.py; do put "listener/$f" "/opt/projectboard/listener/$f" 0755; done
 put ops/board-cam.sh /opt/projectboard/ops/board-cam.sh 0755
+put ops/kiosk-prestart.sh /opt/projectboard/ops/kiosk-prestart.sh 0755
 # The Wi-Fi watchdog (v2, 28 Oct 2026): kicks Hangout, the rescue hotspot, guarded reboots.
 # The hotspot's profile (pb-rescue) holds a password, so setup.sh writes it from secrets.env.
 put ops/pb-netwatch.sh /usr/local/sbin/pb-netwatch.sh 0755
@@ -108,6 +111,13 @@ put conf/pb-watchdog.conf /etc/systemd/system.conf.d/pb-watchdog.conf 0644
 put conf/projectboard.tmpfiles /etc/tmpfiles.d/projectboard.conf 0644
 put conf/98-projectboard-no-rand-mac.conf /etc/NetworkManager/conf.d/98-projectboard-no-rand-mac.conf 0644
 put conf/kiosk.pam /etc/pam.d/kiosk 0644
+# The kiosk's Chromium policy (review WALL-01, 12 Nov 2026). Only if it's valid JSON:
+# Chromium ignores a broken file silently, which would leave DevTools on.
+if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$SRC/conf/chromium-kiosk.json"; then
+    put conf/chromium-kiosk.json /etc/chromium/policies/managed/projectboard-kiosk.json 0644
+else
+    echo "!! conf/chromium-kiosk.json isn't valid JSON: not installed"
+fi
 put config.env.example /etc/projectboard/config.env.example 0644
 if [ -f "$SRC/config.env" ]; then
     put config.env /etc/projectboard/config.env 0644
@@ -285,7 +295,8 @@ fi
 if changed '/opt/projectboard/ops/board-cam.sh' '/etc/systemd/system/board-cam.service'; then
     run systemctl restart board-cam
 fi
-if changed '/etc/systemd/system/kiosk.service' '/etc/systemd/system/kiosk.service.d/*' "$WALL_KEY"; then
+if changed '/etc/systemd/system/kiosk.service' '/etc/systemd/system/kiosk.service.d/*' "$WALL_KEY" \
+   '/etc/chromium/policies/managed/*' /opt/projectboard/ops/kiosk-prestart.sh; then
     echo "   kiosk unit changed: it applies the next time pb-mode starts it (not restarting the screen now)"
 fi
 

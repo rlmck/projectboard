@@ -9,7 +9,11 @@
 #   3 listener   status file stale (90 s) or not joined for 5 min -> restart pb-listener
 #                (stopped while pb-ledmap, the LED mapping tool, runs: logged, never restarted)
 #   4 board-cam  enabled but failed/inactive -> restart it
-#   5 log only   temperature, disk free, throttling
+#   5 kiosk      running 10 min+ and the wall page's heartbeat (an IndexedDB write
+#                every 2 min while it's on screen, app/wall.js wallAlive) 10 min old
+#                -> restart the kiosk (a crashed or frozen page, or another page on
+#                screen); at most 6 a day. No heartbeat file at all -> nothing done.
+#   6 log only   temperature, disk free, throttling
 #
 # Every action is one journal line tagged pb-health starting "ACTION <name>:",
 # which pb-status counts. Reboot guard: at most 1 an hour and 3 a day, from
@@ -158,7 +162,41 @@ EOF
     fi
 fi
 
-# ---- 5 log only ----------------------------------------------------------------
+# ---- 5 kiosk ------------------------------------------------------------------
+# Review WALL-11 (12 Nov 2026). Runs online or not: offline, the service worker
+# still serves the wall page, which still writes its heartbeat.
+KIOSK_DIR=/home/kiosk/.config/chromium/Default
+KIOSK_STALE=$(cfg KIOSK_STALE_S 600)
+[[ "$KIOSK_STALE" =~ ^[0-9]+$ ]] && (( KIOSK_STALE >= 300 )) || KIOSK_STALE=600
+if [ "$(systemctl is-active kiosk 2>/dev/null)" = active ]; then
+    since_us=$(systemctl show kiosk -p ActiveEnterTimestampMonotonic --value 2>/dev/null)
+    up_us=$(awk '{printf "%d", $1 * 1000000}' /proc/uptime)
+    [[ "$since_us" =~ ^[0-9]+$ ]] || since_us=$up_us
+    kiosk_up=$(( (up_us - since_us) / 1000000 ))
+    beat=$(find "$KIOSK_DIR" -path '*IndexedDB*' -type f -printf '%T@\n' 2>/dev/null | sort -n | tail -n 1 | cut -d. -f1)
+    if ! [[ "$beat" =~ ^[0-9]+$ ]]; then
+        SUMMARY+=("kiosk up ${kiosk_up}s, no heartbeat file")
+    else
+        beat_age=$(( NOW - beat ))
+        if (( kiosk_up >= KIOSK_STALE && beat_age >= KIOSK_STALE )); then
+            touch "$RUN/kiosk_restarts"
+            n=$(awk -v now="$NOW" '$1 ~ /^[0-9]+$/ && now - $1 < 86400' "$RUN/kiosk_restarts" | wc -l)
+            if (( n >= 6 )); then
+                log "kiosk heartbeat ${beat_age}s old, but it was restarted $n times in 24 h: leaving it" err
+                SUMMARY+=("kiosk heartbeat ${beat_age}s old (restart limit)")
+            else
+                echo "$NOW" >> "$RUN/kiosk_restarts"
+                action kiosk-restart "the wall page's heartbeat is ${beat_age}s old (kiosk up ${kiosk_up}s)"
+                systemctl restart kiosk
+                SUMMARY+=("kiosk restarted")
+            fi
+        else
+            SUMMARY+=("kiosk beat ${beat_age}s ago")
+        fi
+    fi
+fi
+
+# ---- 6 log only ----------------------------------------------------------------
 LEVEL=info
 temp=$(awk '{printf "%.1f", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
 awk -v t="${temp:-0}" 'BEGIN{exit !(t >= 75)}' && LEVEL=warning

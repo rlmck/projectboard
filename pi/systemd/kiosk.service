@@ -21,6 +21,15 @@ StartLimitIntervalSec=0
 # Outside the opening hours (mode.py, 7 Nov 2026) it doesn't start: ExecCondition
 # skips it (not a failure, so no restart loop), so a boot at night keeps the
 # screen dark; pb-mode stops it at closing and starts it at opening.
+# Hardening (12 Nov 2026, review WALL-01/11): Chromium's managed policy
+# (/etc/chromium/policies/managed/projectboard-kiosk.json, from conf/chromium-kiosk.json)
+# turns DevTools, downloads, printing and every other site off, and the page itself
+# blocks the long-press/right-click menu. kiosk-prestart.sh marks the last session
+# as a clean exit and --hide-crash-restore-bubble is the current switch (the old
+# --disable-session-crashed-bubble is kept for older builds), so no "Restore pages?"
+# after a power cut or a restart. The DNS wait is 20 s, not 120: offline, the service
+# worker serves the wall from its copy at once. pb-health restarts the kiosk when the
+# page's heartbeat stops (a crashed renderer, a frozen page, another page on screen).
 [Service]
 Type=simple
 User=kiosk
@@ -38,8 +47,9 @@ TimeoutStartSec=150
 RuntimeDirectory=kiosk-cache
 RuntimeDirectoryMode=0700
 ExecCondition=/usr/bin/python3 /opt/projectboard/listener/mode.py --is-day
-ExecStartPre=-/usr/bin/timeout 120 /bin/sh -c 'until getent hosts symmetryboard.co.uk >/dev/null; do sleep 2; done'
-ExecStart=/bin/sh -c 'exec /usr/bin/cage -d -- /usr/bin/chromium --ozone-platform=wayland --kiosk --noerrdialogs --no-first-run --disable-infobars --disable-session-crashed-bubble --disable-features=Translate --password-store=basic --overscroll-history-navigation=0 --check-for-update-interval=31536000 --deny-permission-prompts --disk-cache-dir=/run/kiosk-cache --disk-cache-size=67108864 --disable-breakpad "https://symmetryboard.co.uk/?wall#k=$$(cat /etc/projectboard/wall-key 2>/dev/null)"'
+ExecStartPre=-/opt/projectboard/ops/kiosk-prestart.sh
+ExecStartPre=-/usr/bin/timeout 20 /bin/sh -c 'until getent hosts symmetryboard.co.uk >/dev/null; do sleep 2; done'
+ExecStart=/bin/sh -c 'exec /usr/bin/cage -d -- /usr/bin/chromium --ozone-platform=wayland --kiosk --noerrdialogs --no-first-run --disable-infobars --disable-session-crashed-bubble --hide-crash-restore-bubble --no-default-browser-check --disable-features=Translate --password-store=basic --overscroll-history-navigation=0 --check-for-update-interval=31536000 --deny-permission-prompts --disk-cache-dir=/run/kiosk-cache --disk-cache-size=67108864 --disable-breakpad "https://symmetryboard.co.uk/?wall#k=$$(cat /etc/projectboard/wall-key 2>/dev/null)"'
 Restart=always
 RestartSec=3
 

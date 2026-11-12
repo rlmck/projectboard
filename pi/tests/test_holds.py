@@ -198,7 +198,9 @@ class SeedCheckTool(unittest.TestCase):
         import check_holds
         self.ch = check_holds
         shapes = load('app', 'hold_shapes.json')
-        self.bc = {'hold_map': HOLD_MAP, 'mirror_map': MIRROR, 'hold_shapes': shapes}
+        # the board version the outlines name (check() ties them since db/45, 12 Nov 2026)
+        self.bc = {'hold_map': HOLD_MAP, 'mirror_map': MIRROR, 'hold_shapes': shapes,
+                   'updated_at': (shapes.get('__meta') or {}).get('board_updated_at')}
         self.holds = []
         for r in seed_rows():
             h = dict(r)

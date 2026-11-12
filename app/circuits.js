@@ -395,6 +395,10 @@
   const CAST_SPEED_KEY = 'pb-circuit-speed';
   const CAST_COUNTDOWN = 5;               // as the Pi's circuit.COUNTDOWN
   const CAST_LAG_MS = 250;                // the Pi starts after reading the circuit: roughly this later
+  // The Pi ends an endless run after CIRCUIT_MAX_S (1800 s by default, contract §8.3); the
+  // screen ends it there too (WALL-03, 12 Nov 2026), or a forgotten run on the wall would
+  // count on for ever, holding off its idle and its updates.
+  const CAST_RUN_MAX_S = 1800;
   let castSheetCircuit = null;            // the circuit the open sheet is for
   let castSpeed = CAST_SPEEDS.includes(+lsGet(CAST_SPEED_KEY)) ? +lsGet(CAST_SPEED_KEY) : 3;
   let castLoop = false;
@@ -557,6 +561,7 @@
       if (now.t < CAST_COUNTDOWN + 1) chBeep(1320, 380, 0.4);
     }
     if (now.phase === 'top') { endCircuitRun(r.moves, true); return; }
+    if (r.loop && now.t >= CAST_RUN_MAX_S) { endCircuitRun(now.moves, false); return; }
     const lap = Math.floor((r.s - 1 + now.beat) / r.L) + 1;
     big.textContent = String(now.moves);
     sub.textContent = r.loop ? `moves · lap ${lap}` : `of ${r.moves} moves`;

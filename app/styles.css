@@ -2582,6 +2582,11 @@
        Outside the opening hours the Pi turns the screen off (pb-mode). */
     #wall { display: none; }
     body.wall { overflow: hidden; --nav-h: 0px; }
+    /* Nothing on the kiosk can be dragged, selected or long-pressed into a menu
+       (WALL-01; wall.js wallLockDown blocks the events too, this is the CSS half). */
+    body.wall,
+    body.wall * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+    body.wall img { -webkit-user-drag: none; }
     /* No scroll bars anywhere on the wall: one rule over everything under
        body.wall (the lists, the Filter panel, the Cast sheet, any modal), so a new
        scrollable area is covered too. Only the bar goes: overflow, touch drag and

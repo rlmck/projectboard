@@ -45,6 +45,16 @@
 // the screen down (pi/ops/pb-mode, since 7 Nov 2026). With no connection the
 // saved list stays up with a note, casting is off, and it keeps trying.
 //
+// Kiosk hardening (12 Nov 2026, review WALL-01/02/03/11): no context menu, drag or
+// selection anywhere on the wall (a long-press or right-click opens nothing, so the
+// screen can't be sent to another page and Inspect can't show the wall key; the Pi
+// also turns DevTools off by policy, pi/conf/chromium-kiosk.json). A forgotten
+// "Discard this problem?" sheet becomes the idle ask after 5 minutes untouched, and
+// an endless circuit run ends on the screen at the Pi's 30-minute limit
+// (circuits.js). While the page is on screen it writes a heartbeat into IndexedDB
+// every 2 minutes (wallAlive); pb-health restarts the kiosk when it stops (a
+// crashed or frozen page, or the screen left on some other page).
+//
 // The phone views stay underneath, hidden (body.wall): the loaders and the router
 // run as usual, and the few hooks into them (renderList, refreshBoardViews,
 // loadProblems, showChallenges) only call in here when WALL is set.
@@ -55,6 +65,7 @@
   const WALL_RETRY_MS = 30 * 1000;       // ...and how often to try while the connection is down
   const WALL_BOARD_ROWS = 10;            // rows on each Ranks board
   const WALL_IDLE_KEY = 'pb-wall-idle';  // sessionStorage: the slides were up when the page unloaded
+  const WALL_ALIVE_MS = 2 * 60 * 1000;   // the heartbeat for pb-health (wallAlive); it restarts the kiosk after 10 min without one
 
   let wallPage = 'problems';     // 'problems' | 'circuits' | 'ranks' | 'app'
   let wallCircId = null;         // the chosen circuit's id
@@ -66,6 +77,7 @@
   let wallSlideAt = 0;           // when the current slide went up
   let wallNetDown = false;       // the last fetch of the problems failed
   let wallLastPoll = Date.now(); // boot has just loaded everything
+  let wallAliveAt = 0;           // the last heartbeat (0: one is due now)
   // The wall's casts (Problems): one is sent at a time; a tap while one is going
   // waits in wallCastNext, and a newer tap replaces it, so rapid taps never queue.
   let wallCastBusy = false;      // castByName is running for the wall
@@ -223,7 +235,7 @@
     // With nothing chosen the board is dimmed all over, as on the Circuits page.
     const overlay = p ? (boardShapeOverlayHtml(p, { mirror, dim: true }) || boardOverlayHtml(p, mirror))
       : `<div class="hold-layer">${wallDimOnlyHtml()}</div>`;
-    return `<div class="board-wrap wall-board"><img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" />${overlay}</div>`;
+    return `<div class="board-wrap wall-board"><img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" draggable="false" />${overlay}</div>`;
   }
 
   function wallRenderStage() {
@@ -393,7 +405,7 @@
     if (wallPicking('circuits')) { wallRenderPickBoard('circuits'); return; }
     const c = wallCircSelected();
     wallEl('wall-cstage').innerHTML =
-      `<div class="board-wrap wall-board"><img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" />`
+      `<div class="board-wrap wall-board"><img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" draggable="false" />`
       + `<div class="hold-layer">${c ? circuitStaticOverlay(c) : wallDimOnlyHtml()}</div></div>`
       + (c ? '' : `<div class="wall-stage-hint">Tap a circuit on the left</div>`);
   }
@@ -1050,7 +1062,9 @@
     if (circuitRunGoing()) wallLastTouch = now;
     if (wallCreateOn) {
       // No slides while someone's setting: 5 minutes untouched asks, then discards.
-      if (!wallAsk && now - wallLastTouch > WALL_CREATE_IDLE_MS) {
+      // A "Discard this problem?" sheet left unanswered turns into that ask too
+      // (WALL-02), so the board's lit holds, updates and Pi deploys aren't held all day.
+      if ((!wallAsk || wallAsk.kind !== 'idle') && now - wallLastTouch > WALL_CREATE_IDLE_MS) {
         wallAskDiscard('idle', () => wallSetPage('problems', true));
       }
       if (wallAsk) wallAskTick(Date.now());
@@ -1061,6 +1075,41 @@
       wallRenderIdle();
     }
     if (now - wallLastPoll > (wallOffline() ? WALL_RETRY_MS : WALL_POLL_MS)) wallPoll();
+    wallAlive(now);
+  }
+
+  // The heartbeat pb-health watches (WALL-11, 12 Nov 2026): every WALL_ALIVE_MS while
+  // this page is on screen, one small IndexedDB write (its own database, nothing
+  // else in the app uses IndexedDB, so its files on the Pi change only for this).
+  // A crashed or frozen renderer, or the screen left on another page (this one
+  // hidden behind it), stops it, and the Pi restarts the kiosk. Relaxed durability:
+  // no fsync, which is all the file's time stamp needs (the SD card).
+  function wallAlive(now) {
+    if (now - wallAliveAt < WALL_ALIVE_MS || document.visibilityState === 'hidden') return;
+    wallAliveAt = now;
+    try {
+      const rq = indexedDB.open('pb-wall-alive', 1);
+      rq.addEventListener('upgradeneeded', () => rq.result.createObjectStore('alive'));
+      rq.addEventListener('success', () => {
+        const db = rq.result;
+        try {
+          const tx = db.transaction('alive', 'readwrite', { durability: 'relaxed' });
+          tx.objectStore('alive').put(now, 'at');
+          tx.addEventListener('complete', () => db.close());
+          tx.addEventListener('abort', () => db.close());
+        } catch (e) { db.close(); }
+      });
+    } catch (e) { /* no IndexedDB: pb-health sees no heartbeat and leaves the kiosk alone */ }
+  }
+
+  // No context menu, drag or selection on the wall (WALL-01): a touch long-press or
+  // a right-click in Chromium opens a menu with "Open image in new tab" (the kiosk
+  // has no tabs or address bar to come back from) and "Inspect" (DevTools would
+  // show the wall key in localStorage). Capture, so nothing on the page can let one
+  // through. The Pi's Chromium policy turns DevTools and other sites off as well.
+  function wallLockDown() {
+    ['contextmenu', 'dragstart', 'selectstart', 'auxclick'].forEach(t =>
+      document.addEventListener(t, e => e.preventDefault(), { capture: true }));
   }
 
   // Called by refreshBoardViews when the board image, map or outlines change.
@@ -1106,6 +1155,7 @@
 
   // ── Start (from app.js's boot) ────────────────────────────────────────────────
   function startWall() {
+    wallLockDown();
     wallFillQr(wallEl('wall'));
 
     // Any touch counts as someone using the screen: a tap, or the start of a

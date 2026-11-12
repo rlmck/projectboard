@@ -30,6 +30,7 @@ def installed():
     for f in sorted(glob.glob(os.path.join(PI, 'listener', 'patterns', '*.py'))):
         add(os.path.relpath(f, REPO), '/opt/projectboard/listener/patterns/' + os.path.basename(f))
     add('pi/ops/board-cam.sh', '/opt/projectboard/ops/board-cam.sh')
+    add('pi/ops/kiosk-prestart.sh', '/opt/projectboard/ops/kiosk-prestart.sh')
     for n in ('pb-health', 'pb-mode', 'pb-status', 'pb-idle', 'pb-ledmap', 'pb-bootcheck', 'pb-weekly-reboot', 'pb-touchwatch', 'pb-healthlog'):
         add('pi/ops/' + n, '/usr/local/bin/' + n)
     add('pi/ops/pb-console-helper', '/usr/local/sbin/pb-console-helper')
@@ -47,6 +48,7 @@ def installed():
     add('pi/conf/projectboard.tmpfiles', '/etc/tmpfiles.d/projectboard.conf')
     add('pi/conf/98-projectboard-no-rand-mac.conf', '/etc/NetworkManager/conf.d/98-projectboard-no-rand-mac.conf')
     add('pi/conf/kiosk.pam', '/etc/pam.d/kiosk')
+    add('pi/conf/chromium-kiosk.json', '/etc/chromium/policies/managed/projectboard-kiosk.json')
     add('pi/config.env.example', '/etc/projectboard/config.env.example')
     if os.path.exists(os.path.join(PI, 'config.env')):
         add('pi/config.env', '/etc/projectboard/config.env')
