@@ -9,7 +9,7 @@
 <body>
   <header>
     <h1>Cast test</h1>
-    <p>Listens on <code>board:HangoutPortland</code> for <code>cast_problem</code>, exactly as the Pi does.
+    <p>Listens on <code>board:HangoutPortland</code> for <code>cast_problem</code> (and <code>cast_circuit</code> and <code>stop</code>, for the checks), as the Pi does.
        Not deployed. Run <code>python tools/serve.py</code> from the repo root (it turns caching off) and open
        <code>http://localhost:8000/tools/cast-test.html</code>.</p>
   </header>
@@ -28,7 +28,9 @@
     <h2>2 · Automated checks</h2>
     <p class="hint">Loads the local app (<code>../app/</code>) in the frame below, adds two fake problems
        (<code>~cast-test-A</code>, <code>~cast-test-B</code>) and drives the cast button. The casts are real
-       broadcasts on the live channel, but no problem has those names, so the Pi ignores them.
+       broadcasts on the live channel, but no problem has those names, so the Pi ignores them. Then the circuit
+       Cast sheet with two fake circuits (<code>~cast-test-C</code> loops, <code>~cast-test-D</code> doesn't):
+       laps, Loop, Stop.
        Location is stubbed, so it never asks for permission.</p>
     <button id="run" type="button">Run checks</button>
     <ol id="results"></ol>

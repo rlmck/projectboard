@@ -9,6 +9,9 @@
 #   3 listener   status file stale (90 s) or not joined for 5 min -> restart pb-listener
 #                (stopped while pb-ledmap, the LED mapping tool, runs: logged, never restarted)
 #   4 board-cam  enabled but failed/inactive -> restart it
+#   4b LEDs      (log only, online or not; review PI-09) the SPI device missing, or
+#                the listener's led_write_errors grown since the last check -> a
+#                warning line (the board is dark while everything else looks fine)
 #   5 kiosk      running 10 min+ and the wall page's heartbeat (an IndexedDB write
 #                every 2 min while it's on screen, app/wall.js wallAlive) 10 min old
 #                -> restart the kiosk (a crashed or frozen page, or another page on
@@ -162,6 +165,38 @@ EOF
     fi
 fi
 
+# ---- 4b LEDs (log only) ----------------------------------------------------------
+# The LED thread counts failed strip writes in listener.json (led_write_errors, the last
+# one in led_write_error); the count restarts with the listener (a new pid).
+SPI_DEV=/dev/spidev0.0
+LED_WARN=""
+if [ "$(systemctl is-active pb-listener)" = active ]; then
+    if [ ! -e "$SPI_DEV" ]; then
+        LED_WARN="$SPI_DEV missing"
+        log "LEDs: $SPI_DEV is missing, so the board can't light (is dtparam=spi=on in /boot/firmware/config.txt?)" err
+    fi
+    read -r pid errs last < <(python3 - "$STATUS" <<'EOF2'
+import json, sys
+try:
+    s = json.load(open(sys.argv[1]))
+except (OSError, ValueError):
+    print('- - -'); sys.exit()
+print(s.get('pid') or '-', int(s.get('led_write_errors') or 0), ' '.join((s.get('led_write_error') or '-').split())[:150])
+EOF2
+)
+    if [[ "${errs:-}" =~ ^[0-9]+$ ]]; then
+        read -r ppid perrs 2>/dev/null < "$RUN/led_errors" || true
+        new=$errs
+        [ "${ppid:-}" = "$pid" ] && [[ "${perrs:-}" =~ ^[0-9]+$ ]] && new=$(( errs - perrs ))
+        echo "$pid $errs" > "$RUN/led_errors"
+        if (( new > 0 )); then
+            LED_WARN="${LED_WARN:+$LED_WARN, }$new LED write(s) failed"
+            log "LEDs: $new strip write(s) failed since the last check ($errs since the listener started; last: $last)" warning
+        fi
+    fi
+fi
+[ -n "$LED_WARN" ] && SUMMARY+=("LEDs: $LED_WARN")
+
 # ---- 5 kiosk ------------------------------------------------------------------
 # Review WALL-11 (12 Nov 2026). Runs online or not: offline, the service worker
 # still serves the wall page, which still writes its heartbeat.
@@ -198,6 +233,7 @@ fi
 
 # ---- 6 log only ----------------------------------------------------------------
 LEVEL=info
+[ -n "$LED_WARN" ] && LEVEL=warning
 temp=$(awk '{printf "%.1f", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
 awk -v t="${temp:-0}" 'BEGIN{exit !(t >= 75)}' && LEVEL=warning
 disk_mb=$(df -BM --output=avail / 2>/dev/null | tail -n 1 | tr -dc 0-9)

@@ -11,11 +11,14 @@ Five states (night always wins):
          (contract 9), lit at once on every change. It ends with an `end`
          message, after PREVIEW_TIMEOUT_S with no message (the app sends a
          keep-alive), at night, or when SIGUSR1 asks for idle, and then goes
-         idle. A problem cast takes the board from it, and so does another
-         person's preview (the latest wins): that session is then "taken over"
-         and its messages are ignored until one says `show` (the app's Show on
-         board). A circuit cast wins too, but the preview waits and comes back
-         when the run ends, if it's still going;
+         idle. A problem cast (or a circuit's static view, which comes as one)
+         takes the board from it, and so does another person's preview (the
+         latest wins): that session is then "taken over" and its messages are
+         ignored until one says `show` (the app's Show on board). A circuit cast
+         wins too, but the preview waits and comes back when the run ends, if
+         it's still going. An ended session is remembered for ENDED_KEEP s and
+         its messages ignored, so a message still in flight when `end` was sent
+         can't light the board again after it (review SEAM-03);
 - idle:  an idle pattern (patterns/: IDLE_PATTERN, one pattern or a cycle),
          from IDLE_AFTER_S after the last cast, and at start and at the end
          of the night; it fades in over 1.5 s. With IDLE_ANIMATION=off the
@@ -51,6 +54,9 @@ from patterns.common import blend, dim, smooth
 CAST, RUN, IDLE, NIGHT, PREVIEW = 'cast', 'circuit', 'idle', 'night', 'preview'
 TAKEN_KEEP = 3600         # s a taken-over preview session is remembered (it needs `show` to come back)
 TAKEN_MAX = 50
+ENDED_KEEP = 120          # s an ended preview session is remembered (a message that overtook its `end`)
+ENDED_MAX = 200
+NIGHT_MAX = 50            # preview sessions logged as not shown, a night (review PI-15: no unbounded set)
 FADE_TO_IDLE = 1.5        # s, the lit problem (or black) crossfading into the idle pattern
 FADE_TO_NIGHT = 3.0       # s, whatever is showing fading to black at the start of the night
 # Animation frames write pixels 0-247 only: 6 ms at 1 MHz instead of 29 ms for
@@ -83,7 +89,8 @@ class Renderer:
         self.pv_timeout = float(cfg.get('PREVIEW_TIMEOUT_S') or 60)
         self.pv = None              # the preview going: {'token', 'frame', 'last'} (shown, or waiting on a circuit)
         self.pv_taken = {}          # token -> when: sessions a cast or another preview took the board from
-        self.pv_night = set()       # sessions already logged as not shown at night
+        self.pv_ended = {}          # token -> when: sessions that sent `end` (later messages ignored)
+        self.pv_night = set()       # sessions already logged as not shown at night (at most NIGHT_MAX)
         self.idle_args = dict(brightness=float(cfg.get('IDLE_BRIGHTNESS') or 1.0),
                               max_ma=float(cfg.get('IDLE_MAX_AMPS') or 2.0) * 1000,
                               ma_per_channel=float(cfg.get('MA_PER_CHANNEL') or 20))
@@ -109,6 +116,7 @@ class Renderer:
         self.broken = False         # Glisten (the fallback) threw: idle stays dark until a restart
         self.cap_logged = False
         self.write_errors = 0
+        self.write_error = None     # the last one, for listener.json (pb-health reports them: review PI-09)
         self.beat = clock()
         self.frames = 0             # animation frames written (window for the status)
         self.busy = 0.0             # seconds spent rendering + writing them
@@ -189,7 +197,8 @@ class Renderer:
              'idle_fps': round(frames / span, 1) if frames and span > 0 else None,
              'idle_frame_ms': round(busy / frames * 1000, 1) if frames else None,
              'idle_capped_frames': self.anim.capped_frames if self.anim else 0,
-             'led_write_errors': self.write_errors}
+             'led_write_errors': self.write_errors,
+             'led_write_error': self.write_error}
         return s
 
     # -- the thread ---------------------------------------------------------------
@@ -210,6 +219,7 @@ class Renderer:
             self.strip.write(dim(frame, self.scale) if self.scale < 1 else frame, None if full else BOARD_PIXELS)
         except Exception as e:
             self.write_errors += 1
+            self.write_error = ('%s: %s' % (type(e).__name__, e))[:200]
             if self.write_errors == 1 or self.write_errors % 1000 == 0:
                 self.err('writing the strip failed (%d so far): %s: %s' % (self.write_errors, type(e).__name__, e))
             return False
@@ -322,10 +332,16 @@ class Renderer:
     # -- the preview (contract 9) ---------------------------------------------
 
     def _preview(self, now, token, frame, show):
+        for t in [t for t, at in self.pv_ended.items() if now - at > ENDED_KEEP]:
+            del self.pv_ended[t]
+        if token in self.pv_ended:
+            self.log('LEDs: preview %s: a message after its end ignored' % token)
+            return
         if self.state == NIGHT:
-            if token not in self.pv_night:
+            if token not in self.pv_night and len(self.pv_night) < NIGHT_MAX:
                 self.pv_night.add(token)
-                self.log('LEDs: preview %s not shown, night' % token)
+                self.log('LEDs: preview %s not shown, night%s' % (
+                    token, '' if len(self.pv_night) < NIGHT_MAX else ' (the last one logged tonight)'))
             return
         for t in [t for t, at in self.pv_taken.items() if now - at > TAKEN_KEEP]:
             del self.pv_taken[t]
@@ -349,6 +365,9 @@ class Renderer:
 
     def _preview_end(self, now, token):
         self.pv_taken.pop(token, None)
+        self.pv_ended[token] = now
+        while len(self.pv_ended) > ENDED_MAX:
+            del self.pv_ended[min(self.pv_ended, key=self.pv_ended.get)]
         if not self.pv or self.pv['token'] != token:
             return
         self.pv = None

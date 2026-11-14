@@ -6,6 +6,7 @@ const SUPA_URL = 'https://uqirowyfqwiceyjznosl.supabase.co';
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaXJvd3lmcXdpY2V5anpub3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODMwMzAsImV4cCI6MjA5NDg1OTAzMH0.gOxEeiW9Ej1ol_w2qyAT2wvPGf8N8ECAwuJ4lO6GDpA';
 
 const received = [];   // { t, payload } for every cast_problem heard
+const circuitMsgs = [];  // { t, event, payload } for every cast_circuit and stop heard
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ── 1. Listener ──────────────────────────────────────────────────────────────
@@ -25,6 +26,8 @@ const listenReady = new Promise(resolve => {
         .forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
       logEl.prepend(tr);
     })
+    .on('broadcast', { event: 'cast_circuit' }, msg => { circuitMsgs.push({ t: Date.now(), event: 'cast_circuit', payload: msg.payload || {} }); })
+    .on('broadcast', { event: 'stop' }, msg => { circuitMsgs.push({ t: Date.now(), event: 'stop', payload: msg.payload || {} }); })
     .subscribe(status => {
       listenState.textContent = status === 'SUBSCRIBED' ? 'listening' : status.toLowerCase().replace(/_/g, ' ');
       listenState.className = 'pill ' + (status === 'SUBSCRIBED' ? 'ok' : 'bad');
@@ -203,7 +206,65 @@ async function run() {
   check(/failed/i.test(toast()) && idle() && since(t0).length === 0, `A failed send shows an error and frees the button (“${toast()}”)`);
   chan.httpSend = realSend;
 
-  // 10. No deprecation warning from the library.
+  // 10. Circuit casts (contract §8.1, 14 Nov 2026): laps, and Loop only for a circuit that loops.
+  // Fake names, so the Pi finds no circuit and leaves the board alone; skipped when signed in
+  // (a member's cast would write a real cast_log row).
+  if (g('session')) {
+    report(false, 'Circuit checks skipped: the local app is signed in (sign out on localhost to run them)');
+  } else {
+    const C = { id: '~cast-test-c', name: '~cast-test-C', loops: true, start_count: 2,
+                hold_sequence: ['hold3', 'hold1', 'hold80', 'hold120'] };
+    const D = { ...C, id: '~cast-test-d', name: '~cast-test-D', loops: false };
+    const circ = (t, ev) => circuitMsgs.filter(m => m.t >= t && m.event === ev &&
+      (ev === 'stop' || String(m.payload.circuit_name || '').startsWith('~cast-test')));
+    const hiddenRow = id => doc.getElementById(id).hidden;
+    const startAndStop = async label => {
+      const t = Date.now();
+      await w.startCircuitCast();
+      const run = g('circuitRun');
+      const ok = await waitFor(() => circ(t, 'cast_circuit').length >= 1, 8000);
+      const cast = ok ? circ(t, 'cast_circuit')[0].payload : null;
+      const ts = Date.now();
+      await w.stopCircuitRun(false);
+      const stopped = await waitFor(() => circ(ts, 'stop').some(m => run && m.payload.run === run.token), 8000);
+      check(stopped, `${label}: Stop sends stop with the run's token`);
+      check(!doc.getElementById('cast-done-stop').hidden,
+        `${label}: the done pane offers to stop the lights again for a few seconds (SEAM-06)`);
+      w.closeCircuitCast();
+      return { cast, run };
+    };
+
+    w.openCircuitCast(C);
+    check(!hiddenRow('cast-sheet-loop-row') && hiddenRow('cast-sheet-laps-row'),
+      'A looping circuit opens on Loop, with no laps stepper');
+    w.toggleCastLoop();
+    w.stepCastLaps(1); w.stepCastLaps(1);
+    check(!hiddenRow('cast-sheet-laps-row') && doc.getElementById('cast-sheet-laps-n').textContent === '3',
+      'Loop off shows the laps stepper; two taps on + make 3 laps');
+    for (let i = 0; i < 12; i++) w.stepCastLaps(1);
+    check(doc.getElementById('cast-sheet-laps-n').textContent === '10', 'Laps stop at 10');
+    for (let i = 0; i < 7; i++) w.stepCastLaps(-1);
+    let r = await startAndStop('3 laps');
+    check(r.cast && r.cast.laps === 3 && r.cast.loop === false && typeof r.cast.run === 'string',
+      `3 laps sends laps: 3 (and loop: false for an old listener) (got ${JSON.stringify(r.cast)})`);
+    check(r.run && r.run.moves === (4 - 2) + 2 * 4, `The phone counts the Pi's moves for 3 laps: 10 (got ${r.run && r.run.moves})`);
+
+    w.openCircuitCast(C);
+    r = await startAndStop('Loop');
+    check(r.cast && r.cast.laps === 0 && r.cast.loop === true, `Loop sends laps: 0, loop: true (got ${JSON.stringify(r.cast)})`);
+    check(r.run && r.run.endless === true, 'The phone counts an endless run');
+
+    w.openCircuitCast(D);
+    check(hiddenRow('cast-sheet-loop-row') && hiddenRow('cast-sheet-laps-row'),
+      'A circuit that doesn’t loop shows neither Loop nor laps (SEAM-02)');
+    w.toggleCastLoop();
+    check(!doc.getElementById('cast-sheet-loop').classList.contains('on'), '…and Loop can’t be switched on for it');
+    r = await startAndStop('Once');
+    check(r.cast && r.cast.laps === 1 && r.cast.loop === false, `It sends laps: 1 (got ${JSON.stringify(r.cast)})`);
+    check(r.run && r.run.moves === 2 && !r.run.endless, `The phone counts one lap: 2 moves (got ${r.run && r.run.moves})`);
+  }
+
+  // 11. No deprecation warning from the library.
   check(!warnings.some(s => /falling back to REST/i.test(s)), 'No “falling back to REST API” deprecation warning');
   check(!rt.isConnected(), 'Still no Realtime socket after casting');
 

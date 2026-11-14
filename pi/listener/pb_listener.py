@@ -12,7 +12,12 @@ docs/pi4-listener-kiosk-plan.md, section R1:
   WATCHDOG every 10 s while the event loop runs, connected or not.
 - Reconnect backoff 1 s doubling to 60 s with jitter; Phoenix heartbeat every
   25 s; no heartbeat reply for 60 s = dead socket.
-- Every cast is checked; a bad one is logged and skipped. Latest cast wins.
+- Every cast is checked; a bad one is logged (its body clipped to CLIP
+  characters) and skipped, and so is a malformed envelope: the socket stays up.
+  Latest cast wins.
+- A stop is remembered for STOPPED_KEEP s (its run token, or "any run" with the
+  time), so a circuit whose stop arrived while it was being fetched, or before
+  its cast, never starts (review PI-01, 14 Nov 2026).
 - Night mode (mode.py: outside the opening hours, HOURS_MON..HOURS_SUN, unless
   PB Console's stay-on override is going): the strip fades out and casts are
   ignored, but the socket stays joined.
@@ -61,6 +66,10 @@ HOLDS_EVERY = 600           # the holds table (each hold's LED and mirror partne
 BENCHMARKS_EVERY = 1800    # the teaser's problems: one small read
 IDLE_FILE = 'idle-pattern'  # pb-idle writes it next to the status file, then sends SIGUSR2
 LED_STALL = 20             # the LED thread silent this long = stuck: exit, systemd restarts us
+MAX_FRAME = 1 << 16        # bytes: a bigger frame drops the socket (a preview of 100 holds is about 2 KB)
+CLIP = 200                 # characters of a refused body that are logged (review PI-12)
+STOPPED_KEEP = 120         # s a stop is remembered, for a circuit still being fetched (review PI-01)
+STOPPED_MAX = 50
 
 
 def log(msg, level=6):
@@ -74,6 +83,13 @@ def warn(msg):
 
 def err(msg):
     log(msg, 3)
+
+
+def clip(body):
+    """A refused body for the journal: repr, at most CLIP characters (a junk payload can be
+    64 KB, and whole ones would rotate the cast lines PB Console reads out of the journal)."""
+    r = repr(body)
+    return r if len(r) <= CLIP else '%s... (%d characters)' % (r[:CLIP], len(r))
 
 
 def sd_notify(msg):
@@ -107,6 +123,8 @@ class Listener:
         host = self.cfg['SUPABASE_URL'].rstrip('/').replace('https://', 'wss://', 1)
         self.ws_url = '%s/realtime/v1/websocket?apikey=%s&vsn=1.0.0' % (host, self.cfg['SUPABASE_ANON_KEY'])
         self.pending = None
+        self.stopped_runs = {}        # run token -> when its stop arrived (monotonic)
+        self.stop_any_at = None       # when a stop with no token last arrived
         self.cast_ready = asyncio.Event()
         self.holds_wanted = asyncio.Event()
         self.holds_cache = supa.HOLDS_CACHE
@@ -127,6 +145,7 @@ class Listener:
             'mirror_map_at': None, 'holds': None, 'holds_source': None, 'last_preview_at': None, 'updated_at': now,
             'leds': None, 'idle_pattern': None, 'idle_plan': None, 'idle_override': None, 'benchmarks': None,
             'idle_fps': None, 'idle_frame_ms': None, 'idle_capped_frames': 0, 'led_write_errors': 0,
+            'led_write_error': None,
         }
 
     # -- status -------------------------------------------------------------
@@ -359,6 +378,9 @@ class Listener:
         if self.pending:
             log('circuit %r superseded by %r before it started' % (name, self.pending[1]))
             return
+        if self.was_stopped(token, t0):
+            log('circuit %r not started: stopped while it was fetched, run %s' % (name, token or '-'))
+            return
         if row is None:
             warn('unknown circuit %r: board left as it is' % name)
             return
@@ -385,15 +407,15 @@ class Listener:
 
     def on_cast(self, body):
         if not isinstance(body, dict):
-            warn('cast_problem with a non-object payload ignored: %r' % (body,))
+            warn('cast_problem with a non-object payload ignored: %s' % clip(body))
             return
         name = body.get('problem_name')
         mirror = body.get('mirror', False)
         if not isinstance(name, str) or not 1 <= len(name) <= 60:
-            warn('cast_problem with a bad problem_name ignored: %r' % (body,))
+            warn('cast_problem with a bad problem_name ignored: %s' % clip(body))
             return
         if mirror not in (True, False):
-            warn('cast_problem with a bad mirror ignored: %r' % (body,))
+            warn('cast_problem with a bad mirror ignored: %s' % clip(body))
             return
         tag = board.origin(body)            # ' [wall, guest]': PB Console's Activity reads it
         if self.mode == 'night':
@@ -410,31 +432,34 @@ class Listener:
         absent: loop true = 0, false = 1, absent = the circuit's loops), loop, mirror, run token.
         trace_s (the old route trace) is ignored. A circuit whose loops is false runs 1 lap."""
         if not isinstance(body, dict):
-            warn('cast_circuit with a non-object payload ignored: %r' % (body,))
+            warn('cast_circuit with a non-object payload ignored: %s' % clip(body))
             return
         name, interval = body.get('circuit_name'), body.get('interval')
         loop, mirror, token = body.get('loop'), body.get('mirror', False), body.get('run')
         if not isinstance(name, str) or not 1 <= len(name) <= 60:
-            warn('cast_circuit with a bad circuit_name ignored: %r' % (body,))
+            warn('cast_circuit with a bad circuit_name ignored: %s' % clip(body))
             return
         if isinstance(interval, bool) or not isinstance(interval, (int, float)) \
                 or not circuit.MIN_INTERVAL <= interval <= circuit.MAX_INTERVAL:
-            warn('cast_circuit with a bad interval ignored: %r' % (body,))
+            warn('cast_circuit with a bad interval ignored: %s' % clip(body))
             return
         if loop not in (True, False, None) or mirror not in (True, False):
-            warn('cast_circuit with a bad loop or mirror ignored: %r' % (body,))
+            warn('cast_circuit with a bad loop or mirror ignored: %s' % clip(body))
             return
         if token is not None and (not isinstance(token, str) or not 1 <= len(token) <= 64):
-            warn('cast_circuit with a bad run token ignored: %r' % (body,))
+            warn('cast_circuit with a bad run token ignored: %s' % clip(body))
             return
         laps = body.get('laps')             # 0 = endless, 1-10 laps; absent: from loop (contract 8.1)
         if laps is not None and (isinstance(laps, bool) or not isinstance(laps, int)
                                  or not 0 <= laps <= circuit.MAX_LAPS):
-            warn('cast_circuit with a bad laps ignored: %r' % (body,))
+            warn('cast_circuit with a bad laps ignored: %s' % clip(body))
             return
         if laps is None and loop is not None:
             laps = 0 if loop else 1
         tag = board.origin(body)
+        if token is not None and token in self.recent_stops():
+            log('circuit %r not started: its stop arrived first, run %s%s' % (name, token, tag))
+            return
         if self.mode == 'night':
             self.status['casts_ignored_night'] += 1
             log('circuit %r ignored: night mode%s' % (name, tag))
@@ -448,11 +473,11 @@ class Listener:
     def on_show_circuit(self, body):
         """show_circuit (contract 8.7): circuit_name, plus source/signed_in. Lit like a problem."""
         if not isinstance(body, dict):
-            warn('show_circuit with a non-object payload ignored: %r' % (body,))
+            warn('show_circuit with a non-object payload ignored: %s' % clip(body))
             return
         name = body.get('circuit_name')
         if not isinstance(name, str) or not 1 <= len(name) <= 60:
-            warn('show_circuit with a bad circuit_name ignored: %r' % (body,))
+            warn('show_circuit with a bad circuit_name ignored: %s' % clip(body))
             return
         tag = board.origin(body)
         if self.mode == 'night':
@@ -464,13 +489,36 @@ class Listener:
         self.pending = ('view', name, time.monotonic())
         self.cast_ready.set()
 
+    def recent_stops(self):
+        """The run tokens stopped in the last STOPPED_KEEP s (older ones forgotten here)."""
+        now = time.monotonic()
+        for t in [t for t, at in self.stopped_runs.items() if now - at > STOPPED_KEEP]:
+            del self.stopped_runs[t]
+        return self.stopped_runs
+
+    def was_stopped(self, token, t0):
+        """A circuit cast received at t0 (monotonic) has had its stop: one with its token, or one
+        with no token since it arrived (review PI-01: the stop landed while it was fetched)."""
+        if token is not None and token in self.recent_stops():
+            return True
+        return self.stop_any_at is not None and self.stop_any_at >= t0
+
     def on_stop(self, body):
-        """stop (contract 8): ends the circuit run with this run token, or any run without one."""
+        """stop (contract 8.2): ends the circuit run with this run token, or any run without one.
+        Remembered for STOPPED_KEEP s, so a circuit still being fetched (or whose cast comes in
+        after its stop) never starts."""
         body = body if isinstance(body, dict) else {}
         token = body.get('run')
-        if token is not None and not isinstance(token, str):
-            warn('stop with a bad run token ignored: %r' % (body,))
+        if token is not None and (not isinstance(token, str) or not 1 <= len(token) <= 64):
+            warn('stop with a bad run token ignored: %s' % clip(body))
             return
+        if token is None:
+            self.stop_any_at = time.monotonic()
+        else:
+            runs = self.recent_stops()
+            runs[token] = time.monotonic()
+            while len(runs) > STOPPED_MAX:
+                del runs[min(runs, key=runs.get)]
         if self.pending and self.pending[0] == 'circuit' and token in (None, self.pending[6]):
             self.pending = None             # stopped before it was even fetched
         log('stop received: run %s%s' % (token or 'any', board.origin(body)))
@@ -528,14 +576,21 @@ class Listener:
         if event in ('phx_error', 'phx_close'):
             raise DeadSocket('channel %s' % event)
         if event == 'broadcast':
-            p = m.get('payload') or {}
-            fn = self.EVENTS.get(p.get('event'))
+            p = m.get('payload')
+            kind = p.get('event') if isinstance(p, dict) else None
+            if not isinstance(kind, str):       # review PI-05: never let junk drop the socket
+                warn('broadcast with a malformed envelope ignored: %s' % clip(p))
+                return None
+            fn = self.EVENTS.get(kind)
             if fn:
-                fn(self, p.get('payload'))
+                try:
+                    fn(self, p.get('payload'))
+                except Exception as e:          # a handler bug: log it, keep the socket
+                    self.error('%s not handled: %s: %s' % (kind, type(e).__name__, e))
         elif event == 'system':
-            p = m.get('payload') or {}
-            if p.get('status') not in (None, 'ok'):
-                warn('Realtime system message: %r' % (p,))
+            p = m.get('payload')
+            if isinstance(p, dict) and p.get('status') not in (None, 'ok'):
+                warn('Realtime system message: %s' % clip(p))
         return None
 
     async def join(self, ws):
@@ -546,11 +601,17 @@ class Listener:
         while True:
             raw = await asyncio.wait_for(ws.recv(), max(0.1, deadline - time.monotonic()))
             self.status['last_message_at'] = time.time()
-            m = json.loads(raw)
+            try:
+                m = json.loads(raw)
+            except ValueError:
+                continue
+            if not isinstance(m, dict):
+                continue
             if m.get('topic') == self.topic and m.get('event') == 'phx_reply' and m.get('ref') == '1':
-                status = (m.get('payload') or {}).get('status')
+                payload = m.get('payload')
+                status = payload.get('status') if isinstance(payload, dict) else None
                 if status != 'ok':
-                    raise DeadSocket('join refused: %r' % (m.get('payload'),))
+                    raise DeadSocket('join refused: %s' % clip(payload))
                 return
 
     async def pump(self, ws):
@@ -579,7 +640,7 @@ class Listener:
             joined_at = None
             try:
                 async with connect(self.ws_url, open_timeout=15, ping_interval=None, close_timeout=5,
-                                   max_size=1 << 20) as ws:
+                                   max_size=MAX_FRAME) as ws:
                     await self.join(ws)
                     joined_at = time.monotonic()
                     self.set_state('joined')

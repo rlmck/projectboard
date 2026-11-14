@@ -23,7 +23,6 @@
   --int: #3b82f6;
   --finish: #ef4444;
   --feet: #f59e0b;
-  --led-amber: #f59e0b;  /* a circuit run's "hold after next" (the key on the cast sheet) */
   --gold: #fbbf24;
   --specific: #fde047;  /* Specific feet: the footholds a problem uses (yellow outline; never lit on the board) */  /* the benchmark mark, the challenge clock in rests */
   --start-text: #4ade80;  /* hold colours as text on a dark surface */

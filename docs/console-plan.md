@@ -137,7 +137,7 @@ A tab that works without the Pi (static content, no ssh): the rescue hotspot ste
 
 ## Phase 16: Circuit tracks
 
-**Removed 10 Nov 2026** (phase 18): the Pi stopped lighting tracks on 5 Nov. `circuits.led_track` and `check_track()` stay (contract §8.6); the editor is in git history.
+**Removed 10 Nov 2026** (phase 18): the Pi stopped lighting tracks on 5 Nov. `circuits.led_track` stays (contract §8.6); the editor is in git history, and `check_track()` went too on 14 Nov 2026 (nothing called it).
 
 **Built 1 Nov 2026** (cast contract §8.6, db/37). A tab that edits a circuit's track: the LEDs between each hold and the next, which the Pi lit in the route trace before a run and dim pink under it until 5 Nov 2026 (the "map and next hold" look, contract §8.3, doesn't draw them; they're kept and checked).
 

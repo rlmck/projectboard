@@ -384,8 +384,9 @@
   }
 
   // ── Cast a circuit (Circuits Phase 2; cast contract §8) ───────────────────────────
-  // The Cast button under the board opens a sheet: speed and loop, then Start sends
-  // cast_circuit and the sheet becomes the run screen (the countdown with beeps, the
+  // The Cast button under the board opens a sheet: speed, and for a circuit that loops,
+  // Loop (endless) or a number of laps (1–10); then Start sends cast_circuit with
+  // `laps` (0 = endless; contract §8.1, 14 Nov 2026) and the sheet becomes the run screen (the countdown with beeps, the
   // move counter, a big Stop). The Pi runs the lights itself (pi/listener/circuit.py);
   // the phone keeps its own clock from the moment the cast was accepted, so the
   // counter stays right after the screen sleeps. Stop sends `stop` with the run's
@@ -399,10 +400,13 @@
   // screen ends it there too (WALL-03, 12 Nov 2026), or a forgotten run on the wall would
   // count on for ever, holding off its idle and its updates.
   const CAST_RUN_MAX_S = 1800;
+  const CAST_STOP_AGAIN_MS = 10000;       // the done pane offers the stop again this long (SEAM-06)
   let castSheetCircuit = null;            // the circuit the open sheet is for
   let castSpeed = CAST_SPEEDS.includes(+lsGet(CAST_SPEED_KEY)) ? +lsGet(CAST_SPEED_KEY) : 3;
-  let castLoop = false;
-  let circuitRun = null;                  // { c, interval, loop, token, t0, s, L, moves, beeped, ended, ... }
+  const CAST_MAX_LAPS = 10;               // as the Pi's circuit.MAX_LAPS
+  let castLoop = false;                   // endless (laps 0); only for a circuit that loops
+  let castLaps = 1;                       // with Loop off: 1–CAST_MAX_LAPS
+  let circuitRun = null;                  // { c, interval, laps, endless, token, t0, s, L, moves, beeped, ended, ... }
   let circuitRunTicker = null;
   let circuitWake = null;
 
@@ -411,7 +415,8 @@
     if (!c) return;
     if (circuitRunGoing()) { document.getElementById('circuit-cast-modal').classList.add('show'); return; }
     castSheetCircuit = c;
-    castLoop = !!c.loops;
+    castLoop = !!c.loops;                 // a looping circuit starts on Loop, as before
+    castLaps = 1;
     document.getElementById('cast-sheet-title').textContent = circuitName(c);
     document.getElementById('cast-sheet-error').textContent = '';
     showCastPane('setup');
@@ -450,9 +455,28 @@
     document.querySelectorAll('#cast-sheet-speed .cc-seg-btn').forEach(b =>
       b.classList.toggle('active', +b.dataset.s === castSpeed));
     document.getElementById('cast-sheet-speed-val').textContent = `${castSpeed} s a move`;
+    // A circuit that doesn't loop always runs once (the Pi forces 1 lap: review SEAM-02), so
+    // it gets neither Loop nor laps. One that loops: Loop (endless), or with Loop off, laps.
+    const loops = !!(castSheetCircuit && castSheetCircuit.loops);
+    if (!loops) castLoop = false;
     const lb = document.getElementById('cast-sheet-loop');
     lb.classList.toggle('on', castLoop);
     lb.setAttribute('aria-pressed', castLoop ? 'true' : 'false');
+    document.getElementById('cast-sheet-loop-row').hidden = !loops;
+    document.getElementById('cast-sheet-laps-row').hidden = !loops || castLoop;
+    document.getElementById('cast-sheet-laps-n').textContent = String(castLaps);
+    document.getElementById('cast-sheet-laps-val').textContent =
+      castLaps === 1 ? 'Once round, then the top' : `${castLaps} times round, then the top`;
+    document.querySelectorAll('#cast-sheet-laps .cc-seg-btn[data-d]').forEach(b => {
+      b.disabled = +b.dataset.d < 0 ? castLaps <= 1 : castLaps >= CAST_MAX_LAPS;
+    });
+  }
+
+  // The laps the run asks for: 0 = endless (Loop), else 1–10; always 1 for a circuit
+  // that doesn't loop (as the Pi's circuit.resolve_laps).
+  function castLapsWanted(c) {
+    if (!c.loops) return 1;
+    return castLoop ? 0 : Math.max(1, Math.min(CAST_MAX_LAPS, castLaps));
   }
 
   function setCastSpeed(s) {
@@ -461,7 +485,15 @@
     lsSet(CAST_SPEED_KEY, String(s));
     syncCastOptions();
   }
-  function toggleCastLoop() { castLoop = !castLoop; syncCastOptions(); }
+  function toggleCastLoop() {
+    if (!(castSheetCircuit && castSheetCircuit.loops)) return;
+    castLoop = !castLoop;
+    syncCastOptions();
+  }
+  function stepCastLaps(d) {
+    castLaps = Math.max(1, Math.min(CAST_MAX_LAPS, castLaps + d));
+    syncCastOptions();
+  }
 
   function castRunToken() {
     const a = new Uint8Array(8);
@@ -509,8 +541,10 @@
 
     btn.textContent = 'Sending…';
     const token = castRunToken();
-    const interval = castSpeed, loop = castLoop;
-    const payload = { circuit_name: circuitName(c), interval, loop, run: token,
+    const interval = castSpeed, laps = castLapsWanted(c), endless = laps === 0;
+    // `laps` is what the Pi runs (contract §8.1); `loop` is only for a listener from before
+    // 5 Nov 2026, which doesn't read laps (a newer one ignores loop when laps is sent).
+    const payload = { circuit_name: circuitName(c), interval, laps, loop: endless, run: token,
                       source: WALL ? 'wall' : 'phone', signed_in: !!session };
     try {
       await channel.httpSend('cast_circuit', payload, { timeout: 10000 });
@@ -524,8 +558,10 @@
     logCast('circuit', circuitName(c), false, token);
     const seq = circuitSeq(c), L = seq.length, s = Math.max(1, Math.min(c.start_count || 1, 2, L));
     // The phone's clock starts at the Pi's countdown: after its read (CAST_LAG_MS). No route trace
-    // since 5 Nov 2026 (contract 8.3): the Pi starts the countdown at once.
-    circuitRun = { c, interval, loop, token, t0: Date.now() + CAST_LAG_MS, L, s, moves: L - s,
+    // since 5 Nov 2026 (contract 8.3): the Pi starts the countdown at once. N laps are
+    // (L - s) + (N - 1) × L moves, as circuit.Run: lap 1 starts on the start holds.
+    circuitRun = { c, interval, laps, endless, token, t0: Date.now() + CAST_LAG_MS, L, s,
+                   moves: endless ? Infinity : (L - s) + (laps - 1) * L,
                    beeped: -1, ended: false, stopSent: false, movesDone: 0 };
     showCastPane('run');
     document.getElementById('cast-run-stop').textContent = 'Stop';
@@ -539,7 +575,7 @@
     const t = (Date.now() - r.t0) / 1000;
     if (t < CAST_COUNTDOWN) return { t, phase: 'count', moves: 0 };
     const b = Math.floor((t - CAST_COUNTDOWN) / r.interval);
-    if (!r.loop && b >= r.moves) return { t, phase: 'top', moves: r.moves };
+    if (!r.endless && b >= r.moves) return { t, phase: 'top', moves: r.moves };
     return { t, phase: 'climb', moves: b, beat: b };
   }
 
@@ -561,29 +597,46 @@
       if (now.t < CAST_COUNTDOWN + 1) chBeep(1320, 380, 0.4);
     }
     if (now.phase === 'top') { endCircuitRun(r.moves, true); return; }
-    if (r.loop && now.t >= CAST_RUN_MAX_S) { endCircuitRun(now.moves, false); return; }
+    // The Pi ends any run at CIRCUIT_MAX_S (a long set of laps at Slow can reach it too).
+    if (now.t >= CAST_RUN_MAX_S) { endCircuitRun(now.moves, false); return; }
     const lap = Math.floor((r.s - 1 + now.beat) / r.L) + 1;
     big.textContent = String(now.moves);
-    sub.textContent = r.loop ? `moves · lap ${lap}` : `of ${r.moves} moves`;
+    sub.textContent = r.endless ? `moves · lap ${lap}`
+      : r.laps > 1 ? `of ${r.moves} moves · lap ${lap} of ${r.laps}` : `of ${r.moves} moves`;
   }
 
-  async function stopCircuitRun() {
+  // again: the done pane's button (send the stop once more, even if one was taken).
+  async function stopCircuitRun(again = false) {
     const r = circuitRun;
     if (!r) return;
-    const btn = document.getElementById('cast-run-stop');
+    const btn = document.getElementById(again ? 'cast-done-stop' : 'cast-run-stop');
     if (!r.ended) endCircuitRun(circuitRunNow(r).moves, false);
-    if (r.stopSent) return;
+    if ((r.stopSent && !again) || r.stopping) return;
+    r.stopping = true;
     btn.disabled = true;
     try {
       await channel.httpSend('stop', { run: r.token, source: WALL ? 'wall' : 'phone', signed_in: !!session },
                              { timeout: 10000 });
+      const first = !r.stopSent;
       r.stopSent = true;
-      document.getElementById('cast-done-stop').hidden = true;
+      // Realtime took the stop; that isn't proof the board got it (contract §8.4). For a few
+      // seconds the done pane keeps a way to send it again, in case the lights are still on
+      // (review SEAM-06; the Pi also remembers the stop if it lands while it's reading the circuit).
+      const again = document.getElementById('cast-done-stop');
+      if (first && circuitRun === r) {
+        again.textContent = 'Lights still on? Stop them';
+        again.hidden = false;
+        setTimeout(() => { if (circuitRun === r || !circuitRun) again.hidden = true; }, CAST_STOP_AGAIN_MS);
+      } else {
+        again.hidden = true;
+      }
     } catch (err) {
       console.error(err);
       showToast('Stop didn’t reach the board — tap Stop the lights', 'error');
+      document.getElementById('cast-done-stop').textContent = 'Stop the lights';
       document.getElementById('cast-done-stop').hidden = false;
     }
+    r.stopping = false;
     btn.disabled = false;
   }
 
@@ -599,7 +652,7 @@
     document.getElementById('cast-done-big').textContent = top ? 'Top!' : String(moves);
     document.getElementById('cast-done-sub').textContent = top
       ? `${moves} move${moves === 1 ? '' : 's'} done`
-      : `move${moves === 1 ? '' : 's'}${r.loop ? ` · ${r.L}-hold loop` : ` of ${r.moves}`}`;
+      : `move${moves === 1 ? '' : 's'}${r.endless ? ` · ${r.L}-hold loop` : ` of ${r.moves}`}`;
     document.getElementById('cast-done-log').textContent = '';
     document.getElementById('cast-done-stop').hidden = true;
     showCastPane('done');
@@ -611,7 +664,7 @@
     if (!r.movesDone) return;
     if (!session) { el.textContent = 'Sign in to keep a log of your runs.'; return; }
     const { error } = await sb.from('circuit_logs').insert({
-      user_id: session.user.id, circuit_id: r.c.id, moves: r.movesDone, looped: r.loop, speed: r.interval });
+      user_id: session.user.id, circuit_id: r.c.id, moves: r.movesDone, looped: r.laps !== 1, speed: r.interval });
     if (circuitRun !== r) return;
     if (error) { el.textContent = 'Couldn’t save this run to your log.'; console.warn('circuit log failed', error); }
     else el.textContent = 'Saved to your log.';

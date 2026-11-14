@@ -3,8 +3,9 @@
     python -m unittest discover -s pi/tests      (from the repo root)
 
 board.check_preview / preview_frame (the payload and the colours), the
-renderer's preview state against cast, circuit, idle and night, and the
-listener's preview_holds handler.
+renderer's preview state against cast, circuit, idle and night, an ended
+session's late messages ignored (review SEAM-03), the night log bounded
+(review PI-15), and the listener's preview_holds handler.
 """
 import os
 import sys
@@ -128,13 +129,56 @@ class Renderer(unittest.TestCase):
         r.preview('s1', A)                                    # s1 was taken over
         self.go(0.1)
         self.assertEqual(self.shown(), B)
-        r.preview_end('s1')                                   # its end changes nothing
-        self.go(0.1)
-        self.assertEqual(r.state, renderer.PREVIEW)
         r.preview('s1', A, show=True)
         self.go(0.1)
         self.assertEqual(self.shown(), A)
         self.assertTrue(any('s2 taken over by another preview' in m for m in self.logs))
+        r.preview_end('s2')                                   # a taken-over session's end changes nothing
+        self.go(0.1)
+        self.assertEqual(r.state, renderer.PREVIEW)
+        self.assertEqual(self.shown(), A)
+        r.preview('s2', B, show=True)                         # and once ended it can't come back
+        self.go(0.1)
+        self.assertEqual(self.shown(), A)
+
+    def test_a_message_that_overtakes_its_end_is_ignored(self):
+        # Review SEAM-03: the app's last tap and its `end` race; `end` lands first.
+        r = self.make()
+        r.preview('s1', A)
+        self.go(0.1)
+        r.preview_end('s1')
+        self.go(0.1)
+        self.assertEqual(r.state, renderer.IDLE)
+        r.preview('s1', B)                                    # the in-flight tap, after its end
+        self.go(0.1)
+        self.assertEqual(r.state, renderer.IDLE)
+        self.assertIsNone(r.pv)
+        self.assertTrue(any('s1: a message after its end ignored' in m for m in self.logs))
+        r.preview('s2', B)                                    # the next session (a new token) works
+        self.go(0.1)
+        self.assertEqual(r.state, renderer.PREVIEW)
+        self.assertEqual(self.shown(), B)
+
+    def test_an_end_that_arrives_first_still_counts(self):
+        # The `end` overtakes the session's only message: nothing lights.
+        r = self.make()
+        r.preview_end('s1')
+        r.preview('s1', A, show=False)
+        self.go(0.1)
+        self.assertEqual(r.state, renderer.IDLE)
+
+    def test_ended_sessions_are_forgotten_and_bounded(self):
+        r = self.make()
+        r.preview_end('s1')
+        self.go(0.1)
+        self.clock.t += renderer.ENDED_KEEP + 1
+        r.preview('s1', A)                                    # long after: an unknown token again
+        self.go(0.1)
+        self.assertEqual(r.state, renderer.PREVIEW)
+        for i in range(renderer.ENDED_MAX + 30):
+            r.preview_end('x%d' % i)
+        self.go(0.1)
+        self.assertLessEqual(len(r.pv_ended), renderer.ENDED_MAX)
 
     def test_a_circuit_wins_and_the_preview_comes_back(self):
         r = self.make()
@@ -168,6 +212,11 @@ class Renderer(unittest.TestCase):
         self.go(0.1)
         self.assertEqual(r.state, renderer.NIGHT)
         self.assertEqual(sum('not shown, night' in m for m in self.logs), 1)
+        for i in range(renderer.NIGHT_MAX * 3):              # review PI-15: a flood of tokens
+            r.preview('n%d' % i, A)
+        self.go(0.1)
+        self.assertLessEqual(len(r.pv_night), renderer.NIGHT_MAX)
+        self.assertLessEqual(sum('not shown, night' in m for m in self.logs), renderer.NIGHT_MAX)
         r = self.make()
         r.preview('s1', A)
         self.go(0.1)

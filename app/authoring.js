@@ -606,16 +606,17 @@
   // so a lost message corrects itself with the next. One message is in flight at
   // a time and the next carries whatever is on screen when it lands, so fast
   // taps coalesce. A keep-alive every PREVIEW_PING_MS keeps the Pi showing it (it
-  // gives up after 60 s of silence); `end` is sent on Save, Cancel or leaving.
+  // gives up after 60 s of silence); `end` is sent on Save, Cancel or leaving, after
+  // any message still in flight (and the Pi ignores a session once it has ended).
   // Phones only send inside the geofence, with no admin bypass (an admin editing
   // holds at home mustn't light the gym's board); outside it, setting works and a
-  // note says why the board isn't lit. A problem cast or someone else's preview
-  // takes the board (the latest wins), and the Pi then ignores this session until
+  // note says why the board isn't lit. A problem cast, a circuit's static view
+  // (show_circuit, from the wall) or someone else's preview takes the board (the latest wins), and the Pi then ignores this session until
   // it says `show`: while setting, the app listens on the channel (the only time
   // it opens a socket) so it can offer "Show on board" when that happens.
   const PREVIEW_PING_MS = 20000;
   const PREVIEW_RETRY_MS = 2000;
-  // { token, first, show, dirty, sending, locating, outside, paused, ping, listen }
+  // { token, first, show, dirty, sending, inflight, locating, outside, paused, ping, listen }
   let preview = null;
 
   // Setting is on screen: the phone's create view (in front), or the wall's Create page.
@@ -669,7 +670,8 @@
     const body = previewBody(p, {
       start: holdsWithRole('start'), hold: holdsWithRole('int'), finish: holdsWithRole('finish'),
       feet: createFeet, ...flags });
-    channel.httpSend('preview_holds', body, { timeout: 8000 }).then(() => {
+    p.inflight = channel.httpSend('preview_holds', body, { timeout: 8000 });
+    p.inflight.then(() => {
       p.sending = false;
       if (flags.first) p.first = false;
       if (flags.show) p.show = false;
@@ -701,7 +703,11 @@
     clearInterval(p.ping);
     previewUnlisten(p);
     if (!p.first || p.sending) {   // something may have reached the Pi
-      channel.httpSend('preview_holds', previewBody(p, { end: true }), { timeout: 8000 })
+      // After the message in flight has settled, so `end` can't be overtaken by it
+      // (review SEAM-03; the Pi also ignores a session's messages once it has ended).
+      const body = previewBody(p, { end: true });
+      Promise.resolve(p.inflight).catch(() => {})
+        .then(() => channel.httpSend('preview_holds', body, { timeout: 8000 }))
         .catch(err => console.warn('preview end not sent', err));
     }
     previewRenderNote();
@@ -719,7 +725,10 @@
       p.paused = true;
       previewRenderNote();
     };
+    // A problem cast, or a circuit's static view (the Pi shows it as a cast: review SEAM-01).
+    // A circuit run doesn't take it: the preview waits and comes back when the run ends.
     ch.on('broadcast', { event: 'cast_problem' }, taken)
+      .on('broadcast', { event: 'show_circuit' }, taken)
       .on('broadcast', { event: 'preview_holds' }, msg => {
         const b = msg && msg.payload;
         // Only a session starting, or one taking the board back, takes it from us (contract §9).

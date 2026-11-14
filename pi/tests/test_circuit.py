@@ -10,12 +10,12 @@ top (three red blinks, the map fading out), mirroring and ids off the grid;
 the config options; then the renderer: a run animates and finishes into idle,
 stop tokens, a problem cast cutting in, the time limit, night. Then the
 listener's cast_circuit parsing (laps, every backward-compatibility case,
-trace_s ignored) and the laps the run gets from the circuit's loops. Circuit
-tracks: check_track still checks (PB Console saves through it), though the Pi
-no longer draws them.
+trace_s ignored), the laps the run gets from the circuit's loops, and a stop
+that lands while its circuit is being fetched (or before its cast) keeping it
+from starting (review PI-01). Circuit tracks aren't drawn or checked any more
+(check_track went on 14 Nov 2026).
 """
 import asyncio
-import json
 import os
 import sys
 import unittest
@@ -400,59 +400,6 @@ class Renderer(unittest.TestCase):
         self.assertEqual(self.strip.writes[-1][0], {})
 
 
-# -- circuit tracks (contract 8.6): checked, not drawn -------------------------------------
-
-# The live Pat Burner (a loop, a match at positions 5-6) and its track as Ross edited it.
-PB_SEQ = ['hold47', 'hold24', 'hold98', 'hold119', 'hold213', 'hold235', 'hold235', 'hold206', 'hold148',
-          'hold112', 'hold53', 'hold49']
-
-
-def pb_track():
-    with open(os.path.join(ROOT, 'tools', 'circuit-tracks-pat-burner.json'), encoding='utf-8') as f:
-        moves = json.load(f)['circuits']['Pat Burner']['moves']
-    return {'version': 1, 'moves': [{k: m[k] for k in ('move', 'from', 'to', 'cells')} for m in moves]}
-
-
-class Tracks(unittest.TestCase):
-    def test_pat_burner_checks_clean(self):
-        moves, problems = circuit.check_track(pb_track(), PB_SEQ)
-        self.assertEqual(problems, [])
-        self.assertEqual(sorted(moves), [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12])     # 6 is the match
-        self.assertEqual(moves[5], ['hold214', 'hold177', 'hold178'])
-
-    def test_stale_and_bad_moves_skipped(self):
-        t = pb_track()
-        seq = list(PB_SEQ)
-        seq[3] = 'hold120'                       # the circuit edited: moves 3 and 4 go stale
-        moves, problems = circuit.check_track(t, seq)
-        self.assertNotIn(3, moves)
-        self.assertNotIn(4, moves)
-        self.assertIn(5, moves)
-        self.assertEqual(sum('stale' in p for p in problems), 2)
-        bad = {'version': 1, 'moves': [
-            {'move': 2, 'from': 'hold24', 'to': 'hold98', 'cells': ['hold21']},                 # a feet sign
-            {'move': 3, 'from': 'hold98', 'to': 'hold119', 'cells': ['hold117', 'hold117']},    # twice
-            {'move': 4, 'from': 'hold119', 'to': 'hold213', 'cells': ['hold999']},              # off the grid
-            {'move': 6, 'from': 'hold235', 'to': 'hold235', 'cells': []},                       # a match
-            {'move': 13, 'from': 'hold49', 'to': 'hold47', 'cells': []},                        # out of range
-            {'move': 8, 'from': 'hold206', 'to': 'hold148', 'cells': ['hold2']},                # the other sign
-            {'move': 9, 'from': 'hold148', 'to': 'hold112', 'cells': ['hold131']},              # fine
-            {'move': 9, 'from': 'hold148', 'to': 'hold112', 'cells': []},                       # twice
-            'nonsense', {'move': True, 'from': 'hold47', 'to': 'hold24', 'cells': []}]}
-        moves, problems = circuit.check_track(bad, PB_SEQ)
-        self.assertEqual(moves, {9: ['hold131']})
-        self.assertEqual(len(problems), 9)
-
-    def test_never_raises_on_bad_json(self):
-        for junk in ('{not json', '[]', 5, [], {'version': 2, 'moves': []}, {'version': True, 'moves': []},
-                     {'version': 1}, {'version': 1, 'moves': 'x'}, {'version': 1, 'moves': [{}] * 201}):
-            moves, problems = circuit.check_track(junk, PB_SEQ)
-            self.assertEqual(moves, {})
-            self.assertEqual(len(problems), 1, junk)
-        self.assertEqual(circuit.check_track(json.dumps(pb_track()), PB_SEQ)[1], [])     # a JSON string is fine
-        self.assertEqual(circuit.check_track(None, PB_SEQ), ({}, []))
-
-
 # -- the listener: cast_circuit (contract 8.1) ---------------------------------------------
 
 class ListenerCast(unittest.TestCase):
@@ -469,7 +416,8 @@ class ListenerCast(unittest.TestCase):
         self.L.mode, self.L.status, self.L.pending, self.L.status_path = 'day', {'circuits_shown': 0}, None, None
         self.L.mirror_map = None
         self.L.circuit_opts = circuit.options({})
-        self.runs = []
+        self.L.stopped_runs, self.L.stop_any_at = {}, None
+        self.runs, self.stops = [], []
 
         class Ready:
             def set(_):
@@ -478,6 +426,9 @@ class ListenerCast(unittest.TestCase):
         class LedThread:
             def circuit(_, run):
                 self.runs.append(run)
+
+            def stop_circuit(_, token=None):
+                self.stops.append(token)
         self.L.cast_ready, self.L.leds = Ready(), LedThread()
         self.warned, self.logged = [], []
         self._warn, self._log = pb_listener.warn, pb_listener.log
@@ -552,6 +503,69 @@ class ListenerCast(unittest.TestCase):
     def test_unknown_circuit_leaves_the_board(self):
         self.assertIsNone(self.start(None, laps=1))
         self.assertTrue(any('unknown circuit' in m for m in self.warned))
+
+    # -- review PI-01 / SEAM-06: a stop while the circuit is being fetched --------------
+
+    LOOPING = {'name': 'Pat Burner', 'hold_sequence': SEQ, 'start_count': 2, 'loops': True}
+
+    def fetch_with(self, during, **fields):
+        """As the worker does: take the job off pending, then fetch; `during` runs inside the fetch
+        (a stop arriving then). -> the Run started, or None."""
+        self.runs.clear()
+        p = self.cast(**fields)
+        self.assertIsNotNone(p)
+        self.L.pending = None                   # the worker has taken it: on_stop can't cancel it there
+        old = self.pb.supa.fetch_circuit
+
+        def fetch(cfg, name):
+            during()
+            return self.LOOPING
+        self.pb.supa.fetch_circuit = fetch
+        try:
+            asyncio.run(self.L.show_circuit(*p[1:]))
+        finally:
+            self.pb.supa.fetch_circuit = old
+        return self.runs[-1] if self.runs else None
+
+    def test_a_stop_during_the_fetch_wins(self):
+        self.assertIsNone(self.fetch_with(lambda: self.L.on_stop({'run': 'ab'}), laps=0))
+        self.assertEqual(self.stops, ['ab'])
+        self.assertTrue(any("circuit 'Pat Burner' not started: stopped while it was fetched, run ab" in m
+                            for m in self.logged))
+
+    def test_a_stop_for_any_run_during_the_fetch_wins(self):
+        self.assertIsNone(self.fetch_with(lambda: self.L.on_stop({}), laps=0))
+        self.assertIsNone(self.fetch_with(lambda: self.L.on_stop('junk'), laps=0))   # a non-object = any
+
+    def test_a_stop_for_another_run_doesnt(self):
+        self.assertIsNotNone(self.fetch_with(lambda: self.L.on_stop({'run': 'zz'}), laps=0))
+
+    def test_a_stop_for_any_run_before_the_cast_doesnt(self):
+        self.L.on_stop({})                      # an earlier run's stop
+        self.assertIsNotNone(self.fetch_with(lambda: None, laps=0))
+
+    def test_a_stop_that_arrives_before_its_cast(self):
+        self.L.on_stop({'run': 'ab'})           # the two POSTs overtook each other
+        self.assertIsNone(self.cast(laps=0))
+        self.assertTrue(any('its stop arrived first, run ab' in m for m in self.logged))
+        self.assertIsNotNone(self.cast(laps=0, run='cd'))      # another run is fine
+
+    def test_stops_are_forgotten_and_bounded(self):
+        self.L.on_stop({'run': 'ab'})
+        self.L.stopped_runs['ab'] -= self.pb.STOPPED_KEEP + 1     # long ago
+        self.assertIsNotNone(self.cast(laps=0))
+        for i in range(self.pb.STOPPED_MAX + 20):
+            self.L.on_stop({'run': 'r%d' % i})
+        self.assertLessEqual(len(self.L.stopped_runs), self.pb.STOPPED_MAX)
+
+    def test_a_pending_circuit_is_cancelled_as_before(self):
+        self.cast(laps=0)
+        self.L.on_stop({'run': 'ab'})
+        self.assertIsNone(self.L.pending)
+        for bad in ({'run': 7}, {'run': ''}, {'run': 'x' * 65}):
+            self.warned.clear()
+            self.L.on_stop(bad)
+            self.assertEqual(len(self.warned), 1, bad)
 
 
 if __name__ == '__main__':

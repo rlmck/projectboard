@@ -28,16 +28,14 @@ pi/tests/test_circuit.py.
   a crossfade, overlay * a + under * (1 - a), so the map stays steady beneath.
 
 Circuit tracks (circuits.led_track, db/37, contract 8.6) are no longer drawn by
-the Pi (5 Nov 2026). check_track() stays: PB Console still checks and saves
-tracks through it.
+the Pi (5 Nov 2026); check_track(), their checker, went on 14 Nov 2026 (review
+SEAM-07: nothing called it once PB Console's tracks tab was removed).
 
 The static view (show_circuit, 2 Nov 2026, contract 8.7) is static_frame(): every
 hold of the circuit lit at once in a problem's colours (start green, the last
 hold red, the rest blue), as the wall screen draws it (circuitHoldRoles in
 app/circuits.js). No animation: the listener shows it like a problem cast.
 """
-import json
-
 import board
 
 COUNTDOWN = 5.0
@@ -47,11 +45,6 @@ GREEN, BLUE, RED = (0, 255, 0), (0, 0, 255), (255, 0, 0)
 BLINK_FULL, BLINK_FADE = 0.08, 0.8          # s: a blink is full, then fades linearly to off, once a second
 MATCH_OFF = ((0.0, 0.15), (0.30, 0.45))     # s into a match beat when its green is off
 TOP_BLINKS, TOP_FADE = 3, 1.0               # the top: three red blinks (one a second), then the map fades out
-
-# Circuit tracks (contract 8.6): only checked now (PB Console saves through check_track)
-TRACK_MAX_MOVES = 200               # size limits (PB Console refuses bigger)
-TRACK_MAX_CELLS = 40                # LEDs in one move
-TRACK_MAX_BYTES = 32768             # the JSON, as PB Console saves it
 
 OPTION_DEFAULTS = {'map_level': 0.2, 'finish_level': 0.6}
 OPTION_KEYS = (('CIRCUIT_MAP_LEVEL', 'map_level', 0.05, 0.6), ('CIRCUIT_FINISH_LEVEL', 'finish_level', 0.1, 1.0))
@@ -107,70 +100,6 @@ def blink(x):
 def match_on(x):
     """A match beat's green, x seconds into the beat: two blinks, then on."""
     return 0.0 if any(a <= x < b for a, b in MATCH_OFF) else 1.0
-
-
-def check_track(led_track, seq):
-    """circuits.led_track against the circuit's hold_sequence (climbing order) ->
-    ({move number: [hold ids in order]}, [problems, one line each]).
-
-    Never raises. The whole track is refused (no moves) if it isn't
-    {"version": 1, "moves": [...]} or has more than TRACK_MAX_MOVES moves. Each
-    move is then checked on its own and skipped with a problem line if: it isn't
-    an object; its move number isn't 1..len(seq) or is listed twice; its from/to
-    aren't hold_sequence[move-1] and the next hold (wrapping to the first) now
-    (a stale move: the circuit was edited); from == to (a match has no track);
-    its cells aren't a list of at most TRACK_MAX_CELLS hold ids on the grid, none
-    of them a feet sign (hold2/hold21), none twice. PB Console saves only a track
-    with no problems."""
-    if led_track is None:
-        return {}, []
-    if isinstance(led_track, str):
-        try:
-            led_track = json.loads(led_track)
-        except ValueError:
-            return {}, ['led_track is not JSON']
-    version = led_track.get('version') if isinstance(led_track, dict) else None
-    if isinstance(version, bool) or version != 1 or not isinstance(led_track.get('moves'), list):
-        return {}, ['led_track is not {"version": 1, "moves": [...]}']
-    raw = led_track['moves']
-    if len(raw) > TRACK_MAX_MOVES:
-        return {}, ['led_track has %d moves (at most %d)' % (len(raw), TRACK_MAX_MOVES)]
-    seq = list(seq or [])
-    L = len(seq)
-    moves, problems = {}, []
-    for k, m in enumerate(raw):
-        if not isinstance(m, dict):
-            problems.append('entry %d: not an object' % (k + 1))
-            continue
-        n = m.get('move')
-        if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= L:
-            problems.append('entry %d: move %r is not 1-%d' % (k + 1, n, L))
-            continue
-        if n in moves:
-            problems.append('move %d: listed twice' % n)
-            continue
-        want = (seq[n - 1], seq[n % L])
-        got = (m.get('from'), m.get('to'))
-        if got != want:
-            problems.append('move %d: %s -> %s, but the circuit now goes %s -> %s (stale)'
-                            % (n, got[0], got[1], want[0], want[1]))
-            continue
-        if want[0] == want[1]:
-            problems.append('move %d: a match has no track' % n)
-            continue
-        cells = m.get('cells')
-        if not isinstance(cells, list) or len(cells) > TRACK_MAX_CELLS:
-            problems.append('move %d: cells is not a list of at most %d hold ids' % (n, TRACK_MAX_CELLS))
-            continue
-        bad = [c for c in cells if board.hold_number(c) is None or c in board.FEET_HOLDS]
-        if bad:
-            problems.append('move %d: not track LEDs: %s' % (n, ', '.join(repr(c) for c in bad[:5])))
-            continue
-        if len(set(cells)) != len(cells):
-            problems.append('move %d: an LED listed twice' % n)
-            continue
-        moves[n] = list(cells)
-    return moves, problems
 
 
 def static_frame(seq, start_count):

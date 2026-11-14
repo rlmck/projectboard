@@ -396,9 +396,13 @@
     const b = e.target.closest('.cc-seg-btn'); if (b) setCastSpeed(+b.dataset.s);
   });
   document.getElementById('cast-sheet-loop').addEventListener('click', toggleCastLoop);
+  document.getElementById('cast-sheet-laps').addEventListener('click', e => {
+    const b = e.target.closest('.cc-seg-btn[data-d]');
+    if (b && !b.disabled) stepCastLaps(+b.dataset.d);
+  });
   document.getElementById('cast-sheet-start').addEventListener('click', startCircuitCast);
-  document.getElementById('cast-run-stop').addEventListener('click', stopCircuitRun);
-  document.getElementById('cast-done-stop').addEventListener('click', stopCircuitRun);
+  document.getElementById('cast-run-stop').addEventListener('click', () => stopCircuitRun(false));
+  document.getElementById('cast-done-stop').addEventListener('click', () => stopCircuitRun(true));
   document.getElementById('cast-sheet-close').addEventListener('click', closeCircuitCast);
   document.getElementById('cast-done-close').addEventListener('click', closeCircuitCast);
   document.getElementById('cast-done-again').addEventListener('click', castCircuitAgain);
