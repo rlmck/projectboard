@@ -32,7 +32,7 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 12. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
 
 ## Bugs
-13. **Act on the code review** (local `review_output.md` → fix plan, one session each). Sessions 1–6 done (12–14 Nov 2026; Ross's tests in `PROJECT_STATUS.md` → Waiting on). **Next: session 7, Pi deploy and ops** (its findings in the fix plan's row 7); needs a Pi deploy, and the gym closed for the test.
+13. **Act on the code review** (local `review_output.md` → fix plan, one session each). Sessions 1–6 done (12–14 Nov 2026; Ross's tests in `PROJECT_STATUS.md` → Waiting on). **Next: session 7, Pi deploy and ops** (its findings in the fix plan's row 7): it has no Critical or High findings, so nothing was fixed on 14 Nov; waiting on Ross to say which Medium/Low ones to fix. Needs a Pi deploy, and the gym closed for the test.
 
 ## Not now
 Don't build yet: Circuits Phase 3 (PBs, leaderboards), mirrored circuits, a Done filter for circuits ("done" = done both sides, problems only), tags, session/logbook tracking beyond ticks, the Flutter migration; **the release workflow** (parked 8 Nov 2026, revisit later; ship straight to `main` until then): features on `dev`, bundled releases tested on staging, a "What's new" popup on phones for new features only (never bug fixes), a PB Console switch pointing the kiosk at staging that reverts itself; **camera LED mapping** (board setup 2b, dropped 10 Nov 2026): parked on `parked/2b-camera-led-mapping`, only for a full rearrange or another gym; **board sets and the archive** (board setup), only for a real rearrange.

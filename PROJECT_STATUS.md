@@ -39,8 +39,9 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
+- **Ross: session 7's scope** (14 Nov): it has no Critical or High findings; say which Medium/Low ones to fix.
 - **Ross: session 6 phone tests** (14 Nov; steps in that session's report).
-- **Ross, at the board: cast seams** (14 Nov; once the Pi has `91d4e9b`, PB Console Home): Start a circuit, Stop in the countdown (board idles, stays idle); 3 laps (red on lap 3, Top! with the board); Loop (endless); a non-looping circuit has no Loop/Laps; live LEDs while setting, Save and Cancel (idle at once); setting on a phone while a circuit is tapped on the wall (Show on board).
+- **Ross, at the board: cast seams** (14 Nov; the Pi has had it since 14:08 on 14 Nov): Start a circuit, Stop in the countdown (board idles, stays idle); 3 laps (red on lap 3, Top! with the board); Loop (endless); a non-looping circuit has no Loop/Laps; live LEDs while setting, Save and Cancel (idle at once); setting on a phone while a circuit is tapped on the wall (Show on board).
 - **Ross: test the update flow on a phone** (14 Nov): start a circuit run, lock the phone, wait for a deploy, unlock: the run screen stays, the update comes after. The app opens offline as before.
 - **Ross, on site: kiosk tests** (12 Nov): long-press and right-click open nothing; a killed renderer recovers by itself (`pi/README.md` → What runs).
 - **Ross: try the publish safety** (12 Nov): each board tool publishes and undoes as before; a publish from elsewhere in between is refused cleanly. **The snapshot is a publish behind live** (11 Nov): PB Console → Holds → Ship the snapshot (Home's tile stays amber till then).
@@ -60,6 +61,11 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-14, Claude Code (review fix session 7: Pi deploy and ops; nothing changed).**
+  - **Changed:** no code. Session 7's row has no Critical or High findings (all Medium/Low); the brief was Critical/High only.
+  - **Live:** the Pi deploy held since 12:26 (session 5's Pi side) went at 14:08 on Ross's go: Pi on `e66bd12`, listener joined, 0 errors, no failed units. App unchanged.
+  - **Left:** Ross to say which of session 7's Medium/Low findings to fix (Waiting on). Session 5 board tests can start.
+
 - **2026-11-14, Claude Code (review fix session 6: app fixes, phone views).**
   - **Changed:** APP-01–10, 13, 14: Escape, `viewRefresh`, one confirm helper, saved lists, challenge retry/expiry/sign-out, shared wake lock, plain-words errors, profile retry, toast over sheets, privacy.html. Overview §4.3, §4.6a, §13.
   - **Tested:** build check; local Chrome (phone, `/?wall`), stubbed writes.
@@ -71,9 +77,3 @@ Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which si
   - **Tested:** pi/tests (196), cast-test 33/33, build check.
   - **Live:** `91d4e9b`, app `pb-0cc82941dc`, no console errors. Pi: waiting (board in use; goes at 15 quiet min or closing). `454874e`: autodeploy no longer picks WSL's bash.
   - **Left:** Ross's board tests (Waiting on). Next: session 6.
-
-- **2026-11-14, Claude Code (review fix session 4: service worker, one version per page load).**
-  - **Changed:** `build.sh` stamps `?v=<CACHE>` on the pages' scripts and CSS; sw.js serves each version's own files, keeps an old version's cache while a page on it is open; no update reload during a circuit run or live preview; open apps pick up a board publish; the syntax gate refuses `export`, top-level `return`/`await`, duplicate names; comments don't satisfy the three-places check. Overview §7.
-  - **Tested:** gate cases; local build restamped; live scripts at `?v=`, no console errors.
-  - **Live:** `869d530`, app `pb-6cb6ce3392`. No Pi change.
-  - **Left:** Ross's phone tests. Next: session 5.
