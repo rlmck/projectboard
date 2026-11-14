@@ -9,13 +9,13 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **The Pi 4 is on a new SD card (1 Nov 2026)** after the old one died: it set itself up unattended (`pi/firstboot/README.md`; secrets in the laptop's gitignored `pi/secrets.env`; db/36 new wall key). Trixie Lite, Tailscale `projectboard`; the listener with self-healing and watchdogs; R8 tests still to do. Idle pattern **`wave`** 15 min after the last cast. Wi-Fi: random MAC, `pb-netwatch` v2, rescue hotspot.
 - **The wall screen casts on the pick (2 Nov 2026):** a tap lights a problem (Mirror flips it), a circuit (`show_circuit`); Start circuit runs it. Tried (Ross, 7 Nov).
 - **Circuits can be cast (30 Oct 2026)** from phones and the wall: Cast → speed, Loop or laps → a 5 s countdown, the move count and Stop; the Pi runs it (`pi/listener/circuit.py`). Signed-in runs go to `circuit_logs`. Contract §8.
-- **The circuit LED look is "map and next hold" (5 Nov 2026):** contract §8.3. **Laps (14 Nov 2026):** the Cast sheet offers Loop or 1–10 laps for a circuit that loops (none for one that doesn't) and sends `laps`, with `loop` beside it for old listeners (contract §8.1, §8.4).
+- **Circuit LED look "map and next hold" (5 Nov 2026):** contract §8.3. **Laps (14 Nov):** the Cast sheet offers Loop or 1–10 laps for a circuit that loops (none for one that doesn't) and sends `laps`, with `loop` beside it for old listeners (contract §8.1, §8.4).
 - **The wall kiosk** (`kiosk.service`: cage + Chromium on `/?wall`, the wall key in the fragment) on the 1280×720 touchscreen picks up a deploy at its next idle or each morning.
 - **Create on the wall, live LEDs while setting (30 Oct 2026):** the wall saves as The Hangout (db/35); taps light the board (contract §9).
 - **Opening hours (7 Nov 2026):** per day in the Pi's `config.env` (Mon–Thu 15:30–22:00, Fri closed, Sat–Sun 09:30–15:00); outside them the LEDs and wall screen are off and casts ignored. PB Console edits them and has Stay on until (`pi/README.md` → Opening hours).
 - **Holds in the database (db/41, db/42):** the `holds` table is the source of each hold's name, kind, LED, position, outline and mirror partner (`board_config` copies it; `tools/check_holds.py`). **Board setup** and **Edit holds** (super admin, db/44) publish a whole board with Undo; the new board went live 10 Nov (188 hand holds, 50 footholds). **Specific feet** (10 Nov): footholds picked in Create/Edit, never lit. **Publish safety (12 Nov, db/45):** every publish names its version, a stale one is refused (CLAUDE.md → Data traps; overview §4.8a, §4.8d).
-- **Hardware:** temporary wiring (`pi/README.md` → "Wiring"), the Pi in the junction box. Two YU0510 5 V 10 A supplies (both needed). No relays or level shifter fitted yet (3.3 V data works; both parts have arrived). A USB webcam shows the back of the board (Tailscale only).
-- **Pi deploys are automatic (10 Nov 2026):** `console/autodeploy.py` keeps the Pi on main (a scheduled task every 10 min, and `/ship`): 15 quiet minutes in opening hours, straight away outside them (`pi/README.md` → Deploying).
+- **Hardware:** temporary wiring (`pi/README.md` → "Wiring"), Pi in the junction box, two 5 V 10 A supplies (both needed); relays and level shifter arrived, not fitted (3.3 V data works). A USB webcam shows the back of the board (Tailscale only).
+- **Pi deploys are automatic (10 Nov 2026):** CLAUDE.md working rule 2; `pi/README.md` → Deploying.
 - **PB Console** (`console/`, `bash console/start.sh`): Home (board controls, webcam, Health with 7 days of `pb-healthlog`, Activity, opening hours), Holds (outlines, footholds, pairs), Activity, Advanced (logs, config, Pi deploy, LED map, R8 checklist, backups, audit); weekly backups (`console/README.md`). Phase 13 (Data) isn't built.
 
 ## Decisions
@@ -30,7 +30,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **Feet rule (30 Oct 2026):** CLAUDE.md → Data traps. Migrated problems: both signs or none → Any, one sign → that rule.
 - **Circuits (30 Oct 2026):** no mirrored circuits and no circuits Done filter for now (future releases); "done" means done both sides and is for problems only. No Play preview.
 - **Who cast (30 Oct 2026):** never in the broadcast; private `cast_log` (CLAUDE.md → Supabase).
-- Star ratings from the old system are gone from the app (30 Oct 2026); `problems.stars` / `ticks.stars` stay in the table, unused.
+- Old star ratings: gone from the app (30 Oct 2026); `stars` columns stay, unused.
 - **Pat Burner challenge** (19 Oct): 3 sets × 3 reps to failure, score = total seconds held; the rest is in CLAUDE.md → Data traps and overview §4.6a.
 - PB Console's Data phase (13) writes through direct Postgres with `db/.env`, never the service key in the console (28 Oct).
 - **The Hangout (30 Oct 2026):** the gym's setter (CLAUDE.md → Data traps). Live LEDs while setting: geofenced on phones, admins too; a cast overrides (Show on board). Comments stay off.
@@ -39,6 +39,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
+- **Ross: session 6 phone tests** (14 Nov; steps in that session's report).
 - **Ross, at the board: cast seams** (14 Nov; once the Pi has `91d4e9b`, PB Console Home): Start a circuit, Stop in the countdown (board idles, stays idle); 3 laps (red on lap 3, Top! with the board); Loop (endless); a non-looping circuit has no Loop/Laps; live LEDs while setting, Save and Cancel (idle at once); setting on a phone while a circuit is tapped on the wall (Show on board).
 - **Ross: test the update flow on a phone** (14 Nov): start a circuit run, lock the phone, wait for a deploy, unlock: the run screen stays, the update comes after. The app opens offline as before.
 - **Ross, on site: kiosk tests** (12 Nov): long-press and right-click open nothing; a killed renderer recovers by itself (`pi/README.md` → What runs).
@@ -59,6 +60,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-14, Claude Code (review fix session 6: app fixes, phone views).**
+  - **Changed:** APP-01–10, 13, 14: Escape, `viewRefresh`, one confirm helper, saved lists, challenge retry/expiry/sign-out, shared wake lock, plain-words errors, profile retry, toast over sheets, privacy.html. Overview §4.3, §4.6a, §13.
+  - **Tested:** build check; local Chrome (phone, `/?wall`), stubbed writes.
+  - **Live:** `5d245a1`, app `pb-5f62d531e5`, scripts at `?v=`, no console errors. No Pi change.
+  - **Left:** Ross's phone tests (Waiting on). Next: session 7.
+
 - **2026-11-14, Claude Code (review fix session 5: cast seams).**
   - **Changed:** Cast sheet sends `laps` (Loop = 0, Laps 1–10; no Loop for a circuit that doesn't loop), the phone counts the Pi's moves; Stop offered again for 10 s. Previews hear `show_circuit`, send `end` after the message in flight. Pi: stops and ended previews remembered 2 min; junk frames keep the socket; clipped logs; LED write errors in pb-health. `check_track` gone. Contract §8–10.
   - **Tested:** pi/tests (196), cast-test 33/33, build check.
@@ -70,8 +77,3 @@ Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which si
   - **Tested:** gate cases; local build restamped; live scripts at `?v=`, no console errors.
   - **Live:** `869d530`, app `pb-6cb6ce3392`. No Pi change.
   - **Left:** Ross's phone tests. Next: session 5.
-
-- **2026-11-14, Claude Code (review fix session 3: secret guard and migration safety).**
-  - **Changed:** the hook scans binary/UTF-16 files, refuses private keys, postgres URLs with a password, `pi/config.env.*`; its test turns it on (37 cases). Direct Postgres verifies TLS. `apply.py`: one transaction per script; `db/board_rpcs_live.sql`, re-run warnings (local). `/rollback`.
-  - **Live:** `822d474`; no app or Pi change. Only `--dry-run` used.
-  - **Left:** Ross saves the new `settings.json`. Next: session 4.
