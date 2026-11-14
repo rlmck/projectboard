@@ -46,7 +46,7 @@ Nothing bad was found in the hooks or build: the pre-commit scan and `bash build
 
 **Safety gates untouched:** `build.sh --check` (the deploy gate), the pre-commit secret scan, the Pi busy check in `/pi-deploy`, the migration dry run in working rule 2, the gated actions list. No rule or data trap was removed from CLAUDE.md.
 
-**Not applied (needs Ross):** adding `"Bash(bash tools/wait-live.sh*)"` to the allow list in `.claude/settings.json` (and updating its stale 11-script syntax-check rule to the current 14). Claude Code refuses to edit its own permission file in auto mode. Until it's added, the first `wait-live.sh` in a session may ask for permission once.
+**Applied later by Ross:** `"Bash(bash tools/wait-live.sh*)"` is in the allow list in `.claude/settings.json`. The stale 11-script syntax-check allow rule is removed in the replacement file from review fix session 3 (14 Nov 2026, BLD-07; Ross saves it, since Claude Code never edits its own permission file): `Bash(bash build.sh*)` already runs the same check over all 14 scripts.
 
 ## Bigger ideas, not applied
 

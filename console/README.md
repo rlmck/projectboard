@@ -79,7 +79,7 @@ Not built yet: the rest of **Data** (phase 13: benchmarks, hand-hold mirror part
 | `autodeploy.py` | automatic Pi deploys of main (10 Nov 2026; `pi/README.md` → Deploying): a scheduled task every 10 min, `--install` makes it; its state in `data/autodeploy.json`; `attention()` is the sidebar's "needs you" list; each run then makes the weekly backup if one is due |
 | `supabase_api.py` | Supabase with the anon key: problems, mirror map, Light a problem's cast, the export |
 | `holds.py` | Holds: the live board (public reads), the edits laid over it (`apply_edits`: the publish payload and the change list), the publish and undo as the super admin over direct Postgres, the snapshot tools |
-| `castlog.py` | members' casts from the private cast log, over direct Postgres; its connection is shared with `holds.py` |
+| `castlog.py` | members' casts from the private cast log, over direct Postgres; its connection is shared with `holds.py`. TLS verified against `tools/supabase-ca-2021.crt` or a system CA, hostname checked (14 Nov 2026) |
 | `reports.py` | activity, the acceptance checklist and night check, mapping results, backups, the runbook |
 | `probe.py` | the read-only script Home runs on the Pi (and `healthlog`: pb-healthlog's 7 days) |
 | `checks.py` | the laptop's checks: the live site, Supabase REST, a Realtime join |

@@ -7,13 +7,22 @@
 # prints a secret: only the file and the kind of thing it found.
 #
 # Blocks:
-#   - files that must never be committed: secrets.env, pi/config.env, db/, .env files,
-#     docs/security-findings.md;
+#   - files that must never be committed: secrets.env, pi/config.env (and pi/config.env.*, e.g. the
+#     console's .tmp, except the committed .example), db/, .env files, docs/security-findings.md;
 #   - a Supabase key whose role isn't anon (the service-role key), and sb_secret_ keys;
 #   - any secret value from db/.env (the service key, the direct-Postgres URL and its password);
 #   - psk= / password= / secret= / private-key= lines with a literal value ($VAR, <placeholder>
 #     and empty pass). This is what guards NetworkManager profiles pulled into pi/conf/
-#     (the console strips those lines on the Pi; this catches one that slipped through).
+#     (the console strips those lines on the Pi; this catches one that slipped through);
+#   - a private-key block (-----BEGIN ... PRIVATE KEY-----: RSA, EC, OpenSSH, PKCS#8, encrypted);
+#   - a postgres:// or postgresql:// URL with a password in it (whether or not db/.env exists,
+#     so a fresh clone or a web session is covered too). Placeholders pass: [YOUR-PASSWORD],
+#     <password>, $VAR / ${VAR}, ***, "password".
+#
+# Text files are scanned on their added lines. Files git treats as binary (no lines in the diff:
+# UTF-16 text from PowerShell 5.1 or Notepad "Unicode", .xlsx, .sqlite, images) are scanned
+# whole, with NUL bytes dropped (so UTF-16 text reads as plain ASCII) and the printable runs
+# kept (review fix BLD-04, 14 Nov 2026).
 #
 # A false alarm? Fix the line. Never bypass this with --no-verify.
 
@@ -28,7 +37,8 @@ problems=()
 while IFS= read -r f; do
   [[ -n "$f" ]] || continue
   case "$f" in
-    secrets.env|*/secrets.env|pi/config.env|db/*|docs/security-findings.md|.env|*/.env|*.env.local)
+    pi/config.env.example) ;;
+    secrets.env|*/secrets.env|pi/config.env|pi/config.env.*|db/*|docs/security-findings.md|.env|*/.env|*.env.local)
       problems+=("$f: this file must never be committed") ;;
   esac
 done < <(git diff --cached --name-only --diff-filter=ACMR)
@@ -90,6 +100,20 @@ check_file() {
   if [[ -n "$bad" ]]; then
     problems+=("$file: a psk=/password=/secret= line with a literal value")
   fi
+  # A private key, in any PEM flavour.
+  if grep -qE -- '-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY( BLOCK)?-----' <<<"$added"; then
+    problems+=("$file: a private-key block (BEGIN ... PRIVATE KEY)")
+  fi
+  # A postgres URL carrying a password (a placeholder passes).
+  local url pw
+  while IFS= read -r url; do
+    [[ -n "$url" ]] || continue
+    pw=${url#*://}; pw=${pw%@}; pw=${pw#*:}
+    if [[ ! "$pw" =~ ^(\[.*\]|<.*>|\$.*|\*+|[Pp]assword|PASSWORD|YOUR[-_A-Z]*|your[-_a-z]*)$ ]]; then
+      problems+=("$file: a postgres:// URL with a password in it")
+      break
+    fi
+  done < <(grep -oE 'postgres(ql)?://[^][:space:]:@/"'"'"'<>]+:[^[:space:]@"'"'"']+@' <<<"$added" | sort -u)
 }
 
 while IFS= read -r line; do
@@ -101,6 +125,18 @@ while IFS= read -r line; do
   fi
 done < <(git diff --cached -U0 --no-color --no-ext-diff --diff-filter=ACMR)
 check_file
+
+# -- files git treats as binary: scan the whole staged blob ---------------------------
+# numstat prints "-<TAB>-<TAB>path" for a binary file. -z keeps odd names intact.
+while IFS= read -r -d '' rec; do
+  [[ "$rec" == $'-\t-\t'* ]] || continue
+  file=${rec#$'-\t-\t'}
+  # Drop NULs (UTF-16LE/BE text becomes ASCII), turn everything unprintable into line breaks,
+  # keep runs of 6+ characters. LC_ALL=C: byte by byte, whatever the locale.
+  added=$(git cat-file blob ":$file" 2>/dev/null | LC_ALL=C tr -d '\000' \
+          | LC_ALL=C tr -c '[:print:]\t\n' '\n' | LC_ALL=C grep -aE '.{6,}')
+  check_file
+done < <(git diff --cached --numstat -z --no-renames --diff-filter=ACMR)
 
 if (( ${#problems[@]} )); then
   echo "pre-commit: refused. This repo is public, and the commit would include:" >&2

@@ -409,7 +409,7 @@ The admin functions re-check `is_admin()` internally, so client-side `.admin-onl
 
 **Storage:** a public bucket `board` (5 MB limit; png/jpeg/webp only). Public read, super-admin-only write (db/44; was admins, db/10).
 
-**Changing the schema:** don't, without Ross asking (a working rule). Scripts live in local `db/`, numbered and idempotent, and are applied by hand. For a full review there's direct Postgres access: the `db/.env` → `SUPABASE_DB_URL` session pooler, via `pg8000` in Python.
+**Changing the schema:** don't, without Ross asking (a working rule). Scripts live in local `db/`, numbered and idempotent, and are applied by hand. For a full review there's direct Postgres access: the `db/.env` → `SUPABASE_DB_URL` session pooler, via `pg8000` in Python. TLS is verified (14 Nov 2026): the certificate must chain to the Supabase Root 2021 CA (`tools/supabase-ca-2021.crt`, public) or a system CA and name the host, in `db/apply.py` and `console/castlog.py` alike. `db/apply.py` runs each script in a transaction of its own (a dry run rolls it all back).
 - Parse the URL by splitting on the **last** `@`, and don't regex-strip quote characters: the password contains one.
 - Retry transient `28P01` errors on connect.
 - Default to read-only.
@@ -509,7 +509,7 @@ Behind the scenes: `signUp({ email: 'u-<16 base32>@users.invalid', password: pin
    - Checked on 10 Sep 2026 by driving every view in headless Chrome with the policy enforced: zero violations.
 6. **`_redirects`:** `/scan  /?src=qr  302`. The printed QR encodes `/scan`, so change its destination here, **never by reprinting**. Paths are case-sensitive.
 7. **`.gitattributes`** pins `build.sh`, `app/_headers`, `app/_redirects`, `pi/**`, `console/**` and `.githooks/**` to LF, so Git Bash (and the Pi) can run them from a Windows clone.
-   - **The pre-commit hook** (`.githooks/pre-commit`, on per clone with `git config core.hooksPath .githooks`) refuses service-role keys, `db/.env` values, `psk=`/`password=` lines with literal values, `secrets.env` and `pi/config.env`. `bash .githooks/test-pre-commit.sh` tests it with fake keys in a throwaway clone.
+   - **The pre-commit hook** (`.githooks/pre-commit`, on per clone with `git config core.hooksPath .githooks`) refuses service-role keys, `db/.env` values, `psk=`/`password=` lines with literal values, private-key blocks, `postgres://` URLs carrying a password (placeholders pass), `secrets.env` and `pi/config.env` (and `pi/config.env.*` except the `.example`). Files git treats as binary, UTF-16 text included, are scanned whole with NULs dropped (14 Nov 2026). `bash .githooks/test-pre-commit.sh` tests it with fake keys in a throwaway clone, where it turns the hook on itself.
 8. **Manifest screenshots are hand-captured** (`screenshot-list.png`, `screenshot-detail.png`), so they don't update with the app. Regenerate them when the list or detail view changes materially, or Android's install sheet shows a stale app. How they were made:
    - a local build, in headless Chrome with CDP mobile emulation at 412×915 CSS px and DPR 2 (so 824×1830);
    - as a guest, with the install banner suppressed (`pb-install-dismissed`);

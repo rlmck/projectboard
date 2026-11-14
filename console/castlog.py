@@ -6,6 +6,10 @@ read through the API. The console reads it here over direct Postgres with
 db/.env's SUPABASE_DB_URL (the same path db/apply.py uses), read-only, and never
 prints or returns the URL. With no db/.env, or no connection, Activity just has
 no names.
+
+TLS is verified (review fix CON-05, 14 Nov 2026): the server's certificate must chain to the
+Supabase Root 2021 CA (tools/supabase-ca-2021.crt, public) or a CA the system trusts, and must
+name the host; db/apply.py does the same. A certificate failure is never retried.
 """
 import os
 import ssl
@@ -13,6 +17,7 @@ import ssl
 from procs import REPO
 
 ENV = os.path.join(REPO, 'db', '.env')
+CA_FILE = os.path.join(REPO, 'tools', 'supabase-ca-2021.crt')
 
 
 def _db_url():
@@ -29,6 +34,21 @@ def _db_url():
     return None
 
 
+def _tls_context():
+    """Verify the server: the system's CAs plus Supabase's own root, hostname checked."""
+    if not os.path.isfile(CA_FILE):
+        raise RuntimeError('no Supabase CA file (tools/supabase-ca-2021.crt)')
+    ctx = ssl.create_default_context()
+    ctx.load_verify_locations(cafile=CA_FILE)
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    return ctx
+
+
+def _tls_failure(e):
+    return isinstance(e, ssl.SSLError) or isinstance(getattr(e, '__cause__', None), ssl.SSLError)         or 'CERTIFICATE' in str(e).upper()
+
+
 def _connect(url):
     import pg8000.native
     rest = url.split('://', 1)[1]
@@ -36,9 +56,7 @@ def _connect(url):
     user, password = creds.split(':', 1)
     hostport, _, database = hostpart.partition('/')
     host, _, port = hostport.partition(':')
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    ctx = _tls_context()
     last = None
     for _ in range(3):                      # the pooler sometimes refuses a good password once (28P01)
         try:
@@ -46,6 +64,8 @@ def _connect(url):
                                             database=database.split('?', 1)[0] or 'postgres', ssl_context=ctx,
                                             timeout=15)
         except Exception as e:              # noqa: BLE001
+            if _tls_failure(e):
+                raise RuntimeError('TLS certificate check failed: not connecting') from None
             last = e
     raise RuntimeError('no database connection (%s)' % type(last).__name__)
 

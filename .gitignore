@@ -1,8 +1,11 @@
 # pi/ is committed (the Pi 4 listener and ops). pi/_old/ keeps the June Pi 3
 # material and the stopgap copies local: problems.csv holds setters' nicknames.
-# pi/config.env is the laptop's copy of the Pi's settings, which stay out of the repo.
+# pi/config.env is the laptop's copy of the Pi's settings, which stay out of the repo;
+# pi/config.env.* covers PB Console's half-written pi/config.env.tmp (CON-14); .example is committed.
 pi/_old/
 pi/config.env
+pi/config.env.*
+!pi/config.env.example
 laptop_key.pub
 db/
 # docs/ stays private, except the documents below (each checked for anything personal
