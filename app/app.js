@@ -237,19 +237,17 @@
   document.getElementById('menu-bench').addEventListener('click', toggleBenchmark);
   document.getElementById('menu-delete').addEventListener('click', openDeleteConfirm);
   document.getElementById('menu-move').addEventListener('click', openProblemMove);
-  document.getElementById('move-cancel').addEventListener('click', closeMoveConfirm);
-  document.getElementById('move-confirm').addEventListener('click', doMoveToCircuits);
-  document.getElementById('move-modal').addEventListener('click', e => {
-    if (e.target.id === 'move-modal') closeMoveConfirm();
-  });
   document.getElementById('menu-info').addEventListener('click', openInfo);
 
-  // Delete confirm modal
-  document.getElementById('delete-cancel').addEventListener('click', closeDeleteConfirm);
-  document.getElementById('delete-confirm').addEventListener('click', doDeleteProblem);
-  document.getElementById('delete-modal').addEventListener('click', e => {
-    if (e.target.id === 'delete-modal') closeDeleteConfirm();
-  });
+  // The confirm sheets (core.js confirmSheet, APP-03): each acts on the item it
+  // was opened for, shows its error inline, and closes on any navigation.
+  confirmSheet('delete-modal',         { cancel: 'delete-cancel',         confirm: 'delete-confirm',         busy: 'Deleting…', action: doDeleteProblem });
+  confirmSheet('move-modal',           { cancel: 'move-cancel',           confirm: 'move-confirm',           busy: 'Moving…',   action: doMoveToCircuits });
+  confirmSheet('circuit-delete-modal', { cancel: 'circuit-delete-cancel', confirm: 'circuit-delete-confirm', busy: 'Deleting…', action: doDeleteCircuit });
+  confirmSheet('attempt-delete-modal', { cancel: 'attempt-delete-cancel', confirm: 'attempt-delete-confirm', busy: 'Deleting…', action: doAttemptDelete });
+  confirmSheet('account-delete-modal', { cancel: 'account-delete-cancel', confirm: 'account-delete-confirm', busy: 'Deleting…', action: doDeleteAccount });
+  confirmSheet('user-delete-modal',    { cancel: 'user-delete-cancel',    confirm: 'user-delete-confirm',    busy: 'Deleting…', action: doDeleteUser });
+  confirmSheet('user-admin-modal',     { cancel: 'user-admin-cancel',     confirm: 'user-admin-confirm',     busy: 'Saving…',   action: doAdminChange });
 
   // Swipe left/right on a detail view to step through its filtered deck (problems
   // or circuits). Attached to the stable <main> (the content is replaced on every
@@ -385,11 +383,6 @@
   document.getElementById('circuit-menu-edit').addEventListener('click', openCircuitEdit);
   document.getElementById('circuit-menu-delete').addEventListener('click', openCircuitDelete);
   document.getElementById('circuit-menu-info').addEventListener('click', openCircuitInfo);
-  document.getElementById('circuit-delete-cancel').addEventListener('click', closeCircuitDelete);
-  document.getElementById('circuit-delete-confirm').addEventListener('click', doDeleteCircuit);
-  document.getElementById('circuit-delete-modal').addEventListener('click', e => {
-    if (e.target.id === 'circuit-delete-modal') closeCircuitDelete();
-  });
 
   // Circuit cast sheet (circuits.js): speed, loop, Start; Stop; Close / Go again.
   document.getElementById('cast-sheet-speed').addEventListener('click', e => {
@@ -521,16 +514,6 @@
   // Admin hub (#admin): hold outlines link + user management
   document.getElementById('admin-back').addEventListener('click', goBack);
   document.getElementById('admin-refresh').addEventListener('click', adminRefreshUsers);
-  document.getElementById('user-delete-cancel').addEventListener('click', closeUserDelete);
-  document.getElementById('user-delete-confirm').addEventListener('click', doDeleteUser);
-  document.getElementById('user-delete-modal').addEventListener('click', e => {
-    if (e.target.id === 'user-delete-modal') closeUserDelete();
-  });
-  document.getElementById('user-admin-cancel').addEventListener('click', closeAdminChange);
-  document.getElementById('user-admin-confirm').addEventListener('click', doAdminChange);
-  document.getElementById('user-admin-modal').addEventListener('click', e => {
-    if (e.target.id === 'user-admin-modal') closeAdminChange();
-  });
   document.getElementById('user-rename-cancel').addEventListener('click', closeUserRename);
   document.getElementById('user-rename-save').addEventListener('click', doUserRename);
   document.getElementById('user-rename-input').addEventListener('keydown', e => { if (e.key === 'Enter') doUserRename(); });
@@ -572,9 +555,6 @@
   });
   document.getElementById('compare-close').addEventListener('click', closeCompare);
   document.getElementById('compare-modal').addEventListener('click', e => { if (e.target.id === 'compare-modal') closeCompare(); });
-  document.getElementById('attempt-delete-cancel').addEventListener('click', closeAttemptDelete);
-  document.getElementById('attempt-delete-confirm').addEventListener('click', doAttemptDelete);
-  document.getElementById('attempt-delete-modal').addEventListener('click', e => { if (e.target.id === 'attempt-delete-modal') closeAttemptDelete(); });
 
   // Challenge view (#challenge/<id>): back, and one delegated listener for the
   // rules / clock / summary buttons (challenge.js).
@@ -586,7 +566,42 @@
   document.getElementById('info-modal').addEventListener('click', e => {
     if (e.target.id === 'info-modal') closeInfo();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeOverflowMenus(); closeInfo(); closeDeleteConfirm(); closeGradeEdit(); closeUserDelete(); closeAdminChange(); closeCircuitDelete(); closeCircuitCast(); closeNameModal(); closeAccountDelete(); closeUserRename(); closeUserReset(); closeCompare(); closeAttemptDelete(); if (holdPickerOpen) closeHoldPicker(); else closeFilter(); } });
+
+  // The sheets that aren't confirm sheets, and how each closes. Escape and
+  // navigation use it (the confirm sheets are in core.js's confirmSheets).
+  const SHEET_CLOSE = {
+    'filter-modal': closeFilter, 'create-grade-modal': closeCreateGrade, 'circuit-cast-modal': closeCircuitCast,
+    'info-modal': closeInfo, 'compare-modal': closeCompare, 'edit-discard-modal': closeEditDiscard,
+    'name-modal': closeNameModal, 'user-rename-modal': closeUserRename, 'user-reset-modal': closeUserReset,
+  };
+
+  // Escape closes the topmost thing open, one per press (APP-01): an ⋮ menu, else
+  // the hold picker (over the Filter sheet), else the highest sheet showing. The
+  // fullscreen viewer takes Escape before this (its own listener, above).
+  function closeTopmost() {
+    if ([...document.querySelectorAll('.overflow-menu')].some(m => !m.hidden)) { closeOverflowMenus(); return; }
+    if (holdPickerOpen) { closeHoldPicker(); return; }
+    const open = [...document.querySelectorAll('.modal-overlay.show')];
+    if (!open.length) return;
+    const z = el => parseInt(getComputedStyle(el).zIndex, 10) || 0;
+    const top = open.reduce((a, b) => (z(b) >= z(a) ? b : a));   // a tie: the later in the page is on top
+    if (confirmSheets.has(top.id)) closeConfirm(top.id);
+    else if (SHEET_CLOSE[top.id]) SHEET_CLOSE[top.id]();
+    else top.classList.remove('show');
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTopmost(); });
+
+  // Navigation (setView, core.js) closes every sheet: a sheet belongs to the screen
+  // it was opened on (APP-03). Two stay: the cast sheet while a run is going
+  // (closeCircuitCast refuses then), and a new PIN being shown, which is shown once.
+  function closeSheetsOnNavigate() {
+    closeConfirmSheets();
+    for (const id in SHEET_CLOSE) {
+      if (id === 'filter-modal') continue;   // setView closes it when the view changes
+      if (id === 'user-reset-modal' && !document.getElementById('user-reset-done').hidden) continue;
+      SHEET_CLOSE[id]();
+    }
+  }
 
   // Auth view (#auth): create an account or sign in, in one form (account.js).
   document.getElementById('auth-form').addEventListener('submit', authSubmit);
@@ -608,11 +623,6 @@
   document.getElementById('name-input').addEventListener('keydown', e => { if (e.key === 'Enter') saveDisplayName(); });
   document.getElementById('name-modal').addEventListener('click', e => {
     if (e.target.id === 'name-modal') closeNameModal();
-  });
-  document.getElementById('account-delete-cancel').addEventListener('click', closeAccountDelete);
-  document.getElementById('account-delete-confirm').addEventListener('click', doDeleteAccount);
-  document.getElementById('account-delete-modal').addEventListener('click', e => {
-    if (e.target.id === 'account-delete-modal') closeAccountDelete();
   });
 
   // True while the user has in-progress create-form state that a hard reload
@@ -676,6 +686,7 @@
     loadChallenges();
     loadHolds();
     retryChallengeSaves();
+    if (session && !profile) retryProfileNow();   // a profile that failed to load at boot (APP-14)
   });
   // Prefer the admin-saved board (image + hold map) from Supabase; fall back to the
   // bundled hold_map.json only if no saved map exists. The board image is only
@@ -914,7 +925,8 @@
       setTimeout(() => { androidPromptLate = true; renderWelcomeAndroid(); }, 3000);
     } else if (installCtx === 'in-app') {
       document.getElementById('welcome-browser').textContent = /android/i.test(navigator.userAgent) ? 'Chrome' : 'Safari';
-      document.getElementById('welcome-url').textContent = location.origin + location.pathname;
+      // The page they're on, #detail/… and all (the ?src= tag is already gone, above).
+      document.getElementById('welcome-url').textContent = location.href;
       showWelcomePanel('in-app');
     } else {
       showWelcomePanel('ios');

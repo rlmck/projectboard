@@ -2301,7 +2301,7 @@
       font-weight: 500;
       box-shadow: var(--shadow);
       transition: transform 0.25s cubic-bezier(.175,.885,.32,1.275);
-      z-index: 200;
+      z-index: 500;          /* above the sheets (300) and the Filter sheet / hold picker (400); under the welcome (900) and splash (1000) */
       max-width: 90vw;
       text-align: center;
       pointer-events: none;
@@ -2553,6 +2553,7 @@
 
     /* Ranks: tabs, the challenge board, compare */
     .ranks-tabs { margin: 0 0 12px; flex-wrap: wrap; }
+    #ranks-tabs[hidden] { display: none; }   /* .filter-pills' display:flex beats the UA [hidden] rule */
     .ch-board-intro { font-size: 13px; color: var(--text-muted); line-height: 1.5; margin: 0 2px 10px; }
     .ch-row { cursor: pointer; touch-action: manipulation; }
     .ch-row.selected { border-color: var(--int); box-shadow: inset 3px 0 0 var(--int); }

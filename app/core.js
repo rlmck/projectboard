@@ -6,8 +6,10 @@
   function escHtml(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
+  // For attribute values: everything escHtml does, plus ' (so it's safe in either
+  // kind of quotes, and nobody has to reason about which).
   function escAttr(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return escHtml(s).replace(/'/g, '&#39;');
   }
 
   // ── Toast helper ─────────────────────────────────────────────────────────────
@@ -19,6 +21,75 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { t.className = ''; }, 2800);
   }
+
+  // ── Database errors in plain words (APP-10) ──────────────────────────────────
+  // What a refused write says on screen: never Postgres's own text. what names the
+  // thing being saved ('problem', 'circuit'). A CHECK refusal (23514) names the
+  // rule it broke where the constraint says (db/29: grade, name, holds).
+  function dbErrorText(error, what = 'problem') {
+    const code = error && error.code;
+    const m = (error && error.message) || '';
+    if (code === '23505') return 'That name is taken — pick another.';
+    if (code === '42501') return 'You don’t have permission to do that.';
+    if (code === '23503') return `That ${what} has been deleted.`;
+    if (code === '23514') {
+      if (/_grade_valid/.test(m)) return 'That grade isn’t allowed — pick another.';
+      if (/_name_valid/.test(m)) return 'That name isn’t allowed — try another.';
+      if (/_(holds|sequence|feet_holds)_valid/.test(m)) return 'Those holds aren’t allowed — check them and try again.';
+      return 'That isn’t allowed — check the name, grade and holds.';
+    }
+    if (!code || error.status === 0) return 'Couldn’t reach the server — check your connection.';
+    return 'Couldn’t save — please try again.';
+  }
+
+  // ── Confirm sheets (APP-03) ──────────────────────────────────────────────────
+  // The "are you sure?" sheets (delete a problem, a circuit, a challenge attempt,
+  // a user or your own account; change an admin; move a problem to Circuits) share
+  // this. Each keeps its own markup in index.html: a Cancel button, the action
+  // button and an .auth-error line. confirmSheet() wires one once (app.js);
+  // openConfirm(id, target) shows it for that item, and the action is called with
+  // that same target when the button is tapped, never with whatever current* is by
+  // then. The action returns an error message to show in the sheet, or nothing when
+  // it worked; the sheet then closes (if the action hasn't already, or navigated
+  // away: any navigation closes every sheet, setView).
+  const confirmSheets = new Map();   // modal id -> { target, open, close }
+  function confirmSheet(id, { cancel, confirm, busy, action }) {
+    const modal = document.getElementById(id);
+    const btn = document.getElementById(confirm);
+    const errEl = modal.querySelector('.auth-error');
+    const sheet = {
+      target: null,
+      open(target) {
+        sheet.target = target;
+        if (errEl) errEl.textContent = '';
+        modal.classList.add('show');
+      },
+      close() { sheet.target = null; modal.classList.remove('show'); },
+    };
+    btn.addEventListener('click', async () => {
+      const target = sheet.target;
+      if (target === null || btn.disabled) return;
+      if (errEl) errEl.textContent = '';
+      const label = btn.textContent;
+      btn.disabled = true;
+      if (busy) btn.textContent = busy;
+      let msg;
+      try { msg = await action(target, sheet); }
+      catch (err) { console.error(err); msg = 'Something went wrong — please try again.'; }
+      btn.disabled = false;
+      btn.textContent = label;
+      if (sheet.target !== target) return;            // closed (or reopened for another) meanwhile
+      if (msg) { if (errEl) errEl.textContent = msg; }
+      else sheet.close();
+    });
+    document.getElementById(cancel).addEventListener('click', () => sheet.close());
+    modal.addEventListener('click', e => { if (e.target === modal) sheet.close(); });
+    confirmSheets.set(id, sheet);
+    return sheet;
+  }
+  function openConfirm(id, target = true) { confirmSheets.get(id).open(target); }
+  function closeConfirm(id) { const s = confirmSheets.get(id); if (s) s.close(); }
+  function closeConfirmSheets() { confirmSheets.forEach(s => s.close()); }
 
   // ── localStorage, guarded ────────────────────────────────────────────────────
   // The accessor itself throws (SecurityError) where site data is blocked: cookies
@@ -481,7 +552,6 @@
   let fsFrame = 'route';        // 'route' | 'board' | 'free' (after a pinch or drag)
   let fsPageRect = null;        // where the board sat on the page when the viewer opened
   let fsClosing = false;        // gliding back to the page after a closing pinch
-  let wakeLock = null;
   const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
   const landscapeMQ = window.matchMedia('(orientation: landscape)');
   const fsReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -604,13 +674,37 @@
     fsSetFrame(fsFrame, true);
   }
 
-  async function acquireWakeLock() {
-    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); }
-    catch (e) { /* unsupported or refused — non-fatal */ }
+  // ── Screen wake lock (APP-08) ────────────────────────────────────────────────
+  // One lock for everything that keeps the screen on: the fullscreen viewer ('fs'),
+  // a challenge attempt ('challenge') and a circuit run ('circuit'). Each holds it by
+  // name; it's taken while anyone holds it and let go when the last one does. Only
+  // one request is ever in flight, so two calls close together can't take it twice
+  // and leak a copy that keeps the screen on afterwards. The OS drops the lock when
+  // the page is hidden; coming back takes it again for whoever still holds it.
+  const wakeHolders = new Set();
+  let wakeSentinel = null, wakePending = false;
+  function wakeHold(who) { wakeHolders.add(who); wakeSync(); }
+  function wakeDrop(who) { wakeHolders.delete(who); wakeSync(); }
+  async function wakeSync() {
+    if (!wakeHolders.size) {
+      const s = wakeSentinel;
+      wakeSentinel = null;
+      if (s) { try { s.release(); } catch (e) {} }
+      return;
+    }
+    if (wakeSentinel || wakePending || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+    wakePending = true;
+    try {
+      const s = await navigator.wakeLock.request('screen');
+      s.addEventListener('release', () => { if (wakeSentinel === s) wakeSentinel = null; });
+      wakeSentinel = s;
+      wakePending = false;
+      wakeSync();   // let it go at once if the last holder left while it was asked for
+    } catch (e) {
+      wakePending = false;   // refused or unsupported: non-fatal, and not asked again until the next hold
+    }
   }
-  function releaseWakeLock() {
-    if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
-  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wakeSync(); });
 
   // auto marks an entry made by turning the phone. The browser's fullscreen
   // needs a user gesture, so it's only asked for from the expand button (auto
@@ -644,7 +738,7 @@
     });
     fsObserver.observe(fsHostEl(), { childList: true, subtree: true });
     fsShowHint();
-    acquireWakeLock();
+    wakeHold('fs');
     if (!auto && !pinch) requestNativeFs();
   }
 
@@ -663,7 +757,7 @@
     fsWrap = null;
     clearTimeout(fsTapTimer);
     document.body.classList.remove('board-fs', 'fs-ui-hidden', 'fs-closing');
-    releaseWakeLock();
+    wakeDrop('fs');
     exitNativeFs();
   }
 
@@ -985,10 +1079,6 @@
   }
   landscapeMQ.addEventListener('change', onOrientationChange);
   window.addEventListener('resize', sizeBoardFs);
-  // Re-acquire the wake lock when the tab returns to the foreground (the OS drops it).
-  document.addEventListener('visibilitychange', () => {
-    if (fsOpen && document.visibilityState === 'visible' && !wakeLock) acquireWakeLock();
-  });
 
   // ── Routing ──────────────────────────────────────────────────────────────────
   function parseHash() {
@@ -1011,10 +1101,17 @@
   }
 
   function setView(name) {
-    // Clear any active fullscreen when the view changes so we never strand the
-    // board-fs classes (re-entered below if still landscape on a board view).
-    exitBoardFs();
-    closeOverflowMenus();
+    // Data that arrived re-renders the view it's on (viewRefresh, below): that
+    // leaves everything as the user had it, the scroll position, fullscreen, an
+    // open ⋮ menu or sheet (APP-02). Only a real navigation resets them.
+    const quiet = routeQuiet && name === currentView;
+    if (!quiet) {
+      // Clear any active fullscreen when the view changes so we never strand the
+      // board-fs classes (re-entered below if still landscape on a board view).
+      exitBoardFs();
+      closeOverflowMenus();
+      closeSheetsOnNavigate();   // a sheet belongs to the screen it was opened on (app.js)
+    }
     if (name !== currentView) closeFilter();   // the Filter sheet belongs to its list (problems.js)
 
     // Preserve the list's scroll position across navigation.
@@ -1039,8 +1136,9 @@
     const navFor = { list: 'list', detail: 'list', create: 'list', outlines: 'profile', setup: 'profile', admin: 'profile', profile: 'profile', auth: 'profile', circuits: 'circuits', 'circuit-detail': 'circuits', 'circuit-create': 'circuits', challenge: 'circuits', leaderboard: 'leaderboard' }[name] || 'list';
     document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.nav === navFor));
 
-    const keep = name === 'list' ? listScroll : name === 'circuits' ? circuitsScroll : null;
-    if (keep !== null) {
+    const keep = quiet ? undefined : name === 'list' ? listScroll : name === 'circuits' ? circuitsScroll : null;
+    if (keep === undefined) { /* a data refresh: the scroll stays where the user has it */ }
+    else if (keep !== null) {
       window.scrollTo(0, keep);
       // Some engines finish their own scrolling (a fragment jump, a restore) a
       // frame after the hash changes, which would land the list back at the top.
@@ -1052,7 +1150,18 @@
 
     // Auto-enter natural fullscreen if a touch device is already landscape on a
     // read-only board view (e.g. navigating/swiping while held sideways).
-    if (isTouchDevice && landscapeMQ.matches && AUTO_FS_VIEWS.has(name)) enterBoardFs(true);
+    if (!quiet && isTouchDevice && landscapeMQ.matches && AUTO_FS_VIEWS.has(name)) enterBoardFs(true);
+  }
+
+  // The router has two callers. A route change (hashchange, replaceRoute, boot)
+  // calls router(). Data arriving (the problems, the session and profile, the
+  // holds, the mirror map, a renamed nickname) calls viewRefresh(): the same
+  // routing and gates, re-rendering the view in place without setView's
+  // navigation side effects (APP-02).
+  let routeQuiet = false;
+  function viewRefresh() {
+    routeQuiet = true;
+    try { router(); } finally { routeQuiet = false; }
   }
 
   function router() {

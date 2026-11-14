@@ -70,7 +70,8 @@
       steps: step('c-start', s, 'start', s >= 1 && s <= 2) +
              step('c-int', i, i === 1 ? 'hold' : 'holds', i >= 1) +
              step('c-finish', f, 'finish', f === 1),
-      next: !s ? 'Tap a start hold, low on the wall'
+      next: !HOLD_MAP ? 'Loading the board…'          // taps wait for the hold map
+        : !s ? 'Tap a start hold, low on the wall'
         : !i ? 'Now tap the holds in between'
         : !f ? 'Tap a finish-zone hold twice to finish'
         : !name ? nameHint
@@ -519,10 +520,11 @@
       const { data, error } = await sb.from('problems').update(update).eq('id', editing.id).select('id');
       btn.disabled = false; btn.classList.remove('casting');
       if (error) {
+        console.warn('problem save failed', error);
         return createMissing(
-          error.code === '23505' ? 'That name is taken — pick another.'                 // unique-name backstop
-          : error.code === '42501' ? 'You don’t have permission to change that.'        // RLS / the db/39 guard
-          : error.message, error.code === '23505' ? () => nameEl.focus() : null);
+          error.code === '42501' ? 'You don’t have permission to change that.'          // RLS / the db/39 guard
+          : dbErrorText(error),                                                       // 23505 name taken, 23514 a rule
+          error.code === '23505' ? () => nameEl.focus() : null);
       }
       if (!data || !data.length) {
         if (isAdmin()) {
@@ -560,13 +562,15 @@
     const { data, error } = await sb.from('problems').insert(row).select().single();
     btn.disabled = false; btn.classList.remove('casting');
     if (error) {
+      console.warn('problem create failed', error);
       return createMissing(
         error.code === '42501' ? 'You don’t have permission to create problems yet.'   // RLS INSERT policy missing
-        : error.code === '23505' ? 'That name is taken — pick another.'                // unique-name backstop
-        : error.message);
+        : dbErrorText(error),                                                        // 23505 name taken, 23514 a rule
+        error.code === '23505' ? () => nameEl.focus() : null);
     }
 
     allProblems.push(data);
+    saveList('problems', allProblems);   // the saved copy (offline, next start) too (APP-04)
     renderList();
     resetCreate();
     showToast('Problem created ✓', 'success');

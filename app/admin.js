@@ -18,7 +18,6 @@
   let adminUsersAt = 0;               // when that fetch landed (the cache lasts ADMIN_USERS_TTL)
   const ADMIN_USERS_TTL = 60000;
   let adminUserSearch = '';           // the user list's nickname filter
-  let pendingDeleteUser = null;       // { id, name } awaiting confirmation
 
   const boardIconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8" cy="8" r="1.4"></circle><circle cx="16" cy="8" r="1.4"></circle><circle cx="8" cy="16" r="1.4"></circle><circle cx="16" cy="16" r="1.4"></circle></svg>';
   const usersIconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>';
@@ -353,78 +352,48 @@
 
   // ── Promote / demote a user (admins only; the RPC re-checks is_admin and
   //    refuses self-changes) — see db/13_admin_promote.sql ─────────────────────
-  let pendingAdminChange = null;   // { id, name, make }
-
+  // Both sheets go through the confirm helper (core.js confirmSheet, wired in
+  // app.js): the action gets the user the sheet named.
   function openAdminChange(id, name, make) {
-    pendingAdminChange = { id, name, make };
     document.getElementById('user-admin-modal-title').textContent = make ? 'Make admin?' : 'Remove admin?';
     document.getElementById('user-admin-modal-text').innerHTML = make
       ? `Give <b>${escHtml(name)}</b> admin rights? They’ll be able to delete problems, mark benchmarks, move problems to Circuits, delete challenge attempts and manage users, including renaming them and giving them new PINs. The board itself (holds, outlines, Board Setup) stays with the super admin.`
       : `Remove admin rights from <b>${escHtml(name)}</b>? They’ll go back to a normal member.`;
-    document.getElementById('user-admin-error').textContent = '';
     const confirm = document.getElementById('user-admin-confirm');
     confirm.className = 'btn-block ' + (make ? 'btn-primary' : 'btn-danger');
-    document.getElementById('user-admin-modal').classList.add('show');
-  }
-  function closeAdminChange() {
-    document.getElementById('user-admin-modal').classList.remove('show');
-    pendingAdminChange = null;
+    openConfirm('user-admin-modal', { id, name, make });
   }
 
-  async function doAdminChange() {
-    if (!pendingAdminChange) return;
-    const { id, make } = pendingAdminChange;
-    const errEl = document.getElementById('user-admin-error');
-    const btn = document.getElementById('user-admin-confirm');
-    errEl.textContent = '';
-    btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Saving…';
-
+  // Returns an error message for the sheet, or nothing when it's done.
+  async function doAdminChange({ id, make }) {
     const { error } = await sb.rpc('admin_set_admin', { target: id, make_admin: make });
-    btn.disabled = false; btn.textContent = prev;
     if (error) {
       console.warn('admin_set_admin failed', error);
-      errEl.textContent = error.message || 'Couldn’t update — check connection.';
-      return;
+      return error.message || 'Couldn’t update — check connection.';
     }
-
     const u = adminUsers.find(x => String(x.id) === String(id));
     if (u) u.is_admin = make;
-    closeAdminChange();
+    closeConfirm('user-admin-modal');
     showToast(make ? 'Promoted to admin' : 'Admin removed', 'success');
-    renderAdmin('user/' + id);   // re-render the detail with the new role + buttons
+    if (currentView === 'admin') renderAdmin('user/' + id);   // the detail with the new role + buttons
   }
 
   function openUserDelete(id, name) {
-    pendingDeleteUser = { id, name };
     document.getElementById('user-delete-name').textContent = name;
-    document.getElementById('user-delete-error').textContent = '';
-    document.getElementById('user-delete-modal').classList.add('show');
-  }
-  function closeUserDelete() {
-    document.getElementById('user-delete-modal').classList.remove('show');
-    pendingDeleteUser = null;
+    openConfirm('user-delete-modal', { id, name });
   }
 
-  async function doDeleteUser() {
-    if (!pendingDeleteUser) return;
-    const { id } = pendingDeleteUser;
-    const errEl = document.getElementById('user-delete-error');
-    const btn = document.getElementById('user-delete-confirm');
-    errEl.textContent = '';
-    btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Deleting…';
-
+  async function doDeleteUser({ id }) {
     const { error } = await sb.rpc('admin_delete_user', { target: id });
-    btn.disabled = false; btn.textContent = prev;
     if (error) {
       console.warn('admin_delete_user failed', error);
-      errEl.textContent = error.message || 'Delete failed — check connection.';
-      return;
+      return error.message || 'Delete failed — check connection.';
     }
 
     adminUsers = adminUsers.filter(u => String(u.id) !== String(id));
     delete profileNames[id];
     leaderboardLoaded = false;   // their ticks went with them: Ranks and Total points refetch
-    closeUserDelete();
+    closeConfirm('user-delete-modal');
     // Their routes lost the owner link (setter_id SET NULL) and now carry their
     // nickname as a snapshot (db/30): refresh the setter names and the list.
     await loadProfileNames();

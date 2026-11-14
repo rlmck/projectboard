@@ -408,7 +408,6 @@
   let castLaps = 1;                       // with Loop off: 1–CAST_MAX_LAPS
   let circuitRun = null;                  // { c, interval, laps, endless, token, t0, s, L, moves, beeped, ended, ... }
   let circuitRunTicker = null;
-  let circuitWake = null;
 
   // c: the circuit on screen (the phone's detail view, or the wall's Circuits page).
   function openCircuitCast(c = currentCircuit) {
@@ -440,7 +439,7 @@
     if (circuitRunGoing()) {
       circuitRun.ended = true;
       clearInterval(circuitRunTicker); circuitRunTicker = null;
-      releaseCircuitWake();
+      wakeDrop('circuit');
     }
     circuitRun = null;
     document.getElementById('circuit-cast-modal').classList.remove('show');
@@ -566,7 +565,7 @@
     showCastPane('run');
     document.getElementById('cast-run-stop').textContent = 'Stop';
     if (!circuitRunTicker) circuitRunTicker = setInterval(tickCircuitRun, 100);
-    acquireCircuitWake();
+    wakeHold('circuit');   // the screen stays on while a run goes (the phone's on the mat)
     tickCircuitRun();
   }
 
@@ -647,7 +646,7 @@
     r.ended = true;
     r.movesDone = moves;
     clearInterval(circuitRunTicker); circuitRunTicker = null;
-    releaseCircuitWake();
+    wakeDrop('circuit');
     if (top) { chBeep(660, 160); setTimeout(() => chBeep(880, 160), 170); setTimeout(() => chBeep(1320, 420, 0.4), 340); }
     document.getElementById('cast-done-big').textContent = top ? 'Top!' : String(moves);
     document.getElementById('cast-done-sub').textContent = top
@@ -678,23 +677,10 @@
     syncCastOptions();
   }
 
-  // The screen stays on while a run is going (the climber's phone is on the mat).
-  async function acquireCircuitWake() {
-    if (circuitWake || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
-    try {
-      circuitWake = await navigator.wakeLock.request('screen');
-      circuitWake.addEventListener('release', () => { circuitWake = null; });
-    } catch (e) { /* refused or unsupported: the run carries on */ }
-  }
-  function releaseCircuitWake() {
-    if (circuitWake) { try { circuitWake.release(); } catch (e) {} circuitWake = null; }
-  }
-  // Back from the lock screen: catch the counter up, and take the wake lock again.
+  // Back from the lock screen: catch the counter up (the wake lock is taken
+  // again by core.js's wakeSync).
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && circuitRun && !circuitRun.ended) {
-      acquireCircuitWake();
-      tickCircuitRun();
-    }
+    if (document.visibilityState === 'visible' && circuitRun && !circuitRun.ended) tickCircuitRun();
   });
 
   // ── Delete a circuit (owner / admin; the DB enforces it via RLS) ─────────────────
@@ -702,45 +688,31 @@
     const c = currentCircuit;
     if (!c || !canEditCircuit(c)) return;
     document.getElementById('circuit-delete-name').textContent = circuitName(c);
-    document.getElementById('circuit-delete-error').textContent = '';
-    document.getElementById('circuit-delete-modal').classList.add('show');
+    openConfirm('circuit-delete-modal', c);   // Delete acts on c, the circuit the sheet names
   }
-  function closeCircuitDelete() { document.getElementById('circuit-delete-modal').classList.remove('show'); }
 
-  async function doDeleteCircuit() {
-    const c = currentCircuit;
-    if (!c) return;
-    const errEl = document.getElementById('circuit-delete-error');
-    const btn = document.getElementById('circuit-delete-confirm');
-    errEl.textContent = '';
-    btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Deleting…';
-
+  // The sheet's action (confirmSheet, app.js): c is the circuit it named.
+  // Returns an error message for the sheet, or nothing when it's done.
+  async function doDeleteCircuit(c) {
     // .select() so a delete RLS quietly filtered out (no error, zero rows) isn't
     // reported as a success.
     const { data, error } = await sb.from('circuits').delete().eq('id', c.id).select('id');
-    btn.disabled = false; btn.textContent = prev;
     if (error) {
-      errEl.textContent = error.code === '42501'
-        ? 'You don’t have permission to delete this circuit.'
-        : error.code === '23503'
-          ? 'A challenge uses this circuit, so it can’t be deleted.'
-          : error.message;
-      return;
+      console.warn('circuit delete failed', error);
+      return error.code === '42501' ? 'You don’t have permission to delete this circuit.'
+        : error.code === '23503' ? 'A challenge uses this circuit, so it can’t be deleted.'
+        : dbErrorText(error, 'circuit');
     }
-    if (!data || !data.length) {
-      errEl.textContent = 'Couldn’t delete it — you may no longer have permission, or it’s already gone.';
-      return;
-    }
+    if (!data || !data.length) return 'Couldn’t delete it — you may no longer have permission, or it’s already gone.';
 
     // Where to land, as for problems: back along the swipe trail, else the
     // circuit before it in the deck (or after, if it was the first), else the list.
     const deck = visibleCircuits();
     const deckIdx = deck.findIndex(x => String(x.id) === String(c.id));
-    allCircuits = allCircuits.filter(x => String(x.id) !== String(c.id));
-    myCircuitFaves.delete(String(c.id));
-    closeCircuitDelete();
-    renderCircuits();
+    forgetCircuit(c.id);
+    closeConfirm('circuit-delete-modal');
     showToast('Circuit deleted', 'success');
+    if (currentView !== 'circuit-detail' || String(parseHash().param) !== String(c.id)) return;
 
     let backTo = '';
     while (circuitTrail.length && !backTo) {
@@ -753,6 +725,16 @@
     }
     // replaceRoute: no Back entry that returns to the circuit that's gone.
     replaceRoute(backTo ? '#circuit/' + encodeURIComponent(backTo) : '#circuits');
+  }
+
+  // A circuit that's gone (deleted here, or found deleted elsewhere: a favourite
+  // refused with 23503): out of the list, the favourites and the saved copy (APP-04).
+  function forgetCircuit(id) {
+    id = String(id);
+    allCircuits = allCircuits.filter(x => String(x.id) !== id);
+    myCircuitFaves.delete(id);
+    saveList('circuits', allCircuits);
+    renderCircuits();
   }
 
   // ── Create a circuit ─────────────────────────────────────────────────────────────
@@ -772,7 +754,7 @@
         ? `<span class="c-start">${Math.min(ccStartCount, n)} start</span>` +
           `<span class="c-int">${Math.max(0, n - ccStartCount - (n > ccStartCount ? 1 : 0))} move${n - ccStartCount - 1 === 1 ? '' : 's'}</span>` +
           `<span class="c-finish">${n > ccStartCount ? '1 finish' : 'no finish yet'}</span>`
-        : `<span class="muted">Tap the board to add the first hold.</span>`;
+        : `<span class="muted">${HOLD_MAP ? 'Tap the board to add the first hold.' : 'Loading the board…'}</span>`;
     }
   }
 
@@ -938,42 +920,38 @@
     document.getElementById('move-text').innerHTML =
       `This deletes the problem <b>${escHtml(displayName(p))}</b> and its ` +
       `${plural(row.ticks, 'tick')} and ${plural(row.favourites, 'favourite')}. This can’t be undone.`;
-    document.getElementById('move-error').textContent = '';
-    document.getElementById('move-modal').classList.add('show');
+    openConfirm('move-modal', String(p.id));   // Move acts on this problem, whatever happens meanwhile
   }
-  function closeMoveConfirm() { document.getElementById('move-modal').classList.remove('show'); }
 
   // The move, in one transaction (db/40): the circuit is created with the
   // problem's setter, then its ticks, favourites and the problem are deleted.
-  async function doMoveToCircuits() {
+  // The sheet's action (confirmSheet, app.js): pid is the problem it named. Only
+  // while that problem's Move is still the screen showing (navigation closes the
+  // sheet, so this is a belt and braces). Returns an error message, or nothing.
+  async function doMoveToCircuits(pid) {
+    if (currentView !== 'circuit-create' || String(ccMoveId) !== pid) return 'This move isn’t open any more.';
     const p = movingProblem();
-    const errEl = document.getElementById('move-error');
-    if (!p) { errEl.textContent = 'Couldn’t find that problem — it may have been deleted.'; return; }
+    if (!p) return 'Couldn’t find that problem — it may have been deleted.';
     const name = document.getElementById('cc-name').value.trim();
-    const btn = document.getElementById('move-confirm');
-    errEl.textContent = '';
-    btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Moving…';
     const { data: cid, error } = await sb.rpc('admin_move_problem_to_circuit', {
       pid: p.id, p_name: name, p_grade: ccGrade, p_sequence: ccSeq.slice(),
       p_start_count: ccStartCount, p_loops: ccLoop
     });
-    btn.disabled = false; btn.textContent = prev;
     if (error || !cid) {
       const m = (error && error.message) || '';
+      if (error) console.warn('move to circuits failed', error);
       if (error && error.code === '23505') {
-        closeMoveConfirm();
+        closeConfirm('move-modal');
         document.getElementById('cc-error').textContent = 'A circuit already has that name — rename it, then save.';
         document.getElementById('cc-name').focus();
         return;
       }
-      errEl.textContent =
-        error && error.code === '42501' ? 'Only admins can move problems: you may no longer be one.'
+      if (error && error.code === '42501') recheckAdmin();
+      return error && error.code === '42501' ? 'Only admins can move problems: you may no longer be one.'
         : m === 'benchmark' ? 'It’s a benchmark now: remove the benchmark first.'
         : m === 'not_found' ? 'That problem has already gone.'
-        : error && error.code === '23514' ? 'The circuit isn’t valid (grade or holds): check them and try again.'
-        : 'Couldn’t move it: ' + (m || 'try again.');
-      if (error && error.code === '42501') recheckAdmin();
-      return;
+        : error ? 'Couldn’t move it: ' + dbErrorText(error, 'problem')
+        : 'Couldn’t move it — try again.';
     }
 
     // Read the new circuit back as the list loads it; build it here if that fails.
@@ -991,7 +969,7 @@
     saveList('problems', allProblems);
     saveList('circuits', allCircuits);
     leaderboardLoaded = false;
-    closeMoveConfirm();
+    closeConfirm('move-modal');
     resetCircuitCreate();
     renderList();
     renderCircuits();
@@ -1097,10 +1075,8 @@
       const { data, error } = await sb.from('circuits').update(update).eq('id', editing.id).select('id');
       btn.disabled = false; btn.classList.remove('casting');
       if (error) {
-        errEl.textContent =
-          error.code === '23505' ? 'That name is taken — pick another.'
-          : error.code === '42501' ? 'You don’t have permission to change that.'
-          : error.message;
+        console.warn('circuit save failed', error);
+        errEl.textContent = error.code === '42501' ? 'You don’t have permission to change that.' : dbErrorText(error, 'circuit');
         return;
       }
       if (!data || !data.length) {
@@ -1138,14 +1114,13 @@
     const { data, error } = await sb.from('circuits').insert(row).select().single();
     btn.disabled = false; btn.classList.remove('casting');
     if (error) {
-      errEl.textContent =
-        error.code === '42501' ? 'You don’t have permission to create circuits yet.'
-        : error.code === '23505' ? 'That name is taken — pick another.'
-        : error.message;
+      console.warn('circuit create failed', error);
+      errEl.textContent = error.code === '42501' ? 'You don’t have permission to create circuits yet.' : dbErrorText(error, 'circuit');
       return;
     }
 
     allCircuits.push(data);
+    saveList('circuits', allCircuits);   // the saved copy (offline, next start) too (APP-04)
     renderCircuits();
     resetCircuitCreate();
     showToast('Circuit created ✓', 'success');

@@ -34,12 +34,10 @@
 
   let chTicker = null;       // the clock (setInterval), while an attempt runs, in any view
   let chAudio = null;        // AudioContext, made on the first tap (browsers need a gesture)
-  let chWakeLock = null;     // screen wake lock while an attempt runs (separate from the viewer's)
   let chLastBeep = '';       // phase + second last beeped, so a countdown beeps once per second
   let chEndArmed = 0;        // End early needs a second tap within 3 s (timestamp of the first)
   let chFellAt = 0;          // last Fell tap, so a double tap can't land on what replaces the button
   let chDiscardArmed = 0;    // Discard (summary) needs a second tap too
-  let chDelTarget = null;    // Ranks: the attempt an admin is about to delete
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
   const challengeById = id => allChallenges.find(c => String(c.id) === String(id)) || null;
@@ -146,6 +144,9 @@
       const r = JSON.parse(lsGet(CH_RUN_KEY) || 'null');
       if (!r || !r.id || !Array.isArray(r.reps) || !r.proto) return null;
       if (Date.now() - r.startedAt > CH_MAX_AGE) { chClearRun(); return null; }
+      // Someone else's (signed out, or another account on this phone): it stays
+      // stored for when they sign back in, but nothing runs or shows (APP-07).
+      if (authReady && (!session || session.user.id !== r.userId)) return null;
       challengeRun = r;
       return r;
     } catch (e) { return null; }
@@ -218,18 +219,6 @@
   const chSoundRest  = () => { chBeep(520, 220); setTimeout(() => chBeep(392, 320), 230); };
   const chSoundDone  = () => { chBeep(660, 160); setTimeout(() => chBeep(880, 160), 170); setTimeout(() => chBeep(1320, 420, 0.4), 340); };
 
-  // ── Wake lock ─────────────────────────────────────────────────────────────────
-  async function chAcquireWake() {
-    if (chWakeLock || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
-    try {
-      chWakeLock = await navigator.wakeLock.request('screen');
-      chWakeLock.addEventListener('release', () => { chWakeLock = null; });
-    } catch (e) { /* refused or unsupported: non-fatal */ }
-  }
-  function chReleaseWake() {
-    if (chWakeLock) { try { chWakeLock.release(); } catch (e) {} chWakeLock = null; }
-  }
-
   // ── The clock ─────────────────────────────────────────────────────────────────
   function chRunning() { return !!(challengeRun && challengeRun.phase !== 'done'); }
 
@@ -237,12 +226,12 @@
   // showing; the bottom nav hides only on the challenge view itself.
   function chStartTicker() {
     if (!chTicker) chTicker = setInterval(chTick, 200);
-    chAcquireWake();
+    wakeHold('challenge');   // the screen stays on (core.js; shared with the viewer and circuit runs)
     chSyncAway();
   }
   function chStopTicker() {
     if (chTicker) { clearInterval(chTicker); chTicker = null; }
-    chReleaseWake();
+    wakeDrop('challenge');
     chSyncAway();
   }
 
@@ -321,6 +310,30 @@
 
   // Boot (app.js, after the first route): an attempt left running when the app
   // was closed carries on, whichever view the app opened on.
+  // Who's signed in changed, or is known at last (account.js): an attempt that
+  // isn't this account's stops running and showing here (its ticker, beeps, wake
+  // lock and the nav strip) but stays stored for its owner (APP-07); the owner's
+  // own carries on.
+  function chAuthChanged() {
+    if (challengeRun && (!session || session.user.id !== challengeRun.userId)) {
+      challengeRun = null;
+      chStopTicker();
+    } else if (!challengeRun) resumeChallenge();
+    chSyncAway();
+  }
+
+  // Everything of this account's left on the phone (deleting the account):
+  // the stored attempt and any waiting to be saved.
+  function forgetChallengeAttempts(uid) {
+    if (challengeRun && challengeRun.userId === uid) { challengeRun = null; chStopTicker(); }
+    try {
+      const r = JSON.parse(lsGet(CH_RUN_KEY) || 'null');
+      if (r && r.userId === uid) lsSet(CH_RUN_KEY, '');
+    } catch (e) {}
+    chSetPending(chPending().filter(a => a.userId !== uid));
+    chSyncAway();
+  }
+
   function resumeChallenge() {
     const r = chLoadRun();
     if (!r) return;
@@ -509,6 +522,15 @@
   function chStart() {
     const ch = challengeById(chViewId);
     if (!ch || !session || chRunning()) return;
+    // Another account's finished attempt still stored here goes to the waiting
+    // list (sent when they next sign in on this phone), not lost under this one.
+    try {
+      const old = JSON.parse(lsGet(CH_RUN_KEY) || 'null');
+      if (old && old.userId !== session.user.id && old.phase === 'done' && old.reps && old.reps.length) {
+        const a = { id: old.id, challengeId: old.challengeId, userId: old.userId, startedAt: old.startedAt, completedAt: old.completedAt, reps: old.reps.slice() };
+        chSetPending([...chPending().filter(x => x.id !== a.id), a]);
+      }
+    } catch (e) {}
     const now = Date.now();
     challengeRun = { id: chUuid(), challengeId: String(ch.id), userId: session.user.id, proto: chProto(ch),
                      startedAt: now, phase: 'ready', phaseStart: now, restLen: 0, reps: [], completedAt: null };
@@ -576,6 +598,10 @@
 
   // One insert. 'saved' (or already saved: 23505), 'refused' (the database won't
   // ever take it: a broken rule or a retired challenge), or 'kept' (try again later).
+  // Refused = any data or integrity error (SQLSTATE class 22 or 23: db/31's trigger
+  // raises 23503/23514) or a raised exception (P0001), since sending it again can't
+  // change the answer (APP-05). A permission refusal (42501) is kept: it can be a
+  // session that lapsed, and the 14-day expiry (chExpirePending) ends it anyway.
   async function chSend(a) {
     const { error } = await sb.from('challenge_attempts').insert({
       id: a.id,
@@ -586,7 +612,7 @@
     });
     if (!error || error.code === '23505') return { result: 'saved' };
     console.warn('challenge save failed', error);
-    if (error.code === '23514' || error.code === '23503') return { result: 'refused', error };
+    if (/^(22|23)/.test(error.code || '') || error.code === 'P0001') return { result: 'refused', error };
     return { result: 'kept', error };
   }
 
@@ -602,27 +628,62 @@
     await retryChallengeSaves(false, a.id);
   }
 
+  // An attempt has to have started within 14 days to be saved (db/31), so one
+  // still waiting after that never can be: it's dropped from the phone, anyone's
+  // (APP-05; privacy.html, "On your device"). Returns how many of this account's went.
+  function chExpirePending() {
+    const all = chPending();
+    const fresh = all.filter(a => Date.now() - a.startedAt <= CH_MAX_AGE);
+    if (fresh.length === all.length) return 0;
+    chSetPending(fresh);
+    const uid = session ? session.user.id : null;
+    return all.filter(a => !fresh.includes(a) && a.userId === uid).length;
+  }
+
   // Send this user's pending attempts, oldest first. Quiet when run in the
-  // background (start-up, back online); otherwise says what happened.
+  // background (start-up, back online); otherwise says what happened. Asked while
+  // a pass is already running (a Save during a background retry), it runs once
+  // more when that pass ends, so the new attempt gets its answer (APP-06).
   let chRetrying = false;
+  let chRetryAgain = null;   // { quiet, justSaved } for the pass after this one
   async function retryChallengeSaves(quiet = true, justSaved = null) {
-    if (chRetrying || !session) return;
-    const mine = chPending().filter(a => a.userId === session.user.id);
-    if (!mine.length) return;
+    if (chRetrying) {
+      chRetryAgain = {
+        quiet: quiet && (!chRetryAgain || chRetryAgain.quiet),   // a loud ask stays loud
+        justSaved: justSaved || (chRetryAgain && chRetryAgain.justSaved) || null,
+      };
+      return;
+    }
     chRetrying = true;
+    try { await chRetryPass(quiet, justSaved); }
+    finally { chRetrying = false; }
+    const again = chRetryAgain;
+    chRetryAgain = null;
+    if (again) await retryChallengeSaves(again.quiet, again.justSaved);
+  }
+
+  async function chRetryPass(quiet, justSaved) {
+    const expired = chExpirePending();
+    if (expired) showToast(expired === 1 ? 'An attempt over 14 days old couldn’t be saved, so it’s been removed.'
+      : `${expired} attempts over 14 days old couldn’t be saved, so they’ve been removed.`, 'error');
+    if (!session) return;
+    const mine = chPending().filter(a => a.userId === session.user.id);
+    if (!mine.length) {
+      if (justSaved && currentView === 'challenge') renderChallengeBody();
+      return;
+    }
     let saved = 0, kept = 0, refused = 0;
     for (const a of mine) {
       const { result, error } = await chSend(a);
       if (result === 'kept') { kept++; continue; }
       chSetPending(chPending().filter(x => x.id !== a.id));
       if (result === 'saved') saved++;
-      else { refused++; console.warn('challenge attempt refused', error && error.message); }
+      else { refused++; console.warn('challenge attempt refused', error && error.code); }
     }
-    chRetrying = false;
     if (saved || refused) {
       for (const cid of new Set(mine.map(a => a.challengeId))) { delete challengeBoards[cid]; delete challengeMine[cid]; }
     }
-    if (!quiet || saved) {
+    if (!quiet || saved || refused) {
       if (kept) showToast(justSaved ? 'No signal: it’s kept on this phone. Try again later.' : 'Still couldn’t save: it’s kept on this phone.', 'error');
       else if (refused) showToast('That attempt couldn’t be saved (it broke a rule).', 'error');
       else if (saved) showToast(saved === 1 ? 'Saved' : `${saved} attempts saved`, 'success');
@@ -754,32 +815,23 @@
     const b = challengeBoards[ranksTab];
     const r = b && b.rows.find(x => String(x.attempt_id) === String(aid));
     if (!r || !isAdmin()) return;
-    chDelTarget = r;
     document.getElementById('attempt-delete-text').textContent =
       `${r.username}’s best attempt: ${chClock(r.total_seconds)} on ${chDate(r.achieved_at)}. Their next-best attempt (if any) takes its place. This is logged.`;
-    document.getElementById('attempt-delete-error').textContent = '';
-    document.getElementById('attempt-delete-modal').classList.add('show');
+    openConfirm('attempt-delete-modal', { r, cid: ranksTab });   // the attempt (and board) the sheet names
   }
-  function closeAttemptDelete() { document.getElementById('attempt-delete-modal').classList.remove('show'); chDelTarget = null; }
 
-  async function doAttemptDelete() {
-    const r = chDelTarget;
-    if (!r) return;
-    const btn = document.getElementById('attempt-delete-confirm');
-    const errEl = document.getElementById('attempt-delete-error');
-    btn.disabled = true;
+  // The sheet's action (confirmSheet, app.js). Returns an error message, or nothing.
+  async function doAttemptDelete({ r, cid }) {
     const { error } = await sb.rpc('admin_delete_attempt', { aid: r.attempt_id });
-    btn.disabled = false;
     if (error) {
-      errEl.textContent = error.code === '42501' ? 'Only admins can delete attempts.' : 'Couldn’t delete it: ' + error.message;
-      return;
+      console.warn('admin_delete_attempt failed', error);
+      return error.code === '42501' ? 'Only admins can delete attempts.' : 'Couldn’t delete it — check your connection and try again.';
     }
-    const cid = ranksTab;
-    closeAttemptDelete();
+    closeConfirm('attempt-delete-modal');
     delete challengeBoards[cid]; delete challengeMine[cid];
     compareSel = compareSel.filter(id => id !== String(r.user_id));
     showToast('Attempt deleted', 'success');
-    renderLeaderboard();
+    if (currentView === 'leaderboard') renderLeaderboard();
   }
 
   // Back in the foreground: catch the attempt up, take the wake lock again.
@@ -787,7 +839,6 @@
     if (document.visibilityState !== 'visible' || !challengeRun) return;
     if (currentView === 'challenge') renderChallengeBody();
     else if (chRunning()) chTick();
-    if (chRunning()) chAcquireWake();
   });
 
   // Browsers only allow sound after a tap. After a reload the attempt may carry on

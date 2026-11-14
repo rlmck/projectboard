@@ -869,6 +869,7 @@
     radiusM: 300     // generous — covers the building + immediate surrounds
   };
   let lastFix = null; // { lat, lng, accuracy, t } — cached so rapid casts don't re-prompt
+  let lastFixTimer = null;
 
   // Great-circle distance between two lat/lng points, in metres (haversine).
   function distanceMeters(lat1, lng1, lat2, lng2) {
@@ -901,6 +902,9 @@
         const pos = await getPosition({ enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 });
         fix = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy || 0, t: Date.now() };
         lastFix = fix;
+        // Forgotten after a minute (privacy.html, "Your location").
+        clearTimeout(lastFixTimer);
+        lastFixTimer = setTimeout(() => { lastFix = null; }, 60000);
       } catch (_) {
         return { ok: true }; // denied / timeout / unsupported → allow
       }
@@ -1005,7 +1009,7 @@
   // Re-render whatever board-bearing view is showing once positions/image change.
   function refreshBoardViews() {
     if (WALL) wallRefreshBoard();
-    if (currentView === 'detail') router();
+    if (currentView === 'detail') viewRefresh();
     if (currentView === 'create') applyCreateRoles();
     if (currentView === 'outlines') initOutlines();
     if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
@@ -1041,7 +1045,12 @@
   // clobber a map that already came from board_config. Its __meta records the board
   // version it was taken from; it comes out here, before anything iterates the holds.
   async function loadHoldMap() {
-    if (configHasMap) return;
+    if (configHasMap) {
+      // The map came with board_config: the create boards drop their loading note.
+      if (currentView === 'create') applyCreateRoles();
+      if (currentView === 'circuit-create') applyCircuitCreate();
+      return;
+    }
     try {
       const res = await fetch(assetUrl('hold_map.json'), { cache: 'no-cache' });
       if (res.ok && !configHasMap) {
@@ -1089,7 +1098,7 @@
     } catch (err) {
       console.warn('mirror_map.json load failed — mirror disabled', err);
     }
-    if (currentView === 'detail' && detailMirror) router();
+    if (currentView === 'detail' && detailMirror) viewRefresh();
   }
 
   // ── Load the admin-saved board (image + hold map) from Supabase ──────────────
@@ -1180,7 +1189,7 @@
       console.warn('holds load failed', err);
     }
     // Redraw what shows the mirror partners or footholds.
-    if (currentView === 'detail' && currentProblem && (detailMirror || feetRule(currentProblem) === 'specific')) router();
+    if (currentView === 'detail' && currentProblem && (detailMirror || feetRule(currentProblem) === 'specific')) viewRefresh();
     else if (currentView === 'create') applyCreateRoles();
     if (WALL) wallRefreshBoard();
   }
@@ -1244,7 +1253,7 @@
     const saved = !loaded && savedList('problems');
     if (saved) {
       showProblems(saved.rows);
-      router();                  // a cold #detail/<id> can open from the saved list
+      viewRefresh();             // a cold #detail/<id> can open from the saved list
     }
     const { data, error } = await sb.from('problems').select('*');
 
@@ -1262,10 +1271,10 @@
     setOfflineNote('list-offline', 0);
     if (WALL) wallSetNet(false);
     showProblems(data || []);
-    // Re-run the router in case we booted straight into #detail/<id>. If the saved
-    // list already routed, just re-render the detail in place: router() has side
-    // effects (it closes the info sheet, exits fullscreen) the user would notice.
-    if (!saved) router();
+    // Re-run the router in case we booted straight into #detail/<id> (viewRefresh:
+    // in place, no navigation side effects). If the saved list already routed,
+    // just re-render the detail.
+    if (!saved) viewRefresh();
     else if (currentView === 'detail') renderDetail(parseHash().param);
   }
 
@@ -1357,6 +1366,7 @@
       return;
     }
     p.is_benchmark = make;               // same object lives in allProblems
+    saveList('problems', allProblems);   // the saved copy (offline, next start) too (APP-04)
     leaderboardLoaded = false;           // points depend on it — refetch the board next view
     renderList();
     if (currentView === 'detail' && currentProblem === p) renderDetail(p.id);
@@ -1379,34 +1389,23 @@
       if (currentProblem !== p) return;   // swiped away while checking
     }
     document.getElementById('delete-name').textContent = displayName(p);
-    document.getElementById('delete-error').textContent = '';
-    document.getElementById('delete-modal').classList.add('show');
+    openConfirm('delete-modal', p);       // Delete acts on p, the problem the sheet names
   }
-  function closeDeleteConfirm() { document.getElementById('delete-modal').classList.remove('show'); }
 
-  async function doDeleteProblem() {
-    const p = currentProblem;
-    if (!p) return;
-    const errEl = document.getElementById('delete-error');
-    const btn = document.getElementById('delete-confirm');
-    errEl.textContent = '';
-    btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Deleting…';
-
+  // The sheet's action (confirmSheet, app.js): p is the problem it named.
+  // Returns an error message for the sheet, or nothing when it's done.
+  async function doDeleteProblem(p) {
     // .select() so we can tell a real delete from one RLS silently filtered out
     // (a blocked delete returns no error, just zero rows).
     const { data, error } = await sb.from('problems').delete().eq('id', p.id).select('id');
-    btn.disabled = false; btn.textContent = prev;
     if (error) {
-      errEl.textContent = error.code === '42501'
-        ? 'You don’t have permission to delete this problem.'
-        : error.message;
-      return;
+      console.warn('problem delete failed', error);
+      return error.code === '42501' ? 'You don’t have permission to delete this problem.' : dbErrorText(error);
     }
     if (!data || !data.length) {
-      errEl.textContent = isAdmin()
+      return isAdmin()
         ? 'Couldn’t delete it — it may already have been removed.'
         : 'Only an admin can delete this now: someone else has ticked it, or it’s become a benchmark.';
-      return;
     }
 
     // The deck (and this problem's place in it) as it stood before the delete —
@@ -1414,15 +1413,11 @@
     const deck = visibleProblems();
     const deckIdx = deck.findIndex(x => String(x.id) === String(p.id));
 
-    allProblems = allProblems.filter(x => String(x.id) !== String(p.id));
-    myTicks.delete(String(p.id));
-    myTicksNormal.delete(String(p.id));
-    myTicksMirrored.delete(String(p.id));
-    myFaves.delete(String(p.id));
-    leaderboardLoaded = false;           // its ticks cascade away — refetch the board next view
-    closeDeleteConfirm();
-    renderList();
+    forgetProblem(p.id);
+    closeConfirm('delete-modal');
     showToast('Problem deleted', 'success');
+    // Only if it's still the problem on screen: the sheet may have outlived it.
+    if (currentView !== 'detail' || String(parseHash().param) !== String(p.id)) return;
 
     // Where to land — stay in viewing mode wherever we can:
     //   1. swiped here → the last problem they were looking at (skipping any that
@@ -1442,6 +1437,21 @@
       if (neighbour) backTo = neighbour.id;
     }
     replaceRoute(backTo ? '#detail/' + encodeURIComponent(backTo) : '#list');
+  }
+
+  // A problem that's gone (deleted here, or found deleted elsewhere: a tick or
+  // favourite refused with 23503): out of the lists, this user's sets and the
+  // saved copy (APP-04).
+  function forgetProblem(id) {
+    id = String(id);
+    allProblems = allProblems.filter(x => String(x.id) !== id);
+    myTicks.delete(id);
+    myTicksNormal.delete(id);
+    myTicksMirrored.delete(id);
+    myFaves.delete(id);
+    saveList('problems', allProblems);
+    leaderboardLoaded = false;           // its ticks cascade away — refetch the board next view
+    renderList();
   }
 
   // ── Who may edit (db/39) ─────────────────────────────────────────────────────

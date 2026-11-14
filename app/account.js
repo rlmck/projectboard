@@ -79,7 +79,7 @@
       on => on
         ? sb.from('ticks').insert({ user_id: session.user.id, problem_id: id, mirrored })
         : sb.from('ticks').delete().eq('user_id', session.user.id).eq('problem_id', id).eq('mirrored', mirrored),
-      db => { setTicked(db); showToast('Could not save — check connection', 'error'); },
+      (db, err) => { setTicked(db); toggleRefused(err, 'problem', id); },
       on => {
         leaderboardLoaded = false;   // points changed — refresh on next leaderboard/profile view
         showToast(on ? 'Ticked ✓' : 'Removed tick', 'success');
@@ -157,7 +157,7 @@
       on => on
         ? sb.from('likes').insert({ user_id: session.user.id, problem_id: id })
         : sb.from('likes').delete().eq('user_id', session.user.id).eq('problem_id', id),
-      db => { setFaved(db); showToast('Could not save — check connection', 'error'); },
+      (db, err) => { setFaved(db); toggleRefused(err, 'problem', id); },
       on => showToast(on ? 'Added to favourites ♥' : 'Removed from favourites', 'success'));
   }
 
@@ -177,12 +177,25 @@
       on => on
         ? sb.from('circuit_likes').insert({ user_id: session.user.id, circuit_id: id })
         : sb.from('circuit_likes').delete().eq('user_id', session.user.id).eq('circuit_id', id),
-      (db, err) => {
-        setFaved(db);
-        console.warn('circuit favourite failed', err);
-        showToast('Could not save — check connection', 'error');
-      },
+      (db, err) => { setFaved(db); toggleRefused(err, 'circuit', id); },
       on => showToast(on ? 'Added to favourites ♥' : 'Removed from favourites', 'success'));
+  }
+
+  // A tick or favourite the database refused. 23503 (APP-10): the problem or
+  // circuit was deleted on another device, so say that, drop it from this phone's
+  // lists and leave its page; anything else is most likely the connection.
+  function toggleRefused(err, kind, id) {
+    if (err) console.warn(kind + ' tick/favourite failed', err);
+    if (!err || err.code !== '23503') { showToast('Could not save — check connection', 'error'); return; }
+    showToast(`That ${kind} has been deleted`, 'error');
+    const here = parseHash().param;
+    if (kind === 'circuit') {
+      forgetCircuit(id);
+      if (currentView === 'circuit-detail' && String(here) === String(id)) replaceRoute('#circuits');
+    } else {
+      forgetProblem(id);
+      if (currentView === 'detail' && String(here) === String(id)) replaceRoute('#list');
+    }
   }
 
   // ── Auth: nickname + PIN accounts (db/30, plan.md; PINs since 2 Nov 2026) ─────
@@ -644,13 +657,21 @@
 
   // ── Session ──────────────────────────────────────────────────────────────────
   async function initAuth() {
-    const { data } = await sb.auth.getSession();
-    session = data.session || null;
     // Not ready until the profile has loaded too: admin-only routes judge is_admin
     // from it, and a router() run in between (loadProblems calls it) would bounce
-    // an admin, or let a non-admin see an admin screen.
-    if (session) await loadProfile();
-    authReady = true;
+    // an admin, or let a non-admin see an admin screen. If getSession itself fails,
+    // carry on signed out rather than leave the gated routes blank (APP-14).
+    try {
+      const { data } = await sb.auth.getSession();
+      session = (data && data.session) || null;
+      if (session) await loadProfile();
+    } catch (err) {
+      console.warn('session restore failed', err);
+    } finally {
+      authReady = true;
+    }
+    if (session && !profile) retryProfileSoon();   // weak Wi-Fi at boot: try again (APP-14)
+    chAuthChanged();         // an attempt on this phone that isn't this account's pauses (challenge.js)
     if (session) { await loadTicks(); await loadFaves(); }
     retryChallengeSaves();   // a challenge attempt kept on the phone from last time (challenge.js)
     updateFilterControls();
@@ -659,9 +680,10 @@
     if (currentView === 'detail') { updateTickButton(); updateFaveButton(); }
     if (currentView === 'circuits') renderCircuits();
     if (currentView === 'circuit-detail') updateCircuitFaveButton();
-    // Re-evaluate the route now auth is known (gates #create for guests). Not on
-    // #auth: that would send someone halfway through sign-up back to the start.
-    if (currentView !== 'auth') router();
+    // Re-evaluate the route now auth is known (gates #create for guests), in
+    // place. Not on #auth: that would send someone halfway through sign-up back
+    // to the start.
+    if (currentView !== 'auth') viewRefresh();
 
     sb.auth.onAuthStateChange((event, s) => {
       session = s || null;
@@ -683,8 +705,10 @@
       profile = null; myTicks = new Set(); myTicksNormal = new Set(); myTicksMirrored = new Set(); myFaves = new Set(); myCircuitFaves = new Set(); leaderboardLoaded = false;
       adminUsers = []; adminUsersLoaded = false;   // the member list: don't keep it after an admin signs out
     }
-    // Challenge boards and history belong to whoever was signed in.
+    // Challenge boards and history belong to whoever was signed in, and so does an
+    // attempt running on this phone (APP-07).
     forgetChallengeData();
+    chAuthChanged();
     retryChallengeSaves();
     updateFilterControls();
     renderProfile();
@@ -707,6 +731,26 @@
     // A load *error* is not the same as "no profile": don't null an existing profile.
     if (error) { console.warn('profile load failed', error); return; }
     profile = data || null;
+  }
+
+  // A profile load that failed (weak gym Wi-Fi at boot) is tried again (APP-14):
+  // a few times over the next minute, and whenever the phone comes back online
+  // (app.js). Without it an admin saw no admin tools all session, and a problem
+  // they set was saved with no setter snapshot.
+  let profileRetryTimer = null;
+  function retryProfileSoon(n = 0) {
+    clearTimeout(profileRetryTimer);
+    if (!session || profile || n >= 4) return;
+    profileRetryTimer = setTimeout(() => retryProfileNow(n + 1), [2000, 5000, 15000, 40000][n]);
+  }
+  async function retryProfileNow(next = 4) {
+    if (!session || profile) return;
+    await loadProfile();
+    if (!profile) { retryProfileSoon(next); return; }
+    clearTimeout(profileRetryTimer);
+    updateAdminUI();
+    renderProfile();
+    if (currentView === 'circuit-detail') updateCircuitMenu();
   }
 
   // An admin-only write that RLS refused (no error, 0 rows) most likely means this
@@ -773,7 +817,7 @@
     leaderboardLoaded = false;
     renderProfile();
     renderList();
-    if (currentView === 'detail') router();
+    if (currentView === 'detail') viewRefresh();
     showToast('Nickname changed', 'success');
   }
 
@@ -807,27 +851,21 @@
   // Server-side (db/30 delete_my_account): the account, ticks, favourites and
   // points go; problems and circuits stay with the nickname (plan.md D2). The
   // only admin left is refused (D7).
-  function openAccountDelete() {
-    document.getElementById('account-delete-error').textContent = '';
-    document.getElementById('account-delete-modal').classList.add('show');
-  }
-  function closeAccountDelete() { document.getElementById('account-delete-modal').classList.remove('show'); }
+  function openAccountDelete() { openConfirm('account-delete-modal'); }
 
+  // The sheet's action (confirmSheet, app.js). Returns an error message, or nothing.
   async function doDeleteAccount() {
-    const errEl = document.getElementById('account-delete-error');
-    const btn = document.getElementById('account-delete-confirm');
-    errEl.textContent = '';
-    btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Deleting…';
+    const uid = session && session.user.id;
+    if (!uid) return 'You’re not signed in any more.';
     const { error } = await sb.rpc('delete_my_account');
-    btn.disabled = false; btn.textContent = prev;
     if (error) {
       console.warn('delete_my_account failed', error);
-      errEl.textContent = error.message === 'last_admin'
+      return error.message === 'last_admin'
         ? 'You’re the only admin. Make someone else an admin first.'
         : 'Couldn’t delete your account — check your connection.';
-      return;
     }
-    closeAccountDelete();
+    closeConfirm('account-delete-modal');
+    forgetChallengeAttempts(uid);   // nothing of theirs left on this phone (challenge.js)
     // The account and its sessions are gone on the server; clear this device too.
     // (The server call may fail now that the session doesn't exist; the local
     // session is dropped either way.)
