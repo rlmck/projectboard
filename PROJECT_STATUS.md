@@ -3,7 +3,7 @@
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 12 KB: the 3 newest session entries live here, older ones in `docs/log/` (`docs/log/2026-10.md`, `docs/log/2026-11.md`).
 
 ## Current state (as of 2026-11-14)
-- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh` (see the newest session entry for the current stamp). Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
+- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh` (see the newest session entry for the current stamp) and, since 14 Nov, onto every script and stylesheet URL (`?v=`), so a page load is always one version (overview §7). Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
 - **Sorting and filtering (4 Nov 2026):** the Filter sheet (phone) or panel (wall): Sort, Grade slider, quick filters, pick Holds; `✕ Clear` (overview §4.2a).
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs, about 0.25–0.45 s) and is used daily. Every hold's LED, mirrored casts, the feet rule and the geofence centre are checked on site.
 - **The Pi 4 is on a new SD card (1 Nov 2026)** after the old one died: it set itself up unattended (`pi/firstboot/README.md`; secrets in the laptop's gitignored `pi/secrets.env`; db/36 new wall key). Trixie Lite, Tailscale `projectboard`; the listener with self-healing and watchdogs; R8 tests still to do. Idle pattern **`wave`** 15 min after the last cast. Wi-Fi: random MAC, `pb-netwatch` v2, rescue hotspot.
@@ -39,7 +39,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
-- **Ross: save `.claude/settings.json`** (14 Nov): the file and the command are in the session 3 report (deny `git commit -n`, `git -c`; drop the 11-script rule). Then commit it.
+- **Ross: test the update flow on a phone** (14 Nov, session 4): start a circuit run, lock the phone, wait for a deploy, unlock: the run screen stays; the update arrives after (leave the circuit or reopen the app). Also: the app opens offline as before.
 - **Ross, on site: kiosk tests** (12 Nov): long-press and right-click open nothing; a killed renderer recovers by itself (`pi/README.md` → What runs).
 - **Ross: try the publish safety** (12 Nov): each board tool publishes and undoes as before; a publish from elsewhere in between is refused cleanly. **The snapshot is a publish behind live** (11 Nov): PB Console → Holds → Ship the snapshot (Home's tile stays amber till then).
 - **Ross:** Edit holds: the footholds beside **G1 and N1** aren't in yet (3 of 5 are). Sign in as Pablo with the new PIN once (reset 10 Nov). The db/41 checks (9 Nov report). **Try Specific feet** (plan → Session 3 → "Try it").
@@ -58,6 +58,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-14, Claude Code (review fix session 4: service worker, one version per page load).**
+  - **Changed:** `build.sh` stamps `?v=<CACHE>` on the pages' scripts and CSS; sw.js serves each version's own files, keeps an old version's cache while a page on it is open; no update reload during a circuit run or live preview; open apps pick up a board publish; the syntax gate refuses `export`, top-level `return`/`await`, duplicate names; comments don't satisfy the three-places check. Overview §7.
+  - **Tested:** gate cases; local build restamped; live scripts at `?v=`, no console errors.
+  - **Live:** `869d530`, app `pb-6cb6ce3392`. No Pi change.
+  - **Left:** Ross's phone tests. Next: session 5.
+
 - **2026-11-14, Claude Code (review fix session 3: secret guard and migration safety).**
   - **Changed:** the hook scans binary/UTF-16 files, refuses private keys, postgres URLs with a password, `pi/config.env.*`; its test turns it on (37 cases). Direct Postgres verifies TLS. `apply.py`: one transaction per script; `db/board_rpcs_live.sql`, re-run warnings (local). `/rollback`.
   - **Live:** `822d474`; no app or Pi change. Only `--dry-run` used.
@@ -67,8 +73,3 @@ Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which si
   - **Changed:** wall: no context menu, drag or selection; a forgotten Discard sheet times out; endless runs end at 30 min. Pi: Chromium policy (no DevTools, other sites); no "Restore pages?"; pb-health restarts the kiosk when the page's heartbeat stops.
   - **Live:** app `pb-ea65354db3`; Pi deployed, kiosk checked under the policy.
   - **Left:** Ross's on-screen tests. Next: fix session 3.
-
-- **2026-11-12, Claude Code (review fix session 1: board publish safety; db/45, db/46).**
-  - **Changed:** every board publish names the version it was built on and the server refuses any other (`stale`); Trace Holds' publish is now a board version (archived, undoable, logged, never clears an outline); foothold ids never reused (`foot_id_max`); Edit holds re-reads the board and lays its edits over a newer one; Board Setup re-reads on its start page; `check_holds.py` extended; PB Console Home: Board snapshot tile.
-  - **Live:** db/45 + db/46 applied (dry run, behaviour test); app `pb-4e7e6dfbf6`; console on restart.
-  - **Left:** the snapshot is still a publish behind (fallback left alone by instruction). Next: fix session 2.
