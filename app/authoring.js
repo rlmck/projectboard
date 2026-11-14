@@ -1526,7 +1526,7 @@
   async function olLoadShipped() {
     let j = null;
     try {
-      const res = await fetch('hold_shapes.json', { cache: 'no-cache' });
+      const res = await fetch(assetUrl('hold_shapes.json'), { cache: 'no-cache' });
       if (res.ok) j = await res.json();
     } catch (err) { /* offline */ }
     if (!j || typeof j !== 'object') { showToast('Couldn’t load the shipped copy', 'error'); return; }

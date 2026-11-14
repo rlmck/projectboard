@@ -76,6 +76,7 @@
     setPull(PULL_HOLD);
     // Hold the spinner briefly so a fast response still reads as a refresh.
     try {
+      refreshBoardIfChanged();   // and the board itself, if it was published since (problems.js)
       await Promise.all([pullList.refresh(), new Promise(r => setTimeout(r, 500))]);
     } catch (err) {
       console.warn('list refresh failed', err);
@@ -624,6 +625,12 @@
     // A challenge attempt (running in any view, or finished on screen): it's kept
     // on the device, but a reload would silence the beeps until the next tap.
     if (chRunning() || (currentView === 'challenge' && challengeRun)) return true;
+    // A circuit run: it lives only in memory, so a reload would lose its run screen,
+    // timer, beeps and Stop while the Pi carries on (BLD-05). The reload waits for
+    // the next navigation or return to the app after the run.
+    if (circuitRunGoing()) return true;
+    // Live LEDs while setting (authoring.js): a session lighting the board now.
+    if (preview && !preview.outside) return true;
     if (currentView === 'create') {
       if (editingProblemId) return problemEditDirty();   // an Edit: only if something changed
       if (Object.keys(createRoles).length || createFeetHolds.length) return true;
@@ -674,6 +681,13 @@
   loadHolds();          // the holds table (db/41): names and mirror partners
   loadBoardConfig().then(() => { applyBoardImage(); loadHoldMap(); loadMirrorMap(); });
   loadHoldShapes();     // bundled hold outlines for the problem shape overlay
+  // Coming back to the app: pick up a board published meanwhile (problems.js).
+  let boardCheckAt = Date.now();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || Date.now() - boardCheckAt < 60000) return;
+    boardCheckAt = Date.now();
+    refreshBoardIfChanged();
+  });
   initAuth();      // restore the session and wire auth state
   if (WALL) startWall();   // the wall-screen layout (wall.js) over the hidden phone views
 
@@ -718,6 +732,9 @@
     let servedFromCache = false;    // sw.js posts this when it fell back to its cache
     navigator.serviceWorker.addEventListener('message', e => {
       if (e.data && e.data.type === 'pb-served-from-cache') servedFromCache = true;
+      // A new worker activating asks which version this page runs, to know whether
+      // to keep the old cache for it (sw.js, activate).
+      if (e.data && e.data.type === 'pb-version' && e.ports && e.ports[0]) e.ports[0].postMessage({ version: PAGE_VERSION });
     });
     const pageIsCurrent = () =>
       !servedFromCache && (booting || (freshWorker && navigator.serviceWorker.controller === freshWorker));
@@ -748,6 +765,8 @@
       // updateViaCache:'none' = always fetch sw.js from the network, never the
       // HTTP cache. A stale sw.js served from cache is the classic reason SW
       // updates stall and a device gets stranded on old code — this prevents it.
+      // This page has loaded: an old version's cache kept for a page now gone can go.
+      if (navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({ type: 'pb-loaded' });
       navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
         // The browser may already have found the update on this navigation.
         freshWorker = reg.installing || reg.waiting || null;

@@ -868,6 +868,7 @@
     loadCircuits();                        // showCircuits -> wallRenderCircuits
     loadProfileNames();
     loadChallenges();                      // showChallenges -> wallOnChallenges reloads Ranks if it's up
+    refreshBoardIfChanged();               // a board publish: the new photo, map, outlines and holds
     if (!wallKeyOk) wallCheckKey();
   }
 

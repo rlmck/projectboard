@@ -1043,7 +1043,7 @@
   async function loadHoldMap() {
     if (configHasMap) return;
     try {
-      const res = await fetch('hold_map.json', { cache: 'no-cache' });
+      const res = await fetch(assetUrl('hold_map.json'), { cache: 'no-cache' });
       if (res.ok && !configHasMap) {
         const map = await res.json();
         bundledMapVersion = (map.__meta && map.__meta.board_updated_at) || null;
@@ -1068,7 +1068,7 @@
   async function loadHoldShapes() {
     if (configHasShapes) return;
     try {
-      const res = await fetch('hold_shapes.json', { cache: 'no-cache' });
+      const res = await fetch(assetUrl('hold_shapes.json'), { cache: 'no-cache' });
       if (res.ok && !configHasShapes) HOLD_SHAPES = await res.json();
     } catch (err) {
       console.warn('hold_shapes.json load failed — shape overlay disabled', err);
@@ -1084,7 +1084,7 @@
   async function loadMirrorMap() {
     if (configHasMirror) return;
     try {
-      const res = await fetch('mirror_map.json', { cache: 'no-cache' });
+      const res = await fetch(assetUrl('mirror_map.json'), { cache: 'no-cache' });
       if (res.ok && !configHasMirror) MIRROR_MAP = await res.json();
     } catch (err) {
       console.warn('mirror_map.json load failed — mirror disabled', err);
@@ -1183,6 +1183,31 @@
     if (currentView === 'detail' && currentProblem && (detailMirror || feetRule(currentProblem) === 'specific')) router();
     else if (currentView === 'create') applyCreateRoles();
     if (WALL) wallRefreshBoard();
+  }
+
+  // ── Notice a board publish while the app is open (SEAM-04) ───────────────────
+  // board_config is otherwise read once at boot, so an open phone or the wall kept
+  // the old photo, map and outlines after a publish until something reloaded it.
+  // The wall's 5-minute poll, the phone's pull-to-refresh and the app coming back
+  // to view call this: one small read of updated_at, and the board is reloaded only
+  // when it moved. Not under Board setup / Edit holds or the outline editor, which
+  // re-read the board themselves and hold drafts against the version they loaded.
+  let boardCheckBusy = false;
+  async function refreshBoardIfChanged() {
+    if (boardCheckBusy || !navigator.onLine || currentView === 'setup' || currentView === 'outlines') return;
+    boardCheckBusy = true;
+    try {
+      const { data, error } = await sb.from('board_config').select('updated_at')
+        .eq('wall', 'HangoutPortland').maybeSingle();
+      if (error || !data || !data.updated_at || data.updated_at === boardConfigVersion) return;
+      await Promise.all([loadBoardConfig(), loadHolds()]);
+      applyBoardImage();
+      if (WALL) wallRefreshBoard();
+    } catch (err) {
+      console.warn('board version check failed', err);
+    } finally {
+      boardCheckBusy = false;
+    }
   }
 
   // ── Load the id -> nickname map (so setters show the live nickname) ───────────

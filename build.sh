@@ -18,9 +18,13 @@
 #   - every allowlisted file exists, and every file in app/ is allowlisted (no subfolders);
 #   - the three-places rule: every sw.js ASSETS entry ships, every shipped file is in
 #     ASSETS (except the NOT_PRECACHED ones below), every shipped .js/.css is
-#     referenced from index.html or privacy.html;
-#   - the syntax check: the app's scripts, in index.html's order, joined and run through
-#     node --check (they share one global scope), and sw.js on its own;
+#     referenced from index.html or privacy.html. Commented-out ASSETS lines and
+#     <!-- --> comments in the pages don't count;
+#   - the syntax check: the app's scripts, in index.html's order, joined and parsed as
+#     ONE classic script (vm.Script, as the browser does: export, import, top-level
+#     return and top-level await all fail), then parsed again with the module goal,
+#     where a top-level name declared twice (two `function f`, or a function and a
+#     var) is an error, as it would silently override in the page; sw.js on its own;
 #   - app/sw.js holds the CACHE placeholder exactly once.
 #
 # CACHE: app/sw.js keeps const CACHE = 'pb-local' (so local preview works as is);
@@ -28,6 +32,10 @@
 # git blob ids of the shipped files at HEAD: it changes exactly when a shipped file
 # changes (a docs-only push leaves it alone), it doesn't depend on line endings, and
 # PB Console gets the same value for origin/main from --stamp. Never edit CACHE by hand.
+#
+# The same stamp goes onto every script and stylesheet URL in public/index.html and
+# public/privacy.html (src="state.js?v=pb-…"), so a page and its files are one
+# version: sw.js answers a versioned URL with that version's file only.
 #
 # Adding a deployable file? Put it in app/, add it here AND to app/sw.js's ASSETS
 # (unless it's one of NOT_PRECACHED), and reference it from a page.
@@ -157,7 +165,10 @@ done
 SW="$SRC/sw.js"
 if [[ -f "$SW" ]]; then
   # ASSETS: the './name' strings between 'const ASSETS = [' and '];'. './' is the shell.
-  mapfile -t ASSETS < <(sed -n '/^const ASSETS = \[/,/^\];/p' "$SW" | grep -o "'\./[^']*'" | tr -d "'" | sed 's#^\./##; s#^$#index.html#')
+  # Comments (// to the end of a line, /* … */) are dropped first: a commented-out
+  # entry isn't precached.
+  mapfile -t ASSETS < <(sed -n '/^const ASSETS = \[/,/^\];/p' "$SW" | sed -e 's#/\*.*\*/##g' -e '/\/\*/,/\*\//d' -e 's#//.*$##' \
+    | grep -o "'\./[^']*'" | tr -d "'" | sed 's#^\./##; s#^$#index.html#')
   (( ${#ASSETS[@]} )) || errors+=("no ASSETS list found in $SW")
   for a in "${ASSETS[@]}"; do
     in_list "$a" "${FILES[@]}" || errors+=("sw.js ASSETS has '$a', which build.sh doesn't ship: the worker's install would fail")
@@ -170,18 +181,75 @@ if [[ -f "$SW" ]]; then
   [[ "$n" == 1 ]] || errors+=("$SW must hold \"$PLACEHOLDER\" exactly once (found $n): CACHE is stamped by the build, never by hand")
 fi
 
-PAGES="$SRC/index.html $SRC/privacy.html"
+# The pages with their <!-- --> comments taken out: a commented-out tag references
+# nothing and loads nothing. (Without node the check below fails anyway.)
+uncomment() {  # uncomment FILE: the file without its HTML comments
+  if command -v node >/dev/null 2>&1; then
+    node -e 'process.stdout.write(require("fs").readFileSync(process.argv[1], "utf8").replace(/<!--[\s\S]*?-->/g, ""))' "$1"
+  else
+    cat "$1"
+  fi
+}
+PAGES_TEXT=$(uncomment "$SRC/index.html"; uncomment "$SRC/privacy.html")
+INDEX_TEXT=$(uncomment "$SRC/index.html")
 for f in "${FILES[@]}"; do
   case "$f" in
     sw.js) continue ;;   # registered by app.js
     *.js|*.css)
-      grep -qE "(src|href)=\"$f\"" $PAGES 2>/dev/null || errors+=("$f ships but neither index.html nor privacy.html references it (the three-places rule)") ;;
+      grep -qF -e "src=\"$f\"" -e "href=\"$f\"" <<<"$PAGES_TEXT" || errors+=("$f ships but neither index.html nor privacy.html references it (the three-places rule)") ;;
   esac
 done
 
 # The syntax check: the app scripts in index.html's order (the vendored supabase-js
 # aside), joined, so a name declared twice across files fails as it would in the page.
-mapfile -t SCRIPTS < <(grep -o '<script src="[^"]*"' "$SRC/index.html" | sed 's/<script src="//; s/"$//' | grep -v '^supabase-js-')
+mapfile -t SCRIPTS < <(grep -o '<script src="[^"]*"' <<<"$INDEX_TEXT" | sed 's/<script src="//; s/"$//' | grep -v '^supabase-js-')
+
+# Run by node: argv = tmpdir, sw.js, then the scripts in load order. Prints what's
+# wrong (with file:line in the scripts) and exits 1, or prints nothing.
+SYNTAX_JS=$(cat <<'EOF'
+const fs = require('fs'), vm = require('vm'), path = require('path'), cp = require('child_process');
+const [tmp, sw, ...files] = process.argv.slice(1);
+let joined = '', line = 1;
+const starts = [];
+for (const f of files) {
+  let s = fs.readFileSync(f, 'utf8');
+  if (!s.endsWith('\n')) s += '\n';
+  starts.push([line, f]);
+  joined += s;
+  line += s.split('\n').length - 1;
+}
+const where = n => {
+  if (!n) return '';
+  let hit = starts[0];
+  for (const st of starts) if (st[0] <= n) hit = st;
+  return ` (at ${hit[1]}:${n - hit[0] + 1})`;
+};
+const lineIn = (text, name) => { const m = new RegExp(name.replace('.', '\\.') + ':(\\d+)').exec(text || ''); return m ? +m[1] : 0; };
+const out = [];
+// 1. One classic script, as the page runs them (vm.Script uses the Script goal).
+try { new vm.Script(joined, { filename: 'all.js' }); }
+catch (e) { out.push(`the ${files.length} scripts joined don't parse as one classic script: ${e.message}${where(lineIn(e.stack, 'all.js'))}`); }
+// 2. The same text with the module goal: a top-level name declared twice is an error
+//    there (in a classic script the later one silently wins). The code must also be
+//    strict-mode clean (no with, no legacy octal), which it is.
+if (!out.length) {
+  const mjs = path.join(tmp, 'all.mjs');
+  fs.writeFileSync(mjs, joined);
+  const r = cp.spawnSync(process.execPath, ['--check', mjs], { encoding: 'utf8' });
+  if (r.status !== 0) {
+    const msg = (/SyntaxError: .*/.exec(r.stderr) || [String(r.stderr).trim()])[0];
+    out.push((/already been declared/.test(msg)
+      ? `a top-level name is declared twice across the scripts (the later one is shown): ${msg}`
+      : `the duplicate-name check (the joined scripts parsed as a module) failed: ${msg}`) + where(lineIn(r.stderr, 'all.mjs')));
+  }
+}
+// 3. sw.js on its own (a classic worker script).
+try { new vm.Script(fs.readFileSync(sw, 'utf8'), { filename: 'sw.js' }); }
+catch (e) { out.push(`sw.js doesn't parse as a classic script: ${e.message}`); }
+if (out.length) { console.log(out.join('\n')); process.exit(1); }
+EOF
+)
+
 if ! command -v node >/dev/null 2>&1; then
   errors+=("node isn't on the PATH: the syntax check can't run")
 elif (( ${#SCRIPTS[@]} == 0 )); then
@@ -193,14 +261,10 @@ else
   for s in "${SCRIPTS[@]}"; do
     [[ -f "$SRC/$s" ]] || { errors+=("index.html loads $s, which isn't in app/"); ok=0; }
   done
-  if (( ok )); then
-    ( cd "$SRC" && cat "${SCRIPTS[@]}" ) > "$tmp/all.js"
-    if ! out=$(node --check "$tmp/all.js" 2>&1); then
-      errors+=("syntax check failed on the ${#SCRIPTS[@]} scripts joined (${SCRIPTS[*]}):"$'\n'"$out")
+  if (( ok )) && [[ -f "$SW" ]]; then
+    if ! out=$(node -e "$SYNTAX_JS" "$tmp" "$SW" "${SCRIPTS[@]/#/$SRC/}" 2>&1); then
+      errors+=("syntax check failed (${SCRIPTS[*]}, then sw.js):"$'\n'"$out")
     fi
-  fi
-  if [[ -f "$SW" ]] && ! out=$(node --check "$SW" 2>&1); then
-    errors+=("syntax check failed on sw.js:"$'\n'"$out")
   fi
 fi
 
@@ -227,5 +291,14 @@ done
 
 sed -i "s/$PLACEHOLDER/const CACHE = '$STAMP';/" "$OUT/sw.js"
 grep -qF "const CACHE = '$STAMP';" "$OUT/sw.js" || { echo "build.sh: ERROR — couldn't stamp $OUT/sw.js" >&2; exit 1; }
+
+# The same stamp on every local script and stylesheet URL of the pages, so sw.js can
+# answer each with its own version's file (one version per page load).
+for page in index.html privacy.html; do
+  sed -i -E "s#(<script src=\")([A-Za-z0-9._-]+\.js)\"#\1\2?v=$STAMP\"#g; s#(<link rel=\"stylesheet\" href=\")([A-Za-z0-9._-]+\.css)\"#\1\2?v=$STAMP\"#g" "$OUT/$page"
+  want=$(grep -oE '<script src="[A-Za-z0-9._-]+\.js[^"]*"|<link rel="stylesheet" href="[A-Za-z0-9._-]+\.css[^"]*"' "$OUT/$page" | wc -l)
+  got=$(grep -oF "?v=$STAMP\"" "$OUT/$page" | wc -l)
+  [[ "$want" == "$got" ]] || { echo "build.sh: ERROR — stamped $got of $want script/stylesheet URLs in $OUT/$page" >&2; exit 1; }
+done
 
 echo "build.sh: copied ${#FILES[@]} files from $SRC/ into $OUT/, CACHE = $STAMP${WORKERS_CI_COMMIT_SHA:+ (commit ${WORKERS_CI_COMMIT_SHA:0:7})}"

@@ -2,6 +2,18 @@
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
 // state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, trace, setup, holdedit, app. This file: Supabase client + channel, grade ladders, and all shared mutable state.
 
+  // ── This page's version ──────────────────────────────────────────────────────
+  // build.sh stamps ?v=<CACHE> onto every script and stylesheet URL of the deployed
+  // pages (local preview has none), and sw.js answers each versioned URL with that
+  // version's file only, so one load never mixes two versions. The bundled data and
+  // the fallback photo are fetched with the same stamp (assetUrl), for the same reason.
+  const ASSET_V = (() => {
+    const m = document.currentScript && /[?&]v=([\w-]+)/.exec(document.currentScript.src);
+    return m ? `?v=${m[1]}` : '';
+  })();
+  const PAGE_VERSION = ASSET_V ? ASSET_V.slice(3) : 'pb-local';   // = sw.js's CACHE for this version
+  const assetUrl = name => name + ASSET_V;
+
   // ── Supabase client ──────────────────────────────────────────────────────────
   const { createClient } = supabase;
   const SUPA_URL = 'https://uqirowyfqwiceyjznosl.supabase.co';
@@ -74,7 +86,7 @@
   let FOOT_HOLDS = null; // foothold id -> {x, y, pts}, from the holds table (db/42): Specific feet's positions and outlines (footholds aren't in board_config's copies)
   let holdsHaveMirror = false;          // true once the holds table supplied the mirror partners (board_config's then step aside)
   let detailMirror = false; // detail view is showing the left/right-mirrored problem
-  let BOARD_IMG = 'board-fallback.jpg'; // resolved board image URL (Supabase upload, else the bundled fallback: a snapshot of the live photo)
+  let BOARD_IMG = assetUrl('board-fallback.jpg'); // resolved board image URL (Supabase upload, else the bundled fallback: a snapshot of the live photo)
   let configHasMap = false;             // true once board_config supplied a hold map (suppresses the bundled fallback)
   let configHasMirror = false;          // true once board_config supplied a mirror map (suppresses the bundled fallback)
   let configHasShapes = false;          // true once board_config supplied hold outlines (suppresses the bundled fallback)
