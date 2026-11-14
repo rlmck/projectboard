@@ -17,12 +17,14 @@ NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 
 def find_bash():
-    """Git Bash's bash, never WSL's (C:\\Windows\\System32\\bash.exe runs in Linux, without the laptop's ssh key)."""
+    """Git Bash's bash, never WSL's (C:\\Windows\\System32\\bash.exe runs in Linux, without the laptop's ssh key).
+    The WindowsApps\\bash.exe launcher is WSL's too: the scheduled autodeploy found it and its
+    deploy.sh hung until the 900 s timeout (12 and 14 Nov 2026)."""
     env = os.environ.get('PB_BASH')
     if env:
         return env
     found = shutil.which('bash')
-    if found and 'system32' not in found.lower():
+    if found and not any(w in found.lower() for w in ('system32', 'windowsapps')):
         return found
     for p in (r'C:\Program Files\Git\bin\bash.exe', r'C:\Program Files (x86)\Git\bin\bash.exe'):
         if os.path.exists(p):
