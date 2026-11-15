@@ -576,11 +576,10 @@
     if (e.target.id === 'name-modal') closeNameModal();
   });
 
-  // True while the user has in-progress create-form state that a hard reload
-  // would silently discard (tapped holds + typed name/grade live only in memory).
+  // True while a reload would lose something: an update waits for it to end
+  // (applyUpdate, below). The one check for the phone and the wall screen (which
+  // also waits for nobody to be touching it: wallUpdateOk, wall.js).
   function hasUnsavedWork() {
-    // The wall screen reloads only while nobody's using it (wall.js sends 'wall-idle').
-    if (WALL && !wallIsIdle()) return true;
     // Creating an account, part-way through: a reload would clear the PINs typed.
     if (currentView === 'auth' && authMode === 'signup' &&
         (document.getElementById('signup-pin').value || document.getElementById('signup-pin2').value)) return true;
@@ -593,13 +592,8 @@
     if (circuitRunGoing()) return true;
     // Live LEDs while setting (authoring.js): a session lighting the board now.
     if (preview && !preview.outside) return true;
-    if (currentView === 'create') {
-      if (editingProblemId) return problemEditDirty();   // an Edit: only if something changed
-      if (Object.keys(createRoles).length || createFeetHolds.length) return true;
-      if (createGrade) return true;
-      const n = document.getElementById('create-name');
-      if (n && n.value.trim()) return true;
-    }
+    // A problem being set, phone or wall (createDirty, authoring.js).
+    if (createDirty()) return true;
     if (currentView === 'circuit-create') {
       if (ccEditingId || ccMoveId) return circuitEditDirty();   // an Edit or a Move: only if changed
       if (ccSeq.length) return true;
@@ -626,6 +620,9 @@
   // Back online after showing a saved list (or nothing): fetch the fresh ones,
   // and send any challenge attempt that was kept on the phone.
   window.addEventListener('online', () => {
+    // The wall screen's own online handler polls everything else (wallPoll): only
+    // the holds here, so nothing is fetched or rendered twice (review WALL-12).
+    if (WALL) { loadHolds(); return; }
     if (!loaded) loadProblems();
     else if (!document.getElementById('list-offline').hidden) refreshProblems().catch(() => {});
     if (!circuitsLoaded) loadCircuits();
@@ -705,11 +702,14 @@
       !servedFromCache && (booting || (freshWorker && navigator.serviceWorker.controller === freshWorker));
 
     // Reload to show the update, but never yank an in-progress create form out
-    // from under the user — defer until they've left it / it's empty.
+    // from under the user — defer until they've left it / it's empty. The wall
+    // screen waits for 2 minutes untouched as well (wallUpdateOk), and comes back to
+    // the same page, problem and scroll position (wallSaveResume / wallResume).
     function applyUpdate() {
       if (reloading) return;
-      if (hasUnsavedWork()) { pendingReload = true; return; }
+      if (WALL ? !wallUpdateOk() : hasUnsavedWork()) { pendingReload = true; return; }
       reloading = true;
+      if (WALL) wallSaveResume();
       window.location.reload();
     }
 
@@ -746,10 +746,12 @@
             if (pendingReload) applyUpdate();
           }
         });
-        // The wall screen is never hidden, so it checks every hour instead, and
-        // takes a waiting update the next time it goes idle.
+        // The wall screen is never hidden, so it checks every 5 minutes instead
+        // (TODO 8, 15 Nov 2026; hourly before), and takes a waiting update once
+        // nobody has touched it for 2 minutes (checked every 15 s), or as it goes idle.
         if (WALL) {
-          setInterval(() => reg.update().catch(() => {}), 3600 * 1000);
+          setInterval(() => reg.update().catch(() => {}), WALL_UPDATE_CHECK_MS);
+          setInterval(() => { if (pendingReload) applyUpdate(); }, 15 * 1000);
           document.addEventListener('wall-idle', () => { if (pendingReload) applyUpdate(); });
         }
       }).catch(err => { booting = false; console.warn('SW registration failed', err); });

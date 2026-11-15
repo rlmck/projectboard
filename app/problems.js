@@ -630,27 +630,51 @@
     filtersChanged(filterKind);
   }
 
-  function cardHtml(p) {
-    const faved = isFaved(p.id);
+  // One card for every list, phone and wall, problems and circuits (review 2.3):
+  // the phone's has the favourite heart; the wall's is one button (a clean tap
+  // picks and lights it, wall.js) with no heart or tick, as the wall has no account.
+  // meta: the card's meta line (problemMetaHtml, or circuits.js's circuitMetaHtml).
+  function listCardHtml(id, name, meta, { wall = false, sel = false, faved = false } = {}) {
+    if (wall) return `
+      <button class="problem-card wall-card${sel ? ' selected' : ''}" type="button" data-id="${escAttr(id)}" aria-pressed="${sel}">
+        <span class="problem-info">
+          <span class="problem-name">${escHtml(name)}</span>
+          <span class="problem-meta">${meta}</span>
+        </span>
+      </button>`;
     return `
-      <div class="problem-card" data-id="${escAttr(p.id)}">
+      <div class="problem-card" data-id="${escAttr(id)}">
         <div class="problem-info">
-          <div class="problem-name">${escHtml(displayName(p))}</div>
-          <div class="problem-meta">
+          <div class="problem-name">${escHtml(name)}</div>
+          <div class="problem-meta">${meta}</div>
+        </div>
+        <button class="card-fave${faved ? ' faved' : ''}" data-fave="${escAttr(id)}" aria-pressed="${faved}" aria-label="${faved ? 'Remove from favourites' : 'Add to favourites'}">${HEART_SVG}</button>
+      </div>`;
+  }
+
+  // A problem's meta line: grade, (the feet rule: the wall's chosen-problem bar),
+  // benchmark, new, setter, (the tick: phone cards).
+  function problemMetaHtml(p, { feet = false, tick = false } = {}) {
+    return `
             <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
+            ${feet ? feetBadgeHtml(p) : ''}
             ${p.is_benchmark ? benchMarkSvg() : ''}
             ${newBadgeHtml(p)}
             <span class="meta-setter">${escHtml(setterName(p))}</span>
-            ${isTicked(p.id) ? '<span class="tick-flag" title="Sent">✓</span>' : ''}
-          </div>
-        </div>
-        <button class="card-fave${faved ? ' faved' : ''}" data-fave="${escAttr(p.id)}" aria-pressed="${faved}" aria-label="${faved ? 'Remove from favourites' : 'Add to favourites'}">${HEART_SVG}</button>
-      </div>`;
+            ${tick ? '<span class="tick-flag" title="Sent">✓</span>' : ''}`;
+  }
+
+  function cardHtml(p, { wall = false } = {}) {
+    return wall
+      ? listCardHtml(p.id, displayName(p), problemMetaHtml(p), { wall, sel: String(p.id) === String(wallSelId) })
+      : listCardHtml(p.id, displayName(p), problemMetaHtml(p, { tick: isTicked(p.id) }), { faved: isFaved(p.id) });
   }
 
   function renderList() {
     updateFilterControls();
-    if (WALL) wallRenderList();           // the wall screen's list follows every render of this one
+    // The wall screen shows its own list; the phone's is hidden there, so it isn't
+    // built at all (review WALL-05).
+    if (WALL) { wallRenderList(); return; }
     const container = document.getElementById('list-container');
     const list = visibleProblems();
     document.getElementById('count').textContent = `${list.length} problem${list.length !== 1 ? 's' : ''}`;
@@ -665,7 +689,7 @@
         : filterEmptyHtml('problems');
       return;
     }
-    container.innerHTML = `<div class="problem-list">${list.map(cardHtml).join('')}</div>`;
+    container.innerHTML = `<div class="problem-list">${list.map(p => cardHtml(p)).join('')}</div>`;
   }
 
   // Shared grade-tab markup (the create pickers, problems and circuits). `isActive(g)`
@@ -942,8 +966,11 @@
   // seconds; if it says the thing tapped is no longer on screen (a swipe, the
   // mirror flipped, the view left) nothing is sent. Otherwise the wall would
   // light the problem you swiped away from.
-  // quiet: no "Cast cancelled" toast (the wall screen, whose next tap casts again).
-  // Resolves true once Realtime accepted the cast, false otherwise.
+  // quiet: no toasts at all (the wall screen, which shows how it went in #wall-lit
+  // and whose next tap casts again; review WALL-09).
+  // Resolves true once Realtime accepted the cast, false otherwise. On the wall the
+  // send waits its turn in boardSend's queue (core.js): a newer tap's cast drops it
+  // while it waits, and stillShowing is asked again just before it goes.
   async function castByName(name, btn, mirror = false, stillShowing = null, { quiet = false } = {}) {
     if (!name) return false;
     // Icon-only cast buttons keep their icon; text buttons swap to status text.
@@ -958,6 +985,7 @@
       resetCastButton(btn);
       if (!isIcon) btn.innerHTML = prev;
     };
+    const toast = (msg, kind) => { if (!quiet) showToast(msg, kind); };
     btn.classList.remove('sent');
     btn.classList.add('casting');
     btn.disabled = true;
@@ -966,15 +994,16 @@
     // Geofence gate — only blocks on a fix that's confidently away from the gym
     // (admins bypass; missing/uncertain fixes are allowed). May briefly wait for GPS.
     const fence = await ensureCastLocation();
-    if (!mine() || (stillShowing && !stillShowing())) {
+    const showing = () => mine() && (!stillShowing || stillShowing());
+    if (!showing()) {
       const superseded = castTarget !== null && !mine();
       restore();
-      if (!superseded && !quiet) showToast('Cast cancelled — the problem changed', 'error');
+      if (!superseded) toast('Cast cancelled — the problem changed', 'error');
       return false;
     }
     if (!fence.ok) {
       restore();
-      showToast('Casting only works at the gym', 'error');
+      toast('Casting only works at the gym', 'error');
       return false;
     }
     if (!isIcon) btn.innerHTML = 'Sending';
@@ -989,9 +1018,10 @@
     try {
       // One REST POST (no socket, see state.js). Resolves once the Realtime server
       // has accepted the broadcast; rejects on an error status or a timeout.
-      await channel.httpSend('cast_problem', payload, { timeout: 10000 });
+      const sent = await boardSend('cast_problem', payload, { timeout: 10000, slot: 'board', still: showing });
+      if (!sent) { restore(); return false; }   // the wall: a newer tap, or it left the screen while it waited
       logCast('problem', name, mirror);
-      showToast(`${mirror ? 'Mirror cast' : 'Cast'}: ${name}`, 'success');
+      toast(`${mirror ? 'Mirror cast' : 'Cast'}: ${name}`, 'success');
       if (!mine()) return true;     // swiped on while sending: that button isn't ours
       btn.classList.remove('casting');
       btn.classList.add('sent');
@@ -1000,7 +1030,7 @@
       return true;
     } catch (err) {
       restore();
-      showToast('Cast failed — check connection', 'error');
+      toast('Cast failed — check connection', 'error');
       console.error(err);
       return false;
     }
@@ -1260,13 +1290,17 @@
   async function loadProfileNames() {
     if (!Object.keys(profileNames).length) {
       const saved = savedList('names');
-      if (saved) profileNames = saved.rows;
+      if (saved) { profileNames = saved.rows; listSig.names = JSON.stringify(saved.rows); }
     }
     const { data, error } = await sb.rpc('setter_names');
     if (error) { console.warn('profile names load failed', error); return; }
-    profileNames = Object.fromEntries((data || []).map(r => [r.id, r.username]));
-    saveList('names', profileNames);
+    const names = Object.fromEntries((data || []).map(r => [r.id, r.username]));
+    const sig = saveList('names', names);
+    if (sig === listSig.names) return;              // the same names: nothing to re-render (WALL-05)
+    listSig.names = sig;
+    profileNames = names;
     if (loaded) renderList();                       // refresh setters once names arrive
+    if (WALL) wallRenderCircuits();                 // the wall's circuit cards show setters too
     if (currentView === 'detail') renderDetail(parseHash().param);
     if (currentView === 'circuits') renderCircuits();
     else if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
@@ -1282,10 +1316,15 @@
 
   // The saved list (if there is one) shows at once; the fresh one replaces it when
   // it arrives. If the fetch fails, the saved list stays, with the offline note.
+  // Boot and coming back online call it, and the wall screen's poll (wallPoll):
+  // a fetch that brings exactly the rows already showing renders nothing (WALL-05),
+  // and a failed refresh keeps the list that's up.
   async function loadProblems() {
-    const saved = !loaded && savedList('problems');
+    const first = !loaded;
+    const saved = first && savedList('problems');
     if (saved) {
       showProblems(saved.rows);
+      listSig.problems = JSON.stringify(saved.rows);
       viewRefresh();             // a cold #detail/<id> can open from the saved list
     }
     const { data, error } = await sb.from('problems').select('*');
@@ -1294,20 +1333,23 @@
       console.warn('problems load failed', error);
       if (WALL) wallSetNet(true);
       if (saved) { setOfflineNote('list-offline', saved.t); return; }
+      if (!first) return;        // a refresh: the list that's showing stays
       document.getElementById('list-container').innerHTML =
         `<div class="state-msg"><div class="icon">⚠️</div>Failed to load problems.<br><small style="opacity:.6">${escHtml(error.message)}</small></div>`;
       document.getElementById('count').textContent = '';
       return;
     }
 
-    saveList('problems', data || []);
+    const sig = saveList('problems', data || []);
     setOfflineNote('list-offline', 0);
     if (WALL) wallSetNet(false);
+    if (loaded && sig === listSig.problems) return;   // nothing changed since it last rendered
+    listSig.problems = sig;
     showProblems(data || []);
     // Re-run the router in case we booted straight into #detail/<id> (viewRefresh:
-    // in place, no navigation side effects). If the saved list already routed,
-    // just re-render the detail.
-    if (!saved) viewRefresh();
+    // in place, no navigation side effects). If the saved list already routed, or
+    // this is a refresh, just re-render the detail.
+    if (first && !saved) viewRefresh();
     else if (currentView === 'detail') renderDetail(parseHash().param);
   }
 
@@ -1322,7 +1364,7 @@
       session ? loadFaves() : null,
     ]);
     if (res.error) { showToast('Couldn’t refresh problems', 'error'); return; }
-    saveList('problems', res.data || []);
+    listSig.problems = saveList('problems', res.data || []);
     setOfflineNote('list-offline', 0);
     showProblems(res.data || []);
   }

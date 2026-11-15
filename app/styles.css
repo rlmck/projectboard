@@ -2704,6 +2704,9 @@
     .wall-card {
       width: 100%; min-height: var(--wall-row-h); margin-bottom: 6px; padding: 8px 16px;
       text-align: left; color: inherit; font: inherit;
+      /* The Pi 4 lays out and paints only the rows in view (review WALL-05); a row
+         out of view counts as one row's height until it has been drawn once. */
+      content-visibility: auto; contain-intrinsic-size: auto var(--wall-row-h);
     }
     .wall-card .problem-name { display: block; font-size: 20px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .wall-card .problem-meta { margin-top: 4px; font-size: 15px; }
@@ -2825,7 +2828,9 @@
       min-height: var(--wall-key-h);
       background: var(--surface2); border: 1px solid var(--border); border-radius: var(--btn-radius);
       color: var(--text); font: inherit; font-size: 24px; font-weight: 700;
-      cursor: pointer; touch-action: manipulation;
+      /* A key types on its finger's lift (wall.js), so no pan or zoom gesture may
+         take the finger over: fast two-finger typing keeps every key (WALL-04). */
+      cursor: pointer; touch-action: none;
     }
     .wall-key:active { background: var(--accent-a19); border-color: var(--accent); }
     .wall-key.fn { background: var(--surface); color: var(--text-muted); font-size: 26px; }

@@ -77,10 +77,11 @@
   }
 
   // As loadProblems: the saved list shows at once, the fresh one replaces it, and a
-  // failed fetch keeps the saved one with the offline note.
+  // failed fetch keeps the saved one with the offline note. Rows identical to the
+  // ones showing render nothing (the wall's 5-minute poll, WALL-05).
   async function loadCircuits() {
     const saved = !circuitsLoaded && savedList('circuits');
-    if (saved) showCircuits(saved.rows);
+    if (saved) { showCircuits(saved.rows); listSig.circuits = JSON.stringify(saved.rows); }
     const { data, error } = await sb.from('circuits').select('*');
     if (error) {
       console.warn('circuits load failed', error);
@@ -91,8 +92,10 @@
       else if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
       return;
     }
-    saveList('circuits', data || []);
+    const sig = saveList('circuits', data || []);
     setOfflineNote('circuit-offline', 0);
+    if (circuitsLoaded && !circuitsError && sig === listSig.circuits) return;
+    listSig.circuits = sig;
     showCircuits(data || []);
   }
 
@@ -104,7 +107,7 @@
       session ? loadFaves() : null,
     ]);
     if (res.error) { showToast('Couldn’t refresh circuits', 'error'); return; }
-    saveList('circuits', res.data || []);
+    listSig.circuits = saveList('circuits', res.data || []);
     setOfflineNote('circuit-offline', 0);
     allCircuits = res.data || [];
     circuitsLoaded = true;
@@ -204,28 +207,28 @@
     holdsOf: c => circuitHolds(c),
     nOn: () => circuitFilterCount(),
     reset: () => resetCircuitFilters(),
-    render: () => { renderCircuits(); wallRenderCircuits(); },
+    // The wall shows only its own list (the phone's is hidden there: WALL-05).
+    render: () => { if (WALL) { updateFilterControls(); wallRenderCircuits(); } else renderCircuits(); },
     search: 'circuit-search',
     searching: () => !!circuitSearch,
   };
 
-  function circuitCardHtml(c) {
+  // A circuit's meta line (its card, phone and wall, and the wall's chosen-circuit bar).
+  function circuitMetaHtml(c) {
     const n = circuitSeq(c).length;
-    const faved = isCircuitFaved(c.id);
     return `
-      <div class="problem-card" data-id="${escAttr(c.id)}">
-        <div class="problem-info">
-          <div class="problem-name">${escHtml(circuitName(c))}</div>
-          <div class="problem-meta">
             <span class="grade-badge">${escHtml(c.grade || '—')}</span>
             ${newBadgeHtml(c)}
             <span class="meta-setter">${escHtml(setterName(c))}</span>
             <span class="circuit-len">${n} move${n === 1 ? '' : 's'}</span>
-            ${c.loops ? '<span class="loop-badge">↻ Loop</span>' : ''}
-          </div>
-        </div>
-        <button class="card-fave${faved ? ' faved' : ''}" data-fave="${escAttr(c.id)}" aria-pressed="${faved}" aria-label="${faved ? 'Remove from favourites' : 'Add to favourites'}">${HEART_SVG}</button>
-      </div>`;
+            ${c.loops ? '<span class="loop-badge">↻ Loop</span>' : ''}`;
+  }
+
+  // The one card renderer (listCardHtml, problems.js); wall: the wall screen's card.
+  function circuitCardHtml(c, { wall = false } = {}) {
+    return wall
+      ? listCardHtml(c.id, circuitName(c), circuitMetaHtml(c), { wall, sel: String(c.id) === String(wallCircId) })
+      : listCardHtml(c.id, circuitName(c), circuitMetaHtml(c), { faved: isCircuitFaved(c.id) });
   }
 
   function renderCircuits() {
@@ -253,7 +256,7 @@
           : filterEmptyHtml('circuits');
       return;
     }
-    container.innerHTML = `<div class="problem-list">${list.map(circuitCardHtml).join('')}</div>`;
+    container.innerHTML = `<div class="problem-list">${list.map(c => circuitCardHtml(c)).join('')}</div>`;
   }
 
   // ── Circuit detail ──────────────────────────────────────────────────────────────
@@ -504,18 +507,19 @@
   // problem's colours, no animation; the Pi shows it like a problem cast (latest wins,
   // then idle). Only the wall screen sends it, when a circuit is tapped on its
   // Circuits page. Like castByName: the lenient geofence, then only sent if
-  // stillShowing() says the same circuit is still on screen. Resolves true once
-  // Realtime accepted it (not proof the board lit). Not in cast_log: the wall has
-  // no sign-in, so it's never a member's.
+  // stillShowing() says the same circuit is still on screen (asked again when its
+  // turn in the wall's send queue comes, boardSend). Resolves true once Realtime
+  // accepted it (not proof the board lit). Not in cast_log: the wall has no
+  // sign-in, so it's never a member's.
   async function showCircuitByName(name, stillShowing = null) {
     if (!name) return false;
     const fence = await ensureCastLocation();
     if (stillShowing && !stillShowing()) return false;
     if (!fence.ok) return false;
     try {
-      await channel.httpSend('show_circuit',
-        { circuit_name: name, source: WALL ? 'wall' : 'phone', signed_in: !!session }, { timeout: 10000 });
-      return true;
+      return await boardSend('show_circuit',
+        { circuit_name: name, source: WALL ? 'wall' : 'phone', signed_in: !!session },
+        { timeout: 10000, slot: 'board', still: stillShowing });
     } catch (err) {
       console.error(err);
       return false;
@@ -546,7 +550,8 @@
     const payload = { circuit_name: circuitName(c), interval, laps, loop: endless, run: token,
                       source: WALL ? 'wall' : 'phone', signed_in: !!session };
     try {
-      await channel.httpSend('cast_circuit', payload, { timeout: 10000 });
+      // On the wall it goes after any message still being sent (boardSend's queue).
+      if (!await boardSend('cast_circuit', payload, { timeout: 10000, slot: 'board' })) { done(); return; }
     } catch (err) {
       done();
       errEl.textContent = 'Cast failed — check your connection.';
@@ -614,8 +619,8 @@
     r.stopping = true;
     btn.disabled = true;
     try {
-      await channel.httpSend('stop', { run: r.token, source: WALL ? 'wall' : 'phone', signed_in: !!session },
-                             { timeout: 10000 });
+      await boardSend('stop', { run: r.token, source: WALL ? 'wall' : 'phone', signed_in: !!session },
+                      { timeout: 10000 });
       const first = !r.stopSent;
       r.stopSent = true;
       // Realtime took the stop; that isn't proof the board got it (contract §8.4). For a few
@@ -661,7 +666,8 @@
   async function logCircuitRun(r) {
     const el = document.getElementById('cast-done-log');
     if (!r.movesDone) return;
-    if (!session) { el.textContent = 'Sign in to keep a log of your runs.'; return; }
+    // The wall screen has no sign-in, so it says nothing (review WALL-09).
+    if (!session) { el.textContent = WALL ? '' : 'Sign in to keep a log of your runs.'; return; }
     const { error } = await sb.from('circuit_logs').insert({
       user_id: session.user.id, circuit_id: r.c.id, moves: r.movesDone, looped: r.laps !== 1, speed: r.interval });
     if (circuitRun !== r) return;

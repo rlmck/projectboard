@@ -16,13 +16,13 @@
 //     scroll) picks the problem and lights it, a tap on Mirror flips it and
 //     lights that side, and the wall's pick takes over whatever is on the board.
 //     It casts through castByName() exactly as the phone does (guests can cast;
-//     with no location fix the geofence lets it through), one at a time, and
-//     rapid taps send only the latest.
+//     with no location fix the geofence lets it through); rapid taps send only
+//     the latest.
 //   - Circuits: the same row (Looping, search, Clear), the list, and the chosen circuit (its numbered holds) over the
 //     board, dimmed when none is chosen. Opening the page lights nothing. Since
 //     2 Nov 2026 a clean tap on a circuit picks it and lights all its holds at once
 //     (show_circuit, contract 8.7: starts green, the last hold red, the rest blue;
-//     no animation), with the same tap rules and one-at-a-time sending as Problems.
+//     no animation), with the same tap rules and sending as Problems.
 //     Start circuit opens the phone's Cast sheet (circuits.js): speed and loop,
 //     then the countdown, the move count and Stop. The wall doesn't go idle while
 //     a run is going.
@@ -55,9 +55,21 @@
 // every 2 minutes (wallAlive); pb-health restarts the kiosk when it stops (a
 // crashed or frozen page, or the screen left on some other page).
 //
+// Everything the wall sends to the board (a problem, show_circuit, cast_circuit,
+// stop, the live LEDs while setting) goes through one queue (boardSend, core.js;
+// review WALL-08): one message at a time, in the order they were made.
+//
+// Kept light for the Pi 4 (review session 12, 15 Nov 2026: WALL-04, WALL-05): the
+// keyboard's keys are built once and only relabelled; a search key re-renders only
+// its list; a pick or Mirror redraws only what's over the board image; the poll
+// re-renders only rows that changed, and never under a finger or a moving list
+// (wallHandsOn: the render waits until they're off). An app update goes in after
+// 2 minutes untouched and comes back to the same page, choice and scroll.
+//
 // The phone views stay underneath, hidden (body.wall): the loaders and the router
 // run as usual, and the few hooks into them (renderList, refreshBoardViews,
-// loadProblems, showChallenges) only call in here when WALL is set.
+// loadProblems, showChallenges) only call in here when WALL is set; the phone's
+// lists themselves aren't built on the wall.
 
   const WALL_IDLE_MS = 20 * 60 * 1000;  // no touch for this long: back to the list, then the slides
   const WALL_SLIDE_MS = 12 * 1000;       // each idle slide
@@ -66,6 +78,10 @@
   const WALL_BOARD_ROWS = 10;            // rows on each Ranks board
   const WALL_IDLE_KEY = 'pb-wall-idle';  // sessionStorage: the slides were up when the page unloaded
   const WALL_ALIVE_MS = 2 * 60 * 1000;   // the heartbeat for pb-health (wallAlive); it restarts the kiosk after 10 min without one
+  const WALL_UPDATE_CHECK_MS = 5 * 60 * 1000;   // how often app.js asks for a new version (TODO 8; hourly before)
+  const WALL_UPDATE_IDLE_MS = 2 * 60 * 1000;    // a waiting update goes in after this long untouched (wallUpdateOk)
+  const WALL_RESUME_KEY = 'pb-wall-resume';     // sessionStorage: where the wall was when an update reloaded it
+  const WALL_RESUME_MAX_MS = 10 * 60 * 1000;    // ...used only by the load straight after
 
   let wallPage = 'problems';     // 'problems' | 'circuits' | 'ranks' | 'app'
   let wallCircId = null;         // the chosen circuit's id
@@ -78,15 +94,20 @@
   let wallNetDown = false;       // the last fetch of the problems failed
   let wallLastPoll = Date.now(); // boot has just loaded everything
   let wallAliveAt = 0;           // the last heartbeat (0: one is due now)
-  // The wall's casts (Problems): one is sent at a time; a tap while one is going
-  // waits in wallCastNext, and a newer tap replaces it, so rapid taps never queue.
-  let wallCastBusy = false;      // castByName is running for the wall
-  let wallCastNext = null;       // the latest tap waiting for it: { name, mirror }
-  let wallCastState = null;      // how the last one went: { name, mirror, state: 'sending' | 'sent' | 'failed' }
-  // The Circuits page's static views (show_circuit), sent the same way: one at a time, the latest next.
-  let wallCircCastBusy = false;
-  let wallCircCastNext = null;   // the circuit name waiting
-  let wallCircCastState = null;  // { name, state: 'sending' | 'sent' | 'failed' }
+  // How the last tap's cast went, per page (#wall-lit, #wall-clit). The sends
+  // themselves queue in boardSend (core.js): a newer tap drops one still waiting.
+  let wallCastState = null;      // Problems: { name, mirror, state: 'sending' | 'sent' | 'failed' }
+  let wallCircCastState = null;  // Circuits (show_circuit): { name, state }
+  // Fingers on the screen and the lists moving (wallHandsOn): renders that aren't
+  // the answer to a tap wait until they're off, so a list is never rebuilt under a
+  // finger (which would swallow its tap) or while it scrolls.
+  const wallFingers = new Map(); // pointerId -> when it went down
+  let wallTouches = 0;           // touch points down (a scroll cancels the pointer, not the touch)
+  let wallScrollAt = 0;          // when a list last scrolled
+  const wallDeferred = new Set();// 'list' | 'circuits': renders waiting for the hands to come off
+  let wallSettleTimer = 0;
+  let wallResumeTop = null;      // a scroll position to restore once the list is rendered (an update)
+  let wallResumeCTop = null;
   // A clean tap: the finger went down while the list wasn't moving, and the list
   // didn't scroll and the finger didn't move more than WALL_TAP_SLOP px before it
   // came up. Anything else (a scroll, a drag, the touch that stops a fling) only
@@ -122,30 +143,47 @@
   // ── Problems page ─────────────────────────────────────────────────────────────
   const wallSelected = () => (wallSelId === null ? null : allProblems.find(p => String(p.id) === String(wallSelId)) || null);
 
-  // feet: the chosen problem's bar also shows its feet rule (not the list's cards).
-  function wallMetaHtml(p, feet = false) {
-    return `
-      <span class="grade-badge">${escHtml(fontGrade(p.grade) || '—')}</span>
-      ${feet ? feetBadgeHtml(p) : ''}
-      ${p.is_benchmark ? benchMarkSvg() : ''}
-      ${newBadgeHtml(p)}
-      <span class="meta-setter">${escHtml(setterName(p))}</span>`;
+  // Sets an element's HTML only when it differs from what it was last set to, so a
+  // re-render that changes nothing touches nothing (no restyle, no relayout).
+  function wallSetHtml(el, html) {
+    if (el._wallHtml === html) return;
+    el._wallHtml = html;
+    el.innerHTML = html;
+  }
+
+  // ── Hands on the screen (WALL-05) ─────────────────────────────────────────────
+  // A finger down, or a list scrolling (a finger dragging it or a fling; only
+  // within a few seconds of a touch, so the list's own re-render moving it doesn't count).
+  function wallHandsOn() {
+    const now = Date.now();
+    for (const [id, t] of wallFingers) if (now - t > 15000) wallFingers.delete(id);   // a lost pointerup
+    return wallFingers.size > 0 || wallTouches > 0
+      || (now - wallScrollAt < WALL_FLING_MS && now - wallLastTouch < 5000);
+  }
+  // A render that would happen under a finger waits; it runs once they're off.
+  function wallDefer(what) {
+    if (!wallHandsOn()) return false;
+    wallDeferred.add(what);
+    wallSettleSoon();
+    return true;
+  }
+  function wallSettleSoon() {
+    if (wallSettleTimer || !wallDeferred.size) return;
+    wallSettleTimer = setTimeout(() => {
+      wallSettleTimer = 0;
+      if (wallHandsOn()) { wallSettleSoon(); return; }
+      const due = [...wallDeferred];
+      wallDeferred.clear();
+      if (due.includes('list')) wallRenderList();
+      if (due.includes('circuits')) wallRenderCircuits();
+    }, 100);
   }
 
   // The grade sections' keys and labels. Unknown grades sort last (gradeRank).
   const wallGradeKey = p => p.grade || '';
   const wallGradeLabel = g => (g ? fontGrade(g) : '—');
 
-  function wallCardHtml(p) {
-    const sel = String(p.id) === String(wallSelId);
-    return `
-      <button class="problem-card wall-card${sel ? ' selected' : ''}" type="button" data-id="${escAttr(p.id)}" aria-pressed="${sel}">
-        <span class="problem-info">
-          <span class="problem-name">${escHtml(displayName(p))}</span>
-          <span class="problem-meta">${wallMetaHtml(p)}</span>
-        </span>
-      </button>`;
-  }
+  const wallCardHtml = p => cardHtml(p, { wall: true });   // the one card renderer (problems.js)
 
   // The list: sorted Easy or Hard, a section per grade with a sticky header and
   // the rail of the grades in it; sorted New or Random, one flat list and no rail.
@@ -155,9 +193,11 @@
   // pill, the search (on the on-screen keyboard) and Clear are here; favourites and
   // done stay off without an account.
   function wallRenderList() {
-    if (!WALL) return;
+    if (!WALL || wallDefer('list')) return;
+    wallDeferred.delete('list');
     const box = wallEl('wall-list');
-    const top = box.scrollTop;
+    let top = box.scrollTop;
+    if (loaded && wallResumeTop !== null) { top = wallResumeTop; wallResumeTop = null; }
     const grouped = sortIsByGrade();
     document.querySelector('#wall .wall-problems').classList.toggle('wall-flat', !grouped);
 
@@ -186,10 +226,10 @@
           : `<div class="wall-flat-list">${list.map(wallCardHtml).join('')}</div>`;
       box.scrollTop = top;
     }
-    wallEl('wall-rail').innerHTML = grades.map(g => {
+    wallSetHtml(wallEl('wall-rail'), grades.map(g => {
       const label = wallGradeLabel(g);
       return `<button class="wall-rail-btn${label.length > 3 ? ' long' : ''}" type="button" data-grade="${escAttr(g)}">${escHtml(label)}</button>`;
-    }).join('');
+    }).join(''));
     wallMarkGrade();
     if (wallSelId !== null && loaded && !wallSelected()) wallSelect(null);   // deleted since
     else wallRenderSel();
@@ -217,11 +257,11 @@
   function wallRenderSel() {
     const p = wallSelected();
     if (wallPicking('problems')) wallRenderPickBar('problems');
-    else wallEl('wall-sel').innerHTML = p
+    else wallSetHtml(wallEl('wall-sel'), p
       ? `<h1 class="wall-name">${escHtml(displayName(p))}</h1>
-         <div class="problem-meta wall-meta">${wallMetaHtml(p, true)}</div>`
+         <div class="problem-meta wall-meta">${problemMetaHtml(p, { feet: true })}</div>`
       : `<h1 class="wall-name wall-name-empty">Pick a problem</h1>
-         <p class="wall-hint">Tap one in the list to light it up on the wall.</p>`;
+         <p class="wall-hint">Tap one in the list to light it up on the wall.</p>`);
     const mirror = wallEl('wall-mirror');
     mirror.disabled = !p;
     mirror.classList.toggle('active', !!p && wallMirror);
@@ -238,12 +278,33 @@
     return `<div class="board-wrap wall-board"><img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" draggable="false" />${overlay}</div>`;
   }
 
+  // The board on a page's right (Problems, Circuits; the hold picker on either):
+  // the <img> is built once, and again only for a new board photo; a pick, Mirror
+  // or a picked hold replace only what's drawn over it (review WALL-05).
+  function wallStageShow(stageId, overlay, hint = '', pick = false) {
+    const stage = wallEl(stageId);
+    let wrap = stage.querySelector('.wall-board');
+    if (!wrap || wrap.querySelector('.board-graphic').getAttribute('src') !== BOARD_IMG) {
+      stage.innerHTML = `<div class="board-wrap wall-board"><img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" draggable="false" /></div>`
+        + '<div class="wall-stage-hint" hidden></div>';
+      wrap = stage.querySelector('.wall-board');
+    }
+    wrap.classList.toggle('wall-pick-board', pick);
+    const img = wrap.querySelector('.board-graphic');
+    while (img.nextSibling) img.nextSibling.remove();
+    img.insertAdjacentHTML('afterend', overlay);
+    const h = stage.querySelector('.wall-stage-hint');
+    h.textContent = hint;
+    h.hidden = !hint;
+  }
+
   function wallRenderStage() {
     if (!WALL) return;
     if (wallPicking('problems')) { wallRenderPickBoard('problems'); return; }
     const p = wallSelected();
-    wallEl('wall-stage').innerHTML = wallBoardHtml(p, wallMirror)
-      + (p ? '' : `<div class="wall-stage-hint">Tap a problem on the left</div>`);
+    const overlay = p ? (boardShapeOverlayHtml(p, { mirror: wallMirror, dim: true }) || boardOverlayHtml(p, wallMirror))
+      : `<div class="hold-layer">${wallDimOnlyHtml()}</div>`;
+    wallStageShow('wall-stage', overlay, p ? '' : 'Tap a problem on the left');
   }
 
   // Picks a problem (null: none), unmirrored. A cast for the one before that is
@@ -279,98 +340,68 @@
 
   // Lights what's on screen: the chosen problem, the way round it's shown. The
   // wall's pick always takes over the board (the Pi shows the latest cast). Not
-  // idle or offline. One cast at a time: a tap while one is being sent
-  // waits, replacing any tap already waiting, so only the latest goes next.
+  // idle or offline. The same path as the phone's cast button (castByName: name and
+  // orientation fixed at the tap, sent only if they're still on screen), its send
+  // in turn in the wall's queue: a tap while one is being sent waits, and a newer
+  // tap replaces it, so rapid taps never queue up and the latest wins. castByName
+  // gets a button of its own that isn't on the page; #wall-lit shows how it went.
   function wallCast() {
     const p = wallSelected();
     if (!p || wallPage !== 'problems' || wallOffline() || wallIsIdle() || wallPicking('problems') || wallKbSearching()) return;
-    wallCastNext = { name: p.name, mirror: wallMirror };
-    wallCastState = { name: p.name, mirror: wallMirror, state: 'sending' };
+    const { name } = p, mirror = wallMirror;
+    const st = wallCastState = { name, mirror, state: 'sending' };
     wallRenderLit();
-    wallCastPump();
-  }
-
-  // The same path as the phone's cast button: name and orientation fixed at the
-  // tap, and only sent if they're still on screen once the location check
-  // returns. castByName gets a button of its own that isn't on the page; the
-  // wall shows how it went in #wall-lit instead.
-  async function wallCastPump() {
-    if (wallCastBusy || !wallCastNext) return;
-    const { name, mirror } = wallCastNext;
-    wallCastNext = null;
-    wallCastBusy = true;
-    let ok = false;
-    try {
-      ok = await castByName(name, document.createElement('button'), mirror, () => {
-        const q = wallSelected();
-        return wallPage === 'problems' && !wallIdleOn && !!q && q.name === name && wallMirror === mirror;
-      }, { quiet: true });
-    } finally {
-      wallCastBusy = false;
-    }
-    const st = wallCastState;
-    if (!wallCastNext && st && st.name === name && st.mirror === mirror) {
-      wallCastState = { name, mirror, state: ok ? 'sent' : 'failed' };
-    }
-    wallRenderLit();
-    wallCastPump();
+    castByName(name, document.createElement('button'), mirror, () => {
+      const q = wallSelected();
+      return wallPage === 'problems' && !wallIdleOn && !!q && q.name === name && wallMirror === mirror;
+    }, { quiet: true }).then(ok => {
+      if (wallCastState !== st) return;    // a newer tap owns the status
+      st.state = ok ? 'sent' : 'failed';
+      wallRenderLit();
+    });
   }
 
   // How the chosen problem's cast went, beside Mirror. "Sent" means Realtime took
   // it, which isn't proof the board lit (contract §4), so it never says "lit".
   const WALL_LIT_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zM21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>';
   function wallRenderLit() {
-    const el = wallEl('wall-lit');
     const p = wallSelected();
     const st = wallCastState;
-    const mine = !!p && !!st && st.name === p.name && st.mirror === wallMirror;
+    wallLitShow(wallEl('wall-lit'), !!p, !!p && !!st && st.name === p.name && st.mirror === wallMirror ? st.state : null);
+  }
+  // One status line, both pages: has = something is chosen; state = how its own
+  // latest cast went ('sending' | 'sent' | 'failed'), or null for none.
+  function wallLitShow(el, has, state) {
     let cls = '', text = '';
-    if (!p) text = '';
+    if (!has) text = '';
     else if (wallOffline()) text = 'Offline: not lit';
-    else if (mine && st.state === 'sending') { cls = 'sending'; text = 'Lighting it up…'; }
-    else if (mine && st.state === 'sent') { cls = 'sent'; text = 'Sent to the board'; }
-    else if (mine && st.state === 'failed') { cls = 'failed'; text = 'Didn’t send: tap it again'; }
+    else if (state === 'sending') { cls = 'sending'; text = 'Lighting it up…'; }
+    else if (state === 'sent') { cls = 'sent'; text = 'Sent to the board'; }
+    else if (state === 'failed') { cls = 'failed'; text = 'Didn’t send: tap it again'; }
     else text = 'Tap it to light it up';
     el.className = 'wall-lit' + (cls ? ' ' + cls : '');
-    el.innerHTML = text ? WALL_LIT_ICON + `<span>${escHtml(text)}</span>` : '';
+    wallSetHtml(el, text ? WALL_LIT_ICON + `<span>${escHtml(text)}</span>` : '');
   }
 
   // ── Circuits page ─────────────────────────────────────────────────────────────
   const wallCircSelected = () => (wallCircId === null ? null
     : allCircuits.find(c => String(c.id) === String(wallCircId)) || null);
 
-  function wallCircMetaHtml(c) {
-    const n = circuitSeq(c).length;
-    return `
-      <span class="grade-badge">${escHtml(c.grade || '—')}</span>
-      ${newBadgeHtml(c)}
-      <span class="meta-setter">${escHtml(setterName(c))}</span>
-      <span class="circuit-len">${n} move${n === 1 ? '' : 's'}</span>
-      ${c.loops ? '<span class="loop-badge">↻ Loop</span>' : ''}`;
-  }
-
   // The phone's list order and filters (visibleCircuits: the Filter panel, the
   // Looping pill and the search; no favourites here). Circuits are few, so no grade rail.
   function wallRenderCircuits() {
-    if (!WALL) return;
+    if (!WALL || wallDefer('circuits')) return;
+    wallDeferred.delete('circuits');
     const box = wallEl('wall-clist');
-    const top = box.scrollTop;
+    let top = box.scrollTop;
+    if (circuitsLoaded && wallResumeCTop !== null) { top = wallResumeCTop; wallResumeCTop = null; }
     if (!circuitsLoaded) {
       box.innerHTML = circuitsError || wallNetDown
         ? `<div class="state-msg"><div class="icon">⚠️</div>Can’t reach the server right now.<br>Trying again by itself.</div>`
         : `<div class="spinner"></div>`;
     } else {
       const list = visibleCircuits();
-      box.innerHTML = list.length ? list.map(c => {
-        const sel = String(c.id) === String(wallCircId);
-        return `
-          <button class="problem-card wall-card${sel ? ' selected' : ''}" type="button" data-id="${escAttr(c.id)}" aria-pressed="${sel}">
-            <span class="problem-info">
-              <span class="problem-name">${escHtml(circuitName(c))}</span>
-              <span class="problem-meta">${wallCircMetaHtml(c)}</span>
-            </span>
-          </button>`;
-      }).join('') : allCircuits.length
+      box.innerHTML = list.length ? list.map(c => circuitCardHtml(c, { wall: true })).join('') : allCircuits.length
         ? filterEmptyHtml('circuits')
         : `<div class="state-msg"><div class="icon">🧗</div>No circuits yet.</div>`;
       box.scrollTop = top;
@@ -383,11 +414,11 @@
     if (!WALL) return;
     const c = wallCircSelected();
     if (wallPicking('circuits')) wallRenderPickBar('circuits');
-    else wallEl('wall-csel').innerHTML = c
+    else wallSetHtml(wallEl('wall-csel'), c
       ? `<h1 class="wall-name">${escHtml(circuitName(c))}</h1>
-         <div class="problem-meta wall-meta">${wallCircMetaHtml(c)}</div>`
+         <div class="problem-meta wall-meta">${circuitMetaHtml(c)}</div>`
       : `<h1 class="wall-name wall-name-empty">Pick a circuit</h1>
-         <p class="wall-hint">Tap one to light its holds. Start circuit runs it a move at a time.</p>`;
+         <p class="wall-hint">Tap one to light its holds. Start circuit runs it a move at a time.</p>`);
     wallEl('wall-ccast').disabled = !c || wallOffline();
     wallRenderCircLit();
   }
@@ -404,10 +435,8 @@
     if (!WALL) return;
     if (wallPicking('circuits')) { wallRenderPickBoard('circuits'); return; }
     const c = wallCircSelected();
-    wallEl('wall-cstage').innerHTML =
-      `<div class="board-wrap wall-board"><img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" draggable="false" />`
-      + `<div class="hold-layer">${c ? circuitStaticOverlay(c) : wallDimOnlyHtml()}</div></div>`
-      + (c ? '' : `<div class="wall-stage-hint">Tap a circuit on the left</div>`);
+    wallStageShow('wall-cstage', `<div class="hold-layer">${c ? circuitStaticOverlay(c) : wallDimOnlyHtml()}</div>`,
+      c ? '' : 'Tap a circuit on the left');
   }
 
   function wallCircSelect(id) {
@@ -430,52 +459,28 @@
 
   // Lights the chosen circuit's holds, all at once (show_circuit): the board shows
   // the latest cast, so this replaces a problem or a run, and a later cast replaces
-  // it. Not idle or offline. One at a time, the latest tap next, as wallCast.
+  // it. Not idle or offline. Sent in turn in the wall's queue, the latest tap next, as wallCast.
   function wallCircShow() {
     const c = wallCircSelected();
     if (!c || wallPage !== 'circuits' || wallOffline() || wallIsIdle() || wallPicking('circuits') || wallKbSearching()) return;
     const name = circuitName(c);
-    wallCircCastNext = name;
-    wallCircCastState = { name, state: 'sending' };
+    const st = wallCircCastState = { name, state: 'sending' };
     wallRenderCircLit();
-    wallCircShowPump();
-  }
-
-  async function wallCircShowPump() {
-    if (wallCircCastBusy || !wallCircCastNext) return;
-    const name = wallCircCastNext;
-    wallCircCastNext = null;
-    wallCircCastBusy = true;
-    let ok = false;
-    try {
-      ok = await showCircuitByName(name, () => {
-        const c = wallCircSelected();
-        return wallPage === 'circuits' && !wallIdleOn && !!c && circuitName(c) === name;
-      });
-    } finally {
-      wallCircCastBusy = false;
-    }
-    const st = wallCircCastState;
-    if (!wallCircCastNext && st && st.name === name) wallCircCastState = { name, state: ok ? 'sent' : 'failed' };
-    wallRenderCircLit();
-    wallCircShowPump();
+    showCircuitByName(name, () => {
+      const q = wallCircSelected();
+      return wallPage === 'circuits' && !wallIdleOn && !!q && circuitName(q) === name;
+    }).then(ok => {
+      if (wallCircCastState !== st) return;
+      st.state = ok ? 'sent' : 'failed';
+      wallRenderCircLit();
+    });
   }
 
   // How the chosen circuit's view went, beside Start circuit (as #wall-lit).
   function wallRenderCircLit() {
-    const el = wallEl('wall-clit');
     const c = wallCircSelected();
     const st = wallCircCastState;
-    const mine = !!c && !!st && st.name === circuitName(c);
-    let cls = '', text = '';
-    if (!c) text = '';
-    else if (wallOffline()) text = 'Offline: not lit';
-    else if (mine && st.state === 'sending') { cls = 'sending'; text = 'Lighting it up…'; }
-    else if (mine && st.state === 'sent') { cls = 'sent'; text = 'Sent to the board'; }
-    else if (mine && st.state === 'failed') { cls = 'failed'; text = 'Didn’t send: tap it again'; }
-    else text = 'Tap it to light it up';
-    el.className = 'wall-lit' + (cls ? ' ' + cls : '');
-    el.innerHTML = text ? WALL_LIT_ICON + `<span>${escHtml(text)}</span>` : '';
+    wallLitShow(wallEl('wall-clit'), !!c, !!c && !!st && st.name === circuitName(c) ? st.state : null);
   }
 
   // Start circuit: the Cast sheet (speed, loop, the countdown and Stop).
@@ -495,18 +500,12 @@
   const wallStageId = kind => (kind === 'circuits' ? 'wall-cstage' : 'wall-stage');
 
   function wallRenderPickBar(kind) {
-    wallEl(kind === 'circuits' ? 'wall-csel' : 'wall-sel').innerHTML =
-      `<h1 class="wall-name">Pick holds</h1><p class="wall-hint">${escHtml(holdPickLine(kind))}</p>`;
+    wallSetHtml(wallEl(kind === 'circuits' ? 'wall-csel' : 'wall-sel'),
+      `<h1 class="wall-name">Pick holds</h1><p class="wall-hint">${escHtml(holdPickLine(kind))}</p>`);
   }
-  // The board is built once when the panel opens; a tap redraws only its layer.
+  // The same board image as the page's (wallStageShow); a tap redraws only its layer.
   function wallRenderPickBoard(kind) {
-    const stage = wallEl(wallStageId(kind));
-    let wrap = stage.querySelector('.wall-pick-board');
-    if (!wrap || wrap.querySelector('.board-graphic').getAttribute('src') !== BOARD_IMG) {
-      stage.innerHTML = `<div class="board-wrap wall-board wall-pick-board"><img class="board-graphic" src="${escAttr(BOARD_IMG)}" alt="The Hangout symmetry board" draggable="false" /><div class="hold-layer"></div></div>`;
-      wrap = stage.querySelector('.wall-pick-board');
-    }
-    wrap.querySelector('.hold-layer').innerHTML = holdPickLayerFor(kind);
+    wallStageShow(wallStageId(kind), `<div class="hold-layer">${holdPickLayerFor(kind)}</div>`, '', true);
   }
   function wallRenderPick(kind) {
     if (!wallPicking(kind)) return;
@@ -521,20 +520,10 @@
     else { wallRenderSel(); wallRenderStage(); }
   }
 
-  // A clean tap on the picking board (WALL_TAP_SLOP, as the lists): the hold nearest it.
+  // A clean tap on the picking board (wallCleanTap, as the lists): the hold nearest it.
   function wallTapBoard(kind) {
-    const stage = wallEl(wallStageId(kind));
-    let press = null;
-    stage.addEventListener('pointerdown', e => { press = { x: e.clientX, y: e.clientY, clean: true }; }, { passive: true });
-    stage.addEventListener('pointermove', e => {
-      if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > WALL_TAP_SLOP) press.clean = false;
-    }, { passive: true });
-    stage.addEventListener('pointercancel', () => { if (press) press.clean = false; }, { passive: true });
-    stage.addEventListener('click', e => {
-      const p = press;
-      press = null;
+    wallCleanTap(wallEl(wallStageId(kind)), e => {
       if (!wallPicking(kind) || wallIsIdle()) return;
-      if (!p || !p.clean || Math.hypot(e.clientX - p.x, e.clientY - p.y) > WALL_TAP_SLOP) return;
       const wrap = e.target.closest('.wall-pick-board');
       if (!wrap) return;
       const h = hitHold(wrap, e.clientX, e.clientY);
@@ -577,9 +566,6 @@
     holds: 'Those holds don’t make a problem yet: check the start, holds and finish.',
     feet: 'The feet didn’t save: pick the feet rule or the footholds again.'
   };
-
-  const wallCreateDirty = () => !!(Object.keys(createRoles).length || createFeetHolds.length || createGrade
-    || wallCreateName.trim() || createFeet !== 'any');
 
   // Create is offered only once the database says the wall key works.
   // A failed ask (the network not up yet when the kiosk starts at 08:00) is asked
@@ -673,6 +659,12 @@
   };
   const wallKbSearching = () => wallKbFor === 'problems' || wallKbFor === 'circuits';
 
+  // The keys are built once per layout (the name's, or a search's) and stay put:
+  // a press changes only the text, and shift only the letters' labels (review
+  // WALL-04: rebuilding every key per press could drop a fast second finger's key).
+  let wallKbRows = null;         // the layout the keys were built for
+  let wallKbCaps = false;        // the letters show as capitals
+
   function wallKbOpen(target = 'name') {
     if (!WALL_KB_TARGETS[target]) return;
     if (target !== 'name' && (wallIsIdle() || filterKind || wallPage !== target)) return;
@@ -680,7 +672,8 @@
     const kb = wallEl('wall-kb');
     kb.classList.toggle('search', target !== 'name');
     kb.hidden = false;
-    wallKbRender();
+    wallKbBuild();
+    wallKbSync();
     wallRenderSearch();
   }
   function wallKbClose() {
@@ -692,22 +685,34 @@
   function wallKbCloseSearch() {
     if (wallKbSearching()) wallKbClose();
   }
-  function wallKbRender() {
+  function wallKbBuild() {
     const t = WALL_KB_TARGETS[wallKbFor];
-    if (!t) return;
-    const text = t.get();
-    const shift = t.caps && wallKbShift;
-    wallEl('wall-kb-text').innerHTML = (text ? escHtml(text)
-      : `<span class="wall-kb-ph">${escHtml(t.ph)}</span>`) + '<i class="wall-kb-caret"></i>';
+    if (!t || wallKbRows === t.rows) return;
+    wallKbRows = t.rows;
+    wallKbCaps = false;
     wallEl('wall-kb-keys').innerHTML = t.rows.map(row => row.map(k => {
-      const label = k === 'shift' ? '⇧' : k === 'back' ? '⌫' : k === 'space' ? 'space' : k === 'clear' ? 'Clear'
-        : (shift && /[a-z]/.test(k) ? k.toUpperCase() : k);
-      const cls = k === 'shift' ? (shift ? ' fn on' : ' fn') : k === 'back' ? ' fn' : k === 'space' ? ' space'
-        : k === 'clear' ? ' fn wide' : '';
+      const label = k === 'shift' ? '⇧' : k === 'back' ? '⌫' : k === 'space' ? 'space' : k === 'clear' ? 'Clear' : k;
+      const cls = k === 'shift' || k === 'back' ? ' fn' : k === 'space' ? ' space' : k === 'clear' ? ' fn wide' : '';
       const aria = k === 'shift' ? ' aria-label="Capital letter"' : k === 'back' ? ' aria-label="Delete"'
         : k === 'clear' ? ' aria-label="Clear the search"' : '';
       return `<button class="wall-key${cls}" type="button" data-k="${escAttr(k)}"${aria}>${escHtml(label)}</button>`;
     }).join('')).join('');
+  }
+  // The text as typed, and the letters' case with shift (the name only).
+  function wallKbSync() {
+    const t = WALL_KB_TARGETS[wallKbFor];
+    if (!t) return;
+    const text = t.get();
+    wallSetHtml(wallEl('wall-kb-text'), (text ? escHtml(text)
+      : `<span class="wall-kb-ph">${escHtml(t.ph)}</span>`) + '<i class="wall-kb-caret"></i>');
+    const caps = t.caps && wallKbShift;
+    if (caps === wallKbCaps) return;
+    wallKbCaps = caps;
+    wallEl('wall-kb-keys').querySelectorAll('.wall-key').forEach(b => {
+      const k = b.dataset.k;
+      if (k === 'shift') b.classList.toggle('on', caps);
+      else if (/^[a-z]$/.test(k)) b.textContent = caps ? k.toUpperCase() : k;
+    });
   }
   function wallKbPress(k) {
     const t = WALL_KB_TARGETS[wallKbFor];
@@ -728,22 +733,30 @@
       if (t.caps) wallKbShift = c === ' ';
     }
     if (text !== t.get()) t.set(text);
-    wallKbRender();
+    wallKbSync();
   }
 
   // ── Search (a list's row): the phone's own state and matching ──
   // The text goes into searchQuery / circuitSearch, trimmed and lowercased as the
   // phone's input handler does, and the list re-renders (and goes back to the top)
-  // with every key. `quiet`: state only, no render, and the keyboard closes
+  // at the next frame: keys typed faster than a frame share one render, and only
+  // that list is rebuilt. `quiet`: state only, no render, and the keyboard closes
   // (clearFilters and the idle, which render themselves).
+  const wallSearchDue = new Set();
   function wallSearchSet(kind, text, quiet = false) {
     if (!(kind in wallSearch)) return;
     wallSearch[kind] = text;
     const q = text.trim().toLowerCase();
     if (kind === 'problems') searchQuery = q; else circuitSearch = q;
-    if (quiet) wallKbCloseSearch();
+    if (quiet) { wallKbCloseSearch(); wallSearchDue.delete(kind); }
     wallRenderSearch();
-    if (!quiet) filtersChanged(kind);
+    if (quiet) return;
+    if (!wallSearchDue.size) requestAnimationFrame(() => {
+      const due = [...wallSearchDue];
+      wallSearchDue.clear();
+      due.forEach(k => filtersChanged(k));
+    });
+    wallSearchDue.add(kind);
   }
   // The search fields: the text (or the placeholder), a caret while the keyboard
   // types into it, and the × whenever there's text.
@@ -755,8 +768,8 @@
       const on = wallKbFor === kind;
       f.classList.toggle('on', on);
       f.setAttribute('aria-expanded', on ? 'true' : 'false');
-      f.innerHTML = (text ? escHtml(text) : `<span class="wall-search-ph">${escHtml(f.dataset.ph || 'Search')}</span>`)
-        + (on ? '<i class="wall-kb-caret"></i>' : '');
+      wallSetHtml(f, (text ? escHtml(text) : `<span class="wall-search-ph">${escHtml(f.dataset.ph || 'Search')}</span>`)
+        + (on ? '<i class="wall-kb-caret"></i>' : ''));
     });
     document.querySelectorAll('#wall [data-wsearch-clear]').forEach(b => { b.hidden = !wallSearch[b.dataset.wsearchClear]; });
   }
@@ -834,12 +847,18 @@
   // ── Offline ───────────────────────────────────────────────────────────────────
   const wallOffline = () => wallNetDown || !navigator.onLine;
 
+  // The connection changed (a fetch failed or worked: loadProblems; the browser's
+  // online and offline events): the cast statuses, the offline note, Start circuit
+  // and Create's Save all follow, both ways (review WALL-07).
   function wallSetNet(down) {
     if (!WALL) return;
     wallNetDown = down;
+    wallRenderNet();
+    if (!loaded) wallRenderList();
+  }
+  function wallRenderNet() {
     wallRenderSel();
     wallCreateNet();
-    if (!loaded) wallRenderList();
   }
 
   function wallRenderOffline() {
@@ -857,15 +876,13 @@
   // Fresh problems (and setter names and challenges) every WALL_POLL_MS; the phone
   // gets them from pull-to-refresh, which the wall doesn't have. Every
   // WALL_RETRY_MS while the connection is down. Silent: no toasts on the wall.
+  // The phone's own loaders (one loading path, review 2.3): each renders only when
+  // its rows changed, so a poll that finds nothing new rebuilds nothing.
   async function wallPoll() {
     wallLastPoll = Date.now();
-    const { data, error } = await sb.from('problems').select('*');
-    if (error) { wallSetNet(true); return; }
-    saveList('problems', data || []);
-    setOfflineNote('list-offline', 0);
-    wallNetDown = false;
-    showProblems(data || []);              // renderList -> wallRenderList
-    loadCircuits();                        // showCircuits -> wallRenderCircuits
+    await loadProblems();                  // saved list, offline note, wallSetNet; renderList -> wallRenderList on a change
+    if (wallNetDown) return;
+    loadCircuits();                        // showCircuits -> wallRenderCircuits on a change
     loadProfileNames();
     loadChallenges();                      // showChallenges -> wallOnChallenges reloads Ranks if it's up
     refreshBoardIfChanged();               // a board publish: the new photo, map, outlines and holds
@@ -925,7 +942,7 @@
   // confirmed Cancel, idle).
   function wallSetPage(page, discard = false) {
     if (wallCreateOn && page !== 'create') {
-      if (!discard && wallCreateDirty()) { wallAskDiscard('leave', () => wallSetPage(page, true)); return; }
+      if (!discard && createDirty()) { wallAskDiscard('leave', () => wallSetPage(page, true)); return; }
       wallCreateClose();
     }
     wallKbCloseSearch();                     // the search keyboard belongs to its list
@@ -986,7 +1003,7 @@
         <div class="wall-slide-text">
           <p class="wall-kicker">Benchmark of the day</p>
           <h1>${escHtml(displayName(p))}</h1>
-          <div class="problem-meta wall-meta">${wallMetaHtml(p)}</div>
+          <div class="problem-meta wall-meta">${problemMetaHtml(p)}</div>
           <p class="wall-slide-sub">Benchmarks score points on Ranks. Touch the screen to light it up.</p>
         </div>
       </div>`;
@@ -1126,32 +1143,99 @@
     if (wallIdleOn && wallSlides()[wallSlide] === 'bench') wallRenderIdle();
   }
 
-  // Only a clean tap on a card (WALL_TAP_SLOP, WALL_FLING_MS) calls onTap(its id):
-  // a scroll, a drag or the touch that stops a fling only moves the list.
-  function wallTapList(list, onTap) {
+  // The one tap rule for the wall's lists and its hold-picking boards (review 2.3):
+  // only a clean tap calls onTap(the click event): the finger moved no more than
+  // WALL_TAP_SLOP and, on a list (scroller), the list didn't scroll under it and
+  // wasn't moving when it went down (WALL_FLING_MS: the touch that stops a fling).
+  // A scroll or a drag only moves the list. A keyboard's Enter (detail 0) is a tap.
+  function wallCleanTap(el, onTap, { scroller = false } = {}) {
     let scrollAt = 0;                    // when the list last scrolled (a finger or a fling)
-    let press = null;                    // { x, y, clean } for the finger on the list
-    list.addEventListener('scroll', () => {
-      scrollAt = Date.now();
+    let press = null;                    // { x, y, clean } for the finger on it
+    if (scroller) el.addEventListener('scroll', () => {
+      scrollAt = wallScrollAt = Date.now();
       if (press) press.clean = false;    // the list moved under the finger
     }, { passive: true });
-    list.addEventListener('pointerdown', e => {
+    el.addEventListener('pointerdown', e => {
       press = { x: e.clientX, y: e.clientY, clean: Date.now() - scrollAt > WALL_FLING_MS };
     }, { passive: true });
-    list.addEventListener('pointermove', e => {
+    el.addEventListener('pointermove', e => {
       if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > WALL_TAP_SLOP) press.clean = false;
     }, { passive: true });
-    list.addEventListener('pointercancel', () => { if (press) press.clean = false; }, { passive: true });
-    list.addEventListener('click', e => {
+    el.addEventListener('pointercancel', () => { if (press) press.clean = false; }, { passive: true });
+    el.addEventListener('click', e => {
       const p = press;
       press = null;
-      if (e.detail !== 0) {              // 0: a keyboard's Enter, which is always a clean tap
+      if (e.detail !== 0) {
         if (!p || !p.clean) return;
         if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > WALL_TAP_SLOP) return;
       }
+      onTap(e);
+    });
+  }
+  // A clean tap on a card calls onTap(its id).
+  function wallTapList(list, onTap) {
+    wallCleanTap(list, e => {
       const card = e.target.closest('.wall-card');
       if (card) onTap(card.dataset.id);
+    }, { scroller: true });
+  }
+
+  // ── App updates (TODO 8, 15 Nov 2026) ─────────────────────────────────────────
+  // app.js checks for a new version every WALL_UPDATE_CHECK_MS and asks this before
+  // reloading for one: only with nobody at the screen (2 minutes untouched, or the
+  // slides up) and nothing a reload would lose: no circuit run or Cast sheet, no
+  // Create (or its discard sheet), no live LEDs (hasUnsavedWork covers the rest).
+  function wallUpdateOk() {
+    if (hasUnsavedWork() || wallCreateOn || preview || wallAsk) return false;
+    const sheet = document.getElementById('circuit-cast-modal');
+    if (sheet && sheet.classList.contains('show')) return false;
+    return wallIdleOn || Date.now() - wallLastTouch >= WALL_UPDATE_IDLE_MS;
+  }
+
+  // Just before that reload: where the wall is (the page, the chosen problem and
+  // circuit, the way round, both lists' filters, searches and scroll), for the next
+  // load to put back (wallResume). The slides have their own key (WALL_IDLE_KEY).
+  function wallSaveResume() {
+    if (wallIdleOn) return;
+    ssSet(WALL_RESUME_KEY, JSON.stringify({
+      at: Date.now(), page: wallPage, sel: wallSelId, mirror: wallMirror, circ: wallCircId,
+      top: wallEl('wall-list').scrollTop, ctop: wallEl('wall-clist').scrollTop,
+      search: { ...wallSearch },
+      f: { listSort, gradeLo, gradeHi, benchOnly, holdPicks,
+           circuitSort, circuitLoopOnly, circuitGradeLo, circuitGradeHi, circuitHoldPicks },
+    }));
+  }
+
+  // On start: the state wallSaveResume left, if it's from the reload just now.
+  // State only (nothing is cast); startWall renders it. Returns the page to open.
+  function wallResume() {
+    const raw = ssGet(WALL_RESUME_KEY);
+    if (!raw) return null;
+    ssSet(WALL_RESUME_KEY, null);
+    let r;
+    try { r = JSON.parse(raw); } catch (e) { return null; }
+    if (!r || typeof r.at !== 'number' || Date.now() - r.at > WALL_RESUME_MAX_MS) return null;
+    const f = r.f || {};
+    const sortOf = (sorts, k) => (sorts.some(x => x[0] === k) ? k : 'new');
+    listSort = sortOf(LIST_SORTS, f.listSort);
+    circuitSort = sortOf(CIRCUIT_SORTS, f.circuitSort);
+    gradeLo = f.gradeLo ?? null; gradeHi = f.gradeHi ?? null;
+    circuitGradeLo = f.circuitGradeLo ?? null; circuitGradeHi = f.circuitGradeHi ?? null;
+    benchOnly = !!f.benchOnly; circuitLoopOnly = !!f.circuitLoopOnly;
+    holdPicks = Array.isArray(f.holdPicks) ? f.holdPicks : [];
+    circuitHoldPicks = Array.isArray(f.circuitHoldPicks) ? f.circuitHoldPicks : [];
+    const search = r.search || {};
+    ['problems', 'circuits'].forEach(k => {
+      const text = typeof search[k] === 'string' ? search[k].slice(0, WALL_SEARCH_MAX) : '';
+      wallSearch[k] = text;
+      if (k === 'problems') searchQuery = text.trim().toLowerCase(); else circuitSearch = text.trim().toLowerCase();
     });
+    wallSelId = r.sel ?? null;
+    wallMirror = !!r.mirror && wallSelId !== null;
+    wallCircId = r.circ ?? null;
+    wallResumeTop = +r.top || 0;
+    wallResumeCTop = +r.ctop || 0;
+    return ['problems', 'circuits', 'ranks', 'app'].includes(r.page) ? r.page : 'problems';
   }
 
   // ── Start (from app.js's boot) ────────────────────────────────────────────────
@@ -1164,6 +1248,16 @@
     // Not 'scroll' itself: re-rendering the list moves it too.
     ['pointerdown', 'touchstart', 'keydown', 'wheel'].forEach(t =>
       document.addEventListener(t, () => { wallLastTouch = Date.now(); }, { capture: true, passive: true }));
+    // Fingers down (wallHandsOn): renders wait for them to come off.
+    document.addEventListener('pointerdown', e => { wallFingers.set(e.pointerId, Date.now()); }, { capture: true, passive: true });
+    ['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, e => {
+      wallFingers.delete(e.pointerId);
+      wallSettleSoon();
+    }, { capture: true, passive: true }));
+    ['touchstart', 'touchend', 'touchcancel'].forEach(t => document.addEventListener(t, e => {
+      wallTouches = e.touches.length;
+      wallSettleSoon();
+    }, { capture: true, passive: true }));
 
     document.querySelectorAll('.wall-tab').forEach(t => t.addEventListener('click', () => wallSetPage(t.dataset.page)));
     wallEl('wall-rail').addEventListener('click', e => {
@@ -1196,8 +1290,26 @@
     wallEl('wall-c-clear').addEventListener('click', onCreateReset);
     wallEl('wall-c-cancel').addEventListener('click', wallCreateCancel);
     wallEl('wall-c-save').addEventListener('click', wallCreateSave);
-    wallEl('wall-kb-keys').addEventListener('click', e => {
-      const k = e.target.closest('.wall-key');
+    // A key types when its finger lifts on it, not on the click: the browser makes
+    // no click at all for a tap that overlaps another finger's, which is how fast
+    // typing goes (WALL-04). Each finger is its own press. A keyboard's Enter or
+    // Space on a focused key (a click with detail 0) types it too.
+    const keys = wallEl('wall-kb-keys');
+    const keyDown = new Map();           // pointerId -> the key it went down on
+    keys.addEventListener('pointerdown', e => {
+      const k = e.button === 0 && e.target.closest('.wall-key');
+      if (k) keyDown.set(e.pointerId, k);
+    });
+    keys.addEventListener('pointerup', e => {
+      const k = keyDown.get(e.pointerId);
+      keyDown.delete(e.pointerId);
+      if (!k || !k.isConnected) return;
+      const over = document.elementFromPoint(e.clientX, e.clientY);
+      if (over && over.closest('.wall-key') === k) wallKbPress(k.dataset.k);   // not if it slid off the key
+    });
+    keys.addEventListener('pointercancel', e => keyDown.delete(e.pointerId));
+    keys.addEventListener('click', e => {
+      const k = e.detail === 0 && e.target.closest('.wall-key');
       if (k) wallKbPress(k.dataset.k);
     });
     wallEl('wall-kb-done').addEventListener('click', wallKbClose);
@@ -1222,14 +1334,19 @@
     wallEl('wall-c-discard').addEventListener('click', () => wallAskAnswer(true));
     wallEl('wall-c-confirm').addEventListener('click', e => { if (e.target.id === 'wall-c-confirm') wallAskAnswer(false); });
     wallEl('wall-idle').addEventListener('click', wallWake);
-    window.addEventListener('online', () => { wallRenderSel(); wallPoll(); });
-    window.addEventListener('offline', wallRenderSel);
+    // The connection, both ways (WALL-07); coming back fetches everything (wallPoll;
+    // app.js's own online handler loads only the holds on the wall, WALL-12).
+    window.addEventListener('online', () => { wallRenderNet(); wallPoll(); });
+    window.addEventListener('offline', wallRenderNet);
 
+    const resumePage = wallResume();     // an update's reload: back where it was
     wallRenderList();
     wallRenderStage();
     wallRenderCircuits();
     wallRenderSearch();
+    updateFilterControls();
     if (ssGet(WALL_IDLE_KEY)) wallGoIdle();
+    else if (resumePage) wallSetPage(resumePage);
     wallCheckKey();
     setInterval(wallTick, 1000);
   }

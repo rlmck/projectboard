@@ -538,6 +538,27 @@
     if (currentView === 'circuit-create' && (ccEditingId || ccMoveId)) resetCircuitCreate();
   }
 
+  // ── Unsaved work on Create ───────────────────────────────────────────────────
+  // Something set that leaving, or a reload, would lose: holds, footholds, a grade,
+  // a name, or a feet rule other than Any. One rule for the phone's Create (an Edit:
+  // only if something changed, problemEditDirty) and the wall's (review 2.3; the
+  // phone didn't count a feet rule alone before 15 Nov 2026). hasUnsavedWork (app.js)
+  // adds the rest: a circuit run, a challenge attempt, live LEDs, a circuit's Create.
+  function createDirty() {
+    let name;
+    if (WALL) {
+      if (!wallCreateOn) return false;
+      name = wallCreateName;
+    } else {
+      if (currentView !== 'create') return false;
+      if (editingProblemId) return problemEditDirty();
+      const n = document.getElementById('create-name');
+      name = n ? n.value : '';
+    }
+    return !!(Object.keys(createRoles).length || createFeetHolds.length || createGrade
+      || name.trim() || createFeet !== 'any');
+  }
+
   // ── Live LEDs while setting (cast contract §9) ────────────────────────────────
   // While someone sets a problem (the phone's Create or Edit, or the wall
   // screen's Create page), every change lights the board in a cast's colours:
@@ -609,7 +630,7 @@
     const body = previewBody(p, {
       start: holdsWithRole('start'), hold: holdsWithRole('int'), finish: holdsWithRole('finish'),
       feet: createFeet, ...flags });
-    p.inflight = channel.httpSend('preview_holds', body, { timeout: 8000 });
+    p.inflight = boardSend('preview_holds', body, { timeout: 8000 });   // the wall: in turn with its casts
     p.inflight.then(() => {
       p.sending = false;
       if (flags.first) p.first = false;
@@ -646,7 +667,7 @@
       // (review SEAM-03; the Pi also ignores a session's messages once it has ended).
       const body = previewBody(p, { end: true });
       Promise.resolve(p.inflight).catch(() => {})
-        .then(() => channel.httpSend('preview_holds', body, { timeout: 8000 }))
+        .then(() => boardSend('preview_holds', body, { timeout: 8000 }))
         .catch(err => console.warn('preview end not sent', err));
     }
     previewRenderNote();

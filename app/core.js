@@ -113,9 +113,16 @@
   // if the fetch fails they stay up with a note (offline, Supabase down). All of it
   // is public data, so nothing needs clearing on sign-out. { t, rows }.
   const SAVED_KEYS = { problems: 'pb-saved-problems', circuits: 'pb-saved-circuits', names: 'pb-saved-names', challenges: 'pb-saved-challenges', holds: 'pb-saved-holds' };
+  // Returns the rows as JSON: the loaders compare it with the last load's (listSig)
+  // and skip the re-render when nothing changed (the wall's 5-minute poll, WALL-05).
   function saveList(kind, rows, extra) {
-    lsSet(SAVED_KEYS[kind], JSON.stringify(Object.assign({ t: Date.now(), rows }, extra || {})));
+    const json = JSON.stringify(rows);
+    const head = JSON.stringify(Object.assign({ t: Date.now() }, extra || {}));
+    lsSet(SAVED_KEYS[kind], head.slice(0, -1) + ',"rows":' + json + '}');
+    return json;
   }
+  // The JSON of the rows each list last showed (saveList's return, or the saved copy's).
+  const listSig = { problems: '', circuits: '', names: '' };
   function savedList(kind) {
     try {
       const v = JSON.parse(lsGet(SAVED_KEYS[kind]) || 'null');
@@ -140,6 +147,49 @@
     if (!el) return;
     el.hidden = !t;
     if (t) el.textContent = `Offline: showing the list saved ${savedWhen(t)}. Pull down to try again.`;
+  }
+
+  // ── Sending to the board (cast contract §4) ──────────────────────────────────
+  // Every message for the board goes through boardSend(): a problem cast
+  // (castByName), show_circuit, cast_circuit, stop and preview_holds. On a phone
+  // it's the plain httpSend. On the wall screen they share one queue (review
+  // WALL-08, 15 Nov 2026): one message in flight at a time, sent in the order they
+  // were made whatever their kind, so an older one can never reach the Pi after a
+  // newer one (a slow problem cast landing after the circuit tapped next).
+  //   slot:  a message still waiting is dropped when a newer one with the same slot
+  //          joins (the taps that choose what the board shows: only the latest goes).
+  //   still: asked just before it goes; false drops it (it's no longer on screen).
+  // Resolves true once Realtime took it, false if it was dropped; a failed send
+  // rejects, as httpSend does. The payloads are the contract's, unchanged.
+  const boardQueue = [];
+  let boardQueueBusy = false;
+  function boardSend(event, payload, { timeout = 10000, slot = null, still = null } = {}) {
+    if (!WALL) return channel.httpSend(event, payload, { timeout }).then(() => true);
+    return new Promise((resolve, reject) => {
+      if (slot) {
+        for (let i = boardQueue.length - 1; i >= 0; i--) {
+          if (boardQueue[i].slot === slot) { boardQueue[i].resolve(false); boardQueue.splice(i, 1); }
+        }
+      }
+      boardQueue.push({ event, payload, timeout, slot, still, resolve, reject });
+      boardPump();
+    });
+  }
+  async function boardPump() {
+    if (boardQueueBusy) return;
+    const m = boardQueue.shift();
+    if (!m) return;
+    if (m.still && !m.still()) { m.resolve(false); boardPump(); return; }
+    boardQueueBusy = true;
+    try {
+      await channel.httpSend(m.event, m.payload, { timeout: m.timeout });
+      m.resolve(true);
+    } catch (err) {
+      m.reject(err);
+    } finally {
+      boardQueueBusy = false;
+    }
+    boardPump();
   }
 
   // ── Small render helpers ─────────────────────────────────────────────────────
