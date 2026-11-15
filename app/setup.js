@@ -98,8 +98,6 @@ const bsName = id => {
   return (s && s.name) || id;
 };
 
-function bsCentre(pts) { return tracePolyCentre(pts); }
-
 // Linear solve (Gaussian elimination, partial pivoting); null if singular.
 function bsSolve(A, b) {
   const n = b.length, M = A.map((r, i) => r.concat([b[i]]));
@@ -187,7 +185,8 @@ const bsMasterPath = path => String(path).replace(/\.(jpe?g|png|webp)$/i, '') + 
 
 // The edit list admin_edit_holds() takes (db/48), from a draft laid over the live holds.
 // d: { outlines: {id: pts%}, turns: {id: deg}, added: [{id, pts}], removed: [id],
-//      pairs: {id: partner | null}, names: {footId: FTn}, image: path | null }.
+//      pairs: {id: partner | null}, names: {footId: FTn}, image: path | null,
+//      smooth: 0..1 | null (the board-wide outline smoothing, __meta.smooth; db/49) }.
 // Edit holds and PB Console send this; the database checks it (the one copy of the rules).
 function bsEditOps(live, d) {
   const r = pts => pts.map(p => [bsR2(bsClamp(p[0], -5, 105)), bsR2(bsClamp(p[1], -5, 105))]);
@@ -213,7 +212,26 @@ function bsEditOps(live, d) {
     if (removed.has(id) || (w && removed.has(w))) return;
     ops.push({ op: 'pair', id, with: w });
   });
+  if (typeof d.smooth === 'number') ops.push({ op: 'smooth', value: bsR2(bsClamp(d.smooth, 0, 1)) });
   return ops;
+}
+
+// An outline mirrored onto its partner (PB Console's mirror-copy): each point (% of a
+// w × h image) through the board's reflection (`reflect`, bsMirrorFit's, in board pixels
+// through the corners' homography), the order reversed (a reflection turns the winding
+// round), then moved so its centroid is the partner's own (`onto`, its outline now): the
+// reflection is fitted to every hold, the partner's place is the surer.
+function bsMirrorOutline(pts, onto, q, w, h, reflect) {
+  const Hq = bsHom(q), Hi = bsHomInv(Hq), bp = bsQuadPx(q, w, h);
+  const out = pts.map(p => {
+    const uv = bsHomApply(Hi, p[0], p[1]), r = reflect([uv[0] * bp.w, uv[1] * bp.h]);
+    return bsHomApply(Hq, r[0] / bp.w, r[1] / bp.h);
+  }).reverse();
+  if (onto && onto.length >= 3) {
+    const a = tracePolyCentre(out), b = tracePolyCentre(onto);
+    out.forEach(p => { p[0] += b[0] - a[0]; p[1] += b[1] - a[1]; });
+  }
+  return out.map(p => [bsR2(bsClamp(p[0], -5, 105)), bsR2(bsClamp(p[1], -5, 105))]);
 }
 
 // Board Setup's whole-board payload checked as admin_publish_board checks it (BRD-10), so a
@@ -636,10 +654,10 @@ function bsRenderBoard() {
     if (s.key === BS.sel) cls += ' sel';
     if (partner && s.key === partner.key) cls += ' partner';
     if (BS.step === 'mirror' && s.kind === 'hand' && BS.flags.some(f => f.id === s.id)) cls += ' flag';
-    out += `<path class="${cls}" d="${smoothShapePath(s.pts, bsSmooth())}"/>`;   // as the app draws it (BRD-15)
+    out += `<path class="${cls}" d="${traceCurvePath(s.pts, bsSmooth())}"/>`;   // as the app draws it (BRD-15)
   });
   if (BS.step === 'mirror' && BS.sel && partner && partner.key !== BS.sel) {
-    const a = bsCentre(bsShape(BS.sel).pts), b = bsCentre(partner.pts);
+    const a = tracePolyCentre(bsShape(BS.sel).pts), b = tracePolyCentre(partner.pts);
     out += `<line class="bs-link" x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}"/>`;
   }
   if (BS.g && BS.g.type === 'lasso' && BS.g.pts.length > 1) {
@@ -677,7 +695,7 @@ function bsRenderOver() {
   }
   const s = BS.sel && bsShape(BS.sel);
   if (s && s.pts.length && BS.step !== 'corners' && BS.step !== 'lineup') {
-    const c = bsCentre(s.pts), top = Math.min(...s.pts.map(p => p[1]));
+    const c = tracePolyCentre(s.pts), top = Math.min(...s.pts.map(p => p[1]));
     const [x, y] = bsScreen(c[0], top);
     const label = s.kind === 'extra' ? 'Extra shape' : s.kind === 'foot' ? (s.name || 'Foothold') : bsName(s.id);
     html += `<div class="bs-label" style="left:${x}px;top:${y}px">${escHtml(label)}</div>`;
@@ -1161,7 +1179,7 @@ function bsMatch() {
   let pred = predOf();
   const im = BS.img.cartoon, bw = bsBoardPx().w;
   const px = p => [p[0] / 100 * im.w, p[1] / 100 * im.h];
-  const cents = BS.shapes.map(s => px(bsCentre(s.pts)));
+  const cents = BS.shapes.map(s => px(tracePolyCentre(s.pts)));
   const assign = (tol) => {
     const cand = [];
     old.forEach(h => {
@@ -1184,7 +1202,7 @@ function bsMatch() {
     const pairs = assign(bw * BS_MATCH * (it ? 1 : 2));
     if (pairs.length < 6) break;
     const rows = [], bx = [], by = [];
-    pairs.forEach(([h, j]) => { const p = pred[h.id]; rows.push([p[0], p[1], 1]); const c = bsCentre(BS.shapes[j].pts); bx.push(c[0]); by.push(c[1]); });
+    pairs.forEach(([h, j]) => { const p = pred[h.id]; rows.push([p[0], p[1], 1]); const c = tracePolyCentre(BS.shapes[j].pts); bx.push(c[0]); by.push(c[1]); });
     const fx = bsLsq(rows, bx), fy = bsLsq(rows, by);
     if (!fx || !fy) break;
     // compose: the new fit after the old one
@@ -1381,7 +1399,7 @@ function bsNextIssue() {
     if (p) bsZoomTo(p[0], p[1], 4);
   } else if (extra.length) {
     BS.sel = extra[0].key;
-    const c = bsCentre(extra[0].pts);
+    const c = tracePolyCentre(extra[0].pts);
     bsZoomTo(c[0], c[1], 4);
   } else {
     const q = bsQueue();
@@ -1389,7 +1407,7 @@ function bsNextIssue() {
       // the next one after the selected one, so Next to fix moves on even without a decision
       const i = q.findIndex(x => x.key === BS.sel), s = q[(i + 1) % q.length];
       BS.sel = s.key;
-      const c = bsCentre(s.pts);
+      const c = tracePolyCentre(s.pts);
       bsZoomTo(c[0], c[1], 4);
     }
   }
@@ -1480,18 +1498,15 @@ async function bsTapTrace(x, y) {
 }
 // Turn a shape's outline by `deg` about its centre (in pixels, so it doesn't skew).
 function bsTurn(pts, deg) {
-  const m = BS.img.cartoon, sx = m.w / 100, sy = m.h / 100;
-  const c = bsCentre(pts), cs = Math.cos(deg * Math.PI / 180), sn = Math.sin(deg * Math.PI / 180);
-  return pts.map(p => {
-    const ux = (p[0] - c[0]) * sx, uy = (p[1] - c[1]) * sy;
-    return [bsR2(c[0] + (cs * ux - sn * uy) / sx), bsR2(c[1] + (sn * ux + cs * uy) / sy)];
-  });
+  const m = BS.img.cartoon, sx = m.w / 100, sy = m.h / 100, c = tracePolyCentre(pts);
+  return traceTurn(pts.map(p => [p[0] * sx, p[1] * sy]), [c[0] * sx, c[1] * sy], deg)
+    .map(p => [bsR2(p[0] / sx), bsR2(p[1] / sy)]);
 }
 // Where the turn handle of the selected shape is (stage px), in Move.
 function bsRotHandle() {
   const s = BS.step === 'review' && BS.tool === 'move' && BS.sel && bsShape(BS.sel);
   if (!s || !s.pts.length) return null;
-  const c = bsCentre(s.pts), top = Math.min(...s.pts.map(p => p[1]));
+  const c = tracePolyCentre(s.pts), top = Math.min(...s.pts.map(p => p[1]));
   const [x, y] = bsScreen(c[0], top);
   return [x, y - 34];
 }
@@ -1549,7 +1564,7 @@ function bsMirrorFit(hand, bp) {
 }
 function bsMakeMirror() {
   const Hi = bsHomInv(bsHom(BS.corners.cartoon)), bp = bsBoardPx();
-  const pos = s => { const c = bsCentre(s.pts), uv = bsHomApply(Hi, c[0], c[1]); return [uv[0] * bp.w, uv[1] * bp.h]; };
+  const pos = s => { const c = tracePolyCentre(s.pts), uv = bsHomApply(Hi, c[0], c[1]); return [uv[0] * bp.w, uv[1] * bp.h]; };
   const reflect = bsMirrorFit(BS.shapes.filter(s => s.kind === 'hand').map(pos), bp);
   const mirror = {}, flags = [];
   ['hand', 'foot'].forEach(kind => {
@@ -1638,7 +1653,7 @@ function bsFootNameList(list, q, w, h) {
   const Hi = bsHomInv(bsHom(q)), bp = bsQuadPx(q, w, h);
   const names = list.map(() => null);
   const feet = list.map((pts, i) => {
-    const c = bsCentre(pts), uv = bsHomApply(Hi, c[0], c[1]);
+    const c = tracePolyCentre(pts), uv = bsHomApply(Hi, c[0], c[1]);
     const ys = pts.map(p => bsHomApply(Hi, p[0], p[1])[1] * bp.h);
     return { i, u: uv[0], v: uv[1] * bp.h, ht: Math.max(...ys) - Math.min(...ys) };
   });
@@ -1663,7 +1678,7 @@ function bsPayload() {
   const r = pts => pts.map(p => [bsR2(bsClamp(p[0], -5, 105)), bsR2(bsClamp(p[1], -5, 105))]);
   const m = BS.img.cartoon;
   return BS.shapes.filter(s => s.kind === 'hand' || s.kind === 'foot').map(s => {
-    const c = bsCentre(s.pts);
+    const c = tracePolyCentre(s.pts);
     const pts = m ? bsCapPoints(s.pts, m.w, m.h) : s.pts;          // a traced outline over 400 points simplified (BRD-10)
     const o = { id: s.id, kind: s.kind, x: bsR2(bsClamp(c[0], 0, 100)), y: bsR2(bsClamp(c[1], 0, 100)), outline: r(pts),
                 mirror: BS.mirror[s.id] != null ? BS.mirror[s.id] : null };
@@ -1771,7 +1786,7 @@ function bsDown(e) {
     bsPushUndo();
     const rh = bsRotHandle(), [sx, sy] = bsStageXY(e.clientX, e.clientY), s = bsShape(BS.sel);
     if (rh && Math.hypot(rh[0] - sx, rh[1] - sy) < 26) {
-      const c = bsCentre(s.pts), [cx, cy] = bsScreen(c[0], c[1]);
+      const c = tracePolyCentre(s.pts), [cx, cy] = bsScreen(c[0], c[1]);
       Object.assign(g, { type: 'rotate', startPts: s.pts.map(p => p.slice()), cx, cy, a0: Math.atan2(sy - cy, sx - cx) });
     } else Object.assign(g, { type: 'move', startPts: s.pts.map(p => p.slice()) });
   }
@@ -1888,14 +1903,11 @@ function bsHitCorner(cx, cy) {
 }
 // The shape under a tap: the smallest containing it, else the nearest close by.
 function bsShapeAt(x, y) {
-  let best = null, ba = Infinity;
-  BS.shapes.forEach(s => {
-    if (s.pts.length >= 3 && tracePointInPoly(x, y, s.pts)) { const a = tracePolyArea(s.pts); if (a < ba) { ba = a; best = s; } }
-  });
+  let best = traceInnermost(BS.shapes, x, y, s => s.pts);
   if (best) return best;
   let bd = Infinity;
   BS.shapes.forEach(s => {
-    const c = bsCentre(s.pts), d = Math.hypot((c[0] - x) * BS.v.aspect, c[1] - y);
+    const c = tracePolyCentre(s.pts), d = Math.hypot((c[0] - x) * BS.v.aspect, c[1] - y);
     if (d < bd) { bd = d; best = s; }
   });
   return bd < 2.5 ? best : null;
@@ -2004,7 +2016,7 @@ function bsWire() {
     else if (act === 'pair') { BS.tool = 'pair'; bsRenderPanel(); }
     else if (act === 'unpair') { const s = bsShape(BS.sel); if (s) { bsPickPair(s, null); bsSave(); bsRenderBoard(); bsRenderPanel(); } }
     else if (act === 'flagpick') bsFlagPick(b.dataset.id, b.dataset.to);
-    else if (act === 'showhold') { const s = bsShapeOf(b.dataset.id); if (s) { BS.sel = s.key; const c = bsCentre(s.pts); bsZoomTo(c[0], c[1], 3); bsRenderBoard(); bsRenderPanel(); } }
+    else if (act === 'showhold') { const s = bsShapeOf(b.dataset.id); if (s) { BS.sel = s.key; const c = tracePolyCentre(s.pts); bsZoomTo(c[0], c[1], 3); bsRenderBoard(); bsRenderPanel(); } }
     else if (act === 'publish') bsPublish();
   };
   page.addEventListener('click', onAct);

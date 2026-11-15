@@ -758,20 +758,6 @@
     }
   }
 
-  function ccNearestHold(clientX, clientY) {
-    if (!HOLD_MAP) return null;
-    const { x: px, y: py, w, h: bh } = boardPct(document.getElementById('cc-board'), clientX, clientY);
-    let best = null, bestD = Infinity;
-    for (const h in HOLD_MAP) {
-      if (!isHandHold(h)) continue;                 // footholds are never in a circuit
-      const dx = (HOLD_MAP[h].x - px) / 100 * w;
-      const dy = (HOLD_MAP[h].y - py) / 100 * bh;
-      const d = dx * dx + dy * dy;
-      if (d < bestD) { bestD = d; best = h; }
-    }
-    return Math.sqrt(bestD) <= w * 0.06 ? best : null;
-  }
-
   function buildCcGrades() {
     document.getElementById('cc-grades').innerHTML =
       gradeTabButtons(SPORT_GRADE_ORDER, g => g === ccGrade);

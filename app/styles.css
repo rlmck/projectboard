@@ -905,7 +905,7 @@
     /* Mirror toggle lit — the board overlay is showing the mirrored problem */
     #detail-mirror.active { color: var(--mirror-text); border-color: var(--int); background: var(--badge-blue-fill); }
     /* Shuffle on — swiping forward picks a random problem */
-    #detail-shuffle.active, #ol-preview-btn.on { color: var(--accent-hover); border-color: var(--accent); background: var(--accent-a14); }
+    #detail-shuffle.active { color: var(--accent-hover); border-color: var(--accent); background: var(--accent-a14); }
     /* Six buttons in the detail bar: tighten the gaps on the narrowest phones */
     @media (max-width: 359px) { #view-detail .detail-actions { gap: 5px; } }
 
@@ -1333,41 +1333,21 @@
     .save-icon-btn { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
     .save-icon-btn:active { background: var(--accent-hover); }
 
-    /* ── Hold outlines editor (#outlines, admin) ──────────────────────────
-       Pinned to the viewport like the detail view: header, a stage the board is
-       zoomed and panned inside (every gesture is handled in authoring.js, so the
-       stage opts out of the browser's own touch actions), and a fixed control
-       panel. The bottom nav is hidden here (setView). The canvas is laid out at its
-       real zoomed size and positioned with a translate; the photo, the outline svgs
-       and the %-positioned handles all scale with it. Colours follow the old
-       desktop tool: gold = the hold being edited, blue = the others, amber = changed. */
-    #view-outlines.active {
-      position: fixed; inset: 0;
-      display: flex; flex-direction: column; overflow: hidden;
-    }
-    #view-outlines .topbar { flex: none; }
-    /* No title in this header, so the back button sits left and the tools right. */
-    #view-outlines .detail-actions { gap: 6px; }
+    /* ── The board-editing stage (Board Setup, Edit holds; setup.js) ─────────
+       The shared pieces of the full-screen board tools: a stage the board is zoomed
+       and panned inside (every gesture is handled in setup.js, so the stage opts out
+       of the browser's own touch actions), point handles, the magnifier and the
+       control panel. Gold = the hold being edited. */
     .ol-stage {
       flex: 1; min-height: 0; position: relative; overflow: hidden;
       background: var(--board-backdrop); touch-action: none; cursor: default;
       -webkit-tap-highlight-color: transparent;
     }
-    .ol-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
-    .ol-img {
-      display: block; width: 100%; height: 100%;
-      pointer-events: none; -webkit-user-drag: none; -webkit-touch-callout: none;
-    }
-    .ol-svg, .ol-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+    .ol-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
     .ol-svg path, .ol-svg polygon, .ol-svg polyline { vector-effect: non-scaling-stroke; stroke-linejoin: round; }
     /* No drop-shadow filter here: Chrome drops a filtered svg once the zoomed canvas gets large. */
-    .ol-other { fill: var(--int-a12); stroke: var(--ol-other-line); stroke-width: 1.6px; }
-    .ol-other.chg { fill: var(--feet-a12); stroke: var(--gold-a95); }
-    .ol-poly { fill: var(--ol-edit-a16); stroke: var(--ol-edit); stroke-width: 2px; }
-    .ol-poly.open { fill: none; }
-    .ol-skel { fill: none; stroke: var(--ol-edit-a45); stroke-width: 1px; stroke-dasharray: 3 3; }
 
-    .ol-v, .ol-m, .ol-x, .ol-dot { position: absolute; transform: translate(-50%, -50%); box-sizing: border-box; }
+    .ol-v, .ol-m { position: absolute; transform: translate(-50%, -50%); box-sizing: border-box; }
     .ol-v {
       width: 12px; height: 12px; transform: translate(-50%, -50%) rotate(45deg);
       background: var(--ol-edit); border: 1.5px solid var(--ol-vertex-ring);
@@ -1376,15 +1356,6 @@
     .ol-m {
       width: 11px; height: 11px; border-radius: 50%;
       background: var(--bg-a55); border: 2px solid var(--ol-edit-a90);
-    }
-    .ol-x { width: 14px; height: 14px; filter: drop-shadow(var(--drop-ol-x)); }
-    .ol-x::before, .ol-x::after { content: ""; position: absolute; background: var(--white-a90); }
-    .ol-x::before { left: 50%; top: 0; bottom: 0; width: 1.5px; transform: translateX(-50%); }
-    .ol-x::after { top: 50%; left: 0; right: 0; height: 1.5px; transform: translateY(-50%); }
-    .ol-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--white-a15); border: 1.5px solid var(--white-a60);
-      box-shadow: var(--shadow-ol-dot);
     }
     @media (pointer: coarse) {
       .ol-v { width: 14px; height: 14px; }
@@ -1398,29 +1369,9 @@
       background: var(--black); border: 2px solid var(--ol-edit); box-shadow: var(--shadow-ol-loupe);
       pointer-events: none; z-index: 4;
     }
-    .ol-loupe img { position: absolute; max-width: none; }
-    .ol-loupe svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-    .ol-loupe path { fill: var(--ol-edit-a12); stroke: var(--ol-edit); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
     .ol-loupe::before, .ol-loupe::after { content: ""; position: absolute; background: var(--white-a70); z-index: 1; }
     .ol-loupe::before { left: 50%; top: 30%; bottom: 30%; width: 1px; }
     .ol-loupe::after { top: 50%; left: 30%; right: 30%; height: 1px; }
-
-    .ol-note {
-      position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 3;
-      width: max-content; max-width: calc(100% - 16px);
-      display: flex; align-items: center; gap: 10px;
-      padding: 8px 12px; border-radius: var(--radius);
-      background: var(--bg-a85); border: 1px solid var(--border);
-      font-size: 13px; line-height: 1.35; color: var(--text); text-align: center;
-      -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-      pointer-events: none;
-    }
-    .ol-note-btn {
-      flex: none; pointer-events: auto; cursor: pointer; touch-action: manipulation;
-      background: var(--accent); color: var(--on-accent); border: none; border-radius: var(--btn-radius);
-      padding: 6px 12px; font-size: 13px; font-weight: 700;
-    }
-    #ol-note[hidden], #ol-loupe[hidden], #ol-note-btn[hidden] { display: none; }
 
     .ol-panel {
       flex: none; background: var(--surface); border-top: 1px solid var(--border);
@@ -1433,8 +1384,6 @@
       background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--btn-radius);
       font: inherit; font-size: 15px; font-weight: 600;
     }
-    .ol-pad { display: flex; gap: 6px; }
-    .ol-pad .icon-btn { touch-action: none; }
     .ol-btn {
       flex: 1; min-width: 0; height: 38px; padding: 0 10px;
       background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--btn-radius);
@@ -1446,24 +1395,9 @@
     .ol-btn:disabled { opacity: 0.4; cursor: default; }
     .ol-publish { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
     .ol-publish:disabled { background: var(--surface2); border-color: var(--border); color: var(--text-muted); opacity: 1; }
-    .ol-round {
-      flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
-      font-size: 13px; font-weight: 600; color: var(--text-muted);
-    }
-    .ol-round input { flex: 1; min-width: 50px; accent-color: var(--accent); }
-    .ol-round-val { min-width: 32px; font-variant-numeric: tabular-nums; color: var(--text); }
-    .ol-round-val.chg { color: var(--gold); }
-    /* The toast normally clears the bottom nav; here it has to clear the panel. */
-    #view-outlines.active ~ #toast {
-      bottom: calc(160px + env(safe-area-inset-bottom));
-      transform: translateX(-50%) translateY(calc(100% + 200px));
-    }
-    #view-outlines.active ~ #toast.show { transform: translateX(-50%) translateY(0); }
-    /* The install banner would sit on top of the panel's controls. */
-    #view-outlines.active ~ #install-banner { display: none; }
 
     /* ── Board setup (#setup, admins; setup.js) ─────────────────────────
-       A full-screen tool like the outline editor: a page for the first two steps
+       A full-screen tool: a page for the first two steps
        (start, photos), then the board stage with a panel below it. */
     #view-setup.active {
       position: fixed; inset: 0;

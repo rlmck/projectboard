@@ -7,7 +7,7 @@
   --surface: #161616;  /* cards, sheets, fields */
   --surface2: #202020;  /* raised controls, pressed rows */
   --border: #2c2c2c;
-  --board-backdrop: #050505;  /* behind the board in fullscreen and the outline editor */
+  --board-backdrop: #050505;  /* behind the board in fullscreen and Board setup */
   --black: #000;  /* the minimap and the editor loupe behind the board photo */
   --white: #fff;  /* the toggle knob, the selected outline vertex */
 
@@ -86,7 +86,6 @@
   --specific-a16: rgba(253,224,71,0.16);
   --specific-a28: rgba(253,224,71,0.28);
   --specific-a50: rgba(253,224,71,0.5);
-  --gold-a95: rgba(251,191,36,0.95);
   --fave-a14: rgba(244,63,94,0.14);
   --mirror-a16: rgba(96,165,250,0.16);
   --success-a12: rgba(74,222,128,0.12);
@@ -100,13 +99,10 @@
   --bg-a85: rgba(10,10,10,0.85);
   --white-a075: rgba(255, 255, 255, 0.075);
   --white-a12: rgba(255,255,255,0.12);
-  --white-a15: rgba(255,255,255,0.15);
   --white-a22: rgba(255,255,255,0.22);
   --white-a25: rgba(255,255,255,0.25);
   --white-a35: rgba(255,255,255,0.35);
-  --white-a60: rgba(255,255,255,0.6);
   --white-a70: rgba(255,255,255,0.7);
-  --white-a90: rgba(255,255,255,0.9);
 
   /* Overlays and bars */
   --topbar-bg: rgba(10,10,10,0.92);  /* the sticky top bar and the compare bar */
@@ -114,11 +110,10 @@
   --fs-bar-bg: rgba(16,16,16,0.62);  /* the fullscreen viewer's bottom bar */
   --scrim: rgba(0,0,0,0.6);  /* behind sheets and modals */
 
-  /* Outline editor (#outlines, admin only) */
+  /* The board-editing stage (Board setup, Edit holds; super admin only) */
   --ol-edit: #f5c842;  /* the hold being edited */
   --ol-edit-a12: rgba(245,200,66,0.12);
   --ol-edit-a16: rgba(245,200,66,0.16);
-  --ol-edit-a45: rgba(245,200,66,0.45);
   --ol-edit-a90: rgba(245,200,66,0.9);
   --ol-other-line: rgba(125,185,255,0.95);  /* the other holds' outlines */
   --ol-vertex-ring: #111;
@@ -153,11 +148,9 @@
   --shadow-fs-map-dim: 0 0 0 999px rgba(0,0,0,0.35);
   --shadow-fs-bar: 0 8px 30px rgba(0,0,0,0.45);
   --shadow-ol-vertex: 0 0 0 3px rgba(245,200,66,0.9);
-  --shadow-ol-dot: 0 0 0 1px rgba(0,0,0,0.5);
   --shadow-ol-loupe: 0 6px 22px rgba(0,0,0,0.7);
   --text-shadow-seq: 0 1px 2px rgba(0,0,0,0.9);
   --drop-hold-lines: 0 0 1px rgba(0,0,0,0.85);  /* used as drop-shadow(var(...)) */
-  --drop-ol-x: 0 0 1.5px #000;
   --shadow-lights-on: 0 0 0 3px rgba(34,197,94,0.28);  /* the 'lit on the board' dot */
 
   /* Sizes */

@@ -121,7 +121,7 @@ tests.forEach(h => {
   const poly = polys.get(h.id), c = tracePolyCentre(poly), line = [];
   angles.forEach(t => {
     const once = heRotateImage(img, [{ poly, deg: t }], others(h.id), pal);
-    const turned = heTurnPx(poly, c, t);
+    const turned = traceTurn(poly, c, t);
     const back = heRotateImage({ data: once, width: W, height: H }, [{ poly: turned, deg: -t }], others(h.id), pal);
     const d = diffIn(data, back, poly, 4);
     // a turn that runs into a neighbour (the neighbour wins) or off the picture can't come back whole
@@ -462,6 +462,45 @@ console.log('\n6  the edit list (db/48), edited points, the 400-point cap, the p
   check(auto === 'foot2' && BS.mirror.foot1 === 'foot3' && BS.mirror.foot3 === 'foot1' && BS.mirror.foot2 === null,
     `Mirror pairs: FT1's reflection pair (${auto}) changed by hand to foot3 is kept when Review remakes the pairs`);
   Object.assign(BS, keep);
+}
+
+console.log('\n7  PB Console: mirror-copy, the smoothing edit (db/49), the shared geometry');
+{
+  // every hand hold's outline mirrored onto its partner (bsMirrorOutline through the fitted
+  // reflection), against the partner's own outline: a symmetry board's partners are mirror images
+  const q = (corners && corners.image) || [[0, 0], [100, 0], [100, 100], [0, 100]];
+  const Hi = bsHomInv(bsHom(q)), bp = bsQuadPx(q, W, H);
+  const hands = usable.filter(h => h.kind === 'hand');
+  const pos = h => { const c = tracePolyCentre(h.outline), uv = bsHomApply(Hi, c[0], c[1]); return [uv[0] * bp.w, uv[1] * bp.h]; };
+  const reflect = bsMirrorFit(hands.map(pos), bp);
+  const byId = new Map(usable.map(h => [h.id, h]));
+  const pct2px = pts => pts.map(p => [p[0] / 100 * W, p[1] / 100 * H]);
+  const ious = [];
+  let back = 1;
+  hands.forEach(h => {
+    const P = h.mirror && h.mirror !== h.id && byId.get(h.mirror);
+    if (!P || P.kind !== 'hand') return;
+    const m = bsMirrorOutline(h.outline, P.outline, q, W, H, reflect);
+    ious.push(tracePolyIoU(pct2px(m), pct2px(P.outline)));
+    if (m.length !== h.outline.length) back = 0;
+    const twice = bsMirrorOutline(m, h.outline, q, W, H, reflect);
+    back = Math.min(back, tracePolyIoU(pct2px(twice), pct2px(h.outline)));
+  });
+  ious.sort((a, b) => a - b);
+  const med = ious[Math.floor(ious.length / 2)] || 0;
+  console.log(`   ${ious.length} hand holds mirrored onto their partners: IoU with the partner's own outline median ${med.toFixed(3)}, p10 ${(ious[Math.floor(ious.length / 10)] || 0).toFixed(3)}`);
+  check(ious.length > 100 && med >= 0.7, `mirror-copy lands on the partner (median IoU ${med.toFixed(3)} >= 0.7)`);
+  check(back >= 0.97, `mirrored there and back is the outline again (worst IoU ${back.toFixed(3)}), with the same number of points`);
+  const sm = bsEditOps(usable, { smooth: 0.55 });
+  check(sm.length === 1 && sm[0].op === 'smooth' && sm[0].value === 0.55 && !bsEditOps(usable, {}).length,
+    'bsEditOps: the smoothing is one edit ({op: smooth, value}), and only when set');
+  // the closed curve: the path and the samples are the same Béziers (one copy, traceCurveSegs)
+  const o = usable[0].outline, segs = traceCurveSegs(o, 0.7), path = traceCurvePath(o, 0.7), samp = traceCurve(o, 0.7);
+  const cs = path.match(/C/g).length;
+  check(cs === o.length && samp.length === o.length * 8 && Math.hypot(samp[8][0] - segs[1][0][0], samp[8][1] - segs[1][0][1]) < 1e-9,
+    `traceCurvePath and traceCurve share one curve (${cs} Béziers, ${samp.length} samples)`);
+  const t = traceTurn([[1, 0]], [0, 0], 90);
+  check(Math.abs(t[0][0]) < 1e-12 && Math.abs(t[0][1] - 1) < 1e-12, 'traceTurn: +90° turns (1, 0) to (0, 1) (clockwise on screen)');
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nall checks passed');

@@ -15,6 +15,11 @@
 //    seeded flood within the shape: a watershed on the distance map);
 //  5 each region's outer boundary is traced, smoothed (Gaussian along the contour)
 //    and simplified to a polygon in image pixels.
+//
+// It's also the one geometry module (review C3, 15 Nov 2026): point-in-polygon, area,
+// centroid, rotation (traceTurn), RDP (traceSimplify), the closed curve every view draws
+// (traceCurve, traceCurvePath) and the innermost-outline pick (traceInnermost). The app,
+// Board Setup, Edit holds and PB Console (which serves this file read-only) all call these.
 
 const TRACE_REF = 1400;   // the image size (longest side, px) the lengths below are tuned for
 const TRACE_WORK = 2200;  // the setup flow traces the cartoon scaled to this (longest side, px): finer outlines
@@ -694,16 +699,18 @@ function tracePriorFit(masks, pts, band, opts) {
     }
     if (!moved) break;
   }
-  const placed = tracePriorPlace(pts, S.c, dx, dy, rot, scale);
+  const placed = traceTurn(pts, S.c, rot, scale, dx, dy);
   // turnShape: how different the turn makes the outline (1 - IoU with it unturned): a
   // round hold turned 40° is the same shape
-  const turnShape = Math.abs(rot) < 1 ? 0 : 1 - tracePolyIoU(placed, tracePriorPlace(pts, S.c, dx, dy, 0, scale));
+  const turnShape = Math.abs(rot) < 1 ? 0 : 1 - tracePolyIoU(placed, traceTurn(pts, S.c, 0, scale, dx, dy));
   return { pts: placed, score, score0, rot, scale, dx, dy, turnGain: score - flat[0], turnShape };
 }
 
-// An outline moved by (dx, dy), turned by rot degrees and scaled about its centre c.
-function tracePriorPlace(pts, c, dx, dy, rot, scale) {
-  const cs = Math.cos(rot * Math.PI / 180) * scale, sn = Math.sin(rot * Math.PI / 180) * scale;
+// Points turned by deg about c (clockwise on screen: y points down), scaled by `scale`
+// about c and then moved by (dx, dy). The one rotation every tool uses: the prior's fit,
+// Board Setup's ↻ handle, Edit holds' turns (in pixels, so nothing skews).
+function traceTurn(pts, c, deg, scale = 1, dx = 0, dy = 0) {
+  const cs = Math.cos(deg * Math.PI / 180) * scale, sn = Math.sin(deg * Math.PI / 180) * scale;
   return pts.map(p => {
     const ux = p[0] - c[0], uy = p[1] - c[1];
     return [c[0] + dx + cs * ux - sn * uy, c[1] + dy + sn * ux + cs * uy];
@@ -833,15 +840,24 @@ function traceNearest(m, w, h, x, y, r) {
   return best;
 }
 
-// A closed outline drawn as the app draws it (Catmull-Rom with tension s, as
-// smoothShapePath in core.js), sampled 8 points a segment.
-function traceCurve(pts, s) {
+// The closed curve through an outline's points, as every view draws it: Catmull-Rom with
+// tension s (0 = the straight polygon, 1 = fully rounded; __meta.smooth) as one cubic
+// Bézier a segment, [p1, c1, c2, p2]. One copy: traceCurve() samples it (8 points a
+// segment), traceCurvePath() writes it as an SVG path (the app's outlines, the editors).
+// The curve is affine-invariant, so it's the same in % of a stretched viewBox and in px.
+function traceCurveSegs(pts, s) {
   const n = pts.length, k = s / 6, out = [];
-  if (n < 3 || !s) return pts.map(p => [p[0], p[1]]);
   for (let i = 0; i < n; i++) {
     const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
-    const c1 = [p1[0] + (p2[0] - p0[0]) * k, p1[1] + (p2[1] - p0[1]) * k];
-    const c2 = [p2[0] - (p3[0] - p1[0]) * k, p2[1] - (p3[1] - p1[1]) * k];
+    out.push([p1, [p1[0] + (p2[0] - p0[0]) * k, p1[1] + (p2[1] - p0[1]) * k],
+      [p2[0] - (p3[0] - p1[0]) * k, p2[1] - (p3[1] - p1[1]) * k], p2]);
+  }
+  return out;
+}
+function traceCurve(pts, s) {
+  if (pts.length < 3 || !s) return pts.map(p => [p[0], p[1]]);
+  const out = [];
+  for (const [p1, c1, c2, p2] of traceCurveSegs(pts, s)) {
     for (let t = 0; t < 1; t += 0.125) {
       const u = 1 - t;
       out.push([u * u * u * p1[0] + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t * t * t * p2[0],
@@ -849,4 +865,30 @@ function traceCurve(pts, s) {
     }
   }
   return out;
+}
+function traceCurvePath(pts, s) {
+  const f = v => +v.toFixed(3);
+  let d = `M${f(pts[0][0])},${f(pts[0][1])}`;
+  for (const [, c1, c2, p2] of traceCurveSegs(pts, s)) {
+    d += `C${f(c1[0])},${f(c1[1])} ${f(c2[0])},${f(c2[1])} ${f(p2[0])},${f(p2[1])}`;
+  }
+  return d + 'Z';
+}
+
+// The item whose outline contains (x, y), the smallest when several do (a foothold inside
+// a hand hold's outline wins), or null. ptsOf(item) -> its outline in the same units as
+// x, y; bbOf(item), optional, -> [x0, y0, x1, y1] to skip the far ones cheaply. Every
+// tap-picker starts here (hitHold in core.js, Board Setup, Edit holds, PB Console); what
+// a tap outside every outline picks is each one's own rule.
+function traceInnermost(items, x, y, ptsOf, bbOf) {
+  let best = null, ba = Infinity;
+  for (const it of items) {
+    const pts = ptsOf(it);
+    if (!pts || pts.length < 3) continue;
+    if (bbOf) { const b = bbOf(it); if (x < b[0] || x > b[2] || y < b[1] || y > b[3]) continue; }
+    if (!tracePointInPoly(x, y, pts)) continue;
+    const a = tracePolyArea(pts);
+    if (a < ba) { ba = a; best = it; }
+  }
+  return best;
 }

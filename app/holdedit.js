@@ -443,11 +443,6 @@ function heCubicW(t, w) {
   w[0] = k(1 + t); w[1] = k(t); w[2] = k(1 - t); w[3] = k(2 - t);
 }
 
-// Turn points (px) by deg about c.
-function heTurnPx(pts, c, deg) {
-  const a = deg * Math.PI / 180, cs = Math.cos(a), sn = Math.sin(a);
-  return pts.map(p => { const ux = p[0] - c[0], uy = p[1] - c[1]; return [c[0] + cs * ux - sn * uy, c[1] + sn * ux + cs * uy]; });
-}
 // One-shot: the image with holds turned. holds: [{ poly (px), deg }], others: [poly px]
 // (holds that don't move). Used by tools/holdedit_score.js.
 function heRotateImage(img, holds, others, pal) {
@@ -456,7 +451,7 @@ function heRotateImage(img, holds, others, pal) {
   const all = holds.map(h => h.poly).concat(others);
   const items = holds.map((h, i) => {
     const region = heRegion(img, h.poly, all.filter((_, k) => k !== i), pal);
-    const keep = holds.filter((_, k) => k !== i).map(o => heTurnPx(o.poly, tracePolyCentre(o.poly), o.deg)).concat(others);
+    const keep = holds.filter((_, k) => k !== i).map(o => traceTurn(o.poly, tracePolyCentre(o.poly), o.deg)).concat(others);
     return { region, deg: h.deg, keep };
   });
   return heComposite(img.data, W, H, items);
@@ -472,7 +467,7 @@ function heQuad() {
 // pts in % turned by deg about their centroid (in pixels, so nothing skews)
 function heTurnPct(pts, deg) {
   const W = HE.img.w, H = HE.img.h, px = pts.map(p => [p[0] / 100 * W, p[1] / 100 * H]);
-  return heTurnPx(px, tracePolyCentre(px), deg).map(p => [bsR2(p[0] / W * 100), bsR2(p[1] / H * 100)]);
+  return traceTurn(px, tracePolyCentre(px), deg).map(p => [bsR2(p[0] / W * 100), bsR2(p[1] / H * 100)]);
 }
 const heCurve = pts => traceCurve(pts.map(p => [p[0] / 100 * HE.img.w, p[1] / 100 * HE.img.h]), heSmooth());
 
@@ -839,7 +834,7 @@ function heRenderBoard() {
     if (warn.has(h.id)) cls += ' he-warn';
     if (part && h.id === part.id) cls += ' partner';
     if (sel && h.id === sel.id) cls += ' sel';
-    out += `<path class="${cls}" d="${smoothShapePath(h.pts, heSmooth())}"/>`;
+    out += `<path class="${cls}" d="${traceCurvePath(h.pts, heSmooth())}"/>`;
   });
   if (sel && part) {
     const a = tracePolyCentre(sel.pts), b = tracePolyCentre(part.pts);
@@ -1136,11 +1131,7 @@ function heTapPts(masks, x, y) {
   const M = heModel(), W = HE.img.w, H = HE.img.h, k = masks.W / W;
   const tx = x / 100 * W, ty = y / 100 * H, near = 0.12 * W;
   const fg = masks.fg.slice(), grow = Math.max(2, Math.round(2.5 * k));
-  let inside = null;
-  M.list.forEach(h => {
-    if (h.bb[2] < tx - near || h.bb[0] > tx + near || h.bb[3] < ty - near || h.bb[1] > ty + near) return;
-    if (tracePointInPoly(tx, ty, h.curve)) { if (!inside || tracePolyArea(h.curve) < tracePolyArea(inside.curve)) inside = h; return; }
-  });
+  const inside = traceInnermost(M.list, tx, ty, h => h.curve, h => h.bb);
   M.list.forEach(h => {
     if (h === inside) return;
     if (h.bb[2] < tx - near || h.bb[0] > tx + near || h.bb[3] < ty - near || h.bb[1] > ty + near) return;
@@ -1178,11 +1169,7 @@ async function heTapTrace(x, y) {
 // outline within reach (so a little foothold beside a hand hold can be picked).
 function heHit(x, y) {
   const M = heModel(), W = HE.img.w, H = HE.img.h, px = x / 100 * W, py = y / 100 * H;
-  let best = null, ba = Infinity;
-  M.list.forEach(h => {
-    if (px < h.bb[0] || px > h.bb[2] || py < h.bb[1] || py > h.bb[3]) return;
-    if (tracePointInPoly(px, py, h.curve)) { const a = tracePolyArea(h.curve); if (a < ba) { ba = a; best = h; } }
-  });
+  let best = traceInnermost(M.list, px, py, h => h.curve, h => h.bb);
   if (best) return best;
   const reach = 22 * W / Math.max(1, bsW());          // 22 screen px
   let bd = reach;

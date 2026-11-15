@@ -50,7 +50,7 @@ def get(url, headers=None):
 
 
 def write_json(name, data, indent=2):
-    # indent=None for the outlines: one line, as register_shapes.py writes them
+    # indent=None for the outlines: one line per hold, as the file has always been written
     # (indented, every coordinate gets its own line and the file grows 2.5x).
     path = os.path.join(APP, name)
     with open(path, "w", encoding="utf-8", newline="\n") as f:

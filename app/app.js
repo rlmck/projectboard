@@ -154,8 +154,8 @@
   const hpBoard = document.getElementById('hp-board');
   hpBoard.addEventListener('click', e => {
     if (e.target.closest('.board-expand-btn')) return;
-    const h = nearestHold(e.clientX, e.clientY, hpBoard);
-    if (h) holdPickToggle(h);
+    const h = hitHold(hpBoard, e.clientX, e.clientY);
+    if (h) holdPickToggle(h.id);
   });
   // Two fingers on it are the viewer's pinch (core.js), as on the Create board.
   ['touchstart', 'touchmove'].forEach(type => {
@@ -298,7 +298,7 @@
   document.getElementById('create-reset').addEventListener('click', onCreateReset);
 
   // Tap the board: cycle the nearest hand hold's role, or pick or drop a
-  // foothold (Specific feet; createPick in authoring.js says which).
+  // foothold (Specific feet; hitHold in core.js says which).
   document.getElementById('create-board').addEventListener('click', e => createTap(e.clientX, e.clientY));
 
   // Two fingers on the Create board belong to the viewer's pinch (core.js), not
@@ -408,8 +408,8 @@
   document.getElementById('cc-undo').addEventListener('click', () => { ccSeq.pop(); applyCircuitCreate(); });
   document.getElementById('cc-reset').addEventListener('click', onCircuitCreateReset);
   document.getElementById('cc-board').addEventListener('click', e => {
-    const h = ccNearestHold(e.clientX, e.clientY);
-    if (h) { ccSeq.push(h); applyCircuitCreate(); }
+    const h = hitHold(e.currentTarget, e.clientX, e.clientY);   // hand holds only: footholds are never in a circuit
+    if (h) { ccSeq.push(h.id); applyCircuitCreate(); }
   });
   document.getElementById('cc-start-count').addEventListener('click', e => {
     const b = e.target.closest('.cc-seg-btn');
@@ -459,59 +459,10 @@
     confirmLeaveEdit(() => { location.hash = href; });
   }, true);
 
-  // Trace Holds: the hold outline editor (#outlines, admin)
-  document.getElementById('ol-back').addEventListener('click', () => {
-    if (olDirty()) showToast('Not published yet — your changes are kept on this device', 'success');
-    goBack();
-  });
-  document.getElementById('ol-undo').addEventListener('click', olUndo);
-  document.getElementById('ol-redo').addEventListener('click', olRedo);
-  wireOverflowMenu('ol-menu-btn', 'ol-menu');
-  document.getElementById('ol-zoom-btn').addEventListener('click', () => olZoomToHold(olCurHold()));
-  document.getElementById('ol-m-fit').addEventListener('click', olFit);
-  document.getElementById('ol-m-todo').addEventListener('click', olNextUntraced);
-  document.getElementById('ol-m-others').addEventListener('click', olToggleOthers);
-  document.getElementById('ol-preview-btn').addEventListener('click', olTogglePreview);
-  document.getElementById('ol-m-redraw').addEventListener('click', olRedraw);
-  document.getElementById('ol-m-revert').addEventListener('click', olRevertHold);
-  document.getElementById('ol-m-shipped').addEventListener('click', olLoadShipped);
-  document.getElementById('ol-m-discard').addEventListener('click', olDiscardAll);
-  document.getElementById('ol-note-btn').addEventListener('click', olNoteAction);
-  document.getElementById('ol-prev').addEventListener('click', () => olGoTo(OL.cur - 1));
-  document.getElementById('ol-next').addEventListener('click', () => olGoTo(OL.cur + 1));
-  document.getElementById('ol-jump').addEventListener('change', e => { olGoTo(parseInt(e.target.value, 10)); e.target.blur(); });
-  document.getElementById('ol-del').addEventListener('click', olDeletePoint);
-  document.getElementById('ol-publish').addEventListener('click', olPublish);
-  document.getElementById('ol-smooth').addEventListener('input', e => olSetSmooth(e.target.value));
-  document.getElementById('ol-img').addEventListener('load', olImgReady);
-  const olStageEl = document.getElementById('ol-stage');
-  olStageEl.addEventListener('pointerdown', olDown);
-  olStageEl.addEventListener('pointermove', olMove);
-  olStageEl.addEventListener('pointerup', olUp);
-  olStageEl.addEventListener('pointercancel', olUp);
-  olStageEl.addEventListener('wheel', olWheel, { passive: false });
-  olStageEl.addEventListener('contextmenu', olContextMenu);
-  document.addEventListener('keydown', olKey);
-  window.addEventListener('resize', () => { if (currentView === 'outlines') olLayout(true); });
-  // Nudge pad: one step per press, then repeating while held (one undo step per press).
-  let olRepeat = null;
-  const olStopRepeat = () => { if (olRepeat) { clearTimeout(olRepeat.t); clearInterval(olRepeat.i); olRepeat = null; } };
-  document.querySelectorAll('#ol-pad button').forEach(b => {
-    const dx = +b.dataset.dx * OL_NUDGE, dy = +b.dataset.dy * OL_NUDGE;
-    b.addEventListener('pointerdown', e => {
-      e.preventDefault();
-      olStopRepeat();
-      olNudge(dx, dy, true);
-      olRepeat = { t: setTimeout(() => { if (olRepeat) olRepeat.i = setInterval(() => olNudge(dx, dy, false), 70); }, 400) };
-    });
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => b.addEventListener(t, olStopRepeat));
-    b.addEventListener('click', e => { if (e.detail === 0) olNudge(dx, dy, true); });   // keyboard activation
-  });
-
   // Board setup (#setup, admin; setup.js)
   bsWire();
 
-  // Admin hub (#admin): hold outlines link + user management
+  // Admin hub (#admin): Board Setup link + user management
   document.getElementById('admin-back').addEventListener('click', goBack);
   document.getElementById('admin-refresh').addEventListener('click', adminRefreshUsers);
   document.getElementById('user-rename-cancel').addEventListener('click', closeUserRename);
@@ -627,12 +578,9 @@
 
   // True while the user has in-progress create-form state that a hard reload
   // would silently discard (tapped holds + typed name/grade live only in memory).
-  // The outline editor keeps a draft, but a reload mid-edit would still lose the
-  // zoom, the selection and the undo history, so it waits too.
   function hasUnsavedWork() {
     // The wall screen reloads only while nobody's using it (wall.js sends 'wall-idle').
     if (WALL && !wallIsIdle()) return true;
-    if (currentView === 'outlines' && olDirty()) return true;
     // Creating an account, part-way through: a reload would clear the PINs typed.
     if (currentView === 'auth' && authMode === 'signup' &&
         (document.getElementById('signup-pin').value || document.getElementById('signup-pin2').value)) return true;
@@ -696,6 +644,8 @@
   loadHolds();          // the holds table (db/41): names and mirror partners
   loadBoardConfig().then(() => { applyBoardImage(); loadHoldMap(); loadMirrorMap(); });
   loadHoldShapes();     // bundled hold outlines for the problem shape overlay
+  // The retired Trace Holds editor (#outlines, 15 Nov 2026) kept a draft here: drop it.
+  try { localStorage.removeItem('pb-outline-draft'); } catch (e) { /* storage blocked */ }
   // Coming back to the app: pick up a board published meanwhile (problems.js).
   let boardCheckAt = Date.now();
   document.addEventListener('visibilitychange', () => {

@@ -537,8 +537,8 @@
       if (!p || !p.clean || Math.hypot(e.clientX - p.x, e.clientY - p.y) > WALL_TAP_SLOP) return;
       const wrap = e.target.closest('.wall-pick-board');
       if (!wrap) return;
-      const h = nearestHold(e.clientX, e.clientY, wrap);
-      if (h) holdPickToggle(h);
+      const h = hitHold(wrap, e.clientX, e.clientY);
+      if (h) holdPickToggle(h.id);
     });
   }
 
@@ -643,7 +643,7 @@
 
   function wallCreateTap(e) {
     // A hand hold cycles (cycleHold redraws and lights the board); a foothold is
-    // picked or dropped (Specific feet, never lit): createPick in authoring.js.
+    // picked or dropped (Specific feet, never lit): createTap in authoring.js.
     createTap(e.clientX, e.clientY, wallEl('wall-c-board'));
   }
 

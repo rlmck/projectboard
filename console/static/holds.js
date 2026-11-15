@@ -3,12 +3,16 @@
 // of edits (bsEditOps(), app/setup.js) through admin_edit_holds() (db/48, the super admin;
 // console/holds.py does the write; the database is the one place the rules are checked). Pick any hold
 // or foothold from the list (search, arrows) or on the board; Clear and draw a fresh outline
-// point by point (Undo while drawing), drag, add or remove single points, Simplify, Revert;
-// new footholds are drawn, named FTn (left to right, bottom row up) and paired by the board's
-// reflection, foot <-> foot only, as in the app. The point counts make the over-traced ones
-// stand out. The geometry is the app's own: /app/trace.js and /app/setup.js are loaded before
-// this file (traceCurve, traceSimplify, bsFootNameList, bsMirrorFit…). No inline scripts or
-// styles (the console's CSP); the canvas colours come from app/tokens.css.
+// point by point (Undo while drawing), drag, add (the mid-edge handles) or remove single
+// points, nudge a point or the whole outline with the arrow keys (Shift x10, Alt /5),
+// Simplify, Revert, Mirror onto the partner (the outline reflected across the board, an
+// edit to review); the board-wide smoothing (__meta.smooth) is a slider, sent as one more
+// edit. New footholds are drawn, named FTn (left to right, bottom row up) and paired by the
+// board's reflection, foot <-> foot only, as in the app. The point counts make the
+// over-traced ones stand out. The geometry is the app's own, never ported: /app/trace.js and
+// /app/setup.js are served read-only and loaded before this file (traceCurve, traceSimplify,
+// traceInnermost, bsFootNameList, bsMirrorFit, bsMirrorOutline, bsEditOps…). No inline
+// scripts or styles (the console's CSP); the canvas colours come from app/tokens.css.
 'use strict';
 (function () {
   const PB = window.PB;
@@ -17,13 +21,19 @@
   const DRAFT_KEY = 'pb-console-holds';
   const MID = 30, HI = 60;               // point counts that stand out (amber, red)
   const UNDO_MAX = 100;
+  const NUDGE = 0.05;                    // % of the image per arrow press (Shift x10, Alt /5), as the app's pad
+  const MID_MIN = 18;                    // screen px: an edge shorter than this shows no mid handle
+  const GRAB = 8;                        // screen px: the reach of a point or a mid handle
   const COLS = 'ABCDEFGHIJKLMNOPQRS';
 
   let data = null;                       // /api/holds
   let bmp = null, W = 0, H = 0;          // the board image (ImageBitmap) and its size
-  let draft = blank();                   // {outlines: {id: pts%}, added: [{id, pts}], removed: [id], pairs: {id: id|null}}
+  let draft = blank();                   // {outlines: {id: pts%}, added: [{id, pts}], removed: [id], pairs: {id: id|null}, smooth: n|null}
   let undoS = [], redoS = [];
   let sel = null;                        // a hold id
+  let selPt = -1;                        // its selected point (the arrows nudge it), or -1: the whole outline
+  let lastNudge = null;                  // {id, pt, t}: a run of arrow presses is one undo step
+  let roundBase = null;                  // the draft before the smoothing slider was dragged
   let mode = null;                       // null | 'draw' | 'pair'
   let drawFor = null, drawPts = [];      // the hold being drawn ('new' = a new foothold), its points (image px)
   let cursor = null;                     // the pointer on the board (image px)
@@ -37,7 +47,7 @@
   const cv = $('hl-board');
   const ctx = cv.getContext('2d');
 
-  function blank() { return { outlines: {}, added: [], removed: [], pairs: {} }; }
+  function blank() { return { outlines: {}, added: [], removed: [], pairs: {}, smooth: null }; }
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const r2 = (v) => Math.round(v * 100) / 100;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -48,6 +58,9 @@
     return Array.isArray(q) && q.length === 4 ? q : [[0, 0], [100, 0], [100, 100], [0, 100]];
   };
   const level = (n) => (n >= HI ? 'hi' : n >= MID ? 'mid' : '');
+  const liveSmooth = () => data.board.smooth;
+  const smoothNow = () => (draft.smooth != null ? draft.smooth : liveSmooth());
+  const drawSmooth = () => ($('hl-smooth').checked ? smoothNow() : 0);
   const tok = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
   // -- the model: the live rows with the draft laid over them -----------------------------
@@ -66,7 +79,7 @@
     const feet = list.filter((h) => h.kind === 'foot' && h.pts.length >= 3);
     const names = bsFootNameList(feet.map((h) => h.pts), quad(), W, H);
     feet.forEach((h, i) => { h.name = names[i]; });
-    const smooth = $('hl-smooth').checked ? data.board.smooth : 0;
+    const smooth = drawSmooth();
     list.forEach((h) => {
       h.px = toPx(h.pts);
       h.curve = h.px.length >= 3 ? traceCurve(h.px, smooth) : h.px;
@@ -99,18 +112,20 @@
     } catch (e) { /* private window: the draft just isn't kept */ }
     render();
   }
-  const dirty = () => Object.keys(draft.outlines).length || draft.added.length || draft.removed.length || Object.keys(draft.pairs).length;
+  const dirty = () => Object.keys(draft.outlines).length || draft.added.length || draft.removed.length || Object.keys(draft.pairs).length || draft.smooth != null;
   function undo() {
     if (!undoS.length) return;
     redoS.push(snapState());
-    draft = JSON.parse(undoS.pop());
+    draft = Object.assign(blank(), JSON.parse(undoS.pop()));
     if (sel && !hold(sel)) sel = null;
+    selPt = -1;
     changed();
   }
   function redo() {
     if (!redoS.length) return;
     undoS.push(snapState());
-    draft = JSON.parse(redoS.pop());
+    draft = Object.assign(blank(), JSON.parse(redoS.pop()));
+    selPt = -1;
     changed();
   }
   // A hold's outline in the draft (pts in %). Equal to live: no draft entry.
@@ -137,13 +152,19 @@
     draft.added.forEach((a) => seen(a.id));
     return 'foot' + (n + 1);
   }
+  // The board's reflection (bsMirrorFit, fitted to the hand holds as the app fits it), in
+  // board pixels through the corners: { reflect, pos (a hold's centre in board px), bp }.
+  function reflection() {
+    const M = getModel(), q = quad(), Hi = bsHomInv(bsHom(q)), bp = bsQuadPx(q, W, H);
+    const pos = (x) => { const c = tracePolyCentre(x.pts), uv = bsHomApply(Hi, c[0], c[1]); return [uv[0] * bp.w, uv[1] * bp.h]; };
+    const reflect = bsMirrorFit(M.list.filter((x) => x.kind === 'hand' && x.pts.length >= 3).map(pos), bp);
+    return { reflect, pos, bp };
+  }
   // The foothold the board's reflection puts opposite this one (unpaired, foot only), as the app.
   function suggestPartner(id) {
     const M = getModel(), h = M.byId.get(id);
     if (!h) return null;
-    const q = quad(), Hi = bsHomInv(bsHom(q)), bp = bsQuadPx(q, W, H);
-    const pos = (x) => { const c = tracePolyCentre(x.pts), uv = bsHomApply(Hi, c[0], c[1]); return [uv[0] * bp.w, uv[1] * bp.h]; };
-    const reflect = bsMirrorFit(M.list.filter((x) => x.kind === 'hand' && x.pts.length >= 3).map(pos), bp);
+    const { reflect, pos, bp } = reflection();
     const [rx, ry] = reflect(pos(h));
     let best = null, bd = Infinity;
     M.list.forEach((o) => {
@@ -158,7 +179,7 @@
   function edits() {
     const names = {};
     getModel().list.forEach((h) => { if (h.kind === 'foot' && h.name) names[h.id] = h.name; });
-    return bsEditOps(data.holds, { outlines: draft.outlines, added: draft.added, removed: draft.removed, pairs: draft.pairs, names });
+    return bsEditOps(data.holds, { outlines: draft.outlines, added: draft.added, removed: draft.removed, pairs: draft.pairs, names, smooth: draft.smooth });
   }
 
   // -- loading -------------------------------------------------------------------------------
@@ -198,6 +219,7 @@
     try { saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch (e) { saved = null; }
     if (!saved || !saved.draft) { draft = blank(); return; }
     draft = Object.assign(blank(), saved.draft);
+    if (typeof draft.smooth !== 'number' || draft.smooth === liveSmooth()) draft.smooth = null;
     // drop what no longer fits the board (a foothold deleted from the phone, say)
     const ids = new Set(data.holds.map((h) => h.id));
     Object.keys(draft.outlines).forEach((k) => { if (!ids.has(k)) delete draft.outlines[k]; });
@@ -272,8 +294,7 @@
     ctx.globalAlpha = 1;
     if (S && S.curve.length >= 3) {
       if (S.redrawn && S.live.length >= 3 && mode !== 'draw') {         // the live outline, for comparison
-        const smooth = $('hl-smooth').checked ? data.board.smooth : 0;
-        pathOf(traceCurve(toPx(S.live), smooth));
+        pathOf(traceCurve(toPx(S.live), drawSmooth()));
         ctx.setLineDash([3, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = colors.bad; ctx.stroke(); ctx.setLineDash([]);
       }
       pathOf(S.curve);
@@ -281,10 +302,16 @@
       ctx.lineWidth = 2.5; ctx.strokeStyle = S.kind === 'foot' ? colors.foot : colors.hand; ctx.stroke();
       ctx.globalAlpha = 1;
       if (mode !== 'draw') {
+        mids(S).forEach((m) => {             // add-a-point handles: drag or click one
+          ctx.beginPath(); ctx.arc(m[0] * view.s + view.ox, m[1] * view.s + view.oy, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = colors.ink; ctx.globalAlpha = 0.45; ctx.fill(); ctx.globalAlpha = 1;
+          ctx.lineWidth = 1.5; ctx.strokeStyle = colors.sel; ctx.stroke();
+        });
         const r = S.px.length > 80 ? 2.5 : 4;
-        S.px.forEach((p) => {
-          ctx.beginPath(); ctx.rect(p[0] * view.s + view.ox - r, p[1] * view.s + view.oy - r, 2 * r, 2 * r);
-          ctx.fillStyle = colors.sel; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = colors.ink; ctx.stroke();
+        S.px.forEach((p, i) => {
+          const rr = i === selPt ? r + 2.5 : r;
+          ctx.beginPath(); ctx.rect(p[0] * view.s + view.ox - rr, p[1] * view.s + view.oy - rr, 2 * rr, 2 * rr);
+          ctx.fillStyle = i === selPt ? colors.accent : colors.sel; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = colors.ink; ctx.stroke();
         });
       }
     }
@@ -388,7 +415,10 @@
       (h.renamed ? '<dt>Name</dt><dd>was ' + esc(h.liveName) + '</dd>' : '') +
       '</dl>' +
       '<div class="btn-row"><button class="btn small primary" data-a="draw" title="C">' + (n ? 'Clear and draw' : 'Draw') + '</button>' +
-      (h.redrawn && !h.isNew ? '<button class="btn small" data-a="revert" title="R">Revert to live</button>' : '') + '</div>' +
+      (h.redrawn && !h.isNew ? '<button class="btn small" data-a="revert" title="R">Revert to live</button>' : '') +
+      (P && n >= 3 ? '<button class="btn small" data-a="mirror" title="M">Mirror onto ' + esc(label(P)) + '</button>' : '') + '</div>' +
+      (n >= 3 ? '<p class="note">' + (selPt >= 0 ? 'Point ' + (selPt + 1) + ' of ' + n + ' selected: the arrows nudge it (Shift ×10, Alt ÷5), Delete removes it, Esc lets it go.'
+        : 'The arrows nudge the whole outline (Shift ×10, Alt ÷5); click a point to nudge just that one.') + '</p>' : '') +
       (n >= 8 ? '<label class="hl-simplify">Simplify <input type="range" id="hl-simp" min="0" max="8" step="0.25" value="0"> <span id="hl-simp-n">' + n + '</span></label>' : '') +
       (h.kind === 'foot' ? '<div class="btn-row"><button class="btn small" data-a="pair" title="P">Pair with…</button>' +
         (h.mirror && h.mirror !== h.id ? '<button class="btn small" data-a="unpair">Unpair</button>' : '') +
@@ -397,6 +427,7 @@
   }
   function renderChanges() {
     const M = getModel(), out = [], pairs = [], renamed = [];
+    if (draft.smooth != null) out.push('Smoothing (every outline): ' + liveSmooth() + ' → ' + draft.smooth);
     M.list.filter((h) => h.redrawn && !h.isNew).forEach((h) => out.push(label(h) + ': outline ' + h.live.length + ' → ' + h.pts.length + ' points'));
     M.list.filter((h) => h.isNew).forEach((h) => out.push(label(h) + ': new foothold (' + h.pts.length + ' points)'));
     draft.removed.forEach((id) => { const r = data.holds.find((x) => x.id === id); out.push((r ? r.name : id) + ': deleted'); });
@@ -420,12 +451,15 @@
       ? 'Behind the live board: the app\'s offline copy (app/hold_map.json, the outlines, the image) is from ' + (s.version || 'an older board') + '. Ship it after publishing (it deploys the app, and the Pi\'s copy follows).'
       : 'The app\'s offline copy matches the live board.';
     $('hl-ship-snap').disabled = !s.behind;
+    if (!roundBase) $('hl-round').value = String(smoothNow());
+    $('hl-round-v').textContent = smoothNow().toFixed(2);
+    $('hl-round-v').classList.toggle('chg', draft.smooth != null);
   }
   function hint() {
     const h = hold(sel);
     $('hl-hint').textContent = mode === 'draw' ? 'Drawing: click to add a point · Enter or the green point finishes · Backspace takes one back · Esc stops'
       : mode === 'pair' ? 'Pairing: click a foothold · Esc stops'
-        : h ? label(h) + ': drag a point to move it · Shift+click a point to remove it · double-click an edge to add one · C to clear and draw'
+        : h ? label(h) + ': drag a point to move it · drag or click a ○ to add one · Shift+click a point to remove it · arrows nudge · M mirrors it onto its partner · C to clear and draw'
           : 'Click a hold to pick it · wheel to zoom · drag to move the view';
   }
   function render() {
@@ -437,13 +471,14 @@
   // -- actions ---------------------------------------------------------------------------------------
   function pick(id, scroll) {
     if (mode) stopMode();
+    if (id !== sel) selPt = -1;
     sel = id;
     simplifyBase = null;
     render();
     if (scroll) bringIntoView(hold(id));
   }
   function startDraw(forId) {
-    mode = 'draw'; drawFor = forId; drawPts = []; simplifyBase = null;
+    mode = 'draw'; drawFor = forId; drawPts = []; simplifyBase = null; selPt = -1;
     if (forId !== 'new') sel = forId;
     render();
   }
@@ -495,6 +530,55 @@
     snap(); setPair(h.id, o.id); stopMode(); changed();
     PB.toast(label(h) + ' ↔ ' + label(o));
   }
+  // The arrow keys: the selected point, or the whole outline, by dx, dy (% of the image). A
+  // run of presses on the same point (each within 0.8 s of the last) is one undo step.
+  function nudge(dx, dy) {
+    const h = hold(sel);
+    if (!h || h.pts.length < 3) return;
+    const now = Date.now(), pt = selPt < h.pts.length ? selPt : -1;
+    if (!lastNudge || lastNudge.id !== sel || lastNudge.pt !== pt || now - lastNudge.t > 800) snap();
+    lastNudge = { id: sel, pt, t: now };
+    const mv = (p) => [r2(clamp(p[0] + dx, -5, 105)), r2(clamp(p[1] + dy, -5, 105))];
+    setPts(sel, h.pts.map((p, i) => (pt < 0 || i === pt ? mv(p) : p.slice())));
+    changed();
+  }
+  function removePoint(i) {
+    const h = hold(sel);
+    if (!h || i < 0 || i >= h.pts.length) return;
+    if (h.pts.length <= 3) { PB.toast('An outline needs at least 3 points'); return; }
+    snap(); setPts(sel, h.pts.filter((_, k) => k !== i)); selPt = -1; changed();
+  }
+  // Mirror-copy: this hold's outline, reflected across the board (bsMirrorOutline, app/setup.js),
+  // replaces its mirror partner's: an edit like any other, to check against the picture (the
+  // partner's live outline is the dashed red line) before Publish. Hand <-> hand or foot <-> foot,
+  // as the pairs are; a centre-line hold (its own partner) has nothing to copy onto.
+  function mirrorCopy() {
+    const h = hold(sel), P = partner(h);
+    if (!h || !P) { PB.toast(h ? label(h) + ' has no mirror partner to copy onto' : 'Pick a hold first'); return; }
+    if (h.pts.length < 3) { PB.toast(label(h) + ' has no outline to copy'); return; }
+    const pts = bsMirrorOutline(h.pts, P.pts, quad(), W, H, reflection().reflect);
+    snap();
+    setPts(P.id, pts);
+    sel = P.id; selPt = -1;
+    changed();
+    bringIntoView(hold(P.id));
+    PB.toast(label(h) + '\'s outline mirrored onto ' + label(P) + ': check it (the dashed red line is its live outline), then Publish');
+  }
+  // The smoothing slider: dragged = a live preview, let go = one edit (equal to live: none).
+  function roundInput(v) {
+    if (!roundBase) roundBase = snapState();
+    draft.smooth = Math.abs(v - liveSmooth()) < 1e-9 ? null : v;
+    gen++;
+    $('hl-round-v').textContent = v.toFixed(2);
+    draw();
+  }
+  function roundChange() {
+    if (!roundBase) return;
+    if (roundBase !== snapState()) { undoS.push(roundBase); if (undoS.length > UNDO_MAX) undoS.shift(); redoS = []; }
+    roundBase = null;
+    changed();
+  }
+
   async function publish() {
     if (mode) stopMode();
     const ok = await PB.runAction('holds-publish', { version: data.board.version, edits: edits() }, 'Publish the holds');
@@ -516,13 +600,14 @@
   // -- the board's pointer --------------------------------------------------------------------------
   function holdAt(x, y) {
     const M = getModel(), tol = 10 / view.s;
-    let inside = null, near = null, nd = Infinity;
+    const inside = traceInnermost(M.list, x, y, (h) => h.curve, (h) => h.bb);   // app/trace.js, as the app picks
+    if (inside) return inside;
+    let near = null, nd = Infinity;
     M.list.forEach((h) => {
       if (h.curve.length < 3 || x < h.bb[0] - tol || x > h.bb[2] + tol || y < h.bb[1] - tol || y > h.bb[3] + tol) return;
-      if (tracePointInPoly(x, y, h.curve)) { if (!inside || h.area < inside.area) inside = h; return; }
       h.curve.forEach((p) => { const d = Math.hypot(p[0] - x, p[1] - y); if (d < nd) { nd = d; near = h; } });
     });
-    return inside || (nd <= tol ? near : null);
+    return nd <= tol ? near : null;
   }
   function vertexAt(h, x, y) {
     if (!h) return -1;
@@ -543,6 +628,22 @@
     return best;
   }
 
+  // The add-a-point handles: each edge's middle (image px), where the edge is long enough on screen.
+  function mids(h) {
+    if (!h || h.px.length < 3 || h.pts.length >= 400) return [];
+    const out = [];
+    h.px.forEach((a, i) => {
+      const b = h.px[(i + 1) % h.px.length];
+      if (Math.hypot(b[0] - a[0], b[1] - a[1]) * view.s >= MID_MIN) out.push([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, i]);
+    });
+    return out;
+  }
+  function midAt(h, x, y) {
+    let best = null, bd = GRAB / view.s;
+    mids(h).forEach((m) => { const d = Math.hypot(m[0] - x, m[1] - y); if (d <= bd) { bd = d; best = m; } });
+    return best;
+  }
+
   let g = null;                           // the gesture: {x, y, sx, sy, moved, type: 'pan' | 'vertex', i, ox, oy}
   cv.addEventListener('pointerdown', (ev) => {
     if (!data || ev.button > 1) return;
@@ -550,8 +651,19 @@
     const [x, y] = toImg(ev);
     g = { sx: ev.clientX, sy: ev.clientY, ox: view.ox, oy: view.oy, moved: false, type: 'pan' };
     if (!mode && ev.button === 0 && !ev.shiftKey) {
-      const i = vertexAt(hold(sel), x, y);
-      if (i >= 0) Object.assign(g, { type: 'vertex', i, before: snapState() });
+      const S = hold(sel), i = vertexAt(S, x, y);
+      if (i >= 0) { Object.assign(g, { type: 'vertex', i, before: snapState() }); selPt = i; draw(); }
+      else {
+        const m = midAt(S, x, y);
+        if (m) {                          // a new point at the edge's middle, then dragged like any other
+          const before = snapState(), pts = S.pts.map((p) => p.slice());
+          pts.splice(m[2] + 1, 0, toPct([[m[0], m[1]]])[0]);
+          setPts(sel, pts); gen++;
+          Object.assign(g, { type: 'vertex', i: m[2] + 1, before, added: true });
+          selPt = m[2] + 1;
+          draw();
+        }
+      }
     }
   });
   cv.addEventListener('pointermove', (ev) => {
@@ -578,11 +690,12 @@
     const was = g;
     g = null;
     cv.classList.remove('panning');
-    if (was.type === 'vertex' && was.moved) {
+    if (was.type === 'vertex' && (was.moved || was.added)) {
       if (was.before !== snapState()) { undoS.push(was.before); if (undoS.length > UNDO_MAX) undoS.shift(); redoS = []; }
       changed();
       return;
     }
+    if (was.type === 'vertex') { renderPanel(); return; }   // a point clicked: it's selected for the arrows
     if (was.moved || !ev) return;
     click(ev);
   }
@@ -605,15 +718,12 @@
     const S = hold(sel);
     if (ev.shiftKey && S) {
       const i = vertexAt(S, x, y);
-      if (i >= 0) {
-        if (S.pts.length <= 3) { PB.toast('An outline needs at least 3 points'); return; }
-        snap(); setPts(sel, S.pts.filter((_, k) => k !== i)); changed();
-        return;
-      }
+      if (i >= 0) { removePoint(i); return; }
     }
     const h = holdAt(x, y);
     if (h && h.id !== sel) pick(h.id, false);
-    else if (!h && sel) { sel = null; render(); }
+    else if (h && selPt >= 0) { selPt = -1; render(); }
+    else if (!h && sel) { sel = null; selPt = -1; render(); }
   }
   cv.addEventListener('dblclick', (ev) => {
     if (mode || !sel) return;
@@ -622,7 +732,7 @@
     if (S.pts.length >= 400) { PB.toast('400 points at most'); return; }
     const pts = S.pts.map((p) => p.slice());
     pts.splice(i + 1, 0, toPct([[x, y]])[0]);
-    snap(); setPts(sel, pts); changed();
+    snap(); setPts(sel, pts); selPt = i + 1; changed();
   });
   cv.addEventListener('wheel', (ev) => {
     if (!data) return;
@@ -650,6 +760,7 @@
     if ($('tab-holds').hidden || !data || document.querySelector('dialog[open]')) return;
     const t = ev.target, typing = t && (t.tagName === 'INPUT' && t.type !== 'checkbox' && t.type !== 'range' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA');
     if (typing && t.id !== 'hl-search') return;
+    if (t && t.type === 'range' && ev.key.startsWith('Arrow')) return;   // the slider's own arrows
     const k = ev.key, ctrl = ev.ctrlKey || ev.metaKey;
     if (t && t.id === 'hl-search') {
       if (k === 'Enter') {                // pick the first match, then show the whole list again (arrows walk on from it)
@@ -670,16 +781,27 @@
     if (k === 'Escape' && mode) { stopMode(); render(); return; }
     if (ctrl && k.toLowerCase() === 'z') { ev.shiftKey ? redo() : undo(); ev.preventDefault(); return; }
     if (ctrl && k.toLowerCase() === 'y') { redo(); ev.preventDefault(); return; }
+    const arrow = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[k];
+    if (arrow && !ctrl && sel && !mode && hold(sel) && hold(sel).pts.length >= 3) {
+      // A hold picked: the arrows nudge (its selected point, or the whole outline); J/K walk the list.
+      const d = NUDGE * (ev.shiftKey ? 10 : ev.altKey ? 0.2 : 1);
+      nudge(arrow[0] * d, arrow[1] * d);
+      ev.preventDefault();
+      return;
+    }
     if (ctrl || ev.altKey) return;
     const key = k.length === 1 ? k.toLowerCase() : k;
     if (key === 'ArrowDown' || key === 'j') { step(1); ev.preventDefault(); }
     else if (key === 'ArrowUp' || key === 'k') { step(-1); ev.preventDefault(); }
+    else if ((key === 'Delete' || key === 'Backspace') && sel && selPt >= 0) { removePoint(selPt); ev.preventDefault(); }
+    else if (key === 'm' && sel) mirrorCopy();
     else if (key === 'c' && sel) startDraw(sel);
     else if (key === 'n') startDraw('new');
     else if (key === 'r' && sel) revert(sel);
     else if (key === 'p' && hold(sel) && hold(sel).kind === 'foot') { mode = 'pair'; render(); }
     else if (key === 'f') fit();
     else if (key === 'z' && sel) zoomTo(hold(sel));
+    else if (key === 'Escape' && sel && selPt >= 0) { selPt = -1; render(); }
     else if (key === 'Escape' && sel) { sel = null; render(); }
   });
 
@@ -693,6 +815,8 @@
   }));
   $('hl-sort').addEventListener('change', () => { sortBy = $('hl-sort').value; renderList(); });
   ['hl-smooth', 'hl-names', 'hl-all'].forEach((id) => $(id).addEventListener('change', () => { gen++; draw(); }));
+  $('hl-round').addEventListener('input', () => roundInput(+$('hl-round').value));
+  $('hl-round').addEventListener('change', roundChange);
   $('hl-fit').addEventListener('click', fit);
   $('hl-zoom').addEventListener('click', () => zoomTo(hold(sel)));
   $('hl-panel').addEventListener('click', (ev) => {
@@ -706,6 +830,7 @@
     else if (a === 'back') { drawPts.pop(); renderPanel(); draw(); }
     else if (a === 'cancel') { stopMode(); render(); }
     else if (a === 'revert') revert(sel);
+    else if (a === 'mirror') mirrorCopy();
     else if (a === 'pair') { mode = 'pair'; render(); }
     else if (a === 'unpair') { snap(); setPair(sel, null); changed(); }
     else if (a === 'delete') deleteFoot(sel);
@@ -739,5 +864,5 @@
   if (window.ResizeObserver) new ResizeObserver(() => { if (!$('tab-holds').hidden) resize(); }).observe(cv);
   PB.tabHooks.holds = () => { if (!loaded) load(); else resize(); };
   // read-only, for checking the tab from the browser's console (and the headless check)
-  PB.holds = { state: () => JSON.parse(JSON.stringify({ sel, mode, view, W, H, draft, drawPts, undo: undoS.length, edits: data ? edits() : null })) };
+  PB.holds = { state: () => JSON.parse(JSON.stringify({ sel, selPt, mode, view, W, H, draft, drawPts, undo: undoS.length, edits: data ? edits() : null })) };
 })();

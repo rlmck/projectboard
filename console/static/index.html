@@ -82,7 +82,7 @@
   </section>
 
   <section id="tab-holds" class="tab" hidden>
-    <header class="page-head"><h1>Holds</h1><p>Outlines, footholds and foothold mirror pairs on the live board, published exactly as the app's Edit holds publishes (<code>admin_publish_board()</code>, the super admin). Turning a hold and a new photo or cartoon stay in the app's Board Setup: they upload a new board image.</p></header>
+    <header class="page-head"><h1>Holds</h1><p>Outlines, footholds and foothold mirror pairs on the live board, published exactly as the app's Edit holds publishes (<code>admin_edit_holds()</code>, the super admin), and the board-wide outline smoothing. Turning a hold and a new photo or cartoon stay in the app's Board Setup: they upload a new board image.</p></header>
     <div id="hl-msg" class="banner warn" hidden></div>
     <div class="hl-grid">
       <div class="hl-list card">
@@ -100,6 +100,7 @@
         <canvas id="hl-board" aria-label="The board: click a hold to pick it; wheel to zoom, drag to move"></canvas>
         <div class="hl-toolbar">
           <label class="check"><input type="checkbox" id="hl-smooth" checked> Smoothed (as the app draws it)</label>
+          <label class="check hl-round" title="How round every outline is drawn, on every phone and the wall (__meta.smooth): 0 = straight lines between the points, 1 = fully rounded. Published as an edit.">Round <input type="range" id="hl-round" min="0" max="1" step="0.05" aria-label="Outline smoothing, every hold"> <span id="hl-round-v" class="hl-round-v"></span></label>
           <label class="check"><input type="checkbox" id="hl-names"> Names</label>
           <label class="check"><input type="checkbox" id="hl-all"> Every outline</label>
           <button class="btn small" id="hl-fit" title="F">Whole board</button>
@@ -127,7 +128,7 @@
           <div class="btn-row"><button class="btn small" id="hl-ship-snap">Ship the snapshot</button></div>
         </div>
         <details class="card hl-keys"><summary>Keys</summary>
-          <p class="note"><kbd>↑</kbd> <kbd>↓</kbd> (or <kbd>J</kbd> <kbd>K</kbd>) previous / next in the list · <kbd>/</kbd> jump to a hold · <kbd>C</kbd> clear and draw · <kbd>Enter</kbd> finish drawing · <kbd>Backspace</kbd> remove the last point · <kbd>Esc</kbd> stop drawing · <kbd>Ctrl Z</kbd> / <kbd>Ctrl Y</kbd> undo / redo · <kbd>R</kbd> revert the hold · <kbd>N</kbd> new foothold · <kbd>P</kbd> pair a foothold · <kbd>F</kbd> whole board · <kbd>Z</kbd> zoom to the hold. On the board: drag a point to move it, Shift+click a point to remove it, double-click an edge to add one; drag anywhere else to move the view, wheel to zoom.</p>
+          <p class="note"><kbd>J</kbd> <kbd>K</kbd> (or <kbd>↑</kbd> <kbd>↓</kbd> with no hold picked) previous / next in the list · <kbd>←</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>→</kbd> with a hold picked: nudge its selected point, or the whole outline (<kbd>Shift</kbd> ×10, <kbd>Alt</kbd> ÷5) · <kbd>Delete</kbd> remove the selected point · <kbd>M</kbd> mirror the outline onto its partner · <kbd>/</kbd> jump to a hold · <kbd>C</kbd> clear and draw · <kbd>Enter</kbd> finish drawing · <kbd>Backspace</kbd> remove the last point · <kbd>Esc</kbd> stop drawing · <kbd>Ctrl Z</kbd> / <kbd>Ctrl Y</kbd> undo / redo · <kbd>R</kbd> revert the hold · <kbd>N</kbd> new foothold · <kbd>P</kbd> pair a foothold · <kbd>F</kbd> whole board · <kbd>Z</kbd> zoom to the hold. On the board: click a point to select it, drag it to move it, Shift+click it to remove it; drag or click a ○ (an edge's middle) or double-click an edge to add one; drag anywhere else to move the view, wheel to zoom. The Round slider sets how round every outline is drawn (the app's smoothing, published with the edits).</p>
         </details>
       </div>
     </div>

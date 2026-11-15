@@ -48,7 +48,8 @@ class Edits(unittest.TestCase):
     def test_a_good_list(self):
         ops = [{'op': 'outline', 'id': 'hold1', 'outline': SQ}, {'op': 'add_foot', 'id': 'foot4', 'outline': SQ, 'name': 'FT4'},
                {'op': 'delete_foot', 'id': 'foot1'}, {'op': 'pair', 'id': 'foot4', 'with': 'foot2'},
-               {'op': 'name', 'id': 'foot3', 'name': 'FT1'}, {'op': 'position', 'id': 'hold1', 'x': 1, 'y': 2}]
+               {'op': 'name', 'id': 'foot3', 'name': 'FT1'}, {'op': 'position', 'id': 'hold1', 'x': 1, 'y': 2},
+               {'op': 'smooth', 'value': 0.55}]
         self.assertIs(holds.check_ops(ops), ops)
 
     def test_refused_by_shape(self):
@@ -60,6 +61,10 @@ class Edits(unittest.TestCase):
             [{'op': 'image', 'path': 'setup/x.jpg'}],               # never from the laptop
             [{'op': 'turn', 'id': 'hold1', 'outline': SQ}],
             [{'op': 'outline', 'outline': SQ}],                     # no hold named
+            [{'op': 'smooth', 'value': 1.5}],                       # smoothing out of range
+            [{'op': 'smooth', 'value': '0.5'}],
+            [{'op': 'smooth', 'value': True}],
+            [{'op': 'smooth'}],
             [{'op': 'outline', 'id': 'x' * 21, 'outline': SQ}],
             [{'op': 'outline', 'id': 'hold1', 'outline': SQ}] * 2001,
             ['outline'],

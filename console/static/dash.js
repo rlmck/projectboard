@@ -536,7 +536,7 @@
 
   function snapshotDetails() {
     return '<section class="d-sec"><p>The app\'s offline copy of the board (the image, hold map and outlines in <code>app/</code>) ' +
-      'is from an earlier board than the live one: a publish (Edit holds, Board Setup, Trace Holds or here) hasn\'t been ' +
+      'is from an earlier board than the live one: a publish (Edit holds, Board Setup or here) hasn\'t been ' +
       'snapshotted yet. Phones offline or on first load see the older board until it is.</p>' +
       '<div class="btn-row"><button class="btn primary" data-goto="holds">Holds → Ship the snapshot</button></div></section>';
   }

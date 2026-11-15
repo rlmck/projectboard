@@ -299,7 +299,7 @@ def backup_tile(b, now=None):
 
 def snapshot_tile(c):
     """The app's offline copy of the board (tools/snapshot_board.py, shipped in app/) against
-    the live board: amber while a publish (phone, console or Trace Holds) hasn't been
+    the live board: amber while a publish (phone or console) hasn't been
     snapshotted and shipped (SEAM-05)."""
     s = (c or {}).get('snapshot') or {}
     lines = ['live board version: %s' % (s.get('live') or '?'),

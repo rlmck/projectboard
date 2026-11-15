@@ -719,7 +719,7 @@
     if (currentView === 'challenge') renderChallengeBody();
     if (currentView === 'leaderboard') renderLeaderboard();
     // Signed out (or lost admin) while on an admin screen: route away from it.
-    if (((currentView === 'outlines' || currentView === 'setup') && !isSuperAdmin()) || (currentView === 'admin' && !isAdmin())) router();
+    if ((currentView === 'setup' && !isSuperAdmin()) || (currentView === 'admin' && !isAdmin())) router();
   }
 
   // Every account has a profile now: the sign-up trigger (db/30) creates it with
@@ -760,7 +760,7 @@
     await loadProfile();
     updateAdminUI();
     renderProfile();
-    if (((currentView === 'outlines' || currentView === 'setup') && !isSuperAdmin()) || (currentView === 'admin' && !isAdmin())) router();
+    if ((currentView === 'setup' && !isSuperAdmin()) || (currentView === 'admin' && !isAdmin())) router();
   }
 
   // Signs out this device only: 'local' leaves the account's other devices signed

@@ -1,5 +1,6 @@
 // PB Console phase 10: Activity. A dashboard (the default) and the log of every cast.
-// The design is tools/activity-dashboard-prototype.html (fake data): this is that page,
+// The design was activity-dashboard-prototype.html (fake data; archived outside the repo
+// since 15 Nov 2026, and in git history): this is that page,
 // fed by /api/activity-history (console/activity_history.py): the console's own cast
 // history from the Pi's journal, plus nicknames, ticks and accounts from the database
 // when db/.env is on this laptop. Every time arrives already in UK local time (d = the

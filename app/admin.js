@@ -1,11 +1,11 @@
 // ProjectBoard - this file was split out of the former single app.js. The pieces load as
 // ordered classic <script>s sharing ONE global scope (no ES modules, no build step). Order:
-// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, trace, setup, holdedit, app. This file: admin hub (#admin) - the hold outlines and board setup entry points (the super admin only) + user management.
+// state, core, problems, admin, account, authoring, circuits, challenge, leaderboard, wall, trace, setup, holdedit, app. This file: admin hub (#admin) - the Board Setup entry point (the super admin only) + user management.
 
-  // ── Admin hub (#admin) — hold outlines + user management ─────────────────────
+  // ── Admin hub (#admin) — Board Setup + user management ───────────────────────
   // Three sub-screens, all under the one #admin view, driven by the hash param:
-  //   #admin            -> hub: cards for Trace Holds + Board Setup (the super admin
-  //                        only, db/44) + Users (every admin)
+  //   #admin            -> hub: cards for Board Setup (the super admin only, db/44;
+  //                        outlines are edited in its Edit holds) + Users (every admin)
   //   #admin/users      -> the user list, with a nickname search (rows are links)
   //   #admin/user/<id>  -> one user: stats, recent activity, and the actions
   // Accounts hold no email (db/30): a row is a nickname, its roles and its counts.
@@ -19,7 +19,6 @@
   const ADMIN_USERS_TTL = 60000;
   let adminUserSearch = '';           // the user list's nickname filter
 
-  const boardIconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8" cy="8" r="1.4"></circle><circle cx="16" cy="8" r="1.4"></circle><circle cx="8" cy="16" r="1.4"></circle><circle cx="16" cy="16" r="1.4"></circle></svg>';
   const usersIconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>';
   const setupIconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>';
   const chevSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
@@ -74,19 +73,11 @@
     adminSetHeader('Admin', false);
     document.getElementById('admin-content').innerHTML = `
       <div class="admin-hub">
-        ${isSuperAdmin() ? `<a class="admin-card" href="#outlines">
-          <div class="admin-card-icon">${boardIconSvg}</div>
-          <div class="admin-card-text">
-            <div class="admin-card-title">Trace Holds</div>
-            <div class="admin-card-sub">Fine-tune the outline of each hold and publish it.</div>
-          </div>
-          <div class="admin-card-chev">${chevSvg}</div>
-        </a>
-        <a class="admin-card" href="#setup">
+        ${isSuperAdmin() ? `<a class="admin-card" href="#setup">
           <div class="admin-card-icon">${setupIconSvg}</div>
           <div class="admin-card-text">
             <div class="admin-card-title">Board Setup</div>
-            <div class="admin-card-sub">A new photo and cartoon: trace the holds, add footholds, set mirror pairs, publish. Or undo the last publish.</div>
+            <div class="admin-card-sub">Edit holds (outlines, footholds, turns), or a new photo and cartoon. Or undo the last publish.</div>
           </div>
           <div class="admin-card-chev">${chevSvg}</div>
         </a>` : ''}

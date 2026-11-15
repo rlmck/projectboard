@@ -46,7 +46,7 @@ SNAPSHOT_FILES = ['app/board-fallback.jpg', 'app/hold_map.json', 'app/mirror_map
 
 OUTLINE_MAX = 400                          # holds_outline_ok() (db/42): shown on the page only
 FOOT_MAX = 300
-EDIT_OPS = ('outline', 'position', 'add_foot', 'delete_foot', 'pair', 'name')   # admin_edit_holds (db/48), never 'image'/'turn' here
+EDIT_OPS = ('outline', 'position', 'add_foot', 'delete_foot', 'pair', 'name', 'smooth')   # admin_edit_holds (db/48; smooth db/49), never 'image'/'turn' here
 EDITS_MAX = 2000
 IMAGE_PATH = re.compile(r'^[A-Za-z0-9][A-Za-z0-9/_.-]{0,200}$')
 UA = 'pb-console (laptop)'
@@ -164,6 +164,11 @@ def check_ops(ops):
     for o in ops:
         if not isinstance(o, dict) or o.get('op') not in EDIT_OPS:
             raise Refused('edits: %r isn\'t an edit the console sends' % (o.get('op') if isinstance(o, dict) else o,))
+        if o['op'] == 'smooth':                # the board-wide outline smoothing (db/49): no hold
+            v = o.get('value')
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= 1:
+                raise Refused('edits: the smoothing is a number from 0 to 1')
+            continue
         if not isinstance(o.get('id'), str) or not 1 <= len(o['id']) <= 20:
             raise Refused('edits: every edit names its hold')
     return ops

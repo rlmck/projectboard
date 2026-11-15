@@ -266,7 +266,7 @@
   }
 
   // Grid name for a hold number: hold1 -> A1, hold19 -> S1, hold20 -> A2, hold243 -> O13.
-  // 19 columns (A–S) × 13 rows, numbered row-major. Labels holds in the outline editor.
+  // 19 columns (A–S) × 13 rows, numbered row-major. Labels holds in Board setup and Edit holds.
   function gridName(n) {
     n = +n;
     if (!n || n < 1) return 'hold' + n;
@@ -332,7 +332,7 @@
   // used holds stay bright. Returns null when shapes can't be used so callers
   // fall back to boardOverlayHtml().
   //
-  // Shapes are traced (register_shapes.py / the #outlines editor) against ONE specific
+  // Shapes are traced (Board Setup, Edit holds, PB Console → Holds) against ONE specific
   // board — the LIVE board_config image + hold map — and hold_shapes.json records
   // that board's updated_at in __meta.board_updated_at. They only fit that board,
   // so the overlay stays off unless board_config supplied the map AND its version
@@ -355,26 +355,14 @@
   // Traced outlines are drawn as a closed Catmull-Rom curve through every traced
   // point, not straight segments. The tension runs 0 = the straight polygon to
   // 1 = fully rounded (can bulge a little past the traced points). It is set in
-  // the #outlines editor and published with the outlines as __meta.smooth;
+  // PB Console → Holds and published with the outlines as __meta.smooth;
   // SHAPE_SMOOTH is the default for a set without one (e.g. the bundled file).
   // The viewBox is stretched, but the curve is affine-invariant so it stays true.
-  // The editor passes its own unpublished `smooth`; everything else uses the set's.
+  // The curve itself is trace.js's (traceCurvePath), one copy for every tool.
   const SHAPE_SMOOTH = 0.7;
   function shapeSmooth() {
     const s = HOLD_SHAPES && HOLD_SHAPES.__meta && HOLD_SHAPES.__meta.smooth;
     return (typeof s === 'number' && s >= 0 && s <= 1) ? s : SHAPE_SMOOTH;
-  }
-  function smoothShapePath(pts, smooth = shapeSmooth()) {
-    const n = pts.length, k = smooth / 6;
-    const f = v => +v.toFixed(3);
-    let d = `M${f(pts[0][0])},${f(pts[0][1])}`;
-    for (let i = 0; i < n; i++) {
-      const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
-      d += `C${f(p1[0] + (p2[0] - p0[0]) * k)},${f(p1[1] + (p2[1] - p0[1]) * k)}`
-        + ` ${f(p2[0] - (p3[0] - p1[0]) * k)},${f(p2[1] - (p3[1] - p1[1]) * k)}`
-        + ` ${f(p2[0])},${f(p2[1])}`;
-    }
-    return d + 'Z';
   }
 
   // roles: { holdId -> 'start' | 'int' | 'finish' }. `mirror` pulls each hold's
@@ -402,7 +390,7 @@
       const pos = HOLD_MAP[key];
       const role = roles[h];
       if (pts && pts.length >= 3) {
-        const d = smoothShapePath(pts);
+        const d = traceCurvePath(pts, shapeSmooth());
         holes.push(`<path d="${d}" fill="#000"/>`);
         outlines.push(`<path d="${d}" class="hs ${role}"/>`);
       } else if (pos) {                       // no traced shape yet — show a dot
@@ -414,7 +402,7 @@
     const footHole = (f, attrs) => {
       const fh = FOOT_HOLDS[f];
       if (!fh) return '';
-      if (fh.pts && fh.pts.length >= 3) return `<path d="${smoothShapePath(fh.pts)}" ${attrs}/>`;
+      if (fh.pts && fh.pts.length >= 3) return `<path d="${traceCurvePath(fh.pts, shapeSmooth())}" ${attrs}/>`;
       return `<ellipse cx="${fh.x}" cy="${fh.y}" rx="${+(rx / 2).toFixed(2)}" ry="${+(ry / 2).toFixed(2)}" ${attrs}/>`;
     };
     if (feet.length && feetUsable()) {
@@ -429,7 +417,7 @@
       Object.keys(HOLD_MAP).forEach(key => {
         if (!isHandHold(key)) return;
         const pts = HOLD_SHAPES[key], pos = HOLD_MAP[key];
-        if (pts && pts.length >= 3) holes.push(`<path d="${smoothShapePath(pts)}" fill="#000"/>`);
+        if (pts && pts.length >= 3) holes.push(`<path d="${traceCurvePath(pts, shapeSmooth())}" fill="#000"/>`);
         else if (pos && typeof pos.x === 'number') holes.push(`<ellipse cx="${pos.x}" cy="${pos.y}" rx="${rx}" ry="${ry}" fill="#000"/>`);
       });
       // Create: the footholds stay bright too, so Specific feet can be tapped.
@@ -459,7 +447,7 @@
       const pts = usable && HOLD_SHAPES[h];
       if (pts && pts.length >= 3) {
         let d = hpPathCache.get(pts);
-        if (!d) { d = smoothShapePath(pts); hpPathCache.set(pts, d); }
+        if (!d) { d = traceCurvePath(pts, shapeSmooth()); hpPathCache.set(pts, d); }
         return `<path d="${d}" ${attrs}/>`;
       }
       const pos = HOLD_MAP[h];
@@ -492,6 +480,56 @@
     const r = boardEl.getBoundingClientRect();
     const w = r.width || 1, h = r.height || 1;
     return { x: (clientX - r.left) / w * 100, y: (clientY - r.top) / h * 100, w, h };
+  }
+
+  // What a tap on a board picks: { id, foot } or null. The one tap rule for every board
+  // that shows HOLD_MAP (review C3, 15 Nov 2026): problem Create and Edit (phone, viewer,
+  // wall), circuit create, the hold filter's picker (phone and wall).
+  //   kinds ['hand'] (the default): the hand hold whose centre is nearest, within
+  //     `radius` × the board's width on screen (0.06: about half a hold spacing); footholds
+  //     are never picked (circuits, the filter).
+  //   kinds ['hand', 'foot'] (Create, Specific feet): a foothold is picked instead only
+  //     when the tap is inside its outline (and no smaller hand outline: traceInnermost),
+  //     or, outside every outline, when its centre is the nearest of all, within
+  //     HIT_FOOT_R of the width; otherwise exactly the hand pick, so hand-hold taps never
+  //     change because footholds exist.
+  // Distances are in screen pixels (boardPct: x and y are % of different lengths), so
+  // the zoomed viewer and the wall's bigger board scale the reach with the board.
+  // Board Setup, Edit holds and PB Console pick among a draft's outlines on their own
+  // stage instead (same first step, traceInnermost; their own reach for a near miss).
+  const HIT_FOOT_R = 0.04;
+  function hitHold(boardEl, clientX, clientY, { kinds = ['hand'], radius = 0.06 } = {}) {
+    if (!HOLD_MAP || !boardEl) return null;
+    const { x: px, y: py, w, h: bh } = boardPct(boardEl, clientX, clientY);
+    const d2 = pos => { const dx = (pos.x - px) / 100 * w, dy = (pos.y - py) / 100 * bh; return dx * dx + dy * dy; };
+    let hand = null, handD = Infinity;
+    if (kinds.includes('hand')) {
+      for (const h in HOLD_MAP) {
+        if (!isHandHold(h)) continue;
+        const d = d2(HOLD_MAP[h]);
+        if (d < handD) { handD = d; hand = h; }
+      }
+    }
+    const handPick = hand && Math.sqrt(handD) <= w * radius ? { id: hand, foot: false } : null;
+    if (!kinds.includes('foot') || !feetUsable()) return handPick;
+    const feet = Object.keys(FOOT_HOLDS);
+    if (!feet.length) return handPick;
+    // Inside outlines: the smallest one containing the tap wins.
+    const items = [];
+    if (shapesUsable()) {
+      for (const h in HOLD_SHAPES) if (h !== '__meta' && HOLD_MAP[h] && isHandHold(h)) items.push({ id: h, foot: false, pts: HOLD_SHAPES[h] });
+    }
+    for (const f of feet) items.push({ id: f, foot: true, pts: FOOT_HOLDS[f].pts });
+    const inside = traceInnermost(items, px, py, it => it.pts);
+    if (inside) return inside.foot ? { id: inside.id, foot: true } : handPick;
+    // Outside every outline: the nearest centre, footholds and hand holds alike.
+    let best = hand ? { id: hand, foot: false } : null, bestD = handD;
+    for (const f of feet) {
+      const d = d2(FOOT_HOLDS[f]);
+      if (d < bestD) { bestD = d; best = { id: f, foot: true }; }
+    }
+    if (best && best.foot && Math.sqrt(bestD) <= w * HIT_FOOT_R) return best;
+    return handPick;
   }
 
   // Floating "expand to fullscreen" button drawn over a board. Used by the inline
@@ -531,7 +569,7 @@
   // but never opens by turning the phone. On create views taps still set holds:
   // there's no tap-to-hide, a drag or pinch never counts as a tap, and on problem
   // Create a double-tap closes the viewer only when both taps miss every hold
-  // (nearestHold), so double-tapping a hold still cycles it twice.
+  // (hitHold), so double-tapping a hold still cycles it twice.
   // The hold filter's picker (#hp-screen over the Filter sheet, problems.js) is
   // the 'holds' view here (fsView()): it pinches in and out as Create does, a tap
   // picks or drops a hold, and the bar shows the live count.
@@ -950,7 +988,7 @@
   // hold of the board as it settles back on the page).
   let fsCreateEmptyTap = null;  // { t, x, y } of the last tap that missed every hold
   function fsCreateTap(p) {
-    const empty = fsView() === 'create' ? !createPick(p.x, p.y, fsWrap) : !nearestHold(p.x, p.y, fsWrap);
+    const empty = !hitHold(fsWrap, p.x, p.y, { kinds: fsView() === 'create' ? ['hand', 'foot'] : ['hand'] });
     const now = Date.now(), prev = fsCreateEmptyTap;
     fsCreateEmptyTap = empty ? { t: now, x: p.x, y: p.y } : null;
     if (!empty || !prev || now - prev.t >= 300 || Math.hypot(p.x - prev.x, p.y - prev.y) > 40) return;
@@ -1130,16 +1168,16 @@
     // A challenge attempt keeps running in other views, with a way back on the nav.
     if (name !== 'challenge') leaveChallenge();
 
-    ['list','detail','create','outlines','setup','admin','auth','profile','circuits','circuit-detail','circuit-create','challenge','leaderboard'].forEach(v => {
+    ['list','detail','create','setup','admin','auth','profile','circuits','circuit-detail','circuit-create','challenge','leaderboard'].forEach(v => {
       document.getElementById('view-' + v).classList.toggle('active', v === name);
     });
 
-    // Bottom nav: hidden on the focused auth screen, and in the outline editor,
+    // Bottom nav: hidden on the focused auth screen, and in Board setup,
     // which needs the whole screen for the board and its controls.
-    document.getElementById('bottom-nav').style.display = (name === 'auth' || name === 'outlines' || name === 'setup') ? 'none' : 'flex';
+    document.getElementById('bottom-nav').style.display = (name === 'auth' || name === 'setup') ? 'none' : 'flex';
 
     // Active nav highlight.
-    const navFor = { list: 'list', detail: 'list', create: 'list', outlines: 'profile', setup: 'profile', admin: 'profile', profile: 'profile', auth: 'profile', circuits: 'circuits', 'circuit-detail': 'circuits', 'circuit-create': 'circuits', challenge: 'circuits', leaderboard: 'leaderboard' }[name] || 'list';
+    const navFor = { list: 'list', detail: 'list', create: 'list', setup: 'profile', admin: 'profile', profile: 'profile', auth: 'profile', circuits: 'circuits', 'circuit-detail': 'circuits', 'circuit-create': 'circuits', challenge: 'circuits', leaderboard: 'leaderboard' }[name] || 'list';
     document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.nav === navFor));
 
     const keep = quiet ? undefined : name === 'list' ? listScroll : name === 'circuits' ? circuitsScroll : null;
@@ -1193,29 +1231,27 @@
         setView('create');
         break;
       case 'calibrate':
-        // The old recalibrate tool's address; the outline editor replaced it.
-        redirectRoute('#outlines');
-        break;
       case 'outlines':
-        // Super-admin-only tool (db/44). Nothing is shown until auth (and the profile)
-        // is known — initAuth re-runs the router then — so nobody else ever sees it, not
-        // even for a moment on a cold deep link. setView first: the editor measures its
-        // stage, which has no size while the view is hidden.
-        if (!authReady) break;
-        if (!isSuperAdmin()) { redirectRoute(isAdmin() ? '#admin' : '#list'); break; }
-        setView('outlines');
-        initOutlines();
+        // Old addresses: the recalibrate tool, then Trace Holds (retired 15 Nov 2026,
+        // review C3). Both go straight into Board Setup → Edit holds.
+        redirectRoute('#setup/edit');
         break;
       case 'setup':
-        // Board setup and Edit holds (setup.js, holdedit.js): the super admin only, same
-        // gate as #outlines. setView first: the board stage measures itself.
+        // Board setup and Edit holds (setup.js, holdedit.js): the super admin only (db/44).
+        // Nothing is shown until auth (and the profile) is known — initAuth re-runs the
+        // router then — so nobody else ever sees it, not even for a moment on a cold deep
+        // link. setView first: the board stage measures itself. #setup/edit opens Edit
+        // holds (from the start page only; mid-flow the flow is kept), then reads #setup.
         if (!authReady) break;
         if (!isSuperAdmin()) { redirectRoute(isAdmin() ? '#admin' : '#list'); break; }
         setView('setup');
-        initSetup();
+        if (param === 'edit') {
+          history.replaceState(history.state, '', '#setup');
+          initSetup().then(() => { if (currentView === 'setup' && BS.step === 'start') heOpen(); });
+        } else initSetup();
         break;
       case 'admin':
-        // Admin-only hub (Trace Holds + user management). Same gate as #outlines:
+        // Admin-only hub (Board Setup + user management). Same gate as #setup:
         // wait for auth + profile, then bounce non-admins.
         if (!authReady) break;
         if (!isAdmin()) { redirectRoute('#list'); break; }
@@ -1319,7 +1355,7 @@
       return ch ? '#circuit/' + encodeURIComponent(ch.circuit_id) : '#circuits';
     }
     if (route === 'create' && param) return '#detail/' + encodeURIComponent(param);
-    if (route === 'outlines' || (route === 'admin' && param)) return '#admin';
+    if ((route === 'admin' && param) || route === 'setup') return '#admin';
     if (route === 'admin') return '#profile';
     return '#list';
   }

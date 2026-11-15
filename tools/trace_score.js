@@ -37,25 +37,11 @@ const data = new Uint8ClampedArray(raw.buffer, raw.byteOffset + nl + 1, W * H * 
 const res = traceHolds({ data, width: W, height: H }, JSON.parse(opt('--opts') || '{}'));
 const shapes = res.shapes;
 
-// The hand-traced outlines, drawn as the app draws them (closed Catmull-Rom, __meta.smooth).
+// The hand-traced outlines, drawn as the app draws them (trace.js traceCurve, __meta.smooth).
 const gtAll = JSON.parse(fs.readFileSync(path.join(ROOT, 'app', 'hold_shapes.json'), 'utf8'));
 const smooth = (gtAll.__meta && gtAll.__meta.smooth) || 0.7;
-function curve(pts, s) {
-  const n = pts.length, k = s / 6, out = [];
-  for (let i = 0; i < n; i++) {
-    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
-    const c1 = [p1[0] + (p2[0] - p0[0]) * k, p1[1] + (p2[1] - p0[1]) * k];
-    const c2 = [p2[0] - (p3[0] - p1[0]) * k, p2[1] - (p3[1] - p1[1]) * k];
-    for (let t = 0; t < 1; t += 0.125) {
-      const u = 1 - t;
-      out.push([u * u * u * p1[0] + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t * t * t * p2[0],
-                u * u * u * p1[1] + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t * t * t * p2[1]]);
-    }
-  }
-  return out;
-}
 const gt = Object.keys(gtAll).filter(k => k !== '__meta').map(id => ({
-  id, pts: curve(gtAll[id], smooth).map(p => [p[0] / 100 * W, p[1] / 100 * H]),
+  id, pts: traceCurve(gtAll[id], smooth).map(p => [p[0] / 100 * W, p[1] / 100 * H]),
 }));
 
 function bbox(pts) {

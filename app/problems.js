@@ -1011,7 +1011,6 @@
     if (WALL) wallRefreshBoard();
     if (currentView === 'detail') viewRefresh();
     if (currentView === 'create') applyCreateRoles();
-    if (currentView === 'outlines') initOutlines();
     if (currentView === 'circuit-detail') renderCircuitDetail(parseHash().param);
     if (currentView === 'circuit-create') applyCircuitCreate();
   }
@@ -1068,8 +1067,8 @@
   // ── Load hold outline shapes (hold id -> [[x,y],…] % polygon) ───────────────
   // Their % coords are traced against the LIVE board image + map (board_config),
   // which is what the detail/create views render, so outlines and board have to
-  // move together: board_config.hold_shapes (db/28) is the source of truth once
-  // an admin has published from the #outlines editor, and this bundled file is
+  // move together: board_config.hold_shapes (db/28; since db/42 a copy of the holds
+  // table's outlines) is the source of truth, and this bundled file (a snapshot) is
   // the first-paint / offline fallback. Don't clobber outlines that already came
   // from board_config. The board version they were traced against is recorded in
   // __meta.board_updated_at; shapesUsable() refuses to draw over any other board,
@@ -1141,7 +1140,7 @@
   }
 
   // ── Load the holds table (db/41): each hold's name, kind and mirror partner ──
-  // Names label the hold chips and the outline editor; the mirror partners replace
+  // Names label the hold chips and Edit holds; the mirror partners replace
   // board_config.mirror_map (a trigger keeps the two the same). Hand holds'
   // positions and outlines come from board_config's copies; footholds are only
   // here, so their position and outline (Specific feet) come with them: a second,
@@ -1233,11 +1232,11 @@
   // the old photo, map and outlines after a publish until something reloaded it.
   // The wall's 5-minute poll, the phone's pull-to-refresh and the app coming back
   // to view call this: one small read of updated_at, and the board is reloaded only
-  // when it moved. Not under Board setup / Edit holds or the outline editor, which
+  // when it moved. Not under Board setup / Edit holds, which
   // re-read the board themselves and hold drafts against the version they loaded.
   let boardCheckBusy = false;
   async function refreshBoardIfChanged() {
-    if (boardCheckBusy || !navigator.onLine || currentView === 'setup' || currentView === 'outlines') return;
+    if (boardCheckBusy || !navigator.onLine || currentView === 'setup') return;
     boardCheckBusy = true;
     try {
       const { data, error } = await sb.from('board_config').select('updated_at')
