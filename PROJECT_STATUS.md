@@ -8,7 +8,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **The Pi 4 is on a new SD card (1 Nov 2026)** (set itself up: `pi/firstboot/README.md`). Trixie Lite, Tailscale `projectboard`; self-healing and watchdogs; R8 tests still to do. Idle pattern **`wave`** 15 min after the last cast. Wi-Fi: random MAC, `pb-netwatch` v2, rescue hotspot.
 - **The wall screen** casts on a tap (problem, circuit `show_circuit`), creates as The Hangout (db/35) with live LEDs (contract §9).
 - **Circuits are cast (30 Oct 2026)** from phones and the wall: Cast → speed, Loop or 1–10 laps → countdown, moves, Stop; the Pi runs it (`pi/listener/circuit.py`; contract §8).
-- **The wall kiosk** (`kiosk.service`: cage + Chromium on `/?wall`, the wall key in the fragment) on the 1280×720 touchscreen picks up a deploy at its next idle or each morning.
+- **The wall kiosk** (`kiosk.service`: cage + Chromium on `/?wall`, the wall key in the fragment) on the 1280×720 touchscreen checks for a deploy every 5 min and takes it after 2 min untouched (back on the same page, problem and scroll), or each morning.
 - **Opening hours (7 Nov 2026):** per day in the Pi's `config.env` (Mon–Thu 15:30–22:00, Fri closed, Sat–Sun 09:30–15:00); night outside them. PB Console edits them (`pi/README.md` → Opening hours).
 - **Holds in the database (db/41, db/42):** the `holds` table is the source (`board_config` copies it). **Board setup** (a new photo: a whole board) and **Edit holds** / PB Console → Holds (edits, db/48 `admin_edit_holds`; points in both, the board-wide smoothing in the console, db/49; Trace Holds retired 15 Nov) publish with Undo; 188 hand holds, 55 footholds. The offline snapshot (five files, `foot_holds.json` since 15 Nov) matches live as of 15 Nov. **Specific feet** (10 Nov). **Publish safety (12 Nov, db/45):** a stale publish is refused (CLAUDE.md → Data traps; overview §4.8a, §4.8d).
 - **Hardware:** temporary wiring (`pi/README.md` → "Wiring"), Pi in the junction box, two 5 V 10 A supplies (both needed); relays and level shifter arrived, not fitted (3.3 V data works). A USB webcam shows the back of the board (Tailscale only).
@@ -38,14 +38,15 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
-- **Ross, session 11 (real edits undone at once):** 1) Phone Create (test problem, then delete): tap holds everywhere, in the viewer too, and footholds (yellow): each picks the hold under your finger. 2) Circuit create: a foothold never goes in. 3) Wall Create (don't save) and the filter's picker. 4) As Pablo, an old `#outlines` link lands on Edit holds; no Trace Holds card. 5) Console → Holds: click a point, arrows nudge it (Shift/Alt), Esc then arrows move the outline, drag a ○, M mirrors onto the partner, Round slider; Discard draft.
-- **Ross, as Pablo, the edit path (session 10; each undone at once):** 1) Edit holds → Edit points: drag (magnifier), ○, Remove point, nudge; Publish; start page → Undo. 2) Tap to trace / Draw a foothold → Publish → Undo. 3) A hand hold +5° → Publish (partner turns too) → Undo. 4) Console → Holds: move a point → Publish → Undo. 5) No "offline copy is behind" card after; if there is, Ship the snapshot.
-- **Ross, db/47 (session 9):** signed in: tick, favourite, Ranks, Pat Burner; a name in other capitals says "already used"; edit your problem; a cast shows in Console → Activity; as admin: users, benchmark, Move to Circuits; `/?wall` list + Create. "Permission" error: tell Claude.
-- **Ross, PB Console (session 8):** Start (icon), no `#c=` left, a 2nd start = a 2nd tab; Backups → database only (17 tables); Restart the listener while busy asks twice; LED map in its frame.
-- **Ross, at the gym (session 7):** casts, circuits, wall; Console → Deploy (dry run, then real); Logs after a reboot; R8 clock, Supabase block and Wi-Fi drop.
+- **Ross, wall feel test (session 12; the Pi can't be timed):** 1) Search, typing fast with two fingers: every letter lands. 2) Create name (don't save): fast typing, capitals after a space. 3) Scroll hard, tap mid-glide: it only stops; the 5-min poll never jumps the list or eats a tap. 4) Quick taps on problems then a circuit: the board shows the last. 5) Next deploy: leave it on a problem, scrolled, 3+ min: reloads onto the same problem, Mirror, scroll.
+- **Ross, session 11:** phone Create taps (viewer too, footholds) pick the hold under the finger; a circuit never takes a foothold; wall Create + filter picker; `#outlines` → Edit holds; Console → Holds: arrows nudge, Esc+arrows move the outline, ○ drag, M mirror, Round slider, Discard draft.
+- **Ross, as Pablo, the edit path (session 10; each undone at once):** Edit points (drag, ○, remove, nudge), tap-trace/draw a foothold, a hold +5°, Console → Holds point: each Publish → Undo; no "offline copy is behind" card after.
+- **Ross, db/47 (session 9):** signed in: tick, favourite, Ranks, Pat Burner, edit your problem, other-capitals name says "already used"; admin: users, benchmark, Move to Circuits. A "permission" error: tell Claude.
+- **Ross, PB Console (session 8):** Start icon, no `#c=`; Backups (17 tables); busy Restart asks twice; LED map framed.
+- **Ross, at the gym (session 7):** Console → Deploy (dry run, then real); Logs after a reboot; R8 clock, Supabase block, Wi-Fi drop.
 - **Ross: session 6 phone tests** (14 Nov; steps in that session's report).
-- **Ross, at the board: cast seams** (14 Nov): Stop in the countdown (stays idle); 3 laps (red on lap 3, Top!); Loop; no Loop/Laps on a non-looping circuit; live LEDs while setting, Save/Cancel idle at once; phone setting vs a wall circuit tap (Show on board).
-- **Ross: update flow on a phone** (14 Nov): a circuit run survives lock + deploy + unlock; the app opens offline.
+- **Ross, at the board: cast seams** (14 Nov): Stop in the countdown; 3 laps; Loop; none on a non-looping circuit; Save/Cancel idle at once; phone setting vs a wall circuit tap.
+- **Ross: phone update flow** (14 Nov): a run survives lock + deploy + unlock; opens offline.
 - **Ross, on site: kiosk** (12 Nov): long-press/right-click open nothing; a killed renderer recovers.
 - **Ross:** Edit holds: the footholds beside **G1 and N1** aren't in yet (3 of 5 are). Sign in as Pablo with the new PIN once (reset 10 Nov). The db/41 checks (9 Nov report). **Try Specific feet** (plan → Session 3 → "Try it").
 - **Parked branch `parked/2b-camera-led-mapping`:** camera LED mapping (2b), unfinished, never shipped; only for a full rearrange or another gym (`TODO.md` → Not now). Its db/43 is live and harmless.
@@ -62,6 +63,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-15, Claude Code (review fix session 12: wall performance + TODO 8).**
+  - **Changed:** wall keys built once, type on lift (overlapping two-finger typing 0/8 → 8/8 keys); no hidden phone list; a pick redraws only the overlay; the poll renders only changes, never under a finger; one wall send queue, in order; Save follows the connection; no phone text. Updates: every 5 min, applied after 2 min untouched, same problem + scroll.
+  - **Tested:** headless Chrome CPU ×6 (key ~350→~200 ms, poll no change ~660→~65 ms); 39 wall + 10 phone checks; update flow; casts stubbed.
+  - **Live:** `3bb287c`, app `pb-8a3928ae84`. No Pi change.
+  - **Left:** Ross's feel test (Waiting on); next is session 13.
+
 - **2026-11-15, Claude Code (review fix session 11: retire Trace Holds, C3).**
   - **Changed:** `#outlines` → Board Setup → Edit holds; Trace Holds and ~880 lines gone; db/49 drops `admin_set_hold_outlines`, adds a `smooth` edit. Console → Holds: arrow nudge, mid handles, Round slider, mirror-copy (M). One geometry module (`trace.js`), one `hitHold()`. Retired generators archived (BRD-14).
   - **Tested:** db/49 test (rolled back); scorers unchanged; console/tests 179; headless Chrome, publishes stubbed; taps = old pickers on 120,000 taps.
@@ -73,9 +80,3 @@ Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which si
   - **Tested:** db/48 test (rolled back), scorers, console/tests 179, build; headless Chrome on localhost, publish stubbed.
   - **Live:** `e7dd5b8`, app `pb-6bc0208e9d`; snapshot shipped, Pi deployed.
   - **Left:** Ross's checks (Waiting on); session 11 retires `#outlines`.
-
-- **2026-11-15, Claude Code (review fix session 9: database access tidy).**
-  - **Changed:** db/47: hold ids must be hand holds (problems, circuits); board writes only through the RPCs; new functions executable by nobody by default, unused grants gone; `cast_log` cap and name check; challenge ties on server time; names unique ignoring case. App: "That name is already used". DB-08, DB-12, DB-13 accepted.
-  - **Tested:** db/47 test (member, guest); member/admin/super-admin paths (dry run); guest API live; console Holds + Activity. Chrome not connected.
-  - **Live:** `da3793c`, app `pb-c2909dc59f`. No Pi change.
-  - **Left:** Ross's checks (Waiting on).
