@@ -2,7 +2,7 @@
 
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 12 KB: the 3 newest session entries live here, older ones in `docs/log/` (`docs/log/2026-10.md`, `docs/log/2026-11.md`).
 
-## Current state (as of 2026-11-14)
+## Current state (as of 2026-11-15)
 - **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` (stamp: newest session entry) is also on every script and stylesheet URL since 14 Nov (overview §7). Not yet announced to the public: the wiring behind the board is temporary.
 - **Sorting and filtering (4 Nov 2026):** the Filter sheet (phone) or panel (wall): Sort, Grade slider, quick filters, pick Holds; `✕ Clear` (overview §4.2a).
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs, about 0.25–0.45 s) and is used daily. Every hold's LED, mirrored casts, the feet rule and the geofence centre are checked on site.
@@ -40,13 +40,14 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
-- **Ross, PB Console (session 8), step by step:** 1) Close the console, start it (icon): the tab works, no `#c=` in the address. 2) Start again: a 2nd working tab. 3) Reload: still works; an old `#c=` address in a new tab: "no session". 4) Advanced → Backups → The database only: a new `db-…` folder, 17 tables. 5) Backups drawer says what it covers. 6) Board in use: Restart the listener → confirm → a 2nd "Go ahead anyway?" step. 7) Holds → Ship the snapshot: one commit pushed (refuses if the repo has other changes). 8) LED map tool works in its frame.
-- **Ross, at the gym (session 7, 15 Nov):** 1) casts, a circuit, the wall screen as before. 2) PB Console → Deploy: dry run, then Deploy, no password. 3) Logs: `netwatch-file`, `netlog` (after a reboot). 4) R8 clock test, reboot within 15 min: NTP back on in 2 min (`ACTION ntp-on`). 5) R8 Supabase block: no listener restarts. 6) Wi-Fi drop: the hotspot stays 15 min; `netwatch.txt` on the card.
+- **Ross, db/47 (session 9; no browser run, Chrome wasn't connected):** 1) Signed in: tick/untick, favourite a problem and a circuit, Ranks, Pat Burner. 2) Create a test problem; the same name in other capitals says "already used"; delete it. 3) Edit your problem's holds. 4) A signed-in cast shows in Console → Activity. 5) As Pablo: Trace Holds, Edit holds publish + Undo, Board Setup, Console → Holds. 6) As admin: users, activity, benchmark, Move to Circuits. 7) `/?wall` list + Create. A "permission" error = a missing grant: tell Claude.
+- **Ross, PB Console (session 8):** 1) Start (icon): works, no `#c=` in the address; again: a 2nd tab; reload works, an old `#c=` address says "no session". 2) Backups → The database only: a `db-…` folder, 17 tables; the drawer says what it covers. 3) Board in use: Restart the listener asks twice. 4) Holds → Ship the snapshot pushes one commit. 5) LED map tool works in its frame.
+- **Ross, at the gym (session 7):** 1) casts, circuits, wall as before. 2) Console → Deploy: dry run, then Deploy, no password. 3) Logs `netwatch-file`, `netlog` after a reboot. 4) R8 clock: reboot within 15 min, NTP back in 2 min. 5) R8 Supabase block: no listener restarts. 6) Wi-Fi drop: hotspot 15 min, `netwatch.txt` on the card.
 - **Ross: session 6 phone tests** (14 Nov; steps in that session's report).
-- **Ross, at the board: cast seams** (14 Nov; the Pi has had it since 14:08 on 14 Nov): Start a circuit, Stop in the countdown (board idles, stays idle); 3 laps (red on lap 3, Top! with the board); Loop (endless); a non-looping circuit has no Loop/Laps; live LEDs while setting, Save and Cancel (idle at once); setting on a phone while a circuit is tapped on the wall (Show on board).
-- **Ross: test the update flow on a phone** (14 Nov): start a circuit run, lock the phone, wait for a deploy, unlock: the run screen stays, the update comes after. The app opens offline as before.
-- **Ross, on site: kiosk tests** (12 Nov): long-press and right-click open nothing; a killed renderer recovers by itself (`pi/README.md` → What runs).
-- **Ross: try the publish safety** (12 Nov): each board tool publishes and undoes as before; a publish from elsewhere in between is refused cleanly. **The snapshot is a publish behind live** (11 Nov): PB Console → Holds → Ship the snapshot (Home's tile stays amber till then).
+- **Ross, at the board: cast seams** (14 Nov): Stop in the countdown (stays idle); 3 laps (red on lap 3, Top!); Loop; no Loop/Laps on a non-looping circuit; live LEDs while setting, Save/Cancel idle at once; phone setting vs a wall circuit tap (Show on board).
+- **Ross: update flow on a phone** (14 Nov): a circuit run survives lock + deploy + unlock; the app opens offline.
+- **Ross, on site: kiosk** (12 Nov): long-press/right-click open nothing; a killed renderer recovers.
+- **Ross: publish safety** (12 Nov): each board tool publishes and undoes; a publish from elsewhere in between is refused. **The snapshot is a publish behind live** (11 Nov): PB Console → Holds → Ship the snapshot (Home's tile stays amber till then).
 - **Ross:** Edit holds: the footholds beside **G1 and N1** aren't in yet (3 of 5 are). Sign in as Pablo with the new PIN once (reset 10 Nov). The db/41 checks (9 Nov report). **Try Specific feet** (plan → Session 3 → "Try it").
 - **Ross: try PB Console → Holds** (`console/README.md` → Holds): a redraw, a new foothold, a pair, Publish, Ship the snapshot. **Decide** whether turning a hold and new photos move to the console (the review recommends no).
 - **Parked branch `parked/2b-camera-led-mapping`:** camera LED mapping (2b), unfinished, never shipped; only for a full rearrange or another gym (`TODO.md` → Not now). Its db/43 is live and harmless.
@@ -63,6 +64,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-15, Claude Code (review fix session 9: database access tidy).**
+  - **Changed:** db/47: hold ids must be hand holds (problems, circuits); board writes only through the RPCs; new functions executable by nobody by default, unused grants gone; `cast_log` cap and name check; challenge ties on server time; names unique ignoring case. App: "That name is already used". DB-08, DB-12, DB-13 accepted.
+  - **Tested:** db/47 test (member, guest); member/admin/super-admin paths (dry run); guest API live; console Holds + Activity. Chrome not connected.
+  - **Live:** `da3793c`, app `pb-c2909dc59f`. No Pi change.
+  - **Left:** Ross's checks (Waiting on).
+
 - **2026-11-15, Claude Code (review fix session 8: PB Console).**
   - **Changed:** CON-01–04, 06–10, 12, 13, 15: safe pull-file; Ship the snapshot pushes only its own commit; the backup is a full local DB dump (newest 8; hook refuses `backups/`; privacy.html); one-time sign-in code; busy 2nd step; 36 tests (`console/README.md`).
   - **Tested:** console/tests 183, hook 38; live backup (17 tables, counts = live); code flow over HTTP (Chrome not connected).
@@ -74,8 +81,3 @@ Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which si
   - **Tested:** pi/tests 253, console/tests 148; on the Pi: swap, `visudo -c`, a killed deploy finished.
   - **Live:** `32e342a`, Pi by autodeploy (listener joined, 0 failed units, drift 68/68). No app change.
   - **Left:** Ross's tests (Waiting on).
-
-- **2026-11-14, Claude Code (review fix session 7: Pi deploy and ops; nothing changed).**
-  - **Changed:** no code (session 7 has only Medium/Low findings; the brief was Critical/High).
-  - **Live:** the Pi deploy held since 12:26 (session 5's Pi side) went at 14:08 on Ross's go: Pi on `e66bd12`, listener joined, 0 errors, no failed units. App unchanged.
-  - **Left:** Ross to say which of session 7's Medium/Low findings to fix (Waiting on). Session 5 board tests can start.
