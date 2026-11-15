@@ -15,7 +15,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **Opening hours (7 Nov 2026):** per day in the Pi's `config.env` (Mon–Thu 15:30–22:00, Fri closed, Sat–Sun 09:30–15:00); outside them the LEDs and wall screen are off and casts ignored. PB Console edits them and has Stay on until (`pi/README.md` → Opening hours).
 - **Holds in the database (db/41, db/42):** the `holds` table is the source of each hold's name, kind, LED, position, outline and mirror partner (`board_config` copies it; `tools/check_holds.py`). **Board setup** and **Edit holds** (super admin, db/44) publish a whole board with Undo; the new board went live 10 Nov (188 hand holds, 50 footholds). **Specific feet** (10 Nov): footholds picked in Create/Edit, never lit. **Publish safety (12 Nov, db/45):** every publish names its version, a stale one is refused (CLAUDE.md → Data traps; overview §4.8a, §4.8d).
 - **Hardware:** temporary wiring (`pi/README.md` → "Wiring"), Pi in the junction box, two 5 V 10 A supplies (both needed); relays and level shifter arrived, not fitted (3.3 V data works). A USB webcam shows the back of the board (Tailscale only).
-- **Pi deploys are automatic (10 Nov 2026):** CLAUDE.md working rule 2; `pi/README.md` → Deploying.
+- **Pi deploys are automatic (10 Nov 2026):** CLAUDE.md working rule 2; since 15 Nov signed, through `pb-install` (`pi/README.md` → Deploying).
 - **PB Console** (`console/`, `bash console/start.sh`): Home (board controls, webcam, Health with 7 days of `pb-healthlog`, Activity, opening hours), Holds (outlines, footholds, pairs), Activity, Advanced (logs, config, Pi deploy, LED map, R8 checklist, backups, audit); weekly backups (`console/README.md`). Phase 13 (Data) isn't built.
 
 ## Decisions
@@ -39,7 +39,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
-- **Ross: session 7's scope** (14 Nov): it has no Critical or High findings; say which Medium/Low ones to fix.
+- **Ross, at the gym (session 7, 15 Nov):** 1) casts, a circuit, the wall screen as before. 2) PB Console → Deploy: dry run, then Deploy, no password. 3) Logs: `netwatch-file`, `netlog` (after a reboot). 4) R8 clock test, reboot within 15 min: NTP back on in 2 min (`ACTION ntp-on`). 5) R8 Supabase block: no listener restarts. 6) Wi-Fi drop: the hotspot stays 15 min; `netwatch.txt` on the card.
 - **Ross: session 6 phone tests** (14 Nov; steps in that session's report).
 - **Ross, at the board: cast seams** (14 Nov; the Pi has had it since 14:08 on 14 Nov): Start a circuit, Stop in the countdown (board idles, stays idle); 3 laps (red on lap 3, Top! with the board); Loop (endless); a non-looping circuit has no Loop/Laps; live LEDs while setting, Save and Cancel (idle at once); setting on a phone while a circuit is tapped on the wall (Show on board).
 - **Ross: test the update flow on a phone** (14 Nov): start a circuit run, lock the phone, wait for a deploy, unlock: the run screen stays, the update comes after. The app opens offline as before.
@@ -61,8 +61,14 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-15, Claude Code (review fix session 7: Pi deploy and ops).**
+  - **Changed:** PI-02, 03, 04, 06, 07, 08, 11, 13, 14, CON-11, CON-16 and TODO 5's first half: signed deploys via `pb-install` (one lock and record, own unit, listener swapped whole); pb-health fixes; logs and first-boot secrets off FAT; rescue profile in `pi/conf` (`pi/README.md` → Deploying).
+  - **Tested:** pi/tests 253, console/tests 148; on the Pi: swap, `visudo -c`, a killed deploy finished.
+  - **Live:** `32e342a`, Pi by autodeploy (listener joined, 0 failed units, drift 68/68). No app change.
+  - **Left:** Ross's tests (Waiting on).
+
 - **2026-11-14, Claude Code (review fix session 7: Pi deploy and ops; nothing changed).**
-  - **Changed:** no code. Session 7's row has no Critical or High findings (all Medium/Low); the brief was Critical/High only.
+  - **Changed:** no code (session 7 has only Medium/Low findings; the brief was Critical/High).
   - **Live:** the Pi deploy held since 12:26 (session 5's Pi side) went at 14:08 on Ross's go: Pi on `e66bd12`, listener joined, 0 errors, no failed units. App unchanged.
   - **Left:** Ross to say which of session 7's Medium/Low findings to fix (Waiting on). Session 5 board tests can start.
 
@@ -71,9 +77,3 @@ Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which si
   - **Tested:** build check; local Chrome (phone, `/?wall`), stubbed writes.
   - **Live:** `5d245a1`, app `pb-5f62d531e5`, scripts at `?v=`, no console errors. No Pi change.
   - **Left:** Ross's phone tests (Waiting on). Next: session 7.
-
-- **2026-11-14, Claude Code (review fix session 5: cast seams).**
-  - **Changed:** Cast sheet sends `laps` (Loop = 0, Laps 1–10; no Loop for a circuit that doesn't loop), the phone counts the Pi's moves; Stop offered again for 10 s. Previews hear `show_circuit`, send `end` after the message in flight. Pi: stops and ended previews remembered 2 min; junk frames keep the socket; clipped logs; LED write errors in pb-health. `check_track` gone. Contract §8–10.
-  - **Tested:** pi/tests (196), cast-test 33/33, build check.
-  - **Live:** `91d4e9b`, app `pb-0cc82941dc`, no console errors. Pi: waiting (board in use; goes at 15 quiet min or closing). `454874e`: autodeploy no longer picks WSL's bash.
-  - **Left:** Ross's board tests (Waiting on). Next: session 6.

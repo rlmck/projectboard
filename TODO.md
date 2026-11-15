@@ -18,7 +18,7 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 4. **Docs: the touchscreen's HDMI port.** Since the rebuild the screen's video is on the Pi's **`HDMI-A-1`** (the micro-HDMI port nearest the USB-C power), not `HDMI-A-2`: seen 2 Nov 2026 in `/sys/class/drm` (`card0-HDMI-A-1` connected and enabled, `HDMI-A-2` disconnected). `cage` uses whichever output is connected, so nothing is broken; fix the text in `pi/README.md` ("Touchscreen" under Wiring) and the wall kiosk line in `PROJECT_STATUS.md`, and check nothing else names `HDMI-A-2`. Also write the screen's video chain as it is now (the picture is back since 7 Nov 2026) into that "Touchscreen" section.
 
 ## Pi and infrastructure
-5. **Pull the Pi-only files into `pi/`** (PB Console → Deploy): `pb-netwatch.sh` v2 and its unit, the `pb-rescue` profile (secrets stripped), the newer `pb-netlog` unit; then add their `install.sh` lines. Look at the kernel errors seen on 28 Oct (about 3,460 in 24 h, nearly all kernel) in Logs once the gym is closed.
+5. **Look at the kernel errors** seen on 28 Oct (about 3,460 in 24 h, nearly all kernel) in Logs once the gym is closed.
 6. **A heartbeat from the Pi to Supabase** so the app can show "board online". Also: when the board is off (opening hours), a phone cast says so instead of "Cast: X", e.g. "Board's off, back Mon 15:30" (needs the hours where the app can read them; open question 2).
 7. **A mock listener on the laptop** that turns a cast into LED indices (lower priority now the webcam shows the real board).
 
@@ -32,7 +32,7 @@ Ross's one to-do list for Project Board, shared by the claude.ai project chat an
 12. **Phase 13 (Data):** benchmark marking, a hold's mirror partner, a hold relabel done as db/32 did it (`docs/console-plan.md`).
 
 ## Bugs
-13. **Act on the code review** (local `review_output.md` → fix plan, one session each). Sessions 1–6 done (12–14 Nov 2026; Ross's tests in `PROJECT_STATUS.md` → Waiting on). **Next: session 7, Pi deploy and ops** (its findings in the fix plan's row 7): it has no Critical or High findings, so nothing was fixed on 14 Nov; waiting on Ross to say which Medium/Low ones to fix. Needs a Pi deploy, and the gym closed for the test.
+13. **Act on the code review** (local `review_output.md` → fix plan, one session each). Sessions 1–7 done (12–15 Nov 2026; Ross's tests in `PROJECT_STATUS.md` → Waiting on). **Next: session 8** (the fix plan's row 8).
 
 ## Not now
 Don't build yet: Circuits Phase 3 (PBs, leaderboards), mirrored circuits, a Done filter for circuits ("done" = done both sides, problems only), tags, session/logbook tracking beyond ticks, the Flutter migration; **the release workflow** (parked 8 Nov 2026, revisit later; ship straight to `main` until then): features on `dev`, bundled releases tested on staging, a "What's new" popup on phones for new features only (never bug fixes), a PB Console switch pointing the kiosk at staging that reverts itself; **camera LED mapping** (board setup 2b, dropped 10 Nov 2026): parked on `parked/2b-camera-led-mapping`, only for a full rearrange or another gym; **board sets and the archive** (board setup), only for a real rearrange.
