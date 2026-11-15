@@ -318,7 +318,7 @@
         <li>Wait 4 minutes: pb-netwatch and pb-health retry the Wi-Fi, restart NetworkManager, and reboot if needed.</li>
         <li>Still nothing: on site, look for the Wi-Fi network <code>projectboard-rescue</code> (the Pi opens it after about 4 minutes offline, for 15 minutes). Join it, then <code>ssh pi@10.42.0.1</code>.</li>
         <li>Over the hotspot: <code>sudo systemctl stop pb-netwatch</code> first, or it tears the hotspot down.</li>
-        <li>No SSH at all: take the SD card out and read <code>netlog.txt</code> and <code>netwatch.txt</code> from its boot partition.</li>
+        <li>No SSH at all: take the SD card out and read <code>netwatch.txt</code> from its boot partition: the Wi-Fi watchdog's log and a network report, written once per boot when the Wi-Fi has been down about 4 minutes. On the Pi the full logs are <code>/var/log/pb-netwatch.log</code> and <code>/var/log/pb-netlog.txt</code> (Advanced &rarr; Logs).</li>
       </ol>
     </div>
     <div id="runbook-out"></div>

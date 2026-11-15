@@ -268,9 +268,9 @@ def build(kind, args):
 
     # -- phase 6: Pi deploy ----------------------------------------------------------------------
     if kind == 'deploy':
-        # No password: since 30 Oct 2026 the Pi lets deploy.sh install without one
-        # (pi/conf/pb-deploy.sudoers). A card without that rule fails here with sudo's
-        # "a password is required"; one `bash pi/deploy.sh` in Git Bash puts it back.
+        # No password: deploy.sh signs a bundle and pb-install installs it (pi/conf/pb-deploy.sudoers,
+        # 14 Nov 2026). The same lock and fingerprint record as autodeploy (PB_DEPLOY_DATA); a
+        # config.env that differs from the Pi's is refused (exit 3): Config keeps one copy first.
         dry = args.get('dry_run') is True
         argv = [procs.find_bash(), 'pi/deploy.sh'] + (['--dry-run'] if dry else [])
         what = ('Dry run: copy pi/ to the Pi and list what would change (nothing installed).' if dry else
@@ -278,7 +278,8 @@ def build(kind, args):
                 "config.env changed, the listener restarts and the board goes dark for a moment. The laptop's "
                 'pi/config.env is installed as the Pi\'s.')
         return Action('deploy%s' % (' --dry-run' if dry else ''), what,
-                      lambda app: procs.local(argv, env={'PB_HOST': app.remote.host}),
+                      lambda app: procs.local(argv, env={'PB_HOST': app.remote.host, 'PB_DEPLOY_SOURCE': 'console',
+                                                          'PB_DEPLOY_DATA': os.path.join(HERE, 'data')}),
                       shown='bash pi/deploy.sh%s' % (' --dry-run' if dry else ''),
                       confirm=True, busy=not dry, timeout=600)
     if kind == 'pull-file':

@@ -17,6 +17,30 @@ SSH_OPTS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-o', 'ServerAliveI
             '-o', 'ServerAliveCountMax=3']
 # Windows: no console window flashing up for each ssh
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+DEFAULT_HOST = 'pi@projectboard'
+
+
+def load_env(path):
+    """console/.env.local: KEY=value lines (gitignored). The environment wins over it."""
+    env = {}
+    try:
+        with open(path, encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    k, v = line.split('=', 1)
+                    env[k.strip()] = v.strip().strip('"\'')
+    except OSError:
+        pass
+    for k, v in os.environ.items():
+        if k.startswith(('PB_', 'SUPABASE_')):
+            env[k] = v
+    return env
+
+
+def from_env(env):
+    """The Remote that .env.local's PB_HOST / PB_SSH name (PB Console and the scheduled task alike)."""
+    return Remote((env or {}).get('PB_HOST') or DEFAULT_HOST, (env or {}).get('PB_SSH'))
 
 
 class Remote:

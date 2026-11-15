@@ -1,16 +1,25 @@
 #!/bin/bash
-# install.sh: runs ON THE PI as root, from the folder pi/deploy.sh copied over
-# (~pi/pb-deploy). Installs only what changed, then restarts only what needs it.
-# Safe to run again: a second run changes nothing.
+# install.sh: runs ON THE PI as root. Installs only what changed, then restarts only
+# what needs it. Safe to run again: a second run changes nothing.
+#
+# Normally pb-install runs it (pi/deploy.sh sends a signed bundle; pb-install checks it,
+# unpacks it into /var/lib/projectboard/stage, root only, and runs this in its own systemd
+# unit, pb-install-run, so a dropped ssh session can't stop it halfway: review PI-06).
+# By hand, a fresh card (pi/firstboot) or the way back (`bash pi/deploy.sh --password`):
 #
 #   sudo bash ~/pb-deploy/install.sh [--dry-run]
 #
 # Where things go:
-#   listener/*.py      /opt/projectboard/listener/ (and listener/patterns/*.py)
+#   listener/*.py      /opt/projectboard/listener/ (and listener/patterns/*.py). Since 15 Nov 2026
+#                      (review PI-06) that's a symlink to a version folder, listener-<time>: a
+#                      new version is built beside the live one, then swapped in with one rename,
+#                      so a listener (re)start never loads half of one version and half of another.
+#                      The two versions before it are kept.
 #   ops/board-cam.sh   /opt/projectboard/ops/
-#   ops/pb-*           /usr/local/bin/ (pb-touchwatch and pb-healthlog too; pb-console-helper, pb-netwatch.sh: /usr/local/sbin/, root only)
+#   ops/pb-*           /usr/local/bin/ (pb-touchwatch and pb-healthlog too; pb-console-helper, pb-install, pb-netwatch.sh: /usr/local/sbin/, root only)
 #   conf/pb-console.sudoers  /etc/sudoers.d/pb-console (checked with visudo -cf first)
-#   conf/pb-deploy.sudoers   /etc/sudoers.d/pb-deploy (the same check): deploys without a password
+#   conf/pb-deploy.signers   /etc/projectboard/deploy-signers (the laptop's public signing key)
+#   conf/pb-deploy.sudoers   /etc/sudoers.d/pb-deploy (the visudo check): pb-install without a password
 #   ledmap/            /opt/projectboard/ledmap/ (the LED mapping tool: installed, never enabled)
 #   systemd/*          /etc/systemd/system/ (kiosk.service as installed 26 Oct)
 #   conf/              journald + system.conf.d drop-ins, NetworkManager conf, tmpfiles.d
@@ -21,10 +30,18 @@
 # Also, when missing (a fresh card, 31 Oct 2026): the kiosk's packages (cage, chromium),
 # the kiosk user and its blank cursor theme; and the SD-card wear settings (the apt
 # timers and any swap file off; the journal and Chromium's cache are in the files above).
-#   config.env         /etc/projectboard/config.env, if deploy.sh sent the laptop's copy
+#   config.env         /etc/projectboard/config.env, if deploy.sh sent the laptop's copy; the old
+#                      one is backed up to /var/lib/projectboard/config-backups first
+#   conf/pb-rescue.nmconnection  the rescue hotspot's settings (no password: the Pi's own psk
+#                      line is kept), into /etc/NetworkManager/system-connections (15 Nov 2026)
 #
-# First run: disables the stopgap cast-listener (its files stay in /home/pi).
-# Rollback:  sudo systemctl disable --now pb-listener && sudo systemctl enable --now cast-listener
+# Rollback: git revert on the laptop, then deploy (pi/README.md -> Deploying). In a hurry,
+# the listener alone, on the Pi: point the symlink back at the previous version folder,
+#   ls -dt /opt/projectboard/listener-*        (the newest is live)
+#   sudo ln -sfnT listener-<older> /opt/projectboard/listener.swap
+#   sudo mv -T /opt/projectboard/listener.swap /opt/projectboard/listener
+#   sudo systemctl restart pb-listener
+# The next deploy puts the repo's version back.
 
 set -euo pipefail
 export LC_ALL=C
@@ -69,17 +86,59 @@ for f in "$SRC"/listener/*.py; do
 done
 
 echo "== Files"
-for f in board.py circuit.py supa.py power.py renderer.py; do put "listener/$f" "/opt/projectboard/listener/$f" 0644; done
-for f in "$SRC"/listener/patterns/*.py; do
-    put "listener/patterns/$(basename "$f")" "/opt/projectboard/listener/patterns/$(basename "$f")" 0644
-done
-# glisten.py moved into listener/patterns/ (28 Oct 2026): remove the old copy.
-if [ -f /opt/projectboard/listener/glisten.py ]; then
-    CHANGED+=(/opt/projectboard/listener/glisten.py)
-    if [ $DRY -eq 1 ]; then echo "   would remove /opt/projectboard/listener/glisten.py (moved)"
-    else rm -f /opt/projectboard/listener/glisten.py; echo "   removed /opt/projectboard/listener/glisten.py (moved to patterns/)"; fi
+# The listener (review PI-06): built in a new version folder (a copy of the live one, then
+# the changed files), swapped in below with one rename. A dry run compares with the live one.
+LIVE=/opt/projectboard/listener
+CUR=""
+if [ -L "$LIVE" ]; then CUR=$(readlink -f "$LIVE"); elif [ -d "$LIVE" ]; then CUR=$LIVE; fi
+LCHANGED=0
+if [ $DRY -eq 1 ]; then
+    LDEST=${CUR:-$LIVE}
+else
+    LDEST=/opt/projectboard/listener-$(date +%Y%m%d-%H%M%S)
+    if [ -e "$LDEST" ]; then LDEST="$LDEST-$$"; fi     # two runs in one second: never the live one
+    mkdir -p "$LDEST/patterns"
+    if [ -n "$CUR" ]; then
+        cp -a "$CUR/." "$LDEST/"
+        find "$LDEST" -name __pycache__ -prune -exec rm -rf {} +
+    fi
 fi
-for f in pb_listener.py leds.py mode.py; do put "listener/$f" "/opt/projectboard/listener/$f" 0755; done
+lput() {   # lput NAME MODE: listener/NAME into the version being built
+    local n=${#CHANGED[@]}
+    put "listener/$1" "$LDEST/$1" "$2"
+    if [ ${#CHANGED[@]} -gt "$n" ]; then LCHANGED=1; CHANGED+=("$LIVE/$1"); fi
+}
+for f in board.py circuit.py supa.py power.py renderer.py; do lput "$f" 0644; done
+# patterns: /opt/projectboard/listener/patterns/*.py
+for f in "$SRC"/listener/patterns/*.py; do lput "patterns/$(basename "$f")" 0644; done
+# glisten.py moved into listener/patterns/ (28 Oct 2026): remove the old copy.
+if [ -f "$LDEST/glisten.py" ]; then
+    LCHANGED=1
+    CHANGED+=("$LIVE/glisten.py")
+    if [ $DRY -eq 1 ]; then echo "   would remove $LIVE/glisten.py (moved)"
+    else rm -f "$LDEST/glisten.py"; echo "   removed glisten.py (moved to patterns/)"; fi
+fi
+for f in pb_listener.py leds.py mode.py; do lput "$f" 0755; done
+if [ $DRY -eq 0 ]; then
+    if [ $LCHANGED -eq 1 ] || [ ! -L "$LIVE" ]; then
+        touch "$LDEST"
+        ln -sfnT "$(basename "$LDEST")" "$LIVE.swap"
+        if [ -d "$LIVE" ] && [ ! -L "$LIVE" ]; then
+            # Once, on a Pi from before 15 Nov 2026: the real folder becomes a version folder.
+            mv -T "$LIVE" "/opt/projectboard/listener-before-$(date +%Y%m%d-%H%M%S)"
+        fi
+        mv -T "$LIVE.swap" "$LIVE"
+        echo "   $LIVE -> $(basename "$LDEST")"
+        CHANGED+=("$LIVE")
+        # Keep the live version and the two before it.
+        ls -1dt /opt/projectboard/listener-* 2>/dev/null | { grep -vxF "$LDEST" || true; } | tail -n +3 | while read -r old; do
+            rm -rf "$old"
+            echo "   removed the old version $(basename "$old")"
+        done
+    else
+        rm -rf "$LDEST"
+    fi
+fi
 put ops/board-cam.sh /opt/projectboard/ops/board-cam.sh 0755
 put ops/kiosk-prestart.sh /opt/projectboard/ops/kiosk-prestart.sh 0755
 # The Wi-Fi watchdog (v2, 28 Oct 2026): kicks Hangout, the rescue hotspot, guarded reboots.
@@ -94,7 +153,11 @@ if visudo -cf "$SRC/conf/pb-console.sudoers" >/dev/null; then
 else
     echo "!! conf/pb-console.sudoers failed visudo -cf: not installed"
 fi
-# The rule that lets deploy.sh run this installer without the Pi's password (30 Oct 2026).
+# The deploy installer (14 Nov 2026, review PI-03): the rule below lets pi run it, and only it,
+# without a password; it installs only bundles signed by the key in deploy-signers. Both go
+# in before the rule, so the rule never points at a missing program.
+put ops/pb-install /usr/local/sbin/pb-install 0755
+put conf/pb-deploy.signers /etc/projectboard/deploy-signers 0644
 if visudo -cf "$SRC/conf/pb-deploy.sudoers" >/dev/null; then
     put conf/pb-deploy.sudoers /etc/sudoers.d/pb-deploy 0440
 else
@@ -111,6 +174,51 @@ put conf/pb-watchdog.conf /etc/systemd/system.conf.d/pb-watchdog.conf 0644
 put conf/projectboard.tmpfiles /etc/tmpfiles.d/projectboard.conf 0644
 put conf/98-projectboard-no-rand-mac.conf /etc/NetworkManager/conf.d/98-projectboard-no-rand-mac.conf 0644
 put conf/kiosk.pam /etc/pam.d/kiosk 0644
+# The rescue hotspot's profile (15 Nov 2026, TODO 5): its settings come from
+# conf/pb-rescue.nmconnection, which has no password; the Pi's own psk line is kept (setup.sh
+# wrote it from secrets.env, and it's never read out or printed). No profile on the Pi yet:
+# there's no password to keep, so setup.sh makes it (pi/firstboot).
+RESCUE=/etc/NetworkManager/system-connections/pb-rescue.nmconnection
+if [ -f "$RESCUE" ]; then
+    r=$(python3 - "$SRC/conf/pb-rescue.nmconnection" "$RESCUE" "$DRY" <<'PY'
+import os, sys
+tpl, live, dry = sys.argv[1], sys.argv[2], sys.argv[3] == '1'
+with open(live, encoding='utf-8') as f:
+    old = f.read()
+kept = [l for l in old.splitlines() if l.strip().startswith('psk=')]   # the Pi's own password line
+if len(kept) != 1:
+    print('nopsk'); sys.exit()
+with open(tpl, encoding='utf-8') as f:
+    lines = f.read().splitlines()
+if any(l.strip().startswith('psk=') for l in lines) or '[wifi-security]' not in lines:
+    print('badtemplate'); sys.exit()
+i = lines.index('[wifi-security]') + 1
+while i < len(lines) and lines[i].strip() and not lines[i].startswith('['):
+    i += 1
+new = '\n'.join(lines[:i] + psk + lines[i:]) + '\n'
+if new == old:
+    print('same'); sys.exit()
+if not dry:
+    tmp = live + '.pb-new'
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        f.write(new)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, live)
+print('updated')
+PY
+) || r=error
+    case "$r" in
+        same) ;;
+        updated)
+            CHANGED+=("$RESCUE")
+            if [ $DRY -eq 1 ]; then echo "   would update $RESCUE (its settings; the password kept)"
+            else echo "   updated $RESCUE (its settings; the password kept)"; nmcli connection reload || true; fi ;;
+        *) echo "!! $RESCUE: not updated ($r): check it by hand" ;;
+    esac
+else
+    echo "   no pb-rescue profile on this Pi: setup.sh makes it from RESCUE_PSK (pi/firstboot)"
+fi
 # The kiosk's Chromium policy (review WALL-01, 12 Nov 2026). Only if it's valid JSON:
 # Chromium ignores a broken file silently, which would leave DevTools on.
 if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$SRC/conf/chromium-kiosk.json"; then
@@ -120,6 +228,15 @@ else
 fi
 put config.env.example /etc/projectboard/config.env.example 0644
 if [ -f "$SRC/config.env" ]; then
+    # Back the Pi's copy up before replacing it (review PI-08): PB Console's edits live there.
+    # pb-install has already done it (PB_CONFIG_BACKED_UP=1); a by-hand run does it here.
+    if [ $DRY -eq 0 ] && [ "${PB_CONFIG_BACKED_UP:-}" != 1 ] && [ -f /etc/projectboard/config.env ] \
+       && ! cmp -s "$SRC/config.env" /etc/projectboard/config.env; then
+        mkdir -p /var/lib/projectboard/config-backups
+        B=/var/lib/projectboard/config-backups/config.env.$(date +%Y%m%d-%H%M%S)-deploy
+        cp /etc/projectboard/config.env "$B" && chmod 0644 "$B"
+        echo "   backed up the Pi's config.env to $B"
+    fi
     put config.env /etc/projectboard/config.env 0644
 elif [ ! -f /etc/projectboard/config.env ]; then
     if [ $DRY -eq 0 ]; then

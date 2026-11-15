@@ -3,7 +3,7 @@ and whether the Pi's matches; plus files on the Pi that the repo doesn't have.
 
 INSTALLED mirrors install.sh's put lines (a test checks every target here is in
 install.sh). The hashes are read as pi with sha256sum; the few root-only files
-come from `pb-console-helper hashes`.
+(the two sudoers rules) come from `pb-console-helper hashes`.
 """
 import glob
 import hashlib
@@ -35,7 +35,10 @@ def installed():
         add('pi/ops/' + n, '/usr/local/bin/' + n)
     add('pi/ops/pb-console-helper', '/usr/local/sbin/pb-console-helper')
     add('pi/ops/pb-netwatch.sh', '/usr/local/sbin/pb-netwatch.sh')
+    add('pi/ops/pb-install', '/usr/local/sbin/pb-install')
+    add('pi/conf/pb-deploy.signers', '/etc/projectboard/deploy-signers')
     add('pi/conf/pb-console.sudoers', '/etc/sudoers.d/pb-console')
+    add('pi/conf/pb-deploy.sudoers', '/etc/sudoers.d/pb-deploy')      # review CON-11: root-only, via the helper
     for f in sorted(glob.glob(os.path.join(PI, 'systemd', '*.service')) + glob.glob(os.path.join(PI, 'systemd', '*.timer'))):
         add(os.path.relpath(f, REPO), '/etc/systemd/system/' + os.path.basename(f))
     add('pi/systemd/kiosk.service.d/cursor.conf', '/etc/systemd/system/kiosk.service.d/cursor.conf')
@@ -103,6 +106,8 @@ def compare(text, root_hashes=''):
         state = 'same' if theirs == mine else theirs if theirs in ('missing', 'unreadable') else 'differs'
         rows.append({'repo': rel, 'pi': dest, 'state': state})
     known_dirs = ('/opt/projectboard/ledmap/__pycache__', '/opt/projectboard/listener/__pycache__')
+    # The listener's version folders (install.sh, review PI-06): /opt/projectboard/listener is a symlink to one.
+    known_dirs += ('/opt/projectboard/listener-', '/opt/projectboard/listener.swap')
     extras = [p for p in extra if p not in placed and not p.startswith(known_dirs) and not p.endswith('.pyc')
               and not p.rstrip('/').endswith('__pycache__')
               and p not in ('/opt/projectboard/listener/patterns', '/etc/systemd/system/pb-ledmap.service',

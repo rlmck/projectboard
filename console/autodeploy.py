@@ -5,8 +5,15 @@ once straight after a push. Each run:
 
   1. git fetch origin main (never touches the working tree). The Pi's part of main
      is pi/, app/hold_map.json and app/board-fallback.jpg (what pi/deploy.sh sends),
-     plus the laptop's pi/config.env. If that fingerprint is what was last deployed,
-     stop: nothing to do (no ssh, no SD-card writes on the Pi).
+     plus the laptop's pi/config.env; its fingerprint is `deploy.sh --fingerprint`
+     run on an export of it. If that's what the last deploy recorded
+     (console/data/pi-deployed, written by deploy.sh after every deploy that worked,
+     whichever way it was started: here, /pi-deploy or PB Console), stop: nothing to
+     do (no ssh, no SD-card writes on the Pi). A by-hand deploy of the working tree
+     records its own fingerprint, so the next run puts main back. If the laptop's
+     record differs, the Pi's own (/var/lib/projectboard/deployed, written by
+     pb-install after an install that worked) is read first: a deploy whose ssh
+     session dropped after the install finished is recorded, not repeated.
   2. The busy check (console/probe.py busy, the same one /pi-deploy and PB Console
      use): inside opening hours, wait while anyone has used the board in the last
      15 minutes (casts, circuits, live LEDs while setting, wall-screen touches);
@@ -15,7 +22,12 @@ once straight after a push. Each run:
      overwrite the Pi's): that needs Ross to pick one (PB Console -> Config).
   4. Export origin/main into a temporary folder (so local edits never reach the
      Pi), add the laptop's pi/config.env, run the pi tests there, check busy again,
-     then bash pi/deploy.sh from that folder.
+     then bash pi/deploy.sh from that folder. deploy.sh takes the laptop's deploy lock
+     (console/data/pi-deploy.lock) and the Pi's (pb-install): while another deploy holds
+     either, this run waits.
+
+The Pi is the one console/.env.local names (PB_HOST, PB_SSH), as in PB Console; the
+weekly backup that rides on this task uses it too (review CON-16).
 
 The result goes to console/data/autodeploy.json (PB Console's banner reads it:
 only problems that need Ross are shown), each run's line to autodeploy.log, the
@@ -27,7 +39,6 @@ last deploy's output to autodeploy-last.txt, and a deploy to the audit log.
     python console/autodeploy.py --install    (re)create the scheduled task; --uninstall removes it
 """
 import datetime
-import hashlib
 import io
 import json
 import os
@@ -43,14 +54,17 @@ sys.path.insert(0, HERE)
 
 import actions  # noqa: E402
 import procs  # noqa: E402
-from remote import Remote  # noqa: E402
+from remote import Remote, load_env, from_env  # noqa: E402,F401
 
 REPO = os.path.dirname(HERE)
 DATA = os.path.join(HERE, 'data')
 STATE = os.path.join(DATA, 'autodeploy.json')
 LOG = os.path.join(DATA, 'autodeploy.log')
 LAST = os.path.join(DATA, 'autodeploy-last.txt')
-LOCK = os.path.join(DATA, 'autodeploy.lock')
+LOCK = os.path.join(DATA, 'autodeploy.lock')           # one autodeploy run at a time
+DEPLOYED = os.path.join(DATA, 'pi-deployed')            # deploy.sh's record of the last deploy that worked
+DEPLOY_LOCK = os.path.join(DATA, 'pi-deploy.lock')      # deploy.sh's lock (a folder), whoever started it
+EXIT_BUSY, EXIT_CONFIG = 75, 3                          # deploy.sh's exit codes
 TASK = r'\ProjectBoard\Pi autodeploy'
 EVERY_MIN = 10
 PI_PATHS = ('pi', 'app/hold_map.json', 'app/board-fallback.jpg')
@@ -110,14 +124,92 @@ def python_exe():
     return exe
 
 
+def export(commit, dest, paths=()):
+    """`git archive` of commit (only `paths`, if given) into dest, plus the laptop's pi/config.env."""
+    data = subprocess.run([shutil.which('git') or 'git', '-C', REPO, '-c', 'core.autocrlf=false', 'archive',
+                           '--format=tar', commit, *paths], capture_output=True, timeout=120,
+                          creationflags=NO_WINDOW, check=True).stdout
+    with tarfile.open(fileobj=io.BytesIO(data)) as t:
+        t.extractall(dest, filter='data')
+    laptop_cfg = actions.laptop_config()
+    if laptop_cfg is not None:
+        with open(os.path.join(dest, 'pi', 'config.env'), 'wb') as f:
+            f.write(laptop_cfg.replace('\r\n', '\n').encode('utf-8'))
+
+
+def tree_fingerprint(folder):
+    """deploy.sh's fingerprint of what it would send from `folder` (one definition, in deploy.sh)."""
+    p = subprocess.run([procs.find_bash(), 'pi/deploy.sh', '--fingerprint'], cwd=folder, capture_output=True,
+                       text=True, timeout=120, creationflags=NO_WINDOW, stdin=subprocess.DEVNULL)
+    fp = p.stdout.strip().splitlines()[-1:] if p.returncode == 0 else []
+    if not fp or len(fp[0]) != 16:
+        raise RuntimeError('deploy.sh --fingerprint: %s' % (p.stdout + p.stderr).strip()[-300:])
+    return fp[0]
+
+
 def fingerprint(ref='origin/main'):
     """(commit, fingerprint): the Pi's part of `ref` plus the laptop's pi/config.env."""
     commit = git('rev-parse', ref).decode().strip()
-    h = hashlib.sha256()
-    for p in PI_PATHS:
-        h.update(git('rev-parse', '%s:%s' % (ref, p)).strip())
-    h.update(hashlib.sha256((actions.laptop_config() or '').encode('utf-8')).digest())
-    return commit, h.hexdigest()[:16]
+    tmp = tempfile.mkdtemp(prefix='pb-fingerprint-')
+    try:
+        export(commit, tmp, PI_PATHS)
+        return commit, tree_fingerprint(tmp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def parse_record(text):
+    out = {}
+    for line in (text or '').splitlines():
+        k, sep, v = line.strip().partition('=')
+        if sep:
+            out[k] = v
+    return out
+
+
+def read_deployed():
+    """deploy.sh's record of the last deploy that worked: {fingerprint, commit, source, at}."""
+    try:
+        with open(DEPLOYED, encoding='utf-8') as f:
+            return parse_record(f.read())
+    except OSError:
+        return {}
+
+
+def write_deployed(rec):
+    """The laptop's record, in deploy.sh's format (one rename)."""
+    os.makedirs(DATA, exist_ok=True)
+    with open(DEPLOYED + '.new', 'w', encoding='utf-8', newline='\n') as f:
+        for k in ('fingerprint', 'commit', 'source', 'at'):
+            f.write('%s=%s\n' % (k, rec.get(k, '')))
+    os.replace(DEPLOYED + '.new', DEPLOYED)
+
+
+PI_RECORD = '/var/lib/projectboard/deployed'
+
+
+def pi_deployed(remote):
+    """pb-install's record on the Pi (review PI-04), or {} when it can't be read."""
+    try:
+        code, out, _ = remote.run('cat %s' % PI_RECORD, timeout=30)
+    except Exception:
+        return {}
+    rec = parse_record(out) if code == 0 else {}
+    return rec if len(rec.get('fingerprint', '')) == 16 else {}
+
+
+def deploy_running():
+    """Who holds deploy.sh's lock (a by-hand or PB Console deploy), or None. Stale after 45 min, as in deploy.sh."""
+    try:
+        if time.time() - os.path.getmtime(DEPLOY_LOCK) > STALE_LOCK_S:
+            return None
+    except OSError:
+        return None
+    try:
+        with open(os.path.join(DEPLOY_LOCK, 'who'), encoding='utf-8') as f:
+            return f.read().strip() or 'a deploy'
+    except OSError:
+        return 'a deploy'
 
 
 def take_lock():
@@ -172,8 +264,8 @@ def problem(kind, **kw):
     if kind == 'password':
         return {'kind': kind, 'tab': 'deploy',
                 'title': 'The Pi asked for its password, so the update could not install.',
-                'todo': 'In Git Bash at the repo root, run bash pi/deploy.sh once and type the Pi\'s password: '
-                        'that puts back the rule that lets updates install on their own.'}
+                'todo': 'In Git Bash at the repo root, run bash pi/deploy.sh --password once and type the Pi\'s '
+                        'password: that puts back the rule that lets updates install on their own.'}
     if kind == 'failed':
         return {'kind': kind, 'tab': 'deploy',
                 'title': 'The Pi update failed %d times in a row: %s' % (kw.get('n', 2), kw.get('why') or 'see the log'),
@@ -245,12 +337,24 @@ def run(force=False, remote=None, say=print):
     if state.get('fingerprint') != fp:
         state['failures'] = 0                               # a new version: its own count of failed tries
     state['target'], state['fingerprint'] = commit, fp
-    if state.get('deployed') == fp and not force:
+    rec = read_deployed()
+    state['deployed'] = rec.get('fingerprint')
+    if rec.get('fingerprint') == fp and not force:
         state['pending_since'] = None
         state['failures'] = 0
         return finish('up to date', 'the Pi has main %s' % commit[:7])
     if not state.get('pending_since'):
         state['pending_since'] = now_iso()
+    who = deploy_running()
+    if who:
+        return finish('waiting', 'another Pi deploy is running (%s)' % who, waiting='another Pi deploy is running')
+    if not force:
+        pi = pi_deployed(remote)
+        if pi.get('fingerprint') == fp:
+            write_deployed({'fingerprint': fp, 'commit': pi.get('commit') or commit, 'source': pi.get('source', ''),
+                            'at': pi.get('installed_at', now_iso())})
+            state.update(deployed=fp, pending_since=None, failures=0)
+            return finish('up to date', "the Pi has main %s (its own record; the laptop's was behind)" % commit[:7])
 
     b = remote.busy()
     if b is None:
@@ -268,15 +372,7 @@ def run(force=False, remote=None, say=print):
 
     tmp = tempfile.mkdtemp(prefix='pb-autodeploy-')
     try:
-        data = subprocess.run([shutil.which('git') or 'git', '-C', REPO, '-c', 'core.autocrlf=false', 'archive',
-                               '--format=tar', commit], capture_output=True, timeout=120,
-                              creationflags=NO_WINDOW, check=True).stdout
-        with tarfile.open(fileobj=io.BytesIO(data)) as t:
-            t.extractall(tmp, filter='data')
-        laptop_cfg = actions.laptop_config()
-        if laptop_cfg is not None:
-            with open(os.path.join(tmp, 'pi', 'config.env'), 'wb') as f:
-                f.write(laptop_cfg.replace('\r\n', '\n').encode('utf-8'))
+        export(commit, tmp)
 
         tests = subprocess.run([python_exe(), '-m', 'unittest', 'discover', '-s', 'pi/tests'], cwd=tmp,
                                capture_output=True, text=True, timeout=600, creationflags=NO_WINDOW,
@@ -295,12 +391,19 @@ def run(force=False, remote=None, say=print):
         say('deploying main %s to the Pi (%s)' % (commit[:7], b.get('mode_reason') or b.get('mode')))
         p = subprocess.run([procs.find_bash(), 'pi/deploy.sh'], cwd=tmp, capture_output=True, text=True,
                            encoding='utf-8', errors='replace', timeout=900, creationflags=NO_WINDOW,
-                           stdin=subprocess.DEVNULL)
+                           stdin=subprocess.DEVNULL,
+                           env=dict(os.environ, PB_DEPLOY_SOURCE='autodeploy', PB_DEPLOY_COMMIT=commit,
+                                    PB_DEPLOY_DATA=DATA, PB_HOST=getattr(remote, 'host', None) or 'pi@projectboard'))
         out = p.stdout + p.stderr
         with open(LAST, 'w', encoding='utf-8') as f:
             f.write('$ bash pi/deploy.sh   (main %s, %s)\n\n%s' % (commit, now_iso(), out))
+        if p.returncode == EXIT_BUSY:
+            return finish('waiting', 'another Pi deploy is running', waiting='another Pi deploy is running')
+        if p.returncode == EXIT_CONFIG:
+            return finish('blocked', "pi/config.env differs between the laptop and the Pi", prob=problem('config'),
+                          waiting="the laptop's and the Pi's settings differ")
         if p.returncode == 0:
-            state.update(deployed=fp, deployed_commit=commit, deployed_at=now_iso(), pending_since=None, failures=0)
+            state.update(deployed=read_deployed().get('fingerprint') or fp, deployed_commit=commit, deployed_at=now_iso(), pending_since=None, failures=0)
             actions.audit('autodeploy', 'ok', 'main %s' % commit[:7])
             return finish('deployed', 'main %s is on the Pi' % commit[:7])
         state['failures'] = int(state.get('failures') or 0) + 1
@@ -368,11 +471,12 @@ def start_background():
                      stderr=subprocess.DEVNULL, creationflags=NO_WINDOW)
 
 
-def weekly_backup():
-    """The weekly backup rides on this task (console/backups.py): it does nothing unless one is due."""
+def weekly_backup(remote=None, env=None):
+    """The weekly backup rides on this task (console/backups.py): it does nothing unless one is due.
+    The same Pi and settings as PB Console (console/.env.local; review CON-16)."""
     try:
         import backups
-        code = backups.run_if_due(say=log)
+        code = backups.run_if_due(remote=remote, env=env, say=log)
         if code is not None:
             actions.audit('backup', 'ok' if code == 0 else 'failed', 'weekly (scheduled task)')
     except Exception as e:
@@ -392,15 +496,17 @@ def main(argv):
     if not take_lock():
         print('another run is going (%s): not starting a second' % LOCK)
         return 0
+    env = load_env(os.path.join(HERE, '.env.local'))
+    remote = from_env(env)
     try:
         try:
-            result = run(force='--force' in argv)
+            result = run(force='--force' in argv, remote=remote)
         except Exception as e:
             log('error: %s: %s' % (type(e).__name__, e))
             print('error: %s: %s' % (type(e).__name__, e))
             return 1
         finally:
-            weekly_backup()
+            weekly_backup(remote, env)
     finally:
         drop_lock()
     return 1 if result == 'failed' else 0

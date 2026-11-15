@@ -10,14 +10,14 @@ Written on 31 Oct 2026, when the Pi 4's card died. A card made this way goes in 
 | SPI on (`dtparam=spi=on`) | `make-card.py` writes it into `config.txt` before the first boot |
 | Wi-Fi country (GB) | `make-card.py` adds `cfg80211.ieee80211_regdom=GB` to `cmdline.txt`; `setup.sh` runs `raspi-config nonint do_wifi_country GB` and unblocks the radio |
 | The `hangout-fixed` connection with `cloned-mac-address=random` (the 28 Oct fix) and no random MAC while scanning | `setup.sh` step 3, from `WIFI_SSID`/`WIFI_PSK` in `secrets.env`. **Imager gets no Wi-Fi**, so there's no netplan profile (the 26 Oct fault) |
-| The `pb-rescue` hotspot profile (`projectboard-rescue`, 10.42.0.1) | `setup.sh` step 3, from `RESCUE_PSK` (a new password: the old one went with the card) |
+| The `pb-rescue` hotspot profile (`projectboard-rescue`, 10.42.0.1) | `setup.sh` step 3, from `RESCUE_PSK` (a new password: the old one went with the card); its settings, without the password, are `pi/conf/pb-rescue.nmconnection` since 15 Nov 2026, kept in step by `install.sh` |
 | `pb-netwatch.sh` v2 and its unit | now in the repo (`pi/ops/pb-netwatch.sh`, `pi/systemd/pb-netwatch.service`), installed by `install.sh`; `firstboot.sh` starts it first |
 | Tailscale identity | a new machine: `setup.sh` joins with a one-off auth key (`TS_AUTHKEY`) as `projectboard`. The old machine must be removed from the admin first so the name is free |
 | `/etc/projectboard/config.env` | the laptop's `pi/config.env` (the anon key, which is public), installed by `install.sh` |
 | The wall key | a new one, made on the laptop (`WALL_KEY`), written by `setup.sh`; its hash went into `wall_keys` by db/36, which revoked the old one. The laptop's copy is deleted once the card is made |
 | The kiosk: `cage`, `chromium`, the `kiosk` user, `/etc/pam.d/kiosk`, the blank cursor theme | now in `install.sh` (they were set up by hand on 26 Oct) |
-| sudoers `pb-console` and `pb-deploy` | `install.sh` (unchanged) |
-| Persistent journal, `pb-netlog` | `setup.sh` and `install.sh` |
+| sudoers `pb-console` and `pb-deploy` | `install.sh`; since 15 Nov 2026 `pb-deploy` lets `pi` run only `pb-install`, which installs bundles signed by the laptop's key (`pi/conf/pb-deploy.signers`; `pi/README.md` → Deploying) |
+| Persistent journal, `pb-netlog` (`/var/log/pb-netlog.txt` since 15 Nov 2026) | `setup.sh` and `install.sh` |
 | The 26 Oct stopgap `cast-listener` | gone for good (not needed: `install.sh` copes without it) |
 
 ## Making a card
@@ -32,12 +32,12 @@ Imager 2 may fill in the Wi-Fi from the laptop's saved network and add a `packag
 ## What happens at the first boot
 
 1. Raspberry Pi OS's own first boot (it may reboot once by itself), then cloud-init applies `user-data`; its `runcmd` installs and starts `pb-firstboot.service`.
-2. `firstboot.sh`: starts `pb-netwatch`, runs `setup.sh` (Wi-Fi, waits up to 10 min for the internet, timezone, apt with the kiosk packages, SSH key, Tailscale, the wall key, journal), clones https://github.com/rlmck/projectboard (else uses the card's copy in `projectboard/repo/`), stages `~/pb-deploy` as `deploy.sh` does, runs `install.sh`, checks the services, deletes `secrets.env`, and **reboots once**.
+2. `firstboot.sh`: starts `pb-netwatch`, runs `setup.sh` (Wi-Fi, waits up to 10 min for the internet, timezone, apt with the kiosk packages, SSH key, Tailscale, the wall key, journal), clones https://github.com/rlmck/projectboard (else uses the card's copy in `projectboard/repo/`), stages the code in `/var/lib/projectboard/stage` (root only) in the layout `deploy.sh` sends, runs `install.sh`, checks the services, deletes `secrets.env`, and **reboots once**. **`secrets.env` leaves the card first thing** (15 Nov 2026, review PI-13): `setup.sh` step 1 moves it to `/var/lib/projectboard/secrets.env` (root, 0600) and deletes the card's copy, since FAT lets every local user read it; Tailscale gets its key by file, never on a command line.
 3. After that reboot the wall screen shows the app (inside the opening hours; outside them it stays off), and casts light the board.
 
-**Where to look:** the wall screen shows the setup's progress while it runs. Everything is in `firstboot.log` in the card's `projectboard` folder (readable on the laptop), and on the Pi in `journalctl -u pb-firstboot`. `netlog.txt` and `netwatch.txt` on the card show the Wi-Fi.
+**Where to look:** the wall screen shows the setup's progress while it runs. Everything is in `firstboot.log` in the card's `projectboard` folder (readable on the laptop), and on the Pi in `journalctl -u pb-firstboot`. `netwatch.txt` on the card shows the Wi-Fi when it has been down about 4 minutes (written once per boot; the full logs are `/var/log/pb-netwatch.log` and `/var/log/pb-netlog.txt` on the Pi).
 
-**If something fails:** it tries again 60 s later and at every boot, until it's done (no internet just delays it). `pb-netwatch` kicks the Wi-Fi, opens the `projectboard-rescue` hotspot (password: `RESCUE_PSK` in the laptop's `pi\secrets.env`) and reboots up to 3 times. If Tailscale won't join, the board still works and it retries every 10 minutes with the key kept on the card.
+**If something fails:** it tries again 60 s later and at every boot, until it's done (no internet just delays it). `pb-netwatch` kicks the Wi-Fi, opens the `projectboard-rescue` hotspot (password: `RESCUE_PSK` in the laptop's `pi\secrets.env`) and reboots up to 3 times. If Tailscale won't join, the board still works and it retries every 10 minutes with the key kept in `/var/lib/projectboard/secrets.env` (root only; no longer on the card).
 
 **The first SSH from the laptop** meets a new host key: `ssh -o StrictHostKeyChecking=accept-new pi@projectboard true` once (the old card's entries were removed from `known_hosts` on 31 Oct 2026). Then in the Tailscale admin, `projectboard` → `…` → **Disable key expiry**.
 

@@ -52,7 +52,7 @@ import supabase_api as supa  # noqa: E402
 import security  # noqa: E402
 import session  # noqa: E402
 import tiles  # noqa: E402
-from remote import Remote  # noqa: E402
+from remote import Remote, load_env, from_env as remote_from_env  # noqa: E402,F401 (load_env: server.load_env)
 
 CODE = session.code_stamp()        # this process's code, for /api/whoami
 
@@ -81,34 +81,19 @@ LOG_SOURCES = {
     'NetworkManager': ['-u', 'NetworkManager'], 'wpa_supplicant': ['-u', 'wpa_supplicant'],
     'tailscaled': ['-u', 'tailscaled'], 'kernel': ['_TRANSPORT=kernel'], 'errors': ['-p', 'err'], 'all': [],
 }
-LOG_FILES = {'netlog': '/boot/firmware/netlog.txt', 'netwatch-file': '/boot/firmware/netwatch.txt'}
+# Since 15 Nov 2026 (review PI-14) both logs live in /var/log; netwatch-card is the boot partition's
+# once-per-boot copy (what a laptop reads from the SD card when SSH is down).
+LOG_FILES = {'netlog': '/var/log/pb-netlog.txt', 'netwatch-file': '/var/log/pb-netwatch.log',
+             'netwatch-card': '/boot/firmware/netwatch.txt'}
 SINCE = re.compile(r'^(-?\d{1,4} ?(s|sec|min|m|h|hour|hours|d|day|days)( ago)?|today|yesterday|now'
                    r'|\d{4}-\d{2}-\d{2}( \d{2}:\d{2}(:\d{2})?)?)$')
-
-
-def load_env(path):
-    """console/.env.local: KEY=value lines (gitignored). The environment wins over it."""
-    env = {}
-    try:
-        with open(path, encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    k, v = line.split('=', 1)
-                    env[k.strip()] = v.strip().strip('"\'')
-    except OSError:
-        pass
-    for k, v in os.environ.items():
-        if k.startswith(('PB_', 'SUPABASE_')):
-            env[k] = v
-    return env
 
 
 class Console:
     def __init__(self, token, port, env=None, remote=None, laptop=None):
         self.env = env or {}
         self.gate = security.Gate(token, port)
-        self.remote = remote or Remote(self.env.get('PB_HOST') or 'pi@projectboard', self.env.get('PB_SSH'))
+        self.remote = remote or remote_from_env(self.env)
         self.laptop = laptop or (lambda realtime: checks.laptop_checks(self.env, realtime))
         self.cam_url = self.env.get('PB_CAM_URL') or 'http://projectboard:8080/stream'
         p = urllib.parse.urlparse(self.cam_url)

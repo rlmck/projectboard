@@ -114,6 +114,29 @@ class Drift(unittest.TestCase):
         self.assertEqual({x['pull_to'] for x in c['extra']}, {'pi/ops/pb-old.sh', 'pi/systemd/pb-old.service'})
         self.assertEqual([n['name'] for n in c['nm']], ['pb-rescue'])
 
+    def test_the_sudoers_rules_are_watched(self):
+        # Review CON-11: both rules are hash-checked; root-only, so the helper hashes them.
+        dests = dict((d, r) for r, d in drift.installed())
+        self.assertEqual(dests['/etc/sudoers.d/pb-deploy'], 'pi/conf/pb-deploy.sudoers')
+        self.assertEqual(dests['/etc/sudoers.d/pb-console'], 'pi/conf/pb-console.sudoers')
+        h = actions.helper()
+        for d in dests:
+            if d.startswith('/etc/sudoers.d/'):
+                self.assertIn(d, h.ROOT_ONLY)
+        rel = 'pi/conf/pb-deploy.sudoers'
+        text = 'sha256sum: /etc/sudoers.d/pb-deploy: Permission denied\n@@extra\n@@nm\n'
+        root = '%s  /etc/sudoers.d/pb-deploy\n' % drift.sha(rel)
+        states = {r['pi']: r['state'] for r in drift.compare(text, root)['files']}
+        self.assertEqual(states['/etc/sudoers.d/pb-deploy'], 'same')
+        root = '%s  /etc/sudoers.d/pb-deploy\n' % ('0' * 64)
+        states = {r['pi']: r['state'] for r in drift.compare(text, root)['files']}
+        self.assertEqual(states['/etc/sudoers.d/pb-deploy'], 'differs')
+
+    def test_listener_version_folders_are_not_extras(self):
+        text = '@@extra\n/opt/projectboard/listener-20261115-160000/board.py\n/opt/projectboard/listener.swap\n' \
+               '/opt/projectboard/listener-before-20261115-160000/patterns\n/usr/local/sbin/pb-old.sh\n@@nm\n'
+        self.assertEqual([x['path'] for x in drift.compare(text)['extra']], ['/usr/local/sbin/pb-old.sh'])
+
     def test_pull_targets(self):
         self.assertIsNone(drift.pull_target('/etc/passwd'))
         self.assertIsNone(drift.pull_target('/usr/local/sbin/../../etc/shadow x'))

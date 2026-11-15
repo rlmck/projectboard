@@ -37,8 +37,9 @@ Nothing secret leaves the Pi through here: nm-export and backup drop every
 psk/password/secret/key line from NetworkManager profiles, and never include
 secrets.env or the Tailscale state.
 
-Deploys are not here on purpose: install.sh runs from a folder pi can write, so
-it keeps needing the password.
+Deploys are not here: they go through /usr/local/sbin/pb-install (its own rule,
+/etc/sudoers.d/pb-deploy), which installs only a bundle signed by the laptop's key
+(14 Nov 2026, review PI-03).
 """
 import datetime
 import difflib
@@ -69,7 +70,7 @@ PATTERNS = ('glisten', 'chase', 'lava', 'breathe', 'aurora', 'rain', 'ripples', 
 NM_DIR = '/etc/NetworkManager/system-connections'
 SECRET_LINE = re.compile(r'^\s*([A-Za-z0-9_-]*(psk|password|passwd|secret|private-key|wep-key\d*|pin)[A-Za-z0-9_-]*)\s*=',
                          re.I)
-ROOT_ONLY = ('/etc/sudoers.d/pb-console',)
+ROOT_ONLY = ('/etc/sudoers.d/pb-console', '/etc/sudoers.d/pb-deploy')     # drift's root-only files (CON-11)
 SUPABASE_HOST = 'uqirowyfqwiceyjznosl.supabase.co'
 
 

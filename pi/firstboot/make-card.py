@@ -12,8 +12,9 @@ cloud-init files. It writes:
 
     projectboard/  setup.sh, firstboot.sh, pb-firstboot.service (from the repo)
                    secrets.env      from the laptop's pi/secrets.env (gitignored): WIFI_SSID,
-                                    WIFI_PSK, TS_AUTHKEY, RESCUE_PSK, WALL_KEY. Deleted from the
-                                    card once the Pi is set up.
+                                    WIFI_PSK, TS_AUTHKEY, RESCUE_PSK, WALL_KEY. setup.sh moves it
+                                    off the card first thing (into /var/lib/projectboard, root
+                                    only) and deletes it once Tailscale is up.
                    laptop_key.pub   ~/.ssh/id_ed25519.pub
                    config.env       the laptop's pi/config.env (no secrets: the anon key is public)
                    repo/            the pi/ and app/ files install.sh needs (a fallback if the

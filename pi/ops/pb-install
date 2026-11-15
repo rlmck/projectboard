@@ -1,0 +1,508 @@
+#!/usr/bin/python3 -I
+"""pb-install: the only way a deploy gets root on the board's Pi without a password
+(14-15 Nov 2026, review PI-03, PI-04, PI-06, PI-08). Installed root-owned as
+/usr/local/sbin/pb-install by install.sh; /etc/sudoers.d/pb-deploy lets pi run it,
+with no arguments, and nothing else:
+
+    sudo -n /usr/local/sbin/pb-install < stream      (pi/deploy.sh sends the stream)
+
+The stream is one header line `PBDEPLOY1 <signature bytes> <tar bytes>`, then an
+ssh signature, then a tar of the files to install (the layout install.sh expects).
+pb-install:
+
+  1. takes the deploy lock (/var/lib/projectboard/deploy.lock, flock): one deploy at
+     a time, whichever way it was started; a second one exits 75 straight away, as
+     it does while an install started earlier is still running (step 5);
+  2. checks the signature with the public key in /etc/projectboard/deploy-signers
+     (root-owned; its private half is only on the laptop), so nothing running as pi
+     can hand it files of its own, or edit the files after they were signed;
+  3. checks every tar entry: plain files and folders only, on a fixed list of paths
+     (no `..`, no absolute paths, no links, no devices), within a size cap;
+  4. checks the signed MANIFEST: made within the last hour, newer than the last
+     deploy (no replaying an old bundle), and, if config.env is in it, that the Pi's
+     config.env is still the one deploy.sh compared it with (PB Console's edits are
+     never overwritten by a stale copy); then backs the Pi's config.env up to
+     /var/lib/projectboard/config-backups/ before it can change;
+  5. unpacks into /var/lib/projectboard/stage (root, 0700: pi can't touch it) and runs
+     install.sh from there in its own systemd unit, pb-install-run.service (review
+     PI-06): an ssh session that drops mid-deploy no longer kills the install halfway.
+     Its output goes to /var/log/pb-install.log, which this process streams back to
+     the laptop while it waits;
+  6. after a real install that worked, the unit writes /var/lib/projectboard/deployed:
+     the fingerprint, commit and source (autodeploy, by-hand, console) every deploy
+     path agrees on. autodeploy reads it when the laptop's own record differs.
+
+Exit codes: install.sh's own, or 75 (another deploy holds the lock or is still
+installing), 77 (refused). Each step is one syslog line tagged pb-install.
+"""
+import datetime
+import hashlib
+import io
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import time
+
+try:
+    import fcntl
+except ImportError:            # the laptop's tests (Windows)
+    fcntl = None
+    import msvcrt
+try:
+    import syslog
+except ImportError:
+    syslog = None
+
+LIB = '/var/lib/projectboard'
+LOCK = LIB + '/deploy.lock'
+INCOMING = LIB + '/deploy-in'
+STAGE = LIB + '/stage'
+RECORD = LIB + '/deployed'
+RESULT = LIB + '/deploy-result'
+BACKUPS = LIB + '/config-backups'
+RUN_LOG = '/var/log/pb-install.log'
+UNIT = 'pb-install-run'
+CONFIG = '/etc/projectboard/config.env'
+SIGNERS = '/etc/projectboard/deploy-signers'
+SELF = '/usr/local/sbin/pb-install'
+SSH_KEYGEN = '/usr/bin/ssh-keygen'
+SYSTEMCTL = '/usr/bin/systemctl'
+SYSTEMD_RUN = '/usr/bin/systemd-run'
+BASH = '/usr/bin/bash'
+NAMESPACE = 'pb-deploy'
+IDENTITY = 'pb-deploy'
+CHECK_OWNERS = True            # the signers file must be root's and not writable by others (off in the laptop's tests)
+KEEP = 30                      # config backups kept (pb-console-helper keeps the same number)
+MAX_SIG = 8192
+MAX_TAR = 64 * 1024 * 1024
+MAX_FILES = 400
+MAX_SKEW = 3600                # a bundle is made seconds before it's sent
+MAX_RUN_S = 1800               # the install unit's limit (a fresh card's apt install takes a few minutes)
+EXIT_BUSY = 75
+EXIT_REFUSED = 77
+RUNNING_STATES = ('active', 'activating', 'deactivating', 'reloading', 'refreshing')
+
+NAME = r'[A-Za-z0-9_][A-Za-z0-9_.@-]*'
+ALLOWED = [re.compile(p) for p in (
+    r'MANIFEST', r'install\.sh', r'config\.env', r'config\.env\.example',
+    r'listener/[A-Za-z0-9_]+\.py', r'listener/patterns/[A-Za-z0-9_]+\.py',
+    r'ops/' + NAME,
+    r'ledmap/(pb_ledmap\.py|index\.html|hold_map\.json|board\.jpg)',
+    r'systemd/' + NAME + r'\.(service|timer)', r'systemd/kiosk\.service\.d/' + NAME + r'\.conf',
+    r'conf/' + NAME,
+)]
+DIRS = {'listener', 'listener/patterns', 'ops', 'ledmap', 'systemd', 'systemd/kiosk.service.d', 'conf'}
+SOURCES = ('autodeploy', 'by-hand', 'console')
+MANIFEST_RX = {
+    'format': re.compile(r'1'),
+    'created': re.compile(r'[0-9]{9,11}'),
+    'mode': re.compile(r'install|dry-run'),
+    'fingerprint': re.compile(r'[0-9a-f]{16}'),
+    'commit': re.compile(r'[0-9a-f]{7,40}(-dirty)?|unknown'),
+    'source': re.compile('|'.join(SOURCES)),
+    'config_base': re.compile(r'[0-9a-f]{64}|none'),
+}
+REQUIRED = ('format', 'created', 'mode', 'fingerprint', 'commit', 'source')
+
+
+class Refused(Exception):
+    pass
+
+
+def log(msg):
+    say('pb-install: %s' % msg)
+    if syslog:
+        syslog.openlog('pb-install')
+        syslog.syslog(syslog.LOG_NOTICE, msg)
+
+
+def say(text, end='\n'):
+    """To the laptop, if it's still there: an ssh session that dropped never stops the deploy."""
+    try:
+        sys.stdout.write(text + end)
+        sys.stdout.flush()
+    except (OSError, ValueError):
+        pass
+
+
+# -- the lock -------------------------------------------------------------------------------
+
+def take_lock(path=None):
+    """An open fd holding the deploy lock, or None if another deploy has it. The kernel
+    lets go when the process ends, however it ends."""
+    fd = os.open(path or LOCK, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        if fcntl:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        else:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    except OSError:
+        os.close(fd)
+        return None
+    return fd
+
+
+def unit_state():
+    """pb-install-run.service's ActiveState ('inactive' once it's gone: it's --collect'ed)."""
+    try:
+        p = subprocess.run([SYSTEMCTL, 'show', '-p', 'ActiveState', '--value', UNIT + '.service'],
+                           capture_output=True, text=True, timeout=20)
+        return p.stdout.strip() or 'inactive'
+    except (OSError, subprocess.TimeoutExpired):
+        return 'unknown'
+
+
+def unit_running():
+    return unit_state() in RUNNING_STATES
+
+
+# -- the stream and its signature ------------------------------------------------------------
+
+def read_stream(f):
+    """(signature, tar bytes) from deploy.sh's stream."""
+    head = f.readline(80)
+    m = re.fullmatch(rb'PBDEPLOY1 ([0-9]{1,5}) ([0-9]{1,9})\n', head)
+    if not m:
+        raise Refused('not a deploy stream (bad header)')
+    nsig, ntar = int(m.group(1)), int(m.group(2))
+    if not 0 < nsig <= MAX_SIG or not 0 < ntar <= MAX_TAR:
+        raise Refused('the bundle is too big')
+    sig, tar = f.read(nsig), f.read(ntar)
+    if len(sig) != nsig or len(tar) != ntar:
+        raise Refused('the bundle was cut short')
+    if f.read(1):
+        raise Refused('extra bytes after the bundle')
+    return sig, tar
+
+
+def check_trusted(path):
+    """The signers file and its folder: root's, and nobody else can write them."""
+    if not CHECK_OWNERS:
+        return
+    for p in (path, os.path.dirname(path)):
+        st = os.stat(p)
+        if st.st_uid != 0 or st.st_mode & 0o022:
+            raise Refused('%s must be owned by root and not writable by others' % p)
+
+
+def verify(sig, tar, work):
+    if not os.path.isfile(SIGNERS):
+        raise Refused('no %s: this Pi trusts no signing key yet' % SIGNERS)
+    check_trusted(SIGNERS)
+    sig_path, tar_path = os.path.join(work, 'bundle.sig'), os.path.join(work, 'bundle.tar')
+    for p, data in ((sig_path, sig), (tar_path, tar)):
+        with open(p, 'wb') as f:
+            f.write(data)
+    with open(tar_path, 'rb') as f:
+        p = subprocess.run([SSH_KEYGEN, '-Y', 'verify', '-f', SIGNERS, '-I', IDENTITY, '-n', NAMESPACE,
+                            '-s', sig_path], stdin=f, capture_output=True, timeout=60)
+    if p.returncode != 0:
+        raise Refused('the signature does not match (not signed by the laptop, or changed after signing)')
+
+
+# -- the tar and its manifest ----------------------------------------------------------------
+
+def members(tar_bytes):
+    """{path: bytes} for every file, after checking each entry against the allowed list."""
+    files = {}
+    total = 0
+    try:
+        t = tarfile.open(fileobj=io.BytesIO(tar_bytes), mode='r:')
+        entries = t.getmembers()
+    except (tarfile.TarError, EOFError) as e:
+        raise Refused('not a readable tar (%s)' % e)
+    if len(entries) > MAX_FILES:
+        raise Refused('too many files')
+    for m in entries:
+        name = m.name[2:] if m.name.startswith('./') else m.name
+        if m.isdir():
+            name = name.rstrip('/')
+            if name not in DIRS and name not in ('', '.'):
+                raise Refused('folder not allowed: %r' % m.name)
+            continue
+        if not m.isreg():
+            raise Refused('not a plain file: %r' % m.name)
+        if '..' in name.split('/') or not any(rx.fullmatch(name) for rx in ALLOWED):
+            raise Refused('path not allowed: %r' % m.name)
+        if name in files:
+            raise Refused('listed twice: %r' % m.name)
+        total += m.size
+        if total > MAX_TAR:
+            raise Refused('the bundle is too big')
+        files[name] = t.extractfile(m).read()
+    for need in ('MANIFEST', 'install.sh'):
+        if need not in files:
+            raise Refused('%s missing from the bundle' % need)
+    return files
+
+
+def parse_kv(text):
+    out = {}
+    for line in text.splitlines():
+        if line.strip() and not line.startswith('#'):
+            k, sep, v = line.partition('=')
+            if sep:
+                out[k.strip()] = v.strip()
+    return out
+
+
+def manifest(data):
+    try:
+        m = parse_kv(data.decode('ascii'))
+    except UnicodeDecodeError:
+        raise Refused('MANIFEST is not plain text')
+    for k, v in m.items():
+        rx = MANIFEST_RX.get(k)
+        if rx is None or not rx.fullmatch(v):
+            raise Refused('MANIFEST: bad %s' % k)
+    for k in REQUIRED:
+        if k not in m:
+            raise Refused('MANIFEST: no %s' % k)
+    return m
+
+
+def read_record():
+    try:
+        with open(RECORD, encoding='utf-8') as f:
+            return parse_kv(f.read())
+    except OSError:
+        return {}
+
+
+def check_fresh(m, now=None):
+    now = time.time() if now is None else now
+    created = int(m['created'])
+    if abs(now - created) > MAX_SKEW:
+        raise Refused('the bundle was made %d s from now: too old (a replay?) or the clocks disagree' % (created - now))
+    if m['mode'] == 'install':
+        last = read_record().get('created', '0')
+        if last.isdigit() and created <= int(last):
+            raise Refused('the bundle is no newer than the last deploy (a replay?)')
+
+
+def sha256_file(path):
+    try:
+        with open(path, 'rb') as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except FileNotFoundError:
+        return 'none'
+
+
+def check_config(files, m):
+    """Refuse if the Pi's config.env changed since deploy.sh compared it. Returns True when
+    the deploy would change it (then it gets backed up first)."""
+    if 'config.env' not in files:
+        return False
+    base = m.get('config_base')
+    if not base:
+        raise Refused('config.env sent without config_base')
+    if sha256_file(CONFIG) != base:
+        raise Refused("the Pi's config.env changed since deploy.sh compared it (PB Console?): nothing installed. "
+                      'Deploy again; if the two copies differ, keep one in PB Console -> Config.')
+    return hashlib.sha256(files['config.env']).hexdigest() != base
+
+
+def backup_config(now=None):
+    """Copy the Pi's config.env into config-backups (PB Console's Config lists and restores them)."""
+    if not os.path.isfile(CONFIG):
+        return None
+    os.makedirs(BACKUPS, mode=0o755, exist_ok=True)
+    stamp = (now or datetime.datetime.now()).strftime('%Y%m%d-%H%M%S')
+    path = os.path.join(BACKUPS, 'config.env.%s-deploy' % stamp)
+    n = 1
+    while os.path.exists(path):
+        n += 1
+        path = os.path.join(BACKUPS, 'config.env.%s-deploy%d' % (stamp, n))
+    shutil.copyfile(CONFIG, path)
+    os.chmod(path, 0o644)
+    names = sorted((x for x in os.listdir(BACKUPS) if x.startswith('config.env.')), reverse=True)
+    for extra in names[KEEP:]:
+        os.remove(os.path.join(BACKUPS, extra))
+    return path
+
+
+# -- unpack, install, record -----------------------------------------------------------------
+
+def fresh_dir(path):
+    if os.path.lexists(path):
+        if os.path.islink(path) or not os.path.isdir(path):
+            os.remove(path)
+        else:
+            shutil.rmtree(path)
+    os.makedirs(path, mode=0o700)
+    os.chmod(path, 0o700)
+
+
+def unpack(files, stage):
+    fresh_dir(stage)
+    for name, data in sorted(files.items()):
+        dest = os.path.join(stage, *name.split('/'))
+        os.makedirs(os.path.dirname(dest), mode=0o755, exist_ok=True)
+        fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o644)
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+
+
+def unit_argv(dry):
+    """The transient unit that runs the install (review PI-06): started by PID 1, so it
+    lives on whatever happens to the ssh session that asked for it."""
+    return [SYSTEMD_RUN, '--unit', UNIT, '--description', 'Project Board deploy (pb-install)', '--collect',
+            '--quiet', '--service-type=exec', '-p', 'StandardOutput=truncate:' + RUN_LOG,
+            '-p', 'StandardError=inherit', '-p', 'RuntimeMaxSec=%d' % MAX_RUN_S,
+            SELF, '--run-stage'] + (['--dry-run'] if dry else [])
+
+
+def follow(log_path, result_path, running, sleep=time.sleep, grace=10):
+    """Stream the install's log to the laptop until the unit writes its result; the exit code.
+    A unit that ended without one (killed, RuntimeMaxSec) is a failure."""
+    pos = 0
+    gone = 0
+
+    def pump():
+        nonlocal pos
+        try:
+            with open(log_path, 'rb') as f:
+                f.seek(pos)
+                data = f.read()
+        except OSError:
+            return
+        if data:
+            pos += len(data)
+            say(data.decode('utf-8', 'replace'), end='')
+
+    while True:
+        pump()
+        if os.path.exists(result_path):
+            pump()
+            try:
+                with open(result_path, encoding='utf-8') as f:
+                    return int(f.read().strip() or '1')
+            except (OSError, ValueError):
+                return 1
+        if running():
+            gone = 0
+        else:
+            gone += 1
+            if gone > grace:
+                pump()
+                log('the install unit ended without a result (see journalctl -u %s)' % UNIT)
+                return 1
+        sleep(0.5)
+
+
+def run_install(stage, dry):
+    """Start install.sh in pb-install-run.service and wait for it; its exit code."""
+    for p in (RESULT,):
+        if os.path.lexists(p):
+            os.remove(p)
+    subprocess.run([SYSTEMCTL, 'reset-failed', UNIT + '.service'], capture_output=True, timeout=20)
+    p = subprocess.run(unit_argv(dry), capture_output=True, text=True, timeout=60)
+    if p.returncode != 0:
+        log('could not start %s: %s' % (UNIT, (p.stderr or p.stdout).strip()[:300]))
+        return 1
+    return follow(RUN_LOG, RESULT, unit_running)
+
+
+def install_env():
+    return {'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C',
+            'HOME': '/root', 'PB_CONFIG_BACKED_UP': '1'}
+
+
+def write_record(m):
+    text = ''.join('%s=%s\n' % (k, m[k]) for k in ('fingerprint', 'commit', 'source', 'created'))
+    text += 'installed_at=%s\n' % datetime.datetime.now().isoformat(timespec='seconds')
+    tmp = RECORD + '.new'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        f.write(text)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, RECORD)
+
+
+def write_result(code):
+    tmp = RESULT + '.new'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        f.write('%d\n' % code)
+    os.replace(tmp, RESULT)
+
+
+def run_stage(dry, run=subprocess.run):
+    """Inside pb-install-run.service: install.sh from the stage, then the record (only after
+    a real install that worked) and the result. The stage's MANIFEST was checked before the
+    unit started; it's re-read here, so the record is written even if the laptop's gone."""
+    with open(os.path.join(STAGE, 'MANIFEST'), 'rb') as f:
+        m = manifest(f.read())
+    code = run([BASH, os.path.join(STAGE, 'install.sh')] + (['--dry-run'] if dry else []),
+               env=install_env(), stdin=subprocess.DEVNULL).returncode
+    if code == 0 and not dry:
+        write_record(m)
+        log('deployed fingerprint=%s commit=%s source=%s' % (m['fingerprint'], m['commit'], m['source']))
+    elif code != 0:
+        log('install.sh failed (exit %d)' % code)
+    write_result(code)
+    return code
+
+
+def deploy(stream):
+    """One deploy, the lock already held. Returns the exit code."""
+    fresh_dir(INCOMING)
+    sig, tar = read_stream(stream)
+    verify(sig, tar, INCOMING)
+    files = members(tar)
+    m = manifest(files['MANIFEST'])
+    check_fresh(m)
+    dry = m['mode'] == 'dry-run'
+    log('%s %s from %s (fingerprint %s)' % ('dry run of' if dry else 'installing', m['commit'], m['source'],
+                                             m['fingerprint']))
+    if check_config(files, m) and not dry:
+        log("config.env will change: the Pi's copy is backed up to %s" % backup_config())
+    unpack(files, STAGE)
+    code = run_install(STAGE, dry)
+    if code == 0 and not dry and read_record().get('created') != m['created']:
+        write_record(m)                                    # the unit writes it; this only fills a gap
+    return code
+
+
+def main(argv):
+    if argv and argv[0] == '--run-stage':                  # only systemd-run (root) passes this
+        if argv[1:] not in ([], ['--dry-run']):
+            print('pb-install --run-stage [--dry-run]', file=sys.stderr)
+            return 2
+        if hasattr(os, 'geteuid') and os.geteuid() != 0:
+            print('pb-install: run it with sudo', file=sys.stderr)
+            return 2
+        try:
+            return run_stage(argv[1:] == ['--dry-run'])
+        except Refused as e:
+            log('refused: %s' % e)
+            write_result(EXIT_REFUSED)
+            return EXIT_REFUSED
+    if argv:
+        print('pb-install takes no arguments: the bundle comes on stdin (bash pi/deploy.sh)', file=sys.stderr)
+        return 2
+    if hasattr(os, 'geteuid') and os.geteuid() != 0:
+        print('pb-install: run it with sudo', file=sys.stderr)
+        return 2
+    os.makedirs(LIB, mode=0o755, exist_ok=True)
+    fd = take_lock()
+    if fd is None:
+        print('pb-install: another deploy is running on the Pi: try again when it has finished', file=sys.stderr)
+        return EXIT_BUSY
+    try:
+        if unit_running():
+            print('pb-install: an earlier deploy is still installing (%s, its output in %s): try again when it '
+                  'has finished' % (UNIT, RUN_LOG), file=sys.stderr)
+            return EXIT_BUSY
+        return deploy(sys.stdin.buffer)
+    except Refused as e:
+        log('refused: %s' % e)
+        return EXIT_REFUSED
+    finally:
+        shutil.rmtree(INCOMING, ignore_errors=True)
+        os.close(fd)
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

@@ -5,8 +5,13 @@
 #   1 network    wlan0 has IPv4 and the gateway answers ping. Fail -> radio on +
 #                connection up; every 3rd failure in a row -> restart NetworkManager;
 #                down 10 min -> reboot (guarded). Steps 2-4 are skipped while down.
+#                While the rescue hotspot (pb-rescue) is up, pb-netwatch owns the
+#                network: logged only, and the 10 minutes start again when it ends
+#                (review PI-02: this check used to take wlan0 back from the hotspot).
 #   2 tailscale  not Running -> restart tailscaled
-#   3 listener   status file stale (90 s) or not joined for 5 min -> restart pb-listener
+#   3 listener   status file stale (90 s) -> restart pb-listener. Not joined for 5 min ->
+#                restart it only if Supabase answers a plain TCP connect: when it
+#                doesn't, the outage is upstream and a restart can't help (review PI-11)
 #                (stopped while pb-ledmap, the LED mapping tool, runs: logged, never restarted)
 #   4 board-cam  enabled but failed/inactive -> restart it
 #   4b LEDs      (log only, online or not; review PI-09) the SPI device missing, or
@@ -16,7 +21,10 @@
 #                every 2 min while it's on screen, app/wall.js wallAlive) 10 min old
 #                -> restart the kiosk (a crashed or frozen page, or another page on
 #                screen); at most 6 a day. No heartbeat file at all -> nothing done.
-#   6 log only   temperature, disk free, throttling
+#   6 clock      NTP off and no R8 clock test running (pb-test-ntp.timer) -> NTP back
+#                on (review PI-07: a reboot during the test lost the timer that turns it
+#                back on, and an unsynced clock keeps the board in day mode all night)
+#   7 log only   temperature, disk free, throttling
 #
 # Every action is one journal line tagged pb-health starting "ACTION <name>:",
 # which pb-status counts. Reboot guard: at most 1 an hour and 3 a day, from
@@ -25,10 +33,13 @@
 set -u
 export LC_ALL=C
 
-CONFIG=/etc/projectboard/config.env
-RUN=/run/projectboard/health
-LEDGER=/var/lib/projectboard/reboots
-STATUS=/run/projectboard/listener.json
+# The paths can be moved for the laptop's tests (pi/tests/test_pb_health.py); systemd runs
+# this with none of these set.
+CONFIG=${PB_HEALTH_CONFIG:-/etc/projectboard/config.env}
+RUN=${PB_HEALTH_RUN:-/run/projectboard/health}
+LEDGER=${PB_HEALTH_LEDGER:-/var/lib/projectboard/reboots}
+STATUS=${PB_HEALTH_STATUS:-/run/projectboard/listener.json}
+RESCUE=pb-rescue
 
 cfg() {   # cfg KEY default: one value from config.env, without sourcing it
     local v
@@ -68,6 +79,16 @@ reboot_guarded() {   # reboot_guarded "reason"
     exit 0
 }
 
+# Supabase's host and port, from SUPABASE_URL (https://<ref>.supabase.co).
+SB_URL=$(cfg SUPABASE_URL "")
+SB_HOST=$(printf '%s' "$SB_URL" | sed -E 's#^[a-zA-Z]+://##; s#[/?].*$##; s#:[0-9]+$##')
+SB_PORT=$(printf '%s' "$SB_URL" | sed -nE 's#^[a-zA-Z]+://[^/:]+:([0-9]+).*#\1#p')
+[ -n "$SB_PORT" ] || { case "$SB_URL" in http://*) SB_PORT=80 ;; *) SB_PORT=443 ;; esac; }
+supabase_up() {   # a plain TCP connect, 5 s; no URL in the config = assume it's up (restart as before)
+    [ -n "$SB_HOST" ] || return 0
+    timeout 5 bash -c 'exec 3<>"/dev/tcp/$0/$1"' "$SB_HOST" "$SB_PORT" 2>/dev/null
+}
+
 # ---- 1 network ---------------------------------------------------------------
 net_ok() {
     ip -4 -o addr show dev "$IFACE" 2>/dev/null | grep -q ' inet ' || { NET_WHY="no IPv4 on $IFACE"; return 1; }
@@ -77,6 +98,8 @@ net_ok() {
     ping -c 2 -W 2 -I "$IFACE" "$gw" >/dev/null 2>&1 || { NET_WHY="gateway $gw not answering"; return 1; }
 }
 
+rescue_up() { nmcli -t -f NAME connection show --active 2>/dev/null | grep -qx "$RESCUE"; }
+
 NET=ok
 NET_WHY=""
 if net_ok; then
@@ -84,6 +107,12 @@ if net_ok; then
         log "network back after $(cat "$RUN/net_fails") failed check(s)"
         rm -f "$RUN/net_fails" "$RUN/net_down_since"
     fi
+elif rescue_up; then
+    # pb-netwatch opened the hotspot (wlan0 = 10.42.0.1, no default route): it's the only
+    # way in while the gym Wi-Fi is broken, so hands off until netwatch takes it down.
+    NET=rescue
+    echo "$NOW" > "$RUN/net_down_since"
+    log "network down ($NET_WHY), but the rescue hotspot $RESCUE is up: pb-netwatch owns the network until it ends; nothing done" warning
 else
     NET=down
     fails=$(( $(cat "$RUN/net_fails" 2>/dev/null || echo 0) + 1 ))
@@ -131,14 +160,19 @@ try:
     age = now - os.stat(path).st_mtime
     s = json.load(open(path))
 except (OSError, ValueError) as e:
-    print('status file unreadable (%s)' % e); sys.exit()
+    print('stale status file unreadable (%s)' % e); sys.exit()
 if age > 90:
-    print('status file %d s old' % age)
+    print('stale status file %d s old' % age)
 elif s.get('state') != 'joined' and s.get('disconnected_since') and now - s['disconnected_since'] > 300:
-    print('not joined for %d s (state %s)' % (now - s['disconnected_since'], s.get('state')))
+    print('unjoined not joined for %d s (state %s)' % (now - s['disconnected_since'], s.get('state')))
 EOF
 )
-        if [ -n "$why" ]; then
+        kind=${why%% *}
+        why=${why#* }
+        if [ -n "$why" ] && [ "$kind" = unjoined ] && ! supabase_up; then
+            log "listener $why, but Supabase ($SB_HOST:$SB_PORT) doesn't answer a TCP connect either: not restarting it (the outage is upstream)" warning
+            SUMMARY+=("listener waiting (Supabase unreachable)")
+        elif [ -n "$why" ]; then
             action listener-restart "$why"
             systemctl restart pb-listener
             SUMMARY+=("listener restarted")
@@ -231,7 +265,21 @@ if [ "$(systemctl is-active kiosk 2>/dev/null)" = active ]; then
     fi
 fi
 
-# ---- 6 log only ----------------------------------------------------------------
+# ---- 6 clock ---------------------------------------------------------------------
+# The R8 clock test (pb-console-helper test clock) turns NTP off and leaves a transient
+# timer, pb-test-ntp, to turn it back on in 15 min; a reboot loses that timer.
+if [ "$(timedatectl show -p NTP --value 2>/dev/null)" = no ]; then
+    if [ "$(systemctl is-active pb-test-ntp.timer 2>/dev/null)" = active ]; then
+        log "NTP is off for the clock test (pb-test-ntp turns it back on)" info
+        SUMMARY+=("NTP off (clock test)")
+    else
+        action ntp-on "NTP was off with no clock test running: turning it back on"
+        timedatectl set-ntp true
+        SUMMARY+=("NTP turned back on")
+    fi
+fi
+
+# ---- 7 log only ----------------------------------------------------------------
 LEVEL=info
 [ -n "$LED_WARN" ] && LEVEL=warning
 temp=$(awk '{printf "%.1f", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null)

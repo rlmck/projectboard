@@ -7,8 +7,9 @@
 #
 #   1  pb-netwatch now (the Wi-Fi watchdog and the projectboard-rescue hotspot)
 #   2  setup.sh: Wi-Fi, apt, SSH key, Tailscale, the wall key, journal (pi/setup.sh)
-#   3  clone the public repo (fall back to the copy on the card) and stage
-#      ~pi/pb-deploy exactly as pi/deploy.sh does, with the laptop's config.env
+#   3  clone the public repo (fall back to the copy on the card) and stage it in
+#      /var/lib/projectboard/stage (root only, as pb-install does) in the layout
+#      pi/deploy.sh sends, with the laptop's config.env
 #   4  install.sh: the listener, kiosk, watchdogs, night mode, sudoers, ... (pi/install.sh)
 #   5  mark done, then reboot once (the boot that proves it comes up by itself)
 #
@@ -25,7 +26,7 @@ DONE=$STATE/firstboot.done
 TRIES=$STATE/firstboot.tries
 REPO_URL=https://github.com/rlmck/projectboard.git
 CLONE=/home/pi/projectboard
-STAGE=/home/pi/pb-deploy
+STAGE=/var/lib/projectboard/stage     # root only (review PI-03: nothing pi can write runs as root)
 
 [ -f "$DONE" ] && exit 0
 mkdir -p "$STATE"
@@ -85,8 +86,9 @@ if [ -z "$SRC" ]; then
         fail "no clone and no copy on the card"
     fi
 fi
-# The same layout pi/deploy.sh copies to ~/pb-deploy (keep the two in step).
+# The same layout pi/deploy.sh sends (keep the two in step).
 rm -rf "$STAGE"
+install -d -m 0700 "$STAGE" || fail "mkdir $STAGE"
 mkdir -p "$STAGE/listener/patterns" "$STAGE/ledmap" "$STAGE/ops" "$STAGE/systemd/kiosk.service.d" "$STAGE/conf" || fail "mkdir $STAGE"
 {
     cp "$SRC/pi/install.sh" "$SRC/pi/config.env.example" "$STAGE/" &&
@@ -103,7 +105,6 @@ if [ -f "$CARD/config.env" ]; then
     tr -d '\r' < "$CARD/config.env" > "$STAGE/config.env"
     echo "   with the laptop's config.env"
 fi
-chown -R pi:pi "$STAGE"
 if grep -rlI $'\r' "$STAGE" --exclude=board.jpg; then
     fail "the files above have Windows line endings"
 fi
@@ -125,15 +126,16 @@ echo "   Tailscale: $(tailscale ip -4 2>/dev/null | head -n1 || echo 'not connec
 echo "   wall key: $([ -s /etc/projectboard/wall-key ] && stat -c '%U:%G %a' /etc/projectboard/wall-key || echo MISSING)"
 [ $ok -eq 1 ] || fail "a service isn't running (above)"
 if ! tailscale ip -4 >/dev/null 2>&1; then
-    # The board itself works now; only remote access is missing. secrets.env is kept,
-    # and every retry (each 10 min, and each boot) runs setup.sh's tailscale up again.
+    # The board itself works now; only remote access is missing. secrets.env is kept (in
+    # /var/lib/projectboard, root only: setup.sh moved it off the card), and every retry
+    # (each 10 min, and each boot) runs setup.sh's tailscale up again.
     say "Tailscale isn't connected (a used or expired key?). The board works; retrying in 10 min."
     sleep 540
     fail "Tailscale not connected"
 fi
 date '+%F %T' > "$DONE"
 systemctl disable pb-firstboot.service 2>/dev/null
-rm -f "$CARD/secrets.env"
+rm -f "$CARD/secrets.env" "$STATE/secrets.env"
 say "DONE. Rebooting in 15 s; the wall screen shows the app about 2 minutes later."
 sync
 sleep 15

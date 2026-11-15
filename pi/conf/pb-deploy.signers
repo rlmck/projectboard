@@ -1,0 +1,6 @@
+# /etc/projectboard/deploy-signers: the public half of the laptop's deploy signing key
+# (~/.ssh/pb-deploy-sign on the laptop; `bash pi/deploy.sh --make-key` prints this line).
+# pb-install installs only a bundle signed by a key listed here. Public: safe to commit.
+# A new laptop key: put its line here, then deploy once with `bash pi/deploy.sh --password`
+# (the old key can't sign for the new one). Installed root:root 0644 by install.sh.
+pb-deploy namespaces="pb-deploy" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKQ9qSNnarmp56vDx1zi8M2rP56MSHolRkO51m7t8dM3

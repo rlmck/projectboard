@@ -157,7 +157,7 @@
   }
 
   async function deploy(dry) {
-    // No password: the Pi lets the deploy install without one (pb-deploy sudoers, 30 Oct 2026).
+    // No password: deploy.sh signs a bundle and the Pi's pb-install installs it (pb-deploy sudoers, 15 Nov 2026).
     await PB.runAction('deploy', { dry_run: dry }, dry ? 'Deploy (dry run)' : 'Deploy to the Pi');
   }
 

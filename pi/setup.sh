@@ -2,7 +2,9 @@
 # ProjectBoard Pi 4 bring-up: one run gets a freshly imaged card onto the gym
 # Wi-Fi and Tailscale, ready for install.sh (the board's own services).
 #
-#   1  read secrets.env (WIFI_SSID, WIFI_PSK, TS_AUTHKEY, RESCUE_PSK, WALL_KEY) from this folder
+#   1  move secrets.env (WIFI_SSID, WIFI_PSK, TS_AUTHKEY, RESCUE_PSK, WALL_KEY) off the boot
+#      partition at once, into /var/lib/projectboard/secrets.env (root, 0600), and read it there
+#      (15 Nov 2026, review PI-13: FAT has no permissions, so every local user could read it)
 #   2  Wi-Fi country GB (Raspberry Pi OS keeps the radio off until it's set)
 #   3  Wi-Fi: the "hangout-fixed" connection (random MAC per join: the 28 Oct 2026 fix),
 #      no random MAC while scanning, and the pb-rescue hotspot profile (off until pb-netwatch needs it)
@@ -12,9 +14,10 @@
 #   7  the laptop's SSH key into /home/pi/.ssh/authorized_keys (password login stays on)
 #   8  Tailscale: install, then join as "projectboard"
 #   9  the wall key (db/35) into /etc/projectboard/wall-key, if secrets.env has one
-#  10  persistent journal and pb-netlog (a network report on the boot partition)
+#  10  persistent journal and pb-netlog (a network report in /var/log; pb-netwatch copies one
+#      to the boot partition once per boot when the Wi-Fi is down: review PI-14)
 #  11  read-only checks (SPI is on in config.txt; nothing here drives a GPIO pin)
-#  12  delete secrets.env once Tailscale is up
+#  12  delete /var/lib/projectboard/secrets.env once Tailscale is up
 #  13  summary
 #
 # On a fresh card pi/firstboot/firstboot.sh runs this unattended at the first boot,
@@ -40,7 +43,8 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 HERE=/boot/firmware/projectboard
-SECRETS="$HERE/secrets.env"
+CARD_SECRETS="$HERE/secrets.env"                 # where make-card.py puts it (FAT: anyone can read it)
+SECRETS=/var/lib/projectboard/secrets.env      # where it's kept until Tailscale is up (root, 0600)
 LAPTOP_KEY="$HERE/laptop_key.pub"
 CONFIG=/boot/firmware/config.txt
 PI_USER=pi
@@ -80,6 +84,17 @@ online() {   # the internet, not just the access point
 
 
 step "1/13  Secrets"
+if [ -f "$CARD_SECRETS" ]; then
+    install -d -m 0755 "$(dirname "$SECRETS")"   # the folder holds other, public files; the file is 0600
+    ( umask 077; cat "$CARD_SECRETS" > "$SECRETS.new" )
+    chown root:root "$SECRETS.new"
+    chmod 0600 "$SECRETS.new"
+    mv -f "$SECRETS.new" "$SECRETS"
+    # Overwrite the card's copy before deleting it (best effort: FAT keeps no promise).
+    shred -u -z "$CARD_SECRETS" 2>/dev/null || rm -f "$CARD_SECRETS"
+    sync
+    echo "   moved $CARD_SECRETS to $SECRETS (root only) and deleted the card's copy"
+fi
 TS_AUTHKEY=""; WIFI_SSID=""; WIFI_PSK=""; RESCUE_PSK=""; WALL_KEY=""
 if [ -f "$SECRETS" ]; then
     TS_AUTHKEY="$(read_secret TS_AUTHKEY)"
@@ -266,12 +281,16 @@ if tailscale ip -4 >/dev/null 2>&1; then
     TS_UP=1
 elif [ -n "$TS_AUTHKEY" ]; then
     # Not fatal: the board runs without Tailscale; secrets.env is kept for a rerun.
-    if tailscale up --authkey="$TS_AUTHKEY" --hostname=projectboard --timeout=120s; then
+    # The key goes by file (review PI-13): on the command line, /proc would show it to anyone.
+    TS_KEYFILE=$(umask 077; mktemp /run/pb-ts-authkey.XXXXXX)
+    printf '%s' "$TS_AUTHKEY" > "$TS_KEYFILE"
+    if tailscale up --auth-key="file:$TS_KEYFILE" --hostname=projectboard --timeout=120s; then
         echo "   connected"
         TS_UP=1
     else
         echo "   FAILED to join Tailscale (an expired or used key?): carrying on without it"
     fi
+    rm -f "$TS_KEYFILE"
 else
     echo "   SKIPPED: no TS_AUTHKEY in $SECRETS, so Tailscale is installed but not connected."
     echo "   Put the key in secrets.env and run setup.sh again, or run:  sudo tailscale up --hostname=projectboard"
@@ -307,17 +326,17 @@ echo "   journal persistent in /var/log/journal"
 # Keep in step with pi/systemd/pb-netlog.service (install.sh owns it after this).
 cat > /etc/systemd/system/pb-netlog.service <<'EOF'
 [Unit]
-Description=Project Board network report to boot partition
+Description=Project Board network report (/var/log/pb-netlog.txt)
 After=NetworkManager.service
 [Service]
 Type=oneshot
-ExecStart=/bin/bash -c 'sleep 60; { date; nmcli -f NAME,TYPE,DEVICE,AUTOCONNECT-PRIORITY connection show; nmcli device status; ip -br addr; journalctl -b --no-pager -u NetworkManager -u wpa_supplicant | grep -viE "psk|password" | tail -160; } > /boot/firmware/netlog.txt 2>&1; sync'
+ExecStart=/bin/bash -c 'sleep 60; { date; nmcli -f NAME,TYPE,DEVICE,AUTOCONNECT-PRIORITY connection show; nmcli device status; ip -br addr; journalctl -b --no-pager -u NetworkManager -u wpa_supplicant | grep -viE "psk|password" | tail -160; } > /var/log/pb-netlog.txt 2>&1'
 [Install]
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
 systemctl enable pb-netlog.service
-echo "   pb-netlog enabled: /boot/firmware/netlog.txt, 60 s after each boot"
+echo "   pb-netlog enabled: /var/log/pb-netlog.txt, 60 s after each boot"
 
 
 step "11/13  Checks (read-only)"

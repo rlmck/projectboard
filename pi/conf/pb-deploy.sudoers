@@ -1,12 +1,10 @@
 # /etc/sudoers.d/pb-deploy: lets the laptop deploy pi/ without the Pi's password
-# (Ross, 30 Oct 2026: Claude Code does the Pi deploys end to end). pi may run the
-# deploy's installer, and only that, as root without a password: deploy.sh copies
-# pi/ to ~/pb-deploy and runs `sudo -n bash /home/pi/pb-deploy/install.sh`.
-# The trade-off: ~/pb-deploy is pi's own folder, so anyone logged in as pi (over
-# Tailscale, with the laptop's SSH key) can get root without the password.
-# To go back to typing the password: `sudo rm /etc/sudoers.d/pb-deploy` on the Pi
-# and delete this file from the repo.
-# /usr/bin/true is deploy.sh's probe: `sudo -n true` succeeds only once this rule
-# is in. (`sudo -n -l <cmd>` can't tell: it says yes for pi's password-protected ALL.)
+# (Ross, 30 Oct 2026: Claude Code does the Pi deploys end to end).
+# Since 14 Nov 2026 (review PI-03) pi may run one root-owned program, with no
+# arguments, as root: /usr/local/sbin/pb-install, which installs only a bundle signed
+# by the laptop's key (/etc/projectboard/deploy-signers) and runs install.sh from a
+# root-only folder. Nothing pi can write is ever run as root by this rule. (Until
+# then it ran ~pi/pb-deploy/install.sh, which anything running as pi could edit.)
+# The way back, if deploys stop working: pi/README.md -> Deploying.
 # Installed by install.sh after `visudo -cf` passes.
-pi ALL=(root) NOPASSWD: /usr/bin/bash /home/pi/pb-deploy/install.sh, /usr/bin/bash /home/pi/pb-deploy/install.sh --dry-run, /usr/bin/true
+pi ALL=(root) NOPASSWD: /usr/local/sbin/pb-install ""

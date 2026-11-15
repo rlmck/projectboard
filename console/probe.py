@@ -24,7 +24,7 @@ TIMERS = ('pb-health', 'pb-mode', 'pb-weekly-reboot', 'pb-bootcheck')
 BUSY_S = 300                 # the overview's "casts in the last 5 minutes"
 QUIET_S = 900                # the busy guard: 15 minutes with nobody using the board (10 Nov 2026)
 TOUCH = RUN + '/touch'       # pb-touchwatch: the wall screen's last touch (Unix time)
-NETWATCH_LOG = '/boot/firmware/netwatch.txt'
+NETWATCH_LOG = '/var/log/pb-netwatch.log'           # since 15 Nov 2026 (review PI-14); the card gets a copy once per boot
 HEALTHLOG = '/var/lib/projectboard/healthlog'      # pb-healthlog's day files (pi/ops/pb-healthlog)
 HEALTH_COLS = ('t', 'temp', 'tmax', 'uv', 'thr', 'wifi', 'disk')
 
