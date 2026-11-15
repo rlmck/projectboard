@@ -10,7 +10,7 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - **Circuits are cast (30 Oct 2026)** from phones and the wall: Cast → speed, Loop or 1–10 laps → countdown, moves, Stop; the Pi runs it (`pi/listener/circuit.py`; contract §8).
 - **The wall kiosk** (`kiosk.service`: cage + Chromium on `/?wall`, the wall key in the fragment) on the 1280×720 touchscreen picks up a deploy at its next idle or each morning.
 - **Opening hours (7 Nov 2026):** per day in the Pi's `config.env` (Mon–Thu 15:30–22:00, Fri closed, Sat–Sun 09:30–15:00); night outside them. PB Console edits them (`pi/README.md` → Opening hours).
-- **Holds in the database (db/41, db/42):** the `holds` table is the source (`board_config` copies it). **Board setup** (a new photo: a whole board) and **Edit holds** / PB Console → Holds (edits, db/48 `admin_edit_holds`; Edit holds also edits points) publish with Undo; 188 hand holds, 55 footholds. The offline snapshot (five files, `foot_holds.json` since 15 Nov) matches live as of 15 Nov. **Specific feet** (10 Nov). **Publish safety (12 Nov, db/45):** a stale publish is refused (CLAUDE.md → Data traps; overview §4.8a, §4.8d).
+- **Holds in the database (db/41, db/42):** the `holds` table is the source (`board_config` copies it). **Board setup** (a new photo: a whole board) and **Edit holds** / PB Console → Holds (edits, db/48 `admin_edit_holds`; points in both, the board-wide smoothing in the console, db/49; Trace Holds retired 15 Nov) publish with Undo; 188 hand holds, 55 footholds. The offline snapshot (five files, `foot_holds.json` since 15 Nov) matches live as of 15 Nov. **Specific feet** (10 Nov). **Publish safety (12 Nov, db/45):** a stale publish is refused (CLAUDE.md → Data traps; overview §4.8a, §4.8d).
 - **Hardware:** temporary wiring (`pi/README.md` → "Wiring"), Pi in the junction box, two 5 V 10 A supplies (both needed); relays and level shifter arrived, not fitted (3.3 V data works). A USB webcam shows the back of the board (Tailscale only).
 - **Pi deploys are automatic (10 Nov 2026):** CLAUDE.md working rule 2; since 15 Nov signed, through `pb-install` (`pi/README.md` → Deploying).
 - **PB Console** (`console/`, `bash console/start.sh`): Home, Holds, Activity, Advanced (`console/README.md`); weekly backups (Pi settings + a full local DB dump since 15 Nov). Phase 13 (Data) isn't built.
@@ -38,10 +38,11 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
-- **Ross, as Pablo, the edit path (session 10; each a real small edit, undone at once):** 1) Board Setup → Edit holds → a hand hold → Edit points: drag a point (magnifier), tap a ○, Remove point, nudge; Publish (toast: snapshot owed); start page → Undo the last publish (tap twice). 2) Tap to trace or Draw a foothold → Publish → Undo. 3) A hand hold +5° → Publish (it and its partner turn in the picture) → Undo. 4) Console → Holds: move a point → Publish (the confirm lists it) → Undo. 5) After the Undos no "offline copy is behind" card; if there is one, Console → Holds → Ship the snapshot. A refusal or "permission": tell Claude.
-- **Ross, db/47 (session 9; no browser run, Chrome wasn't connected):** 1) Signed in: tick/untick, favourite a problem and a circuit, Ranks, Pat Burner. 2) Create a test problem; the same name in other capitals says "already used"; delete it. 3) Edit your problem's holds. 4) A signed-in cast shows in Console → Activity. 5) As Pablo: Trace Holds. 6) As admin: users, activity, benchmark, Move to Circuits. 7) `/?wall` list + Create. A "permission" error = a missing grant: tell Claude.
-- **Ross, PB Console (session 8):** 1) Start (icon): works, no `#c=` in the address; again: a 2nd tab; reload works, an old `#c=` address says "no session". 2) Backups → The database only: a `db-…` folder, 17 tables; the drawer says what it covers. 3) Board in use: Restart the listener asks twice. 4) LED map tool works in its frame.
-- **Ross, at the gym (session 7):** 1) casts, circuits, wall as before. 2) Console → Deploy: dry run, then Deploy, no password. 3) Logs `netwatch-file`, `netlog` after a reboot. 4) R8 clock: reboot within 15 min, NTP back in 2 min. 5) R8 Supabase block: no listener restarts. 6) Wi-Fi drop: hotspot 15 min, `netwatch.txt` on the card.
+- **Ross, session 11 (real edits undone at once):** 1) Phone Create (test problem, then delete): tap holds everywhere, in the viewer too, and footholds (yellow): each picks the hold under your finger. 2) Circuit create: a foothold never goes in. 3) Wall Create (don't save) and the filter's picker. 4) As Pablo, an old `#outlines` link lands on Edit holds; no Trace Holds card. 5) Console → Holds: click a point, arrows nudge it (Shift/Alt), Esc then arrows move the outline, drag a ○, M mirrors onto the partner, Round slider; Discard draft.
+- **Ross, as Pablo, the edit path (session 10; each undone at once):** 1) Edit holds → Edit points: drag (magnifier), ○, Remove point, nudge; Publish; start page → Undo. 2) Tap to trace / Draw a foothold → Publish → Undo. 3) A hand hold +5° → Publish (partner turns too) → Undo. 4) Console → Holds: move a point → Publish → Undo. 5) No "offline copy is behind" card after; if there is, Ship the snapshot.
+- **Ross, db/47 (session 9):** signed in: tick, favourite, Ranks, Pat Burner; a name in other capitals says "already used"; edit your problem; a cast shows in Console → Activity; as admin: users, benchmark, Move to Circuits; `/?wall` list + Create. "Permission" error: tell Claude.
+- **Ross, PB Console (session 8):** Start (icon), no `#c=` left, a 2nd start = a 2nd tab; Backups → database only (17 tables); Restart the listener while busy asks twice; LED map in its frame.
+- **Ross, at the gym (session 7):** casts, circuits, wall; Console → Deploy (dry run, then real); Logs after a reboot; R8 clock, Supabase block and Wi-Fi drop.
 - **Ross: session 6 phone tests** (14 Nov; steps in that session's report).
 - **Ross, at the board: cast seams** (14 Nov): Stop in the countdown (stays idle); 3 laps (red on lap 3, Top!); Loop; no Loop/Laps on a non-looping circuit; live LEDs while setting, Save/Cancel idle at once; phone setting vs a wall circuit tap (Show on board).
 - **Ross: update flow on a phone** (14 Nov): a circuit run survives lock + deploy + unlock; the app opens offline.
@@ -61,6 +62,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-15, Claude Code (review fix session 11: retire Trace Holds, C3).**
+  - **Changed:** `#outlines` → Board Setup → Edit holds; Trace Holds and ~880 lines gone; db/49 drops `admin_set_hold_outlines`, adds a `smooth` edit. Console → Holds: arrow nudge, mid handles, Round slider, mirror-copy (M). One geometry module (`trace.js`), one `hitHold()`. Retired generators archived (BRD-14).
+  - **Tested:** db/49 test (rolled back); scorers unchanged; console/tests 179; headless Chrome, publishes stubbed; taps = old pickers on 120,000 taps.
+  - **Live:** `e67bdba`, app `pb-6d2a49bf5d`. No Pi change.
+  - **Left:** Ross's checks (Waiting on); next is session 12.
+
 - **2026-11-15, Claude Code (review fix session 10: one edit path, C2).**
   - **Changed:** db/48 `admin_edit_holds` (edits checked in SQL, same internals as `admin_publish_board`); Edit holds and Console → Holds send edits; Edit holds gains point editing (drag + magnifier, mid handles, remove, nudge, zoom, double-tap); turns compose in boxes from a lossless master; Board Setup payload checks, pairs kept, safe paths, used feet flagged; `foot_holds.json`; snapshot-owed card/toasts. BRD-05/06/07/10, SEAM-05; BRD-08/15 finished.
   - **Tested:** db/48 test (rolled back), scorers, console/tests 179, build; headless Chrome on localhost, publish stubbed.
@@ -72,9 +79,3 @@ Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which si
   - **Tested:** db/47 test (member, guest); member/admin/super-admin paths (dry run); guest API live; console Holds + Activity. Chrome not connected.
   - **Live:** `da3793c`, app `pb-c2909dc59f`. No Pi change.
   - **Left:** Ross's checks (Waiting on).
-
-- **2026-11-15, Claude Code (review fix session 8: PB Console).**
-  - **Changed:** CON-01–04, 06–10, 12, 13, 15: safe pull-file; Ship the snapshot pushes only its own commit; the backup is a full local DB dump (newest 8; hook refuses `backups/`; privacy.html); one-time sign-in code; busy 2nd step; 36 tests (`console/README.md`).
-  - **Tested:** console/tests 183, hook 38; live backup (17 tables, counts = live); code flow over HTTP (Chrome not connected).
-  - **Live:** `654f2a7`, app `pb-a9958e0c00`. No Pi change.
-  - **Left:** Ross's console checks (Waiting on).
