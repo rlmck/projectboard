@@ -571,7 +571,7 @@
     key: 'This screen can’t save problems right now.',
     rate: 'Lots of new problems just now: try again in a few minutes.',
     name: 'Use letters or numbers in the name.',
-    name_taken: 'That name is taken — pick another.',
+    name_taken: 'That name is already used — pick another.',
     offensive: 'Please pick a different name.',
     grade: 'Pick a grade.',
     holds: 'Those holds don’t make a problem yet: check the start, holds and finish.',

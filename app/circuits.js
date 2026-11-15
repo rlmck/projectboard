@@ -1048,7 +1048,7 @@
     if (ccEditingId && !editing) { errEl.textContent = 'Couldn’t find that circuit — go back and reopen it.'; return; }
     const lname = name.toLowerCase();
     if (allCircuits.some(c => c !== editing && circuitName(c).toLowerCase() === lname)) {
-      errEl.textContent = ccMoveId ? 'A circuit already has that name — rename it, then save.' : 'That name is taken — pick another.';
+      errEl.textContent = ccMoveId ? 'A circuit already has that name — rename it, then save.' : 'That name is already used — pick another.';
       return;
     }
 

@@ -29,13 +29,18 @@
   function dbErrorText(error, what = 'problem') {
     const code = error && error.code;
     const m = (error && error.message) || '';
-    if (code === '23505') return 'That name is taken — pick another.';
+    // db/47: names are unique ignoring capitals and spaces (problems_name_lower_key,
+    // circuits_name_lower_key), so "good bug" clashes with "Good Bug".
+    if (code === '23505') {
+      if (/name_lower_key/.test(m)) return 'That name is already used (capitals don’t make it different) — pick another.';
+      return 'That name is already used — pick another.';
+    }
     if (code === '42501') return 'You don’t have permission to do that.';
     if (code === '23503') return `That ${what} has been deleted.`;
     if (code === '23514') {
       if (/_grade_valid/.test(m)) return 'That grade isn’t allowed — pick another.';
-      if (/_name_valid/.test(m)) return 'That name isn’t allowed — try another.';
-      if (/_(holds|sequence|feet_holds)_valid/.test(m)) return 'Those holds aren’t allowed — check them and try again.';
+      if (/_name_(valid|trimmed)/.test(m)) return 'That name isn’t allowed — try another.';
+      if (/_(holds|sequence|feet_holds|hold_ids)_valid/.test(m)) return 'Those holds aren’t allowed — check them and try again.';
       return 'That isn’t allowed — check the name, grade and holds.';
     }
     if (!code || error.status === 0) return 'Couldn’t reach the server — check your connection.';

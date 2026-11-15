@@ -458,7 +458,7 @@
     if (!createGrade) return { field: 'grade', msg: 'Pick a grade.' };
     const lower = name.toLowerCase();
     if (allProblems.some(p => p !== editing && String(p.name || '').trim().toLowerCase() === lower)) {
-      return { field: 'name', msg: 'That name is taken — pick another.' };
+      return { field: 'name', msg: 'That name is already used — pick another.' };
     }
     return null;
   }
