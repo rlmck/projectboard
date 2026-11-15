@@ -3,20 +3,20 @@
 Shared by Claude Code and the claude.ai project chat (which edits it through GitHub). **Pull before you edit.** The repo is public: no personal data about users, no personal circumstances, no secrets. Rules for both sides: CLAUDE.md → "Session rules". The to-do list is in `TODO.md`. Keep this file under 12 KB: the 3 newest session entries live here, older ones in `docs/log/` (`docs/log/2026-10.md`, `docs/log/2026-11.md`).
 
 ## Current state (as of 2026-11-14)
-- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` is stamped by `build.sh` (see the newest session entry for the current stamp) and, since 14 Nov, onto every script and stylesheet URL (`?v=`), so a page load is always one version (overview §7). Every styling value lives in `app/tokens.css`. Not yet announced to the public: the wiring behind the board is temporary.
+- **The app** is live at https://symmetryboard.co.uk with the Pat Burner challenge and the wall-screen mode (`/?wall`). `CACHE` (stamp: newest session entry) is also on every script and stylesheet URL since 14 Nov (overview §7). Not yet announced to the public: the wiring behind the board is temporary.
 - **Sorting and filtering (4 Nov 2026):** the Filter sheet (phone) or panel (wall): Sort, Grade slider, quick filters, pick Holds; `✕ Clear` (overview §4.2a).
 - **Casting works end to end** (phone → Supabase → Pi 4 → LEDs, about 0.25–0.45 s) and is used daily. Every hold's LED, mirrored casts, the feet rule and the geofence centre are checked on site.
-- **The Pi 4 is on a new SD card (1 Nov 2026)** after the old one died: it set itself up unattended (`pi/firstboot/README.md`; secrets in the laptop's gitignored `pi/secrets.env`; db/36 new wall key). Trixie Lite, Tailscale `projectboard`; the listener with self-healing and watchdogs; R8 tests still to do. Idle pattern **`wave`** 15 min after the last cast. Wi-Fi: random MAC, `pb-netwatch` v2, rescue hotspot.
+- **The Pi 4 is on a new SD card (1 Nov 2026)** (set itself up: `pi/firstboot/README.md`). Trixie Lite, Tailscale `projectboard`; self-healing and watchdogs; R8 tests still to do. Idle pattern **`wave`** 15 min after the last cast. Wi-Fi: random MAC, `pb-netwatch` v2, rescue hotspot.
 - **The wall screen casts on the pick (2 Nov 2026):** a tap lights a problem (Mirror flips it), a circuit (`show_circuit`); Start circuit runs it. Tried (Ross, 7 Nov).
 - **Circuits can be cast (30 Oct 2026)** from phones and the wall: Cast → speed, Loop or laps → a 5 s countdown, the move count and Stop; the Pi runs it (`pi/listener/circuit.py`). Signed-in runs go to `circuit_logs`. Contract §8.
 - **Circuit LED look "map and next hold" (5 Nov 2026):** contract §8.3. **Laps (14 Nov):** the Cast sheet offers Loop or 1–10 laps for a circuit that loops (none for one that doesn't) and sends `laps`, with `loop` beside it for old listeners (contract §8.1, §8.4).
 - **The wall kiosk** (`kiosk.service`: cage + Chromium on `/?wall`, the wall key in the fragment) on the 1280×720 touchscreen picks up a deploy at its next idle or each morning.
 - **Create on the wall, live LEDs while setting (30 Oct 2026):** the wall saves as The Hangout (db/35); taps light the board (contract §9).
-- **Opening hours (7 Nov 2026):** per day in the Pi's `config.env` (Mon–Thu 15:30–22:00, Fri closed, Sat–Sun 09:30–15:00); outside them the LEDs and wall screen are off and casts ignored. PB Console edits them and has Stay on until (`pi/README.md` → Opening hours).
-- **Holds in the database (db/41, db/42):** the `holds` table is the source of each hold's name, kind, LED, position, outline and mirror partner (`board_config` copies it; `tools/check_holds.py`). **Board setup** and **Edit holds** (super admin, db/44) publish a whole board with Undo; the new board went live 10 Nov (188 hand holds, 50 footholds). **Specific feet** (10 Nov): footholds picked in Create/Edit, never lit. **Publish safety (12 Nov, db/45):** every publish names its version, a stale one is refused (CLAUDE.md → Data traps; overview §4.8a, §4.8d).
+- **Opening hours (7 Nov 2026):** per day in the Pi's `config.env` (Mon–Thu 15:30–22:00, Fri closed, Sat–Sun 09:30–15:00); night outside them. PB Console edits them (`pi/README.md` → Opening hours).
+- **Holds in the database (db/41, db/42):** the `holds` table is the source (`board_config` copies it). **Board setup** and **Edit holds** (super admin) publish a whole board with Undo; live since 10 Nov (188 hand holds, 50 footholds). **Specific feet** (10 Nov). **Publish safety (12 Nov, db/45):** a stale publish is refused (CLAUDE.md → Data traps; overview §4.8a, §4.8d).
 - **Hardware:** temporary wiring (`pi/README.md` → "Wiring"), Pi in the junction box, two 5 V 10 A supplies (both needed); relays and level shifter arrived, not fitted (3.3 V data works). A USB webcam shows the back of the board (Tailscale only).
 - **Pi deploys are automatic (10 Nov 2026):** CLAUDE.md working rule 2; since 15 Nov signed, through `pb-install` (`pi/README.md` → Deploying).
-- **PB Console** (`console/`, `bash console/start.sh`): Home (board controls, webcam, Health with 7 days of `pb-healthlog`, Activity, opening hours), Holds (outlines, footholds, pairs), Activity, Advanced (logs, config, Pi deploy, LED map, R8 checklist, backups, audit); weekly backups (`console/README.md`). Phase 13 (Data) isn't built.
+- **PB Console** (`console/`, `bash console/start.sh`): Home, Holds, Activity, Advanced (`console/README.md`); weekly backups (Pi settings + a full local DB dump since 15 Nov). Phase 13 (Data) isn't built.
 
 ## Decisions
 - **Deploying:** CLAUDE.md working rule 2 (ship by default, end to end, gated items, rollback). **Confirmed 8 Nov 2026: keep shipping straight to `main`;** the bundled-release idea is parked in `TODO.md` → Not now.
@@ -33,12 +33,14 @@ Shared by Claude Code and the claude.ai project chat (which edits it through Git
 - Old star ratings: gone from the app (30 Oct 2026); `stars` columns stay, unused.
 - **Pat Burner challenge** (19 Oct): 3 sets × 3 reps to failure, score = total seconds held; the rest is in CLAUDE.md → Data traps and overview §4.6a.
 - PB Console's Data phase (13) writes through direct Postgres with `db/.env`, never the service key in the console (28 Oct).
+- **Backups (15 Nov 2026):** every public table (members' data too) weekly to the laptop's gitignored `backups/`; local only, not encrypted, newest 8; restores by hand (`console/README.md`).
 - **The Hangout (30 Oct 2026):** the gym's setter (CLAUDE.md → Data traps). Live LEDs while setting: geofenced on phones, admins too; a cast overrides (Show on board). Comments stay off.
 
 ## To-do
 The ordered to-do list (next steps, backlog, and what not to build yet) lives in `TODO.md`. Top item = now.
 
 ## Waiting on
+- **Ross, PB Console (session 8), step by step:** 1) Close the console, start it (icon): the tab works, no `#c=` in the address. 2) Start again: a 2nd working tab. 3) Reload: still works; an old `#c=` address in a new tab: "no session". 4) Advanced → Backups → The database only: a new `db-…` folder, 17 tables. 5) Backups drawer says what it covers. 6) Board in use: Restart the listener → confirm → a 2nd "Go ahead anyway?" step. 7) Holds → Ship the snapshot: one commit pushed (refuses if the repo has other changes). 8) LED map tool works in its frame.
 - **Ross, at the gym (session 7, 15 Nov):** 1) casts, a circuit, the wall screen as before. 2) PB Console → Deploy: dry run, then Deploy, no password. 3) Logs: `netwatch-file`, `netlog` (after a reboot). 4) R8 clock test, reboot within 15 min: NTP back on in 2 min (`ACTION ntp-on`). 5) R8 Supabase block: no listener restarts. 6) Wi-Fi drop: the hotspot stays 15 min; `netwatch.txt` on the card.
 - **Ross: session 6 phone tests** (14 Nov; steps in that session's report).
 - **Ross, at the board: cast seams** (14 Nov; the Pi has had it since 14:08 on 14 Nov): Start a circuit, Stop in the countdown (board idles, stays idle); 3 laps (red on lap 3, Top! with the board); Loop (endless); a non-looping circuit has no Loop/Laps; live LEDs while setting, Save and Cancel (idle at once); setting on a phone while a circuit is tapped on the wall (Show on board).
@@ -46,7 +48,7 @@ The ordered to-do list (next steps, backlog, and what not to build yet) lives in
 - **Ross, on site: kiosk tests** (12 Nov): long-press and right-click open nothing; a killed renderer recovers by itself (`pi/README.md` → What runs).
 - **Ross: try the publish safety** (12 Nov): each board tool publishes and undoes as before; a publish from elsewhere in between is refused cleanly. **The snapshot is a publish behind live** (11 Nov): PB Console → Holds → Ship the snapshot (Home's tile stays amber till then).
 - **Ross:** Edit holds: the footholds beside **G1 and N1** aren't in yet (3 of 5 are). Sign in as Pablo with the new PIN once (reset 10 Nov). The db/41 checks (9 Nov report). **Try Specific feet** (plan → Session 3 → "Try it").
-- **Ross: try PB Console → Holds** (restart the console first; what it does: `console/README.md` → Holds): a redraw, a new foothold, a pair, Publish, Ship the snapshot. **Decide** whether turning a hold and new photos move to the console (they upload an image: a console sign-in as Pablo, or the service key there; the review recommends no). Until then they stay in the app.
+- **Ross: try PB Console → Holds** (`console/README.md` → Holds): a redraw, a new foothold, a pair, Publish, Ship the snapshot. **Decide** whether turning a hold and new photos move to the console (the review recommends no).
 - **Parked branch `parked/2b-camera-led-mapping`:** camera LED mapping (2b), unfinished, never shipped; only for a full rearrange or another gym (`TODO.md` → Not now). Its db/43 is live and harmless.
 - **Ross: test the opening hours** (live 7 Nov): the 7 Nov checklist in `docs/log/2026-11.md`.
 - Ross (low priority): delete the local passphrase hand-out file (and empty the Recycle Bin) once all 7 migrated accounts have signed in.
@@ -61,6 +63,12 @@ Details in `docs/cast-contract.md` → "Open questions".
 ## Session log
 Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which side (Claude Code / chat), what changed, what's left, new questions.
 
+- **2026-11-15, Claude Code (review fix session 8: PB Console).**
+  - **Changed:** CON-01–04, 06–10, 12, 13, 15: safe pull-file; Ship the snapshot pushes only its own commit; the backup is a full local DB dump (newest 8; hook refuses `backups/`; privacy.html); one-time sign-in code; busy 2nd step; 36 tests (`console/README.md`).
+  - **Tested:** console/tests 183, hook 38; live backup (17 tables, counts = live); code flow over HTTP (Chrome not connected).
+  - **Live:** `654f2a7`, app `pb-a9958e0c00`. No Pi change.
+  - **Left:** Ross's console checks (Waiting on).
+
 - **2026-11-15, Claude Code (review fix session 7: Pi deploy and ops).**
   - **Changed:** PI-02, 03, 04, 06, 07, 08, 11, 13, 14, CON-11, CON-16 and TODO 5's first half: signed deploys via `pb-install` (one lock and record, own unit, listener swapped whole); pb-health fixes; logs and first-boot secrets off FAT; rescue profile in `pi/conf` (`pi/README.md` → Deploying).
   - **Tested:** pi/tests 253, console/tests 148; on the Pi: swap, `visudo -c`, a killed deploy finished.
@@ -71,9 +79,3 @@ Newest first, the 3 newest only (older: `docs/log/`). Each entry: date, which si
   - **Changed:** no code (session 7 has only Medium/Low findings; the brief was Critical/High).
   - **Live:** the Pi deploy held since 12:26 (session 5's Pi side) went at 14:08 on Ross's go: Pi on `e66bd12`, listener joined, 0 errors, no failed units. App unchanged.
   - **Left:** Ross to say which of session 7's Medium/Low findings to fix (Waiting on). Session 5 board tests can start.
-
-- **2026-11-14, Claude Code (review fix session 6: app fixes, phone views).**
-  - **Changed:** APP-01–10, 13, 14: Escape, `viewRefresh`, one confirm helper, saved lists, challenge retry/expiry/sign-out, shared wake lock, plain-words errors, profile retry, toast over sheets, privacy.html. Overview §4.3, §4.6a, §13.
-  - **Tested:** build check; local Chrome (phone, `/?wall`), stubbed writes.
-  - **Live:** `5d245a1`, app `pb-5f62d531e5`, scripts at `?v=`, no console errors. No Pi change.
-  - **Left:** Ross's phone tests (Waiting on). Next: session 7.
