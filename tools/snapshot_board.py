@@ -2,18 +2,22 @@
 
 The app draws the board from the live Supabase `board_config` row: the photo
 (`board.jpg` in Storage), the hold map, the mirror map and the published hold
-outlines. The files in app/ are what it falls back to when that row can't be
-fetched (offline, or Supabase down). This writes all four from ONE read of the
-live row, so they always belong to the same board version:
+outlines, and the footholds from the `holds` table. The files in app/ are what it
+falls back to when those can't be fetched (offline, or Supabase down). This writes
+all five from one read of the live row (and the footholds read with it, checked
+against the same version), so they always belong to the same board version:
 
     app/board-fallback.jpg   the live photo, re-encoded as a JPEG (quality 85)
     app/hold_map.json        the live hold map, plus __meta.board_updated_at
     app/mirror_map.json      the live mirror map
     app/hold_shapes.json     the live published outlines (their own __meta
                              already carries board_updated_at and smooth)
+    app/foot_holds.json      the footholds (id -> name, x, y, pts, mirror), plus
+                             __meta.board_updated_at (review BRD-07)
 
 The app strips hold_map.json's __meta when it loads it, and draws the bundled
-outlines offline only when both files carry the same board_updated_at.
+outlines offline only when both files carry the same board_updated_at; the bundled
+footholds the same (feetUsable()).
 
 Run it after anything changes on the live board (a new photo or map, or newly
 published outlines), then ship it (build.sh stamps CACHE itself; never by hand):
@@ -84,6 +88,15 @@ def main():
                                  **hold_map})
     write_json("mirror_map.json", mirror_map)
     write_json("hold_shapes.json", shapes, indent=None)
+    feet = json.loads(get(f"{SUPA_URL}/rest/v1/holds?wall=eq.HangoutPortland&kind=eq.foot"
+                          "&select=id,name,x,y,outline,mirror&order=id", h).decode())
+    again = json.loads(get(f"{SUPA_URL}/rest/v1/board_config?wall=eq.HangoutPortland&select=updated_at", h).decode())
+    if not again or again[0].get("updated_at") != version:
+        sys.exit("The board was published while the snapshot was being taken: run it again.")
+    write_json("foot_holds.json", {"__meta": {"board_updated_at": version, "source": "tools/snapshot_board.py"},
+                                   **{f["id"]: {"name": f["name"], "x": float(f["x"]), "y": float(f["y"]),
+                                                "pts": f.get("outline"), "mirror": f.get("mirror")} for f in feet}},
+               indent=None)
     print("Done. Now ship it: commit these files and push main (build.sh stamps CACHE).")
 
 

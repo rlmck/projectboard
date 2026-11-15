@@ -1,6 +1,7 @@
 // PB Console: Holds. The outlines, footholds and foothold mirror pairs of the live board,
-// edited on the laptop and published exactly as the app's Edit holds publishes them
-// (admin_publish_board(), the super admin; console/holds.py does the write). Pick any hold
+// edited on the laptop and published exactly as the app's Edit holds publishes them: a list
+// of edits (bsEditOps(), app/setup.js) through admin_edit_holds() (db/48, the super admin;
+// console/holds.py does the write; the database is the one place the rules are checked). Pick any hold
 // or foothold from the list (search, arrows) or on the board; Clear and draw a fresh outline
 // point by point (Undo while drawing), drag, add or remove single points, Simplify, Revert;
 // new footholds are drawn, named FTn (left to right, bottom row up) and paired by the board's
@@ -153,10 +154,11 @@
     if (!best || best.id === id || bd > bp.w * BS_PAIR || best.mirror) return null;
     return best.id;
   }
+  // The edit list admin_edit_holds() takes (db/48), built as the phone builds it.
   function edits() {
     const names = {};
     getModel().list.forEach((h) => { if (h.kind === 'foot' && h.name) names[h.id] = h.name; });
-    return { outlines: draft.outlines, added: draft.added, removed: draft.removed, pairs: draft.pairs, names };
+    return bsEditOps(data.holds, { outlines: draft.outlines, added: draft.added, removed: draft.removed, pairs: draft.pairs, names });
   }
 
   // -- loading -------------------------------------------------------------------------------

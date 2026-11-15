@@ -2,7 +2,9 @@
 // build step). Order: state, core, problems, admin, account, authoring, circuits,
 // challenge, leaderboard, wall, trace, setup, holdedit, app. This file: Board setup
 // (#setup, the super admin only: db/44), session 2a of docs/board-setup-plan.md. The hold editor (Edit holds,
-// the step 'edit') lives in holdedit.js and uses this file's stage and gestures.
+// the step 'edit') lives in holdedit.js and uses this file's stage and gestures, its point
+// editing (handles, the outline-aware magnifier, zoom to hold, double-tap), the edit list
+// for admin_edit_holds (bsEditOps, PB Console's too) and the one draft rule (bsDraftState).
 //
 // The flow, one step at a time, on a phone:
 //   start    the board as it is (holds, footholds, its corners), a saved draft to carry
@@ -62,6 +64,7 @@ const BS = {
   pred: {},            // hold id -> predicted [x%, y%] on the cartoon (from today's board)
   mirror: null,        // hold id -> partner id (hand: itself = stays put; foot: null = none)
   flags: [],           // [{ id, today, reflection }] hand pairs the reflection disagrees with
+  pairPicks: {},       // hold id -> partner chosen by hand in Mirror pairs (kept when Review edits remake the pairs: BRD-15)
   sel: null,           // a shape key, or 'hold:<id>' (a hand hold with no shape)
   tool: null,          // 'draw' | 'redraw' | 'move' | 'pair' | null
   undo: [],
@@ -75,6 +78,8 @@ const BS = {
   v: { s: 1, tx: 0, ty: 0, fitW: 0, sw: 0, sh: 0 },
   ptrs: new Map(),
   g: null,             // the gesture under way
+  lastTap: null,       // the last tap (double-tap: zoom to the hold)
+  snap: undefined,     // the app's bundled snapshot version (app/hold_map.json __meta), read on the start page
 };
 
 // ── small helpers ─────────────────────────────────────────────────────────────
@@ -156,6 +161,170 @@ function bsQuadPx(q, w, h) {
            h: (Math.hypot(d[0] - a[0], d[1] - a[1]) + Math.hypot(c[0] - b[0], c[1] - b[1])) / 2 };
 }
 
+// ── shared by Board Setup, Edit holds and PB Console (pure: no DOM) ────────────
+const BS_PTS_MAX = 400;          // holds_outline_ok() (db/42): an outline has 3-400 points
+const BS_FEET_MAX = 300;
+// An outline (% of an image w × h) with at most 400 points: simplified (RDP, in pixels,
+// a growing tolerance) only when it has more (review BRD-10).
+function bsCapPoints(pts, w, h) {
+  if (!pts || pts.length <= BS_PTS_MAX) return pts;
+  const px = pts.map(p => [p[0] / 100 * w, p[1] / 100 * h]);
+  let tol = 0.4, out = px;
+  while (out.length > BS_PTS_MAX && tol < 64) { out = traceSimplify(px, tol); tol *= 1.5; }
+  return out.map(p => [bsR2(bsClamp(p[0] / w * 100, -5, 105)), bsR2(bsClamp(p[1] / h * 100, -5, 105))]);
+}
+// A Storage path that can't clash with another upload, a retry in the same second included
+// (BRD-15): setup/<stamp>-<6 random>-<kind>.<ext>.
+function bsStoragePath(kind, ext) {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
+  const r = new Uint8Array(3);
+  crypto.getRandomValues(r);
+  return `setup/${stamp}-${Array.from(r, b => b.toString(16).padStart(2, '0')).join('')}-${kind}.${ext}`;
+}
+// The lossless master kept beside a board image (BRD-06): the next turn starts from it, so
+// a turn never re-encodes an already re-encoded JPEG. Absent for older images.
+const bsMasterPath = path => String(path).replace(/\.(jpe?g|png|webp)$/i, '') + '.master.png';
+
+// The edit list admin_edit_holds() takes (db/48), from a draft laid over the live holds.
+// d: { outlines: {id: pts%}, turns: {id: deg}, added: [{id, pts}], removed: [id],
+//      pairs: {id: partner | null}, names: {footId: FTn}, image: path | null }.
+// Edit holds and PB Console send this; the database checks it (the one copy of the rules).
+function bsEditOps(live, d) {
+  const r = pts => pts.map(p => [bsR2(bsClamp(p[0], -5, 105)), bsR2(bsClamp(p[1], -5, 105))]);
+  const byId = new Map((live || []).map(h => [h.id, h]));
+  const outlines = d.outlines || {}, turns = d.turns || {}, names = d.names || {}, pairs = d.pairs || {};
+  const removed = new Set(d.removed || []), added = new Set((d.added || []).map(a => a.id));
+  const ops = [];
+  if (d.image) ops.push({ op: 'image', path: d.image });
+  removed.forEach(id => ops.push({ op: 'delete_foot', id }));
+  (d.added || []).forEach(a => ops.push({ op: 'add_foot', id: a.id, outline: r(outlines[a.id] || a.pts), name: names[a.id] || null }));
+  Object.keys(outlines).forEach(id => {
+    if (added.has(id) || removed.has(id)) return;
+    const deg = turns[id];
+    ops.push(deg ? { op: 'turn', id, outline: r(outlines[id]), deg } : { op: 'outline', id, outline: r(outlines[id]) });
+  });
+  Object.keys(names).forEach(id => {
+    if (added.has(id) || removed.has(id)) return;
+    const h = byId.get(id);
+    if (h && h.kind === 'foot' && h.name !== names[id]) ops.push({ op: 'name', id, name: names[id] });
+  });
+  Object.keys(pairs).forEach(id => {
+    const w = pairs[id] || null;
+    if (removed.has(id) || (w && removed.has(w))) return;
+    ops.push({ op: 'pair', id, with: w });
+  });
+  return ops;
+}
+
+// Board Setup's whole-board payload checked as admin_publish_board checks it (BRD-10), so a
+// refusal is named before anything is sent. live: today's holds rows; footMax: foot_id_max;
+// used: {footId: problems using it}. -> a list of problems, each naming the hold.
+function validateBoardPayload(payload, live, footMax, used) {
+  const out = [], seen = new Set(), liveById = new Map((live || []).map(h => [h.id, h]));
+  const name = o => (o.kind === 'foot' ? o.name || o.id : (liveById.get(o.id) || {}).name || o.id);
+  const okPts = pts => Array.isArray(pts) && pts.length >= 3 && pts.length <= BS_PTS_MAX
+    && pts.every(p => Array.isArray(p) && p.length === 2 && p.every(v => typeof v === 'number' && v >= -5 && v <= 105));
+  const ok01 = v => typeof v === 'number' && v >= 0 && v <= 100;
+  const byId = new Map();
+  (payload || []).forEach(o => {
+    if (!o || !o.id || seen.has(o.id)) { out.push(`${o && o.id ? name(o) : 'A hold'}: listed twice, or no id`); return; }
+    seen.add(o.id); byId.set(o.id, o);
+    const lv = liveById.get(o.id);
+    if (o.kind === 'hand') {
+      if (!lv || lv.kind !== 'hand') out.push(`${o.id} isn’t a hand hold of this board`);
+    } else if (o.kind === 'foot') {
+      if (!/^foot\d{1,4}$/.test(o.id) || !/^FT\d{1,3}$/.test(o.name || '')) out.push(`Foothold ${name(o)}: ids are footN, names FTn`);
+      else if (lv && lv.kind !== 'foot') out.push(`${o.id} is already a hold of another kind`);
+      else if (!lv && +o.id.slice(4) <= (footMax || 0)) out.push(`${name(o)}: ${o.id} was an earlier foothold’s id (trace again to renumber it)`);
+    } else out.push(`${name(o)}: only hand holds and footholds can be published`);
+    if (!ok01(o.x) || !ok01(o.y)) out.push(`${name(o)}: its position is off the board`);
+    if (!okPts(o.outline)) out.push(`${name(o)}: an outline needs 3–400 points inside the board`);
+  });
+  (live || []).forEach(h => { if (h.kind === 'hand' && !seen.has(h.id)) out.push(`${h.name} has no outline in the publish`); });
+  const feet = (payload || []).filter(o => o && o.kind === 'foot');
+  if (feet.length > BS_FEET_MAX) out.push(`At most ${BS_FEET_MAX} footholds`);
+  const fn = new Map();
+  feet.forEach(o => { if (fn.has(o.name)) out.push(`${o.name}: two footholds would share that name`); fn.set(o.name, o.id); });
+  const handNames = new Set((live || []).filter(h => h.kind !== 'foot').map(h => h.name));
+  feet.forEach(o => { if (handNames.has(o.name)) out.push(`${o.name}: a foothold would share a hand hold’s name`); });
+  byId.forEach(o => {
+    const m = o.mirror;
+    if (!m || m === o.id) return;
+    const p = byId.get(m);
+    if (!p || p.kind !== o.kind || p.mirror !== o.id) out.push(`${name(o)}: its mirror partner must be the same kind of hold and pair back`);
+  });
+  (live || []).forEach(h => {
+    if (h.kind === 'foot' && !seen.has(h.id) && used && used[h.id]) out.push(`${h.name} is in a problem’s Specific feet, so it can’t be dropped`);
+  });
+  return out;
+}
+
+// ── point editing on the stage (Edit holds; from the old #outlines editor) ─────
+const BS_NUDGE = 0.05;           // % per nudge
+const bsHitR = () => (window.matchMedia && matchMedia('(pointer: coarse)').matches ? 22 : 10);   // px grab radius
+// The handles of an outline (% pts) on screen: its points and, on edges long enough, a
+// mid handle (tap: add a point there; drag: add it and drag). null when the outline is
+// too small on screen to grab a point (zoom in first).
+function bsPtHandles(pts) {
+  if (!pts || pts.length < 3) return null;
+  const s = pts.map(p => bsScreen(p[0], p[1]));
+  const xs = s.map(p => p[0]), ys = s.map(p => p[1]);
+  if (Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) < 36) return null;
+  const mids = [], R = bsHitR();
+  for (let i = 0; i < pts.length; i++) {
+    const a = s[i], b = s[(i + 1) % s.length];
+    if (Math.hypot(b[0] - a[0], b[1] - a[1]) < R * 2) continue;
+    const q = pts[(i + 1) % pts.length];
+    mids.push({ after: i, pt: [bsR2((pts[i][0] + q[0]) / 2), bsR2((pts[i][1] + q[1]) / 2)], s: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] });
+  }
+  return { v: s, mids };
+}
+// The handle under a pointer (client px): { kind: 'vtx', i } | { kind: 'mid', after, pt } | null.
+function bsPtHit(pts, cx, cy) {
+  const H = bsPtHandles(pts);
+  if (!H) return null;
+  const [sx, sy] = bsStageXY(cx, cy), R = bsHitR();
+  let best = null;
+  H.v.forEach((p, i) => { const d = Math.hypot(p[0] - sx, p[1] - sy); if (d <= R && (!best || d < best.d)) best = { kind: 'vtx', i, d }; });
+  H.mids.forEach(m => { const d = Math.hypot(m.s[0] - sx, m.s[1] - sy) + 4; if (d <= R + 4 && (!best || d < best.d)) best = { kind: 'mid', after: m.after, pt: m.pt, d }; });
+  return best;
+}
+function bsPtOverHtml(pts, sel) {
+  const H = bsPtHandles(pts);
+  if (!H) return '';
+  let html = '';
+  H.mids.forEach(m => { html += `<div class="ol-m" style="left:${m.s[0]}px;top:${m.s[1]}px"></div>`; });
+  H.v.forEach((p, i) => { html += `<div class="ol-v${i === sel ? ' sel' : ''}" style="left:${p[0]}px;top:${p[1]}px"></div>`; });
+  return html;
+}
+// Zoom so the outline (% pts) fills about a third of the stage (#outlines' zoom to hold).
+function bsZoomToPts(pts) {
+  if (!pts || !pts.length || !BS.v.fitW) return;
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const wPct = Math.max(3, (Math.max(...xs) - Math.min(...xs)) * 2.6), hPct = Math.max(3, (Math.max(...ys) - Math.min(...ys)) * 2.6);
+  const fitH = BS.v.fitW / (BS.v.aspect || 1);
+  const s = Math.min(BS.v.sw / (BS.v.fitW * wPct / 100), BS.v.sh / (fitH * hPct / 100));
+  bsZoomTo((Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2, s);
+}
+// A second tap close by within 350 ms (the stage's double-tap: zoom to the hold).
+function bsDoubleTap(g) {
+  const now = Date.now(), last = BS.lastTap;
+  const dbl = !!(last && now - last.t < 350 && Math.hypot(g.sx - last.x, g.sy - last.y) < 30);
+  BS.lastTap = dbl ? null : { t: now, x: g.sx, y: g.sy };
+  return dbl;
+}
+
+// ── one draft rule (Board Setup and Edit holds; review 2.1) ────────────────────
+// A draft remembers the board version (and image) it was made on. Read back after the
+// board was published from somewhere else, it's `moved`: Edit holds lays its edits over the
+// board as it is (dropping what clashes) and drops them all on a new image; Board Setup
+// drops its trace and everything matched to the old board (its photos and corners stay).
+function bsDraftState(d) {
+  const L = BS.live;
+  if (!d || !L) return { moved: false, newImage: false };
+  return { moved: !!(d.version && d.version !== L.version), newImage: !!(d.image && d.image !== L.image) };
+}
+
 // ── the draft (this device) ───────────────────────────────────────────────────
 function bsSave() {
   if (BS.step === 'start' || BS.step === 'edit') return;   // the hold editor keeps its own draft (holdedit.js)
@@ -165,7 +334,7 @@ function bsSave() {
     localStorage.setItem(BS_DRAFT, JSON.stringify({
       v: BS_DRAFT_V, t: Date.now(), step: BS.step, img, corners: BS.corners, shapes: BS.shapes, seq: BS.seq,
       xf: BS.xf, fits: BS.fits, stats: BS.stats,
-      pred: BS.pred, mirror: BS.mirror, flags: BS.flags, traced: BS.traced, lineup: BS.lineup,
+      pred: BS.pred, mirror: BS.mirror, flags: BS.flags, traced: BS.traced, lineup: BS.lineup, picks: BS.pairPicks,
       version: BS.base,
     }));
   } catch (e) { /* full or blocked: the draft lives in memory */ }
@@ -179,11 +348,12 @@ function bsDropDraft() { try { localStorage.removeItem(BS_DRAFT); } catch (e) {}
 // ── loading the live board ────────────────────────────────────────────────────
 async function bsLoadLive() {
   BS.loading = true;
-  const [h, bc, ver] = await Promise.all([
+  const [h, bc, ver, fu] = await Promise.all([
     sb.from('holds').select('id,name,kind,led,x,y,outline,mirror').eq('wall', BS_WALL).order('id').limit(2000),
     sb.from('board_config').select('*').eq('wall', BS_WALL).maybeSingle(),
     sb.from('board_versions').select('id,saved_at,reason,undone_at,board_updated_at').eq('wall', BS_WALL)
       .order('id', { ascending: false }).limit(20),
+    sb.from('problems').select('feet_holds').not('feet_holds', 'is', null).limit(5000),
   ]);
   BS.loading = false;
   if (h.error || bc.error || !bc.data) {
@@ -196,7 +366,9 @@ async function bsLoadLive() {
     image: bc.data.image_path || null, version: bc.data.updated_at,
     footMax: Number(bc.data.foot_id_max) || 0,       // db/45: a new foothold's number is above every one ever used
     versions: ver.error ? [] : (ver.data || []),
+    feetUsed: {},                                     // foothold id -> problems whose Specific feet use it
   };
+  (fu.error ? [] : fu.data || []).forEach(p => (p.feet_holds || []).forEach(f => { BS.live.feetUsed[f] = (BS.live.feetUsed[f] || 0) + 1; }));
   return true;
 }
 
@@ -222,8 +394,9 @@ async function bsReadFile(file, max) {
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(bmp, 0, 0, w, h);
   const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88));
+  const master = max === BS_CARTOON_MAX ? await new Promise(r => c.toBlob(r, 'image/png')) : null;   // the cartoon's lossless master (BRD-06)
   const out = await createImageBitmap(c);
-  return { bmp: out, w, h, blob, path: null };
+  return { bmp: out, w, h, blob, master, path: null };
 }
 
 // ── entry ─────────────────────────────────────────────────────────────────────
@@ -233,15 +406,27 @@ async function bsReadFile(file, max) {
 async function initSetup() {
   if (!BS.loading && (!BS.live || BS.step === 'start')) {
     if (!BS.live) bsRender();
-    await bsLoadLive();
+    await Promise.all([bsLoadLive(), bsLoadSnap()]);
   }
   bsRender();
 }
+// The board version the app's bundled offline copy was taken from (SEAM-05: a publish from
+// the phone leaves it behind until PB Console -> Holds -> Ship the snapshot).
+async function bsLoadSnap() {
+  try {
+    const res = await fetch(assetUrl('hold_map.json'), { cache: 'no-cache' });
+    const j = res.ok ? await res.json() : null;
+    BS.snap = (j && j.__meta && j.__meta.board_updated_at) || null;
+  } catch (e) { BS.snap = undefined; }
+}
+const bsSnapBehind = () => !!(BS.live && BS.snap !== undefined && BS.snap !== BS.live.version);
+const BS_SNAP_OWED = 'The app’s offline copy of the board is now behind: PB Console → Holds → Ship the snapshot.';
 // The publish RPCs' refusals, in words (db/45: 'stale' = the board moved since it was loaded).
 const bsIsStale = e => !!(e && e.code === 'P0001' && e.message === 'stale');
 function bsPublishError(e) {
   if (e && e.code === '42501') return 'Only the super admin can publish a board';
   if (bsIsStale(e)) return 'The board was published from somewhere else since this was loaded';
+  if (e && e.code === 'P0001' && e.message === 'no_change') return 'Nothing to publish: the edits match the board as it is';
   return 'Publish failed: ' + ((e && (e.details || e.message)) || 'check the connection');
 }
 
@@ -286,7 +471,12 @@ function bsRenderPage() {
   const last = L.versions.find(v => (v.reason === 'publish' || v.reason === 'outlines') && !v.undone_at);
   const draft = bsDraft();
   const when = t => new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const moved = draft && bsDraftState(draft).moved && draft.traced;
   el.innerHTML = `
+    ${bsSnapBehind() ? `<div class="bs-card">
+      <div class="bs-card-title">The offline copy is behind</div>
+      <p class="bs-muted">The board has been published since the app’s bundled copy (what phones show offline or before the board loads) was taken. On the laptop: PB Console → Holds → <b>Ship the snapshot</b>.</p>
+    </div>` : ''}
     <div class="bs-card">
       <div class="bs-card-title">The board now</div>
       <div class="bs-facts">
@@ -309,6 +499,7 @@ function bsRenderPage() {
     <div class="bs-card">
       <div class="bs-card-title">Your draft</div>
       <p class="bs-muted">Saved on this phone ${escHtml(when(draft.t))}, at <b>${escHtml(BS_STEP_NAMES[draft.step] || draft.step)}</b>. To use a different cartoon, Start again below.</p>
+      ${moved ? '<p class="bs-muted"><b>The board has been published since this draft was traced,</b> so Carry on drops the trace and what was matched to the old board (your photos and corners stay): run Trace again.</p>' : ''}
       <div class="bs-row">
         <button class="ol-btn ol-publish" data-act="resume">Carry on</button>
         <button class="ol-btn" data-act="discard">Discard it</button>
@@ -445,7 +636,7 @@ function bsRenderBoard() {
     if (s.key === BS.sel) cls += ' sel';
     if (partner && s.key === partner.key) cls += ' partner';
     if (BS.step === 'mirror' && s.kind === 'hand' && BS.flags.some(f => f.id === s.id)) cls += ' flag';
-    out += `<path class="${cls}" d="${bsPath(s.pts)}"/>`;
+    out += `<path class="${cls}" d="${smoothShapePath(s.pts, bsSmooth())}"/>`;   // as the app draws it (BRD-15)
   });
   if (BS.step === 'mirror' && BS.sel && partner && partner.key !== BS.sel) {
     const a = bsCentre(bsShape(BS.sel).pts), b = bsCentre(partner.pts);
@@ -505,15 +696,16 @@ function bsCounts() {
     extra: BS.shapes.filter(s => s.kind === 'extra').length,
     check: BS.shapes.filter(s => s.kind === 'hand' && s.chk).length,       // flagged or turned: to confirm
     cand: BS.shapes.filter(s => s.chk === 'cand').length,                   // new footholds not yet kept
+    used: BS.shapes.filter(s => s.chk === 'footused').length,               // matched footholds a problem uses (BRD-08)
     ok: BS.shapes.filter(s => s.kind === 'hand' && !s.chk).length,
   };
 }
 // What Review still asks for, in the order Next to fix goes through it.
 function bsQueue() {
-  const order = { flag: 0, changed: 1, cand: 2 };
+  const order = { flag: 0, changed: 1, footused: 2, cand: 3 };
   return BS.shapes.filter(s => s.chk).sort((a, b) => order[a.chk] - order[b.chk]);
 }
-const bsOpen = c => c.missing || c.extra || c.check || c.cand;
+const bsOpen = c => c.missing || c.extra || c.check || c.cand || c.used;
 function bsTraceSummary() {
   const st = BS.stats;
   if (!st) return `Traced ${BS.shapes.length} shapes. Next, check them.`;
@@ -557,7 +749,7 @@ function bsReviewPanel() {
   const back = `<button class="ol-btn" data-act="prev">Back</button>`;
   const status = `<div class="bs-status">
       ${BS.stats || c.check || c.cand
-        ? `<span class="ok">${c.ok} matched</span><span class="${c.check ? 'bad' : 'ok'}">${c.check} to check</span><span>${c.feet} footholds${c.cand ? ` (${c.cand} new)` : ''}</span>${c.missing ? `<span class="bad">${c.missing} with no outline</span>` : ''}`
+        ? `<span class="ok">${c.ok} matched</span><span class="${c.check ? 'bad' : 'ok'}">${c.check} to check</span><span>${c.feet} footholds${c.cand ? ` (${c.cand} new)` : ''}</span>${c.used ? `<span class="bad">${c.used} in use to check</span>` : ''}${c.missing ? `<span class="bad">${c.missing} with no outline</span>` : ''}`
         : `<span class="${c.missing ? 'bad' : 'ok'}">${c.matched}/${c.hands} hand holds</span><span>${c.feet} footholds</span>`}
       ${c.extra ? `<span class="bad">${c.extra} extra</span>` : ''}
       <button class="bs-link-btn" data-act="nextissue" ${bsOpen(c) ? '' : 'disabled'}>Next to fix ›</button>
@@ -610,10 +802,11 @@ function bsCheckHint(s) {
   const f = s.fit || {};
   let why;
   if (s.chk === 'cand') why = `A new foothold, found where no hand hold is. Keep it, or Delete it if it isn’t one.`;
+  else if (s.chk === 'footused') why = `This foothold keeps its number because it’s where today’s ${escHtml(bsName(s.id))} was, and a problem’s Specific feet use it. Check it’s the same foothold on the wall: if not, Delete it (the publish then refuses until that problem drops it).`;
   else if (s.chk === 'changed') why = `<b>${escHtml(bsName(s.id))}</b> looks turned (about ${Math.abs(f.turn || 0)}°)${f.grow && Math.abs(f.grow - 1) > 0.15 ? ' or resized' : ''} since today’s board. Check its outline${s.src === 'traced' ? ' (traced from the cartoon)' : ''}.`;
   else if ((f.score || 0) < 0.5) why = `Nothing like <b>${escHtml(bsName(s.id))}</b> was found here: is it on the cartoon? Its old outline is shown where it should be. Tap to trace or Draw it, or Move it.`;
   else why = `<b>${escHtml(bsName(s.id))}</b>: no clear outline on the cartoon, so today’s outline is shown fitted here. Check it, or Tap to trace it.`;
-  return `<p class="bs-hint">${why}</p><div class="ol-row"><button class="ol-btn ol-publish" data-act="ok">${s.chk === 'cand' ? 'Keep this foothold' : 'Looks right'}</button></div>`;
+  return `<p class="bs-hint">${why}</p><div class="ol-row"><button class="ol-btn ol-publish" data-act="ok">${s.chk === 'cand' ? 'Keep this foothold' : s.chk === 'footused' ? 'It’s the same foothold' : 'Looks right'}</button></div>`;
 }
 
 function bsMirrorPanel() {
@@ -655,7 +848,7 @@ function bsPublishPanel() {
     <ul class="bs-checks">
       <li class="${c.missing ? 'bad' : 'ok'}">${c.matched} of ${c.hands} hand holds have one outline each (names and LEDs unchanged)</li>
       <li class="${c.extra ? 'bad' : 'ok'}">${c.extra ? c.extra + ' extra shapes left' : 'No extra shapes'}</li>
-      ${c.check || c.cand ? `<li class="bad">${c.check + c.cand} shapes still to check in Review</li>` : ''}
+      ${c.check || c.cand || c.used ? `<li class="bad">${c.check + c.cand + c.used} shapes still to check in Review</li>` : ''}
       <li class="ok">${c.feet} footholds${c.feet ? `, FT1–FT${c.feet}` : ''}${dropped ? ` (${dropped} of today’s footholds weren’t found and will go)` : ''}</li>
       <li class="${problems.length ? 'bad' : 'ok'}">${problems.length ? escHtml(problems[0]) : 'Mirror pairs: every pair is two holds of the same kind'}</li>
       <li class="ok">The cartoon becomes the app’s board picture. Undo puts today’s back.</li>
@@ -682,15 +875,19 @@ async function bsPickFile(input) {
 async function bsUpload() {
   if (BS.busy) return;
   BS.busy = true; bsRender(); bsThumbs();
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
   try {
     for (const kind of ['photo', 'cartoon']) {
       const m = BS.img[kind];
       if (m.path) continue;
-      const path = `setup/${stamp}-${kind}.jpg`;
+      const path = bsStoragePath(kind, 'jpg');          // never clashes, a retry included (BRD-15)
       const { error } = await sb.storage.from(BOARD_BUCKET).upload(path, m.blob, { contentType: 'image/jpeg', upsert: false });
       if (error) throw error;
       m.path = path;
+      if (m.master) {
+        // the lossless master Edit holds turns from; without it (too big, a failure) a turn starts from the JPEG
+        const { error: me } = await sb.storage.from(BOARD_BUCKET).upload(bsMasterPath(path), m.master, { contentType: 'image/png', upsert: false });
+        if (me) console.warn('board setup: master not kept', me);
+      }
     }
     BS.busy = false;
     bsDefaultCorners();
@@ -928,9 +1125,17 @@ function bsTraceData(data, w, h) {
   BS.undo = [];
   BS.fits = {};
   BS.stats = null;
+  BS.pairPicks = {};
   bsMatch();
   if (bsHasPrior()) bsPrior(res.masks, w, h, res.shapes);
+  bsFlagUsedFeet();
   return res;
+}
+// Matched footholds that a problem's Specific feet use: to confirm in Review (BRD-08), as a
+// foothold matched to a different hold on the wall would move that problem's feet.
+function bsFlagUsedFeet() {
+  const used = (BS.live && BS.live.feetUsed) || {};
+  BS.shapes.forEach(s => { if (s.kind === 'foot' && used[s.id] && !s.chk) s.chk = 'footused'; });
 }
 
 // A quad grown about its centre by a share of its size (the corner marks are rough).
@@ -1372,6 +1577,12 @@ function bsMakeMirror() {
   flags.forEach(f => { mirror[f.id] = f.today; });
   BS.mirror = mirror;
   BS.flags = flags;
+  // the partners chosen by hand earlier survive a Review edit that remade the pairs (BRD-15)
+  Object.keys(BS.pairPicks || {}).forEach(id => {
+    const a = bsShapeOf(id), to = BS.pairPicks[id], b = to && to !== id ? bsShapeOf(to) : null;
+    if (!a || (to && to !== id && (!b || b.kind !== a.kind))) { delete BS.pairPicks[id]; return; }
+    bsSetPair(a, b);
+  });
 }
 // Set a's partner to b (both directions), freeing their old partners.
 function bsSetPair(a, b) {
@@ -1384,17 +1595,28 @@ function bsSetPair(a, b) {
   if (!b || a === b) { BS.mirror[a.id] = self(a); return; }
   BS.mirror[a.id] = b.id; BS.mirror[b.id] = a.id;
 }
+// A partner chosen by hand (Change partner, No partner, a flag's choice): set, and kept.
+function bsPickPair(a, b) {
+  bsSetPair(a, b);
+  BS.pairPicks = BS.pairPicks || {};
+  BS.pairPicks[a.id] = b && b !== a ? b.id : a.id;
+  if (b && b !== a) BS.pairPicks[b.id] = a.id;
+}
 function bsFlagPick(id, to) {
   const f = BS.flags.find(x => x.id === id);
   if (!f) return;
   const a = bsShapeOf(id), target = to === 'reflection' ? f.reflection : f.today;
-  bsSetPair(a, bsShapeOf(target));
+  bsPickPair(a, bsShapeOf(target));
   bsSave(); bsRenderBoard(); bsRenderPanel();
 }
-// The checks Publish makes (as the server does).
+// The checks Publish makes (as the server does: validateBoardPayload, BRD-10).
 function bsPublishProblems() {
   const out = [];
   if (!BS.mirror) return ['Mirror pairs aren’t made yet'];
+  if (BS.live && BS.img.cartoon) {
+    out.push(...validateBoardPayload(bsPayload(), BS.live.holds, BS.live.footMax, BS.live.feetUsed));
+    if (out.length) return out;
+  }
   BS.shapes.filter(s => s.kind !== 'extra').forEach(s => {
     const m = BS.mirror[s.id];
     if (!m || m === s.id) return;
@@ -1439,9 +1661,11 @@ function bsFootNameList(list, q, w, h) {
 function bsPayload() {
   bsNameFeet();
   const r = pts => pts.map(p => [bsR2(bsClamp(p[0], -5, 105)), bsR2(bsClamp(p[1], -5, 105))]);
+  const m = BS.img.cartoon;
   return BS.shapes.filter(s => s.kind === 'hand' || s.kind === 'foot').map(s => {
     const c = bsCentre(s.pts);
-    const o = { id: s.id, kind: s.kind, x: bsR2(bsClamp(c[0], 0, 100)), y: bsR2(bsClamp(c[1], 0, 100)), outline: r(s.pts),
+    const pts = m ? bsCapPoints(s.pts, m.w, m.h) : s.pts;          // a traced outline over 400 points simplified (BRD-10)
+    const o = { id: s.id, kind: s.kind, x: bsR2(bsClamp(c[0], 0, 100)), y: bsR2(bsClamp(c[1], 0, 100)), outline: r(pts),
                 mirror: BS.mirror[s.id] != null ? BS.mirror[s.id] : null };
     if (s.kind === 'foot') o.name = s.name;
     return o;
@@ -1449,6 +1673,8 @@ function bsPayload() {
 }
 async function bsPublish() {
   if (BS.busy) return;
+  const problems = bsPublishProblems();
+  if (problems.length) { showToast(problems[0], 'error'); bsRenderPanel(); return; }
   BS.busy = true; bsRenderPanel();
   try {
     const corners = { image: BS.corners.cartoon.map(p => [bsR2(bsClamp(p[0], 0, 100)), bsR2(bsClamp(p[1], 0, 100))]) };
@@ -1463,10 +1689,10 @@ async function bsPublish() {
     bsDropDraft();
     BS.base = null;
     BS.img = {}; BS.corners = {}; BS.shapes = []; BS.mirror = null; BS.flags = []; BS.traced = false; BS.pred = {};
-    BS.xf = null; BS.fits = {}; BS.stats = null; BS.masks = null;
+    BS.xf = null; BS.fits = {}; BS.stats = null; BS.masks = null; BS.pairPicks = {};
     BS.lineup = bsLuEmpty(); BS.luKind = 'current'; BS.luSel = 0;
     BS.busy = false;
-    showToast('Published: the new board is live on everyone’s next load', 'success');
+    showToast('Published: the new board is live on everyone’s next load. ' + BS_SNAP_OWED, 'success');
     await bsAfterBoardChange();
     bsGo('start');
   } catch (e) {
@@ -1499,7 +1725,7 @@ async function bsUndoPublish() {
     bsRenderPage();
     return;
   }
-  showToast('Undone: the previous board is back', 'success');
+  showToast('Undone: the previous board is back. ' + BS_SNAP_OWED, 'success');
   await bsAfterBoardChange();
   bsRender();
 }
@@ -1524,6 +1750,7 @@ function bsDown(e) {
     BS.g = { type: 'pinch', d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), s0: BS.v.s,
              bx: (mx - BS.v.tx) / bsW(), by: (my - BS.v.ty) / bsH() };
     bsLoupe(null);
+    if (BS.step === 'edit') heCancelGesture();       // a point drag the second finger interrupted is undone
     return;
   }
   if (BS.ptrs.size > 2) return;
@@ -1571,6 +1798,7 @@ function bsMove(e) {
     if (Math.hypot(dx, dy) < 6) return;
     g.moved = true;
     if (g.type === 'tap') g.type = 'pan';
+    if (g.type === 'hemid') heMidStart(g);              // dragging an edge handle adds a point there
   }
   const ddx = dx / bsW() * 100, ddy = dy / bsH() * 100;
   if (g.type === 'pan') {
@@ -1595,6 +1823,8 @@ function bsMove(e) {
     bsRenderBoard();
   } else if (g.type === 'herot') {
     heRotMove(g, e.clientX, e.clientY);
+  } else if (g.type === 'hevtx') {
+    heVtxMove(g, ddx, ddy, e.clientX, e.clientY);
   } else if (g.type === 'rotate') {
     const [sx, sy] = bsStageXY(e.clientX, e.clientY);
     bsShape(BS.sel).pts = bsTurn(g.startPts, (Math.atan2(sy - g.cy, sx - g.cx) - g.a0) * 180 / Math.PI);
@@ -1621,6 +1851,7 @@ function bsUp(e) {
     BS.mirror = null; bsSave(); bsRenderBoard(); bsRenderPanel(); return;
   }
   if (g.type === 'herot') { heRotEnd(g); return; }
+  if (g.type === 'hevtx' || g.type === 'hemid') { hePtEnd(g, e.type === 'pointercancel'); return; }
   if (g.type === 'lasso' && BS.step === 'edit') { heLasso(g.pts); return; }
   if (g.type === 'lasso') {
     const pts = bsLassoDone(g.pts);
@@ -1687,7 +1918,7 @@ function bsTap(g) {
     if (BS.tool === 'pair' && BS.sel && s) {
       const a = bsShape(BS.sel);
       if (s.kind !== a.kind) { showToast(a.kind === 'hand' ? 'A hand hold can only pair with a hand hold' : 'A foothold can only pair with a foothold', 'error'); return; }
-      bsSetPair(a, s);
+      bsPickPair(a, s);
       BS.tool = null;
       bsSave(); bsRenderBoard(); bsRenderPanel();
       return;
@@ -1697,8 +1928,9 @@ function bsTap(g) {
   }
 }
 
-// The magnifier above the finger (corners and drawing).
-function bsLoupe(cx, cy, p) {
+// The magnifier above the finger (corners, drawing, and a point being dragged: then the
+// outline `outline` (% pts) is drawn in it as the app draws it, with its points).
+function bsLoupe(cx, cy, p, outline) {
   const el = bsEl('bs-loupe');
   if (cx == null) { el.hidden = true; return; }
   const m = bsCur();
@@ -1714,6 +1946,18 @@ function bsLoupe(cx, cy, p) {
   ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--black').trim() || 'black';
   ctx.fillRect(0, 0, 120, 120);
   ctx.drawImage(m.bmp, ix - r, iy - r, 2 * r, 2 * r, 0, 0, 120, 120);
+  if (outline && outline.length >= 3) {
+    const k = 60 / r, to = q => [(q[0] / 100 * m.w - ix + r) * k, (q[1] / 100 * m.h - iy + r) * k];
+    const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    const curve = traceCurve(outline.map(to), bsSmooth());
+    ctx.beginPath();
+    curve.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])));
+    ctx.closePath();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = css('--ol-edit') || 'gold';
+    ctx.stroke();
+    ctx.fillStyle = css('--white') || 'white';
+    outline.forEach(q => { const [x, y] = to(q); ctx.fillRect(x - 1.5, y - 1.5, 3, 3); });
+  }
 }
 
 // ── wiring (app.js calls this once) ───────────────────────────────────────────
@@ -1731,7 +1975,7 @@ function bsWire() {
     const act = b.dataset.act;
     if (act.startsWith('he-')) { heAct(act, b); return; }
     if (act === 'reload') { BS.live = null; initSetup(); }
-    else if (act === 'new') { bsDropDraft(); Object.assign(BS, { img: {}, corners: {}, shapes: [], mirror: null, flags: [], traced: false, pred: {}, undo: [], lineup: bsLuEmpty(), luKind: 'current', luSel: 0, xf: null, fits: {}, stats: null, masks: null }); bsGo('photos'); }
+    else if (act === 'new') { bsDropDraft(); Object.assign(BS, { img: {}, corners: {}, shapes: [], mirror: null, flags: [], traced: false, pred: {}, undo: [], lineup: bsLuEmpty(), luKind: 'current', luSel: 0, xf: null, fits: {}, stats: null, masks: null, pairPicks: {} }); bsGo('photos'); }
     else if (act === 'discard') { bsDropDraft(); bsRender(); }
     else if (act === 'resume') await bsResume();
     else if (act === 'undo') bsUndoPublish();
@@ -1758,7 +2002,7 @@ function bsWire() {
     else if (act === 'acceptall') bsAcceptAll();
     else if (act === 'undo-edit') bsUndoEdit();
     else if (act === 'pair') { BS.tool = 'pair'; bsRenderPanel(); }
-    else if (act === 'unpair') { const s = bsShape(BS.sel); if (s) { bsSetPair(s, null); bsSave(); bsRenderBoard(); bsRenderPanel(); } }
+    else if (act === 'unpair') { const s = bsShape(BS.sel); if (s) { bsPickPair(s, null); bsSave(); bsRenderBoard(); bsRenderPanel(); } }
     else if (act === 'flagpick') bsFlagPick(b.dataset.id, b.dataset.to);
     else if (act === 'showhold') { const s = bsShapeOf(b.dataset.id); if (s) { BS.sel = s.key; const c = bsCentre(s.pts); bsZoomTo(c[0], c[1], 3); bsRenderBoard(); bsRenderPanel(); } }
     else if (act === 'publish') bsPublish();
@@ -1824,13 +2068,18 @@ async function bsResume() {
     Object.assign(BS, { img, corners: d.corners || {}, shapes: d.shapes || [], seq: d.seq || 0, pred: d.pred || {},
                         mirror: d.mirror || null, flags: d.flags || [], traced: !!d.traced, undo: [], lineup,
                         xf: d.v === BS_DRAFT_V ? d.xf || null : null, fits: d.v === BS_DRAFT_V ? d.fits || {} : {},
-                        stats: d.v === BS_DRAFT_V ? d.stats || null : null, masks: null });
+                        stats: d.v === BS_DRAFT_V ? d.stats || null : null, masks: null, pairPicks: d.picks || {} });
     BS.luKind = lineup.cur.every(Boolean) ? 'cartoon' : 'current';
     BS.luSel = bsLuFirstFree(BS.luKind === 'current' ? lineup.cur : lineup.cart);
     BS.busy = false;
     BS.base = d.version || null;
-    if (d.version && BS.live && d.version !== BS.live.version) showToast('The board was published since this draft was traced: run Trace again before you publish', 'error');
-    const step = d.step === 'lineup' && !bsNeedLineup() ? 'corners' : d.step;
+    let step = d.step === 'lineup' && !bsNeedLineup() ? 'corners' : d.step;
+    if (bsDraftState(d).moved && d.traced) {
+      // the one draft rule: what was matched to the old board goes; photos and corners stay
+      Object.assign(BS, { shapes: [], traced: false, mirror: null, flags: [], pred: {}, xf: null, fits: {}, stats: null, pairPicks: {}, base: null });
+      if (['review', 'mirror', 'publish'].includes(step)) step = 'trace';
+      showToast('The board was published since this draft was traced, so the trace was dropped: run Trace again (your photos and corners are kept)', 'error');
+    }
     bsGo(BS_STEPS.includes(step) && step !== 'start' ? (img.cartoon || step === 'photos' ? step : 'photos') : 'photos');
   } catch (e) {
     console.warn('board setup: resume', e);

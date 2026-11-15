@@ -85,6 +85,8 @@
   let HOLD_INFO = null;  // hold id -> {name, kind, mirror}, from the holds table (db/41): kind hand | foot | feet_sign
   let FOOT_HOLDS = null; // foothold id -> {x, y, pts}, from the holds table (db/42): Specific feet's positions and outlines (footholds aren't in board_config's copies)
   let holdsHaveMirror = false;          // true once the holds table supplied the mirror partners (board_config's then step aside)
+  let feetLive = false;                 // true once FOOT_HOLDS came from the holds table this session (the live board)
+  let footVersion = null;               // the board version FOOT_HOLDS belong to (live read, saved copy or foot_holds.json's __meta): feetUsable() (BRD-07)
   let detailMirror = false; // detail view is showing the left/right-mirrored problem
   let BOARD_IMG = assetUrl('board-fallback.jpg'); // resolved board image URL (Supabase upload, else the bundled fallback: a snapshot of the live photo)
   let configHasMap = false;             // true once board_config supplied a hold map (suppresses the bundled fallback)

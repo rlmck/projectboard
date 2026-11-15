@@ -11,7 +11,11 @@
 //     traced and picked, and the trace never takes over the hand hold;
 //   5 laying a draft over a newer board (heRebase, db/45): turns, deletions and pairs kept;
 //     a trim of a redrawn outline, a pair re-made elsewhere and edits on holds that are gone
-//     dropped; new footholds renumbered above every id the board has used.
+//     dropped; new footholds renumbered above every id the board has used;
+//   6 the edit list (bsEditOps / heOps, db/48), points edited (heSetBase), the 400-point cap
+//     (bsCapPoints) and Board Setup's payload checks (validateBoardPayload, BRD-10);
+//   (3) the editor's compose: only the turned holds' boxes, into one buffer (BRD-06), is the
+//     whole-image compose, and nothing outside the boxes changes.
 //
 //   node tools/holdedit_score.js                      # app/board-fallback.jpg + app/hold_shapes.json
 //   node tools/holdedit_score.js --image <jpg> --holds <json>   # a board + its holds rows
@@ -224,10 +228,22 @@ check(pairKinds, 'every pair on the board is hand ↔ hand or foot ↔ foot');
 if (left) {
   reset();
   heRotateBy(left.id, 25); HE.gen++;
-  const turned = heComposeNow();
+  const items = heItems(), full = heComposite(HE.img.orig, W, H, items);
+  const buf = new Uint8ClampedArray(HE.img.orig);
+  heCompositeInto(buf, HE.img.orig, W, H, items);
+  const boxes = items.map(it => heItemBox(it.region, W, H));
+  let same = true, outside = 0;
+  for (let i = 0; i < buf.length; i++) if (buf[i] !== full[i]) { same = false; break; }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (boxes.some(b => x >= b[0] && x < b[2] && y >= b[1] && y < b[3])) continue;
+    const j = (y * W + x) * 4;
+    if (full[j] !== HE.img.orig[j] || full[j + 1] !== HE.img.orig[j + 1] || full[j + 2] !== HE.img.orig[j + 2]) outside++;
+  }
+  check(items.length === 2 && same && outside === 0,
+    `the editor's compose (${left.name} and its partner, ${boxes.map(b => (b[2] - b[0]) + '×' + (b[3] - b[1])).join(' + ')} px of ${W}×${H}) into one buffer is the whole-image compose; ${outside} pixels outside the boxes change`);
   heRotateBy(left.id, -25); HE.gen++;
-  check(turned !== HE.img.orig && !Object.keys(HE.rot).length && heComposeNow() === HE.img.orig,
-    `in the editor, ${left.name} +25° then −25° leaves no turn at all: the image is the original, untouched`);
+  check(!Object.keys(HE.rot).length && !heItems().length,
+    `in the editor, ${left.name} +25° then −25° leaves no turn at all: nothing to compose, the image is the original`);
 }
 check(heNorm(190) === -170 && heNorm(-185) === 175 && heNorm(360) === 0, 'angles stay within ±180°');
 
@@ -289,12 +305,13 @@ if (tapped) {
   const sugg = heModel().list.filter(h => h.isNew && h.mirror);
   check(sugg.every(h => heHold(h.mirror).kind === 'foot'), `suggested partners are footholds only (${sugg.length} of ${tapped} new footholds paired)`);
 }
-// --payload <file>: the publish payload of these edits plus a turn (the first paired
-// hand hold on the left +10°), for a rolled-back run through the real admin_publish_board()
+// --payload <file>: the edit list of these edits plus a turn (the first paired hand hold on
+// the left +10°), for a rolled-back run through the real admin_edit_holds() (db/48)
 if (opt('--payload') && left) {
   heRotateBy(left.id, 10); HE.gen++;
-  fs.writeFileSync(opt('--payload'), JSON.stringify({ holds: hePayload(), turned: [left.id, left.mirror], added: HE.added.map(a => a.id), cut: Object.keys(HE.outlines) }));
-  console.log(`   payload (${hePayload().length} holds) written to ${opt('--payload')}`);
+  const ops = heOps('setup/zz-test-edit.jpg');
+  fs.writeFileSync(opt('--payload'), JSON.stringify({ edits: ops, turned: [left.id, left.mirror], added: HE.added.map(a => a.id), cut: Object.keys(HE.outlines) }));
+  console.log(`   edit list (${ops.length} edits) written to ${opt('--payload')}`);
 }
 // the same names as today's for an unedited board
 reset();
@@ -382,6 +399,69 @@ if (cropDir) {
   check(!Object.keys(HE.pairs).length, 'rebase: a pair re-made elsewhere is kept, the draft\'s dropped at both ends');
   BS.live = keepLive;
   Object.assign(HE, JSON.parse(keepHE));
+}
+
+// ── 6 the edit list, points, the 400-point cap, Board Setup's payload checks ───
+console.log('\n6  the edit list (db/48), edited points, the 400-point cap, the payload checks');
+{
+  const sq = (x, y) => [[x, y], [x + 1, y], [x + 1, y + 1], [x, y + 1]];
+  const row = (id, kind, name, x, y, mirror) => ({ id, kind, name, x: x + 0.5, y: y + 0.5, outline: sq(x, y), mirror: mirror || null });
+  const live = [row('hold1', 'hand', 'A1', 10, 90, 'hold19'), row('hold19', 'hand', 'S1', 80, 90, 'hold1'),
+    row('foot1', 'foot', 'FT1', 10, 95, 'foot2'), row('foot2', 'foot', 'FT2', 90, 95, 'foot1'), row('foot3', 'foot', 'FT3', 50, 95)];
+  const ops = bsEditOps(live, { outlines: { hold1: sq(10.2, 90) }, turns: {}, added: [{ id: 'foot9', pts: sq(30, 96) }], removed: ['foot2'],
+    pairs: { foot1: null, foot9: 'foot3', foot3: 'foot9' }, names: { foot1: 'FT1', foot3: 'FT2', foot9: 'FT3' }, image: null });
+  const by = op => ops.filter(o => o.op === op);
+  check(by('delete_foot').length === 1 && by('add_foot')[0].name === 'FT3' && by('outline')[0].id === 'hold1'
+    && by('name').length === 1 && by('name')[0].id === 'foot3' && by('pair').length === 3 && !by('image').length,
+    `bsEditOps: one delete, a named new foothold, an outline, one rename (only the changed name), the pairs (${ops.length} edits)`);
+  const t = bsEditOps(live, { outlines: { hold1: sq(10, 90) }, turns: { hold1: 5 }, image: 'setup/x.jpg' });
+  check(t[0].op === 'image' && t[1].op === 'turn' && t[1].deg === 5, 'a turn is sent with its image first');
+  check(!bsEditOps(live, { pairs: { foot1: 'foot2' }, removed: ['foot2'] }).some(o => o.op === 'pair'), 'no pair with a foothold being deleted');
+  // the 400-point cap
+  const ring = Array.from({ length: 900 }, (_, i) => [50 + 5 * Math.cos(i / 900 * 2 * Math.PI), 50 + 5 * Math.sin(i / 900 * 2 * Math.PI)]);
+  const capped = bsCapPoints(ring, W, H);
+  check(capped.length <= 400 && capped.length >= 12 && bsCapPoints(sq(1, 1), W, H).length === 4,
+    `bsCapPoints: a 900-point outline -> ${capped.length} points (≤ 400); a small one is left alone`);
+  // points edited on the model, and the edit list from them
+  const keepLive = BS.live, keepHE = JSON.stringify({ rot: HE.rot, added: HE.added, removed: HE.removed, pairs: HE.pairs, outlines: HE.outlines, sel: HE.sel });
+  BS.live = { holds: live, footMax: 9, corners: null };
+  Object.assign(HE, { rot: {}, added: [], removed: [], pairs: {}, outlines: {} }); HE.gen++;
+  heSetBase('hold1', sq(10, 90));
+  check(!Object.keys(HE.outlines).length, 'heSetBase: an outline back to the board\'s own is no edit');
+  heSetBase('hold1', sq(10, 90).map((p, i) => (i === 2 ? [p[0] + 0.3, p[1] + 0.3] : p)));
+  let o = heOps(null).filter(x => x.op !== 'name');      // (these test footholds get renumbered by the FTn rule too)
+  check(o.length === 1 && o[0].op === 'outline' && o[0].id === 'hold1' && heHold('hold1').edited, 'a point moved: one outline edit');
+  heSetBase('hold1', sq(40, 50)); o = heOps(null);
+  check(o.some(x => x.op === 'position' && x.id === 'hold1' && Math.abs(x.x - 40.5) < 0.01), 'an outline moved off its hand hold\'s position: the position follows (its centre)');
+  BS.live = keepLive;
+  Object.assign(HE, JSON.parse(keepHE)); HE.gen++;
+  // Board Setup's payload checks (as admin_publish_board's)
+  const pay = live.filter(h => h.id !== 'foot2').map(h => Object.assign({ id: h.id, kind: h.kind, x: h.x, y: h.y, outline: h.outline, mirror: h.mirror }, h.kind === 'foot' ? { name: h.name } : {}));
+  pay.find(h => h.id === 'foot1').mirror = null;
+  check(!validateBoardPayload(pay, live, 3, {}).length, 'validateBoardPayload: a good board passes');
+  const bad = (f, what, used) => { const p = JSON.parse(JSON.stringify(pay)); f(p); const v = validateBoardPayload(p, live, 3, used || {}); check(v.length > 0, `validateBoardPayload refuses ${what}: "${v[0]}"`); };
+  bad(p => { p.find(h => h.id === 'hold1').outline = ring; }, 'over 400 points');
+  bad(p => { p.splice(0, 1); }, 'a hand hold left out');
+  bad(p => { p.find(h => h.id === 'foot1').mirror = 'hold1'; }, 'a hand ↔ foot pair');
+  bad(p => { p.find(h => h.id === 'foot3').name = 'FT1'; }, 'two footholds with one name');
+  bad(p => { p.push({ id: 'foot2', kind: 'foot', name: 'FT9', x: 5, y: 5, outline: sq(5, 5), mirror: null }); p.find(h => h.id === 'foot2').id = 'foot3'; }, 'an id twice');
+  bad(p => { p.push({ id: 'foot3x', kind: 'foot', name: 'FT9', x: 5, y: 5, outline: sq(5, 5), mirror: null }); }, 'a bad foothold id');
+  bad(p => { p.push({ id: 'foot3', kind: 'foot', name: 'FT9', x: 5, y: 5, outline: sq(5, 5), mirror: null }); p.find(h => h.id === 'foot3' && h.name === 'FT3').id = 'foot0'; }, 'an old foothold id (≤ foot_id_max, not on the board)');
+  bad(() => {}, 'dropping a foothold a problem uses', { foot2: 1 });
+  // Board Setup: a partner chosen by hand survives a Review edit that remakes the pairs (BRD-15)
+  const keep = { shapes: BS.shapes, corners: BS.corners, img: BS.img, live: BS.live, mirror: BS.mirror, flags: BS.flags, pairPicks: BS.pairPicks };
+  BS.img = { cartoon: { w: 1000, h: 1000 } }; BS.corners = { cartoon: [[0, 0], [100, 0], [100, 100], [0, 100]] };
+  BS.live = { holds: [], footMax: 0 };
+  const shp = (key, kind, id, x, y) => ({ key, kind, id, pts: sq(x, y) });
+  BS.shapes = [shp('a', 'foot', 'foot1', 20, 90), shp('b', 'foot', 'foot2', 79, 90), shp('c', 'foot', 'foot3', 50, 95)];
+  for (let i = 0; i < 14; i++) BS.shapes.push(shp('h' + i, 'hand', 'hold' + (i + 1), 10 + (i % 7) * 5, 10 + Math.floor(i / 7) * 20), shp('m' + i, 'hand', 'hold' + (i + 40), 89 - (i % 7) * 5, 10 + Math.floor(i / 7) * 20));
+  BS.pairPicks = {}; BS.mirror = null; bsMakeMirror();
+  const auto = BS.mirror.foot1;
+  bsPickPair(bsShapeOf('foot1'), bsShapeOf('foot3'));
+  BS.mirror = null; bsMakeMirror();                      // what a Review edit does
+  check(auto === 'foot2' && BS.mirror.foot1 === 'foot3' && BS.mirror.foot3 === 'foot1' && BS.mirror.foot2 === null,
+    `Mirror pairs: FT1's reflection pair (${auto}) changed by hand to foot3 is kept when Review remakes the pairs`);
+  Object.assign(BS, keep);
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nall checks passed');

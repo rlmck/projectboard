@@ -72,7 +72,8 @@ const ASSETS = [
   './board-fallback.jpg',
   './hold_map.json',
   './hold_shapes.json',
-  './mirror_map.json'
+  './mirror_map.json',
+  './foot_holds.json'
 ];
 
 const NAV_TIMEOUT = 5000;      // ms the network gets to answer a page before the cache does

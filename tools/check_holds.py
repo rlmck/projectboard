@@ -24,7 +24,7 @@ app/state.js) and checks, for every hold:
     (db/45) is at least every foothold's number;
   - every problem's Specific feet are footholds of the board, and every problem and
     circuit hold is a hand hold (never a feet sign, a foothold or an unknown id);
-  - the bundled snapshot (app/hold_map.json, app/mirror_map.json, app/hold_shapes.json,
+  - the bundled snapshot (app/hold_map.json, app/mirror_map.json, app/hold_shapes.json, app/foot_holds.json,
     their __meta.board_updated_at) still matches live. A snapshot behind live is a
     WARNING, not a failure (the exit code stays 0): a publish hasn't been snapshotted
     yet (re-run tools/snapshot_board.py and ship, or PB Console -> Holds -> Ship the
@@ -186,7 +186,7 @@ def check_uses(holds, problems, circuits):
     return bad
 
 
-def check_snapshot(bc, snap_map, snap_mirror, snap_shapes):
+def check_snapshot(bc, snap_map, snap_mirror, snap_shapes, snap_feet=None, holds=None):
     """The bundled snapshot against live. -> warning strings (a snapshot behind live is
     expected right after a publish, until it's shipped)."""
     warn = []
@@ -202,6 +202,13 @@ def check_snapshot(bc, snap_map, snap_mirror, snap_shapes):
         warn.append('app/hold_shapes.json differs from live')
     if not same_version((snap_shapes.get('__meta') or {}).get('board_updated_at'), ver):
         warn.append('app/hold_shapes.json and app/hold_map.json are of different boards')
+    if snap_feet is not None:
+        if not same_version((snap_feet.get('__meta') or {}).get('board_updated_at'), ver):
+            warn.append('app/foot_holds.json and app/hold_map.json are of different boards')
+        live_feet = {h['id']: [h.get('name'), h.get('outline'), h.get('mirror')] for h in (holds or []) if h.get('kind') == 'foot'}
+        if holds is not None and {k: [v.get('name'), v.get('pts'), v.get('mirror')] for k, v in snap_feet.items()
+                                  if k != '__meta'} != live_feet:
+            warn.append('app/foot_holds.json differs from live')
     return warn
 
 
@@ -227,7 +234,8 @@ def main():
     snap_map = load('app', 'hold_map.json')
     bad = check(holds, rows[0], load('tools', 'led_map.json'), snap_map, load('app', 'mirror_map.json'))
     bad += check_uses(holds, problems, circuits)
-    warn = check_snapshot(rows[0], snap_map, load('app', 'mirror_map.json'), load('app', 'hold_shapes.json'))
+    warn = check_snapshot(rows[0], snap_map, load('app', 'mirror_map.json'), load('app', 'hold_shapes.json'),
+                          load('app', 'foot_holds.json'), holds)
     kinds = {}
     for h in holds:
         kinds[h['kind']] = kinds.get(h['kind'], 0) + 1

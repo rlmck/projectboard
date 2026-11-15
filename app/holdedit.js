@@ -12,6 +12,10 @@
 //             the FTn rule (left to right, bottom row up); a mirror partner suggested by
 //             the board's reflection (foot <-> foot only)
 //   delete    a foothold, unless a problem's Specific feet uses it
+//   points    a hold's outline point by point (Edit points; from the old Trace Holds editor):
+//             drag a point (the magnifier shows the outline under the finger), tap or drag
+//             a mid handle to add one, remove one, the nudge pad, zoom to the hold
+//             (the button, or a double-tap on the board)
 //   rotate    a hold about its centroid (drag the ↻ handle, or −5° −1° +1° +5°); its
 //             mirror partner turns the same amount the other way. The hold's pixels in
 //             the board image (cut by its outline, grown to take in the dark outline
@@ -19,8 +23,10 @@
 //             around it (heRegion: rays to the region's edge; opposite rays that land on
 //             the same background colour decide, so a straight stripe edge stays straight)
 //   publish   every edit is kept in a draft on this device (Undo/Redo); Publish changes
-//             shows a summary, uploads the new board image (only when a hold turned) and
-//             publishes through admin_publish_board(), so Undo the last publish works.
+//             shows a summary, uploads the new board image (only when a hold turned: a JPEG
+//             and its lossless master, so the next turn starts from the master) and sends the
+//             edits, not a whole board, to admin_edit_holds() (db/48: the same list PB Console
+//             sends, checked by the database), so Undo the last publish works.
 //             The edits are kept by hold id (turns, new and deleted footholds, pairs,
 //             trims), so when the board is published from somewhere else meanwhile they
 //             are laid over the board as it is now (heRebase), keeping whatever was
@@ -28,11 +34,12 @@
 //             publish names the version it was built on and the server refuses any other
 //             (db/45), so nothing published elsewhere is ever overwritten.
 // The image work (heRegion, heComposite, heRotateImage) is pure, no DOM:
-// tools/holdedit_score.js runs it in Node.
+// tools/holdedit_score.js runs it in Node. While a hold turns, only the turned holds' boxes
+// are recomposed, into one working buffer (heRenderImage, BRD-06).
 
 const HE_DRAFT = 'pb-hold-edit';
 const HE_DRAFT_V = 1;
-const HE_JPEG_Q = 0.95;          // the edited board image: same size, JPEG, no visible recompression
+const HE_JPEG_Q = 0.95;          // the edited board image: same size, JPEG, encoded from the lossless master (one generation)
 const HE_GROW_MAX = 0.009;       // a hold's region grows at most this share of the image's width past its outline
 const HE_BG_TOL = 52;            // RGB distance to a background (palette) colour
 const HE_UNDO_MAX = 40;
@@ -46,7 +53,10 @@ const HE = {
   added: [],           // [{ id, pts: [[x%, y%]…] }] new footholds
   removed: [],         // ids of today's footholds to delete
   pairs: {},           // foothold id -> partner id | null (overrides today's)
-  outlines: {},        // hand hold id -> its outline with a foothold cut out of it (%)
+  outlines: {},        // hold id -> its edited outline (%, unturned): points edited, or a foothold cut out of it
+  pt: null,            // Edit points: the selected point's index
+  work: null, boxes: [],   // the image being shown (one ImageData) and the boxes the last compose changed
+  master: false,       // the image came from its lossless master (bsMasterPath)
   undo: [], redo: [],
   sel: null,           // a hold id
   tool: null,          // 'tap' | 'draw' | 'pair' | 'summary' | null
@@ -364,7 +374,10 @@ function heStripeFill(d, W, x0, y0, w, h, mask, other, pal, fill) {
 // hold's region is filled with its background first, then its pixels, turned about its
 // centroid (bilinear), are laid over the result. -> a new RGBA array.
 function heComposite(orig, W, H, items) {
-  const out = new Uint8ClampedArray(orig);
+  return heCompositeInto(new Uint8ClampedArray(orig), orig, W, H, items);
+}
+// The same, written into `out` (already the original wherever the items can reach: heItemBox).
+function heCompositeInto(out, orig, W, H, items) {
   items.forEach(({ region: R }) => {
     for (let ly = 0; ly < R.h; ly++) {
       for (let lx = 0; lx < R.w; lx++) {
@@ -418,6 +431,12 @@ function heComposite(orig, W, H, items) {
   return out;
 }
 
+// The box [x0, y0, x1, y1] (px) a turned item can change: its region and the circle it turns through.
+function heItemBox(R, W, H) {
+  return [Math.max(0, Math.min(R.x0, Math.floor(R.c[0] - R.reach))), Math.max(0, Math.min(R.y0, Math.floor(R.c[1] - R.reach))),
+          Math.min(W, Math.max(R.x0 + R.w, Math.ceil(R.c[0] + R.reach) + 1)), Math.min(H, Math.max(R.y0 + R.h, Math.ceil(R.c[1] + R.reach) + 1))];
+}
+
 // The four bicubic (Keys, a = −0.5) weights for a sample t (0..1) past the second of four pixels.
 function heCubicW(t, w) {
   const a = -0.5, k = x => { x = Math.abs(x); return x <= 1 ? (a + 2) * x * x * x - (a + 3) * x * x + 1 : x < 2 ? a * x * x * x - 5 * a * x * x + 8 * a * x - 4 * a : 0; };
@@ -464,7 +483,7 @@ function heModel() {
     if (h.kind !== 'hand' && h.kind !== 'foot') return;
     if (h.kind === 'foot' && HE.removed.includes(h.id)) return;
     if (!Array.isArray(h.outline) || h.outline.length < 3) return;
-    list.push({ id: h.id, kind: h.kind, name: h.name, x: +h.x, y: +h.y, base: HE.outlines[h.id] || h.outline, mirror: h.mirror || null, isNew: false, liveName: h.name, cut: !!HE.outlines[h.id] });
+    list.push({ id: h.id, kind: h.kind, name: h.name, x: +h.x, y: +h.y, base: HE.outlines[h.id] || h.outline, mirror: h.mirror || null, isNew: false, liveName: h.name, edited: !!HE.outlines[h.id] });
   });
   HE.added.forEach(a => list.push({ id: a.id, kind: 'foot', name: '', x: null, y: null, base: a.pts, mirror: null, isNew: true }));
   list.forEach(h => {
@@ -637,7 +656,8 @@ function heDraftSummary(d) {
   if (nr) parts.push(`${nr} hold${nr === 1 ? '' : 's'} turned`);
   if (na) parts.push(`${na} foothold${na === 1 ? '' : 's'} added`);
   if (nd) parts.push(`${nd} foothold${nd === 1 ? '' : 's'} deleted`);
-  if (Object.keys(s.outlines || {}).length) parts.push('outlines trimmed');
+  const no = Object.keys(s.outlines || {}).length;
+  if (no) parts.push(`${no} outline${no === 1 ? '' : 's'} changed`);
   if (!parts.length && Object.keys(s.pairs || {}).length) parts.push('foothold pairs changed');
   return parts.join(', ');
 }
@@ -645,12 +665,13 @@ function heDraftSummary(d) {
 function heStartCard() {
   const d = heDraft();
   const when = t => new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  const stale = d && BS.live && d.image !== BS.live.image;                // a new image: the edits can't be kept
-  const moved = d && BS.live && !stale && d.version !== BS.live.version;  // published since: laid over it
+  const ds = bsDraftState(d);                                    // the one draft rule (setup.js)
+  const stale = ds.newImage;                                     // a new image: the edits can't be kept
+  const moved = !stale && ds.moved;                              // published since: laid over it
   return `
     <div class="bs-card">
       <div class="bs-card-title">Edit holds</div>
-      <p class="bs-muted">Change today’s board directly: add or delete footholds, and turn a hold to match the wall (its mirror partner turns the other way). Nothing changes for climbers until you publish.</p>
+      <p class="bs-muted">Change today’s board directly: add or delete footholds, fix an outline point by point, and turn a hold to match the wall (its mirror partner turns the other way). Nothing changes for climbers until you publish.</p>
       ${d && !stale ? `<p class="bs-muted"><b>Unpublished edits</b> (${escHtml(when(d.t))}): ${escHtml(heDraftSummary(d))}.</p>` : ''}
       ${moved ? `<p class="bs-muted">The board has been published since, so your edits will be laid over it as it is now (anything that clashes is dropped, and you’re told).</p>` : ''}
       ${stale ? `<p class="bs-muted"><b>Your unpublished edits were made on an earlier board image</b> (a new photo or a turn has been published since), so they’ll be dropped when you open the editor.</p>` : ''}
@@ -677,7 +698,10 @@ async function heOpen() {
       if (heDirty()) heRebasedToast(lost);
     }
     if (!HE.img || HE.img.path !== BS.live.image || HE.version !== BS.live.version) {
-      const res = await fetch(bsUrl(BS.live.image), { cache: 'no-cache' });
+      // the lossless master when there is one (BRD-06), else the JPEG itself
+      let res = null, master = false;
+      try { res = await fetch(bsUrl(bsMasterPath(BS.live.image)), { cache: 'no-cache' }); master = res.ok; } catch (e) { res = null; }
+      if (!master) res = await fetch(bsUrl(BS.live.image), { cache: 'no-cache' });
       if (!res.ok) throw new Error('image ' + res.status);
       const blob = await res.blob();
       let bmp;
@@ -690,16 +714,18 @@ async function heOpen() {
       const orig = ctx.getImageData(0, 0, W, H).data;
       HE.img = { orig, w: W, h: H, path: BS.live.image };
       HE.canvas = c;
+      HE.master = master;
+      HE.work = null; HE.boxes = [];
       HE.palette = hePalette(orig, W, H);
       HE.version = BS.live.version;
       HE.baseRef = heRefAll();
       HE.masks = null; HE.masksGen = -1;
       Object.assign(HE, { rot: {}, added: [], removed: [], pairs: {}, outlines: {}, undo: [], redo: [] });
-      const d = heDraft();
-      if (d && d.version === HE.version && d.image === HE.img.path) {
+      const d = heDraft(), ds = bsDraftState(d);
+      if (d && !ds.moved && !ds.newImage) {
         heLoadState(JSON.stringify(d.state || {}));
         HE.undo = d.undo || []; HE.redo = d.redo || [];
-      } else if (d && d.image === HE.img.path) {
+      } else if (d && !ds.newImage) {
         heLoadState(JSON.stringify(d.state || {}));
         const lost = heRebase(d.ref || {});
         heSave();
@@ -709,10 +735,10 @@ async function heOpen() {
         showToast('A new board image was published since your edits, so they were dropped', 'error');
       }
     }
-    HE.sel = null; HE.tool = null;
+    HE.sel = null; HE.tool = null; HE.pt = null;
     HE.regions.clear(); HE.regionsKey = '';
     HE.gen++;
-    heRenderImage();
+    heRenderImage(true);
     BS.img.edit = { bmp: HE.canvas, w: HE.img.w, h: HE.img.h, path: HE.img.path };
     HE.busy = false;
     bsGo('edit');
@@ -746,23 +772,39 @@ function heRegionFor(h) {
   }
   return r;
 }
-function heComposeNow() {
+// The turned holds, ready to compose: [{ region, deg, keep }].
+function heItems() {
   const M = heModel();
-  const items = M.list.filter(h => h.deg).map(h => {
+  return M.list.filter(h => h.deg).map(h => {
     const r = heRegionFor(h), m = r.reach + 4;
     const keep = M.list.filter(o => o !== h && !(o.bb[2] < r.c[0] - m || o.bb[0] > r.c[0] + m || o.bb[3] < r.c[1] - m || o.bb[1] > r.c[1] + m)).map(o => o.curve);
     return { region: r, deg: h.deg, keep };
   });
-  return items.length ? heComposite(HE.img.orig, HE.img.w, HE.img.h, items) : HE.img.orig;
 }
-function heRenderImage() {
-  const data = heComposeNow();
-  HE.canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(data), HE.img.w, HE.img.h), 0, 0);
+// The image as edited, into the one working buffer (HE.work). Only the boxes the turned
+// holds can change are touched: last time's boxes go back to the original, then every
+// turned hold is composed again, and only those boxes are copied to the canvases (BRD-06:
+// no full-image copies per frame while a hold turns). full: the whole image (on open).
+function heRenderImage(full) {
+  const W = HE.img.w, H = HE.img.h, o = HE.img.orig;
+  if (!HE.work) { HE.work = new ImageData(W, H); HE.work.data.set(o); HE.boxes = []; full = true; }
+  const d = HE.work.data, items = heItems();
+  const boxes = items.map(it => heItemBox(it.region, W, H));
+  const okBox = b => b[2] > b[0] && b[3] > b[1];
+  const dirty = HE.boxes.concat(boxes).filter(okBox);
+  dirty.forEach(([x0, y0, x1, y1]) => { for (let y = y0; y < y1; y++) d.set(o.subarray((y * W + x0) * 4, (y * W + x1) * 4), (y * W + x0) * 4); });
+  heCompositeInto(d, o, W, H, items);
+  HE.boxes = boxes;
+  const ctx = HE.canvas.getContext('2d');
+  if (full) ctx.putImageData(HE.work, 0, 0);
+  else dirty.forEach(([x0, y0, x1, y1]) => ctx.putImageData(HE.work, 0, 0, x0, y0, x1 - x0, y1 - y0));
   HE.imgGen++;
   const c = bsEl('bs-img');
   if (c && BS.step === 'edit') {
-    if (c.width !== HE.img.w || c.height !== HE.img.h) { c.width = HE.img.w; c.height = HE.img.h; }
-    c.getContext('2d').drawImage(HE.canvas, 0, 0);
+    if (c.width !== W || c.height !== H || c.dataset.src !== 'edit') { c.width = W; c.height = H; full = true; }
+    const cc = c.getContext('2d');
+    if (full) cc.drawImage(HE.canvas, 0, 0);
+    else dirty.forEach(([x0, y0, x1, y1]) => cc.drawImage(HE.canvas, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0));
     c.dataset.src = 'edit';
   }
 }
@@ -812,7 +854,7 @@ function heRenderBoard() {
 function heOverHtml() {
   const h = heHold(HE.sel);
   if (!h) return '';
-  let html = '';
+  let html = HE.tool === 'points' ? bsPtOverHtml(h.pts, HE.pt) : '';
   const top = Math.min(...h.pts.map(p => p[1])), c = tracePolyCentre(h.pts);
   const [x, y] = bsScreen(c[0], top);
   html += `<div class="bs-label" style="left:${x}px;top:${y}px">${escHtml(heLabel(h))}</div>`;
@@ -853,6 +895,18 @@ function hePanel() {
     return status + `<p class="bs-hint">Draw round the foothold with one finger (two fingers zoom).</p>
       <div class="ol-row"><button class="ol-btn" data-act="he-tool-off">Cancel</button></div>`;
   }
+  if (HE.tool === 'points' && h) {
+    const tiny = !bsPtHandles(h.pts), what = HE.pt != null ? 'the point' : 'the whole outline';
+    return status + `
+      <div class="ol-row"><span class="bs-sel-text">${escHtml(heLabel(h))}</span><span class="he-kind">${h.pts.length} points</span></div>
+      <p class="bs-hint">${tiny ? 'Zoom in (pinch, or Zoom to hold) to see its points.' : 'Drag a point (the magnifier shows it); tap or drag a ○ on an edge to add one; double-tap to zoom to the hold.'}</p>
+      <div class="ol-row he-nudge"><span class="he-kind">Nudge ${what}</span>
+        <button class="ol-btn" data-act="he-nudge" data-dx="-1" data-dy="0" aria-label="Left">←</button><button class="ol-btn" data-act="he-nudge" data-dx="0" data-dy="-1" aria-label="Up">↑</button>
+        <button class="ol-btn" data-act="he-nudge" data-dx="0" data-dy="1" aria-label="Down">↓</button><button class="ol-btn" data-act="he-nudge" data-dx="1" data-dy="0" aria-label="Right">→</button></div>
+      <div class="ol-row"><button class="ol-btn bs-danger" data-act="he-ptdel" ${HE.pt != null && h.pts.length > 3 ? '' : 'disabled'}>Remove point</button>
+        <button class="ol-btn" data-act="he-zoom">Zoom to hold</button></div>
+      <div class="ol-row">${undoRow}<button class="ol-btn ol-publish" data-act="he-tool-off">Done</button></div>`;
+  }
   if (HE.tool === 'pair' && h) {
     return status + `<p class="bs-hint">Tap the foothold to pair with <b>${escHtml(heLabel(h))}</b> (footholds pair only with footholds).</p>
       <div class="ol-row"><button class="ol-btn" data-act="he-tool-off">Cancel</button></div>`;
@@ -873,6 +927,8 @@ function hePanel() {
         <button class="ol-btn" data-act="he-rot" data-d="-5">−5°</button><button class="ol-btn" data-act="he-rot" data-d="-1">−1°</button>
         <button class="ol-btn" data-act="he-rot" data-d="1">+1°</button><button class="ol-btn" data-act="he-rot" data-d="5">+5°</button>
         <button class="ol-btn" data-act="he-rot0" ${h.deg ? '' : 'disabled'}>Reset</button></div>
+      <div class="ol-row"><button class="ol-btn" data-act="he-points" ${h.deg ? 'disabled' : ''}>Edit points</button><button class="ol-btn" data-act="he-zoom">Zoom to hold</button></div>
+      ${h.deg ? '<p class="bs-hint">Its points can be edited unturned: Reset the turn, or publish the turn first.</p>' : ''}
       ${heCutTargets(h).length ? `<p class="bs-hint">It sits inside <b>${heCutTargets(h).map(x => escHtml(heLabel(x))).join(', ')}</b>’s outline.</p>
         <div class="ol-row"><button class="ol-btn" data-act="he-cut">Cut it out of ${heCutTargets(h).map(x => escHtml(heLabel(x))).join(', ')}’s outline</button></div>` : ''}
       ${h.kind === 'foot' ? `<div class="ol-row"><button class="ol-btn" data-act="he-pair">${p ? 'Change partner' : 'Pair with…'}</button>
@@ -881,7 +937,7 @@ function hePanel() {
       <div class="ol-row">${undoRow}<button class="ol-btn" data-act="he-desel">Close</button></div>`;
   }
   return status + `
-    <p class="bs-hint">Tap a hold to select it. Add a foothold with Tap to trace or Draw. A foothold a problem uses (Specific feet) can’t be deleted.</p>
+    <p class="bs-hint">Tap a hold to select it (double-tap zooms to it): turn it, or Edit points to fix its outline. Add a foothold with Tap to trace or Draw. A foothold a problem uses (Specific feet) can’t be deleted.</p>
     <div class="ol-row"><button class="ol-btn" data-act="he-tap">Tap to trace a foothold</button><button class="ol-btn" data-act="he-draw">Draw a foothold</button></div>
     <div class="ol-row">${undoRow}</div>
     <div class="ol-row"><button class="ol-btn" data-act="he-close">Back</button>
@@ -905,8 +961,8 @@ function heChanges() {
     pairs.push(h);
   });
   const renamed = M.list.filter(h => h.kind === 'foot' && !h.isNew && h.name !== h.liveName);
-  const cut = M.list.filter(h => h.cut);
-  return { turned, added, removed, pairs, renamed, cut };
+  const edited = M.list.filter(h => h.edited);
+  return { turned, added, removed, pairs, renamed, edited };
 }
 function heSummaryPanel() {
   const ch = heChanges(), ov = heOverlaps();
@@ -917,10 +973,11 @@ function heSummaryPanel() {
   if (ch.added.length) items += li(true, `Footholds added: ${names(ch.added)}.`);
   if (ch.removed.length) items += li(true, `Footholds deleted: ${ch.removed.map(h => escHtml(h.name)).join(', ')}.`);
   if (ch.pairs.length) items += li(true, `Foothold pairs: ${ch.pairs.map(h => `${escHtml(heLabel(h))} ↔ ${h.mirror ? escHtml(heLabel(heHold(h.mirror))) : 'none'}`).join(', ')}.`);
-  if (ch.cut.length) items += li(true, `Outline trimmed round a foothold: ${names(ch.cut)}.`);
+  if (ch.edited.length) items += li(true, `Outline${ch.edited.length === 1 ? '' : 's'} changed: ${names(ch.edited)}.`);
   if (ch.renamed.length) items += li(true, `${ch.renamed.length} foothold${ch.renamed.length === 1 ? '' : 's'} renumbered to keep FT1, FT2… left to right, bottom row up (their ids, and any Specific feet, stay the same).`);
   if (ov.length) items += li(false, `Overlapping: ${ov.map(([a, b]) => `${escHtml(heLabel(a))} / ${escHtml(heLabel(b))}`).join(', ')}.`);
   items += li(true, 'Hand holds keep their names, LEDs and problems. Undo the last publish puts today’s board back.');
+  items += li(true, 'Then the app’s offline copy is behind: on the laptop, PB Console → Holds → Ship the snapshot.');
   return `<ul class="bs-checks">${items}</ul>
     <div class="ol-row"><button class="ol-btn" data-act="he-tool-off">Back</button>
       <button class="ol-btn ol-publish" data-act="he-publish" ${HE.busy ? 'disabled' : ''}>${HE.busy ? 'Publishing…' : 'Publish changes'}</button></div>`;
@@ -1035,8 +1092,8 @@ function heCutOutline(handCurve, footCurve, W, H) {
   for (let i = 0; i < m.length; i++) if (f[i]) m[i] = 0;
   const o = traceOpts(W, H, { inset: 0 });
   const pts = traceOutline({ mask: m, w, h, x0, y0 }, o);
-  if (!pts || pts.length < 3 || pts.length > 400) return null;
-  return pts.map(p => [bsR2(bsClamp(p[0] / W * 100, -5, 105)), bsR2(bsClamp(p[1] / H * 100, -5, 105))]);
+  if (!pts || pts.length < 3) return null;
+  return bsCapPoints(pts.map(p => [bsR2(bsClamp(p[0] / W * 100, -5, 105)), bsR2(bsClamp(p[1] / H * 100, -5, 105))]), W, H);
 }
 function heCut() {
   const f = heHold(HE.sel), targets = heCutTargets(f);
@@ -1105,7 +1162,7 @@ function heTapPts(masks, x, y) {
   const px = pts.map(p => [p[0] / k, p[1] / k]);
   if (bsPerim(px) ** 2 / Math.max(1, tracePolyArea(px)) > 60) return { error: 'That didn’t trace cleanly: try Draw' };   // a thin ring, not a hold
   if (inside && tracePolyIoU(px, inside.curve) > 0.5) return { error: `That’s ${heLabel(inside)}: tap the foothold itself, or Draw it` };
-  return { pts: px.map(p => [bsR2(bsClamp(p[0] / W * 100, -5, 105)), bsR2(bsClamp(p[1] / H * 100, -5, 105))]) };
+  return { pts: bsCapPoints(px.map(p => [bsR2(bsClamp(p[0] / W * 100, -5, 105)), bsR2(bsClamp(p[1] / H * 100, -5, 105))]), W, H) };   // at most 400 points (BRD-10)
 }
 async function heTapTrace(x, y) {
   if (HE.busy) return;
@@ -1145,6 +1202,18 @@ function heTap(g) {
   if (HE.tool === 'tap') { heTapTrace(g.x, g.y); return; }
   if (HE.tool === 'summary') return;
   const h = heHit(g.x, g.y);
+  if (bsDoubleTap(g) && HE.tool !== 'pair') {           // double-tap: zoom to the hold
+    const z = h || heHold(HE.sel);
+    if (z) { if (!HE.tool) HE.sel = z.id; bsZoomToPts(z.pts); bsRenderBoard(); bsRenderPanel(); }
+    return;
+  }
+  if (HE.tool === 'points') {
+    // another hold: edit its points instead; anywhere else: no point selected
+    if (h && h.id !== HE.sel && !h.deg) { HE.sel = h.id; HE.pt = null; }
+    else if (!h || h.id !== HE.sel) HE.pt = null;
+    bsRenderBoard(); bsRenderPanel();
+    return;
+  }
   if (HE.tool === 'pair') {
     const a = heHold(HE.sel);
     if (!a || !h) return;
@@ -1162,6 +1231,17 @@ function heTap(g) {
 // pointerdown on the stage: the turn handle starts a turn. Returns true when it took the gesture.
 function heDown(g, cx, cy) {
   if (HE.tool === 'draw') { Object.assign(g, { type: 'lasso', pts: [[bsR2(g.x), bsR2(g.y)]] }); return true; }
+  if (HE.tool === 'points') {
+    const h = heHold(HE.sel), hit = h && bsPtHit(h.pts, cx, cy);
+    if (!hit) return false;
+    g.snap = heState();
+    if (hit.kind === 'vtx') {
+      HE.pt = hit.i;
+      Object.assign(g, { type: 'hevtx', i: hit.i, start: h.pts[hit.i].slice() });
+      bsRenderOver(); bsRenderPanel();
+    } else Object.assign(g, { type: 'hemid', after: hit.after, start: hit.pt.slice() });
+    return true;
+  }
   const rh = heRotHandle();
   if (!rh) return false;
   const [sx, sy] = bsStageXY(cx, cy);
@@ -1189,6 +1269,74 @@ function heRotEnd(g) {
   HE.redo = [];
   heChanged(true);
 }
+// ── Edit points (the selected hold's outline, unturned) ───────────────────────
+// A hold's outline as edited: a new foothold's own points, else HE.outlines (dropped when
+// it's back to the board's own).
+function heSetBase(id, pts) {
+  const a = HE.added.find(x => x.id === id);
+  if (a) a.pts = pts;
+  else {
+    const live = (BS.live ? BS.live.holds : []).find(h => h.id === id);
+    if (live && JSON.stringify(live.outline) === JSON.stringify(pts)) delete HE.outlines[id];
+    else HE.outlines[id] = pts;
+  }
+  HE.gen++;
+}
+function heMidStart(g) {
+  const h = heHold(HE.sel);
+  if (!h || h.pts.length >= BS_PTS_MAX) { g.type = 'pan'; if (h) showToast('400 points is the most an outline can have', 'error'); return; }
+  const pts = h.pts.map(p => p.slice());
+  pts.splice(g.after + 1, 0, g.start.slice());
+  heSetBase(h.id, pts);
+  HE.pt = g.after + 1;
+  Object.assign(g, { type: 'hevtx', i: HE.pt });
+}
+function heVtxMove(g, ddx, ddy, cx, cy) {
+  const h = heHold(HE.sel);
+  if (!h) return;
+  const p = [bsR2(bsClamp(g.start[0] + ddx, -5, 105)), bsR2(bsClamp(g.start[1] + ddy, -5, 105))];
+  const pts = h.pts.map(q => q.slice());
+  pts[g.i] = p;
+  heSetBase(h.id, pts);
+  bsRenderBoard();
+  if (g.touch) bsLoupe(cx, cy, p, pts);
+}
+function hePtEnd(g, cancelled) {
+  bsLoupe(null);
+  if (cancelled) { heLoadState(g.snap); HE.gen++; bsRenderBoard(); bsRenderPanel(); return; }
+  if (!g.moved && g.type === 'hemid') {                 // a tap on an edge handle adds a point
+    heMidStart(g);
+    if (g.type !== 'hevtx') { bsRenderPanel(); return; }
+  }
+  if (heState() === g.snap) { bsRenderOver(); bsRenderPanel(); return; }
+  HE.undo.push(g.snap);
+  if (HE.undo.length > HE_UNDO_MAX) HE.undo.shift();
+  HE.redo = [];
+  heChanged(heModel().list.some(x => x.deg));           // a turned hold's image skips this outline: redraw it
+}
+// A second finger turned a point drag into a pinch: the drag is undone.
+function heCancelGesture() {
+  const g = BS.g;
+  if (g && (g.type === 'hevtx' || g.type === 'hemid') && g.snap && heState() !== g.snap) { heLoadState(g.snap); HE.gen++; bsRenderBoard(); }
+}
+// The nudge pad: the selected point, or the whole outline, by BS_NUDGE % a press.
+function heNudge(dx, dy) {
+  const h = heHold(HE.sel);
+  if (!h || h.deg) return;
+  heSnap();
+  const mv = p => [bsR2(bsClamp(p[0] + dx * BS_NUDGE, -5, 105)), bsR2(bsClamp(p[1] + dy * BS_NUDGE, -5, 105))];
+  heSetBase(h.id, HE.pt != null && h.pts[HE.pt] ? h.pts.map((p, i) => (i === HE.pt ? mv(p) : p.slice())) : h.pts.map(mv));
+  heChanged(heModel().list.some(x => x.deg));
+}
+function hePtDelete() {
+  const h = heHold(HE.sel);
+  if (!h || HE.pt == null || h.pts.length <= 3) return;
+  heSnap();
+  heSetBase(h.id, h.pts.filter((_, i) => i !== HE.pt));
+  HE.pt = null;
+  heChanged(heModel().list.some(x => x.deg));
+}
+
 function heLasso(gpts) {
   const pts = bsLassoDone(gpts);
   if (!pts) { bsRenderBoard(); showToast('Too small: draw all the way round the foothold', 'error'); return; }
@@ -1196,19 +1344,27 @@ function heLasso(gpts) {
 }
 
 // ── publish ───────────────────────────────────────────────────────────────────
-function hePayload() {
-  const M = heModel(), r = pts => pts.map(p => [bsR2(bsClamp(p[0], -5, 105)), bsR2(bsClamp(p[1], -5, 105))]);
-  return M.list.map(h => {
-    let x = h.x, y = h.y;
-    if (h.isNew || x == null || y == null) { const c = tracePolyCentre(h.pts); x = bsR2(bsClamp(c[0], 0, 100)); y = bsR2(bsClamp(c[1], 0, 100)); }
-    const o = { id: h.id, kind: h.kind, x, y, outline: r(h.pts), mirror: h.mirror || null };
-    if (h.kind === 'foot') o.name = h.name;
-    return o;
+// The edit list for admin_edit_holds() (db/48): bsEditOps() over the draft, as PB Console
+// sends it. A hand hold whose outline moved off its position takes the outline's centre.
+function heOps(image) {
+  const M = heModel(), outlines = {}, turns = {}, names = {};
+  M.list.forEach(h => {
+    if (h.kind === 'foot') names[h.id] = h.name;
+    if (h.isNew) return;
+    if (h.deg) { outlines[h.id] = h.pts; turns[h.id] = h.deg; } else if (h.edited) outlines[h.id] = h.pts;
   });
+  const added = HE.added.map(a => ({ id: a.id, pts: heHold(a.id).pts }));
+  const ops = bsEditOps(BS.live.holds, { outlines, turns, added, removed: HE.removed, pairs: HE.pairs, names, image });
+  M.list.forEach(h => {
+    if (h.kind !== 'hand' || !outlines[h.id] || h.x == null || tracePointInPoly(h.x, h.y, h.pts)) return;
+    const c = tracePolyCentre(h.pts);
+    ops.push({ op: 'position', id: h.id, x: bsR2(bsClamp(c[0], 0, 100)), y: bsR2(bsClamp(c[1], 0, 100)) });
+  });
+  return ops;
 }
 // The edited board image as a JPEG of the same size.
-function heImageBlob() {
-  return new Promise((res, rej) => HE.canvas.toBlob(b => (b ? res(b) : rej(new Error('encode'))), 'image/jpeg', HE_JPEG_Q));
+function heImageBlob(type = 'image/jpeg') {
+  return new Promise((res, rej) => HE.canvas.toBlob(b => (b ? res(b) : rej(new Error('encode'))), type, type === 'image/jpeg' ? HE_JPEG_Q : undefined));
 }
 // A hand hold or foothold of the board with no outline can't be published (the server
 // refuses the whole board): say which, before anything is uploaded (BRD-04).
@@ -1223,7 +1379,7 @@ async function heStale() {
   if (!(await bsLoadLive()) || !BS.live) { BS.live = keep; showToast('The board changed since you opened it, and it couldn’t be reloaded: try again', 'error'); bsRenderPanel(); return; }
   if (BS.live.image !== HE.img.path) {
     heDropDraft();
-    Object.assign(HE, { rot: {}, added: [], removed: [], pairs: {}, outlines: {}, undo: [], redo: [], sel: null, tool: null, img: null, canvas: null, masks: null, version: null });
+    Object.assign(HE, { rot: {}, added: [], removed: [], pairs: {}, outlines: {}, undo: [], redo: [], sel: null, tool: null, pt: null, img: null, canvas: null, work: null, boxes: [], masks: null, version: null });
     HE.regions.clear(); HE.gen++;
     delete BS.img.edit;
     showToast('A new board image was published from somewhere else meanwhile, so your edits were dropped: open Edit holds again', 'error');
@@ -1250,29 +1406,29 @@ async function hePublish() {
     const { data: cur, error: curErr } = await sb.from('board_config').select('updated_at').eq('wall', BS_WALL).maybeSingle();
     if (curErr) throw curErr;
     if (cur && cur.updated_at !== HE.version) { HE.busy = false; await heStale(); return; }
-    let path = HE.img.path;
+    let image = null;
     if (heModel().list.some(h => h.deg)) {
       if (HE.raf) { cancelAnimationFrame(HE.raf); HE.raf = 0; }
-      heRenderImage();
-      const blob = await heImageBlob();
-      const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
-      path = `setup/${stamp}-edit.jpg`;
-      const { error: upErr } = await sb.storage.from(BOARD_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+      heRenderImage(true);
+      // one JPEG generation from the master (or the original), and the new lossless master
+      // beside it for the next turn (BRD-06); a path that can't clash on a retry (BRD-15)
+      image = bsStoragePath('edit', 'jpg');
+      const { error: upErr } = await sb.storage.from(BOARD_BUCKET).upload(image, await heImageBlob(), { contentType: 'image/jpeg', upsert: false });
       if (upErr) throw upErr;
+      try {
+        const { error: me } = await sb.storage.from(BOARD_BUCKET).upload(bsMasterPath(image), await heImageBlob('image/png'), { contentType: 'image/png', upsert: false });
+        if (me) console.warn('hold editor: master not kept', me);
+      } catch (e) { console.warn('hold editor: master not kept', e); }
     }
-    // corners null = the board keeps its own (never a made-up full-image quad: BRD-13)
-    const { data, error } = await sb.rpc('admin_publish_board', {
-      p_wall: BS_WALL, p_image_path: path, p_photo_path: BS.live.photo || null,
-      p_corners: null, p_holds: hePayload(), p_smooth: null, p_expected_version: HE.version,
-    });
+    const { data, error } = await sb.rpc('admin_edit_holds', { p_wall: BS_WALL, p_expected_version: HE.version, p_edits: heOps(image) });
     if (error) throw error;
-    console.info('hold editor: published, board version', data);
+    console.info('hold editor: published', data);
     heDropDraft();
-    Object.assign(HE, { rot: {}, added: [], removed: [], pairs: {}, outlines: {}, undo: [], redo: [], sel: null, tool: null, img: null, canvas: null, masks: null, version: null });
+    Object.assign(HE, { rot: {}, added: [], removed: [], pairs: {}, outlines: {}, undo: [], redo: [], sel: null, tool: null, pt: null, img: null, canvas: null, work: null, boxes: [], masks: null, version: null });
     HE.regions.clear(); HE.gen++;
     delete BS.img.edit;
     HE.busy = false;
-    showToast('Published: the edited board is live on everyone’s next load', 'success');
+    showToast('Published: the edited board is live on everyone’s next load. ' + BS_SNAP_OWED, 'success');
     await bsAfterBoardChange();
     bsGo('start');
   } catch (e) {
@@ -1290,8 +1446,12 @@ function heAct(act, b) {
   else if (act === 'he-close') heClose();
   else if (act === 'he-undo') heUndo();
   else if (act === 'he-redo') heRedo();
-  else if (act === 'he-desel') { HE.sel = null; HE.tool = null; bsRenderBoard(); bsRenderPanel(); }
-  else if (act === 'he-tool-off') { HE.tool = null; bsRenderBoard(); bsRenderPanel(); }
+  else if (act === 'he-desel') { HE.sel = null; HE.tool = null; HE.pt = null; bsRenderBoard(); bsRenderPanel(); }
+  else if (act === 'he-tool-off') { HE.tool = null; HE.pt = null; bsRenderBoard(); bsRenderPanel(); }
+  else if (act === 'he-points') { const h = heHold(HE.sel); if (h && !h.deg) { HE.tool = 'points'; HE.pt = null; if (!bsPtHandles(h.pts)) bsZoomToPts(h.pts); bsRenderBoard(); bsRenderPanel(); } }
+  else if (act === 'he-zoom') { const h = heHold(HE.sel); if (h) { bsZoomToPts(h.pts); bsRenderPanel(); } }
+  else if (act === 'he-nudge') heNudge(+b.dataset.dx, +b.dataset.dy);
+  else if (act === 'he-ptdel') hePtDelete();
   else if (act === 'he-rot') heRotButton(+b.dataset.d);
   else if (act === 'he-rot0') heRotReset();
   else if (act === 'he-tap') { HE.tool = 'tap'; HE.sel = null; bsRenderBoard(); bsRenderPanel(); heEnsureMasks().then(() => { if (HE.tool === 'tap') bsRenderPanel(); }); }

@@ -1,33 +1,32 @@
 """Holds: outlines, footholds and mirror pairs, edited on the laptop (PB Console's Holds tab).
 
-The phone's Edit holds (app/holdedit.js) and Board Setup (app/setup.js) publish a whole
-board through admin_publish_board() (db/42, super admin only since db/44). This is the
-console's side of the same thing:
+The phone's Edit holds (app/holdedit.js) and this tab send the same thing: a list of edits
+(set an outline, add or delete a foothold, pair footholds, a foothold's FTn name) to
+admin_edit_holds() (db/48, super admin only), which lays them over the holds as they are,
+under the board row's lock, checks them (the one copy of the rules: 3-400 points, foot <->
+foot pairs that point back, never hand <-> foot, no foothold a problem uses deleted, every
+hand hold keeps an outline, a new foothold's number above every one ever used) and publishes
+through the same internals as admin_publish_board (a board_versions row, one version bump,
+Undo works). Board Setup's new photo keeps the whole-board admin_publish_board.
 
 - reads are public (the anon key, as the app): the holds table, board_config's image,
   corners, version and outline smoothing, and which footholds a problem's Specific feet
   uses; the board image itself comes from the public `board` bucket;
-- the page sends only its edits (outlines by hold id, new footholds, deleted footholds,
-  foothold pairs, the footholds' FTn names); apply_edits() lays them over the live rows
-  and builds exactly the payload hePayload() builds in the app;
-- publish() runs over direct Postgres (db/.env, the Data phase's path, castlog.py's
-  connection), in one transaction: the board row is locked and the write refused if the
-  board version moved since the page loaded it; the payload is rebuilt from the rows as
-  they are then; then, as the super admin (the
-  request's JWT claims set to that profile, role authenticated: what PostgREST does for
-  a signed-in phone), the very same admin_publish_board() call, naming the version it
-  was built on (db/45: the server refuses any other). Its checks (every hand hold once,
-  outlines 3-400 points, foot <-> foot pairs that point back, no foothold a problem
-  uses dropped, a new foothold's number above every one ever used (foot_id_max),
-  is_super_admin()) all apply unchanged. The board's corners are sent as null (kept as
-  they are). Only once the transaction has committed are the old rows written to
-  console/data/undo/ (review CON-07: a refused or rolled-back publish leaves no record).
-  undo_last() is the app's Undo the last publish (admin_undo_board), and records the rows
-  it replaced the same way. A closed tab stops a publish only before the RPC (CON-03).
+- the page builds the edit list (bsEditOps() in app/setup.js, shared with the phone); here
+  it's only checked for shape (check_ops), never validated: the database does that;
+- preview() and publish() run over direct Postgres (db/.env, the Data phase's path,
+  castlog.py's connection), in one transaction, as the super admin (the request's JWT
+  claims set to that profile, role authenticated: what PostgREST does for a signed-in
+  phone), naming the version the page loaded (the server refuses any other: 'stale').
+  preview() runs the very same call and rolls it back, so the change list the confirm shows
+  is the server's own; publish() commits it. Only once it has committed are the old rows
+  written to console/data/undo/ (review CON-07: a refused or rolled-back publish leaves no
+  record). undo_last() is the app's Undo the last publish (admin_undo_board), and records the
+  rows it replaced the same way. A closed tab stops a publish only before the RPC (CON-03).
 
 No board image is ever written here: Storage needs a signed-in session, which the console
 doesn't have (Turnstile guards sign-in). A turn (which re-draws the hold's pixels) and a
-new photo or cartoon stay in the app's Board Setup.
+new photo or cartoon stay in the app (Ross, 15 Nov 2026).
 """
 import datetime
 import json
@@ -42,13 +41,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 UNDO = os.path.join(HERE, 'data', 'undo')
 WALL = 'HangoutPortland'
-SNAPSHOT_FILES = ['app/board-fallback.jpg', 'app/hold_map.json', 'app/mirror_map.json', 'app/hold_shapes.json']
+SNAPSHOT_FILES = ['app/board-fallback.jpg', 'app/hold_map.json', 'app/mirror_map.json', 'app/hold_shapes.json',
+                  'app/foot_holds.json']
 
-OUTLINE_MIN, OUTLINE_MAX = 3, 400          # holds_outline_ok() (db/42)
+OUTLINE_MAX = 400                          # holds_outline_ok() (db/42): shown on the page only
 FOOT_MAX = 300
-HOLD_ID = re.compile(r'^hold\d{1,3}$')
-FOOT_ID = re.compile(r'^foot\d{1,4}$')
-FOOT_NAME = re.compile(r'^FT\d{1,3}$')
+EDIT_OPS = ('outline', 'position', 'add_foot', 'delete_foot', 'pair', 'name')   # admin_edit_holds (db/48), never 'image'/'turn' here
+EDITS_MAX = 2000
 IMAGE_PATH = re.compile(r'^[A-Za-z0-9][A-Za-z0-9/_.-]{0,200}$')
 UA = 'pb-console (laptop)'
 
@@ -156,182 +155,18 @@ def image(path, env=None):
 
 # -- the edits (pure: no network) ---------------------------------------------------
 
-def _pts(v, what):
-    if not isinstance(v, list) or not OUTLINE_MIN <= len(v) <= OUTLINE_MAX:
-        raise Refused('%s: an outline needs %d-%d points' % (what, OUTLINE_MIN, OUTLINE_MAX))
-    out = []
-    for p in v:
-        if (not isinstance(p, list) or len(p) != 2 or not all(isinstance(c, (int, float)) and not isinstance(c, bool)
-                                                              for c in p)):
-            raise Refused('%s: every point is [x, y]' % what)
-        out.append([round(min(105.0, max(-5.0, float(p[0]))), 2), round(min(105.0, max(-5.0, float(p[1]))), 2)])
-    return out
-
-
-def check_edits(e):
-    """The page's edits, checked for shape (never trusted): -> a clean copy, or Refused."""
-    if not isinstance(e, dict):
-        raise Refused('edits: an object')
-    outlines, added, removed, pairs, names = (e.get('outlines') or {}, e.get('added') or [], e.get('removed') or [],
-                                              e.get('pairs') or {}, e.get('names') or {})
-    if not (isinstance(outlines, dict) and isinstance(added, list) and isinstance(removed, list)
-            and isinstance(pairs, dict) and isinstance(names, dict)):
-        raise Refused('edits: outlines {}, added [], removed [], pairs {}, names {}')
-    if len(outlines) > 400 or len(added) > 100 or len(removed) > FOOT_MAX or len(pairs) > 2 * FOOT_MAX \
-            or len(names) > FOOT_MAX + 100:
+def check_ops(ops):
+    """The page's edit list, checked for shape only (the database validates it: db/48)."""
+    if not isinstance(ops, list) or not ops:
+        raise Refused('edits: a list of edits (nothing to publish)')
+    if len(ops) > EDITS_MAX:
         raise Refused('edits: far too many')
-    out = {'outlines': {}, 'added': [], 'removed': [], 'pairs': {}, 'names': {}}
-    for k, v in outlines.items():
-        if not (HOLD_ID.match(k) or FOOT_ID.match(k)):
-            raise Refused('outlines: %r is not a hold id' % k)
-        out['outlines'][k] = _pts(v, k)
-    for a in added:
-        if not isinstance(a, dict) or not isinstance(a.get('id'), str) or not FOOT_ID.match(a['id']):
-            raise Refused('added: each new foothold is {id: footN, pts}')
-        if any(x['id'] == a['id'] for x in out['added']):
-            raise Refused('added: %s twice' % a['id'])
-        out['added'].append({'id': a['id'], 'pts': _pts(a.get('pts'), a['id'])})
-    for r in removed:
-        if not isinstance(r, str) or not FOOT_ID.match(r):
-            raise Refused('removed: only footholds (footN) can be deleted')
-        if r not in out['removed']:
-            out['removed'].append(r)
-    for k, v in pairs.items():
-        if not FOOT_ID.match(k) or not (v is None or (isinstance(v, str) and FOOT_ID.match(v))):
-            raise Refused('pairs: foothold -> foothold or null (never a hand hold)')
-        out['pairs'][k] = v
-    for k, v in names.items():
-        if not FOOT_ID.match(k) or not isinstance(v, str) or not FOOT_NAME.match(v):
-            raise Refused('names: foothold -> FTn')
-        out['names'][k] = v
-    return out
-
-
-def centre(pts):
-    """tracePolyCentre (app/trace.js): the area centroid, or the mean for a flat polygon."""
-    a = cx = cy = 0.0
-    n = len(pts)
-    for i in range(n):
-        p, q = pts[i], pts[(i + 1) % n]
-        c = p[0] * q[1] - q[0] * p[1]
-        a += c
-        cx += (p[0] + q[0]) * c
-        cy += (p[1] + q[1]) * c
-    if abs(a) < 1e-9:
-        return [sum(p[0] for p in pts) / n, sum(p[1] for p in pts) / n]
-    return [cx / (3 * a), cy / (3 * a)]
-
-
-def _xy(pts):
-    c = centre(pts)
-    return round(min(100.0, max(0.0, c[0])), 2), round(min(100.0, max(0.0, c[1])), 2)
-
-
-def apply_edits(rows, edits, used=None):
-    """Lay the edits over the live rows. -> (payload for admin_publish_board, change lines).
-    rows: the holds table's rows (any kind; only hand and foot are published). Refused when
-    the edits don't fit the board as it is (a hold that isn't there, a foothold in use, a pair
-    that wouldn't point back, two footholds with one name)."""
-    e = check_edits(edits)
-    used = used or {}
-    live = {h['id']: h for h in rows if h.get('kind') in ('hand', 'foot')}
-    hold = {}
-    for h in sorted(live.values(), key=lambda h: h['id']):
-        if not isinstance(h.get('outline'), list) or len(h['outline']) < OUTLINE_MIN:
-            if h['id'] not in e['outlines']:
-                raise Refused('%s has no outline: draw one first' % h.get('name'))
-        hold[h['id']] = {'id': h['id'], 'kind': h['kind'], 'name': h.get('name'), 'x': h.get('x'), 'y': h.get('y'),
-                         'outline': h.get('outline'), 'mirror': h.get('mirror')}
-    lines = []
-    for r in e['removed']:
-        h = live.get(r)
-        if not h or h['kind'] != 'foot':
-            raise Refused('%s is not a foothold of the board' % r)
-        if used.get(r):
-            raise Refused('%s is in %d problem(s)\' Specific feet, so it can\'t be deleted' % (h.get('name'), used[r]))
-        del hold[r]
-        lines.append('%s: deleted' % h.get('name'))
-    for a in e['added']:
-        if a['id'] in live:
-            raise Refused('%s is already a hold of the board' % a['id'])
-        x, y = _xy(a['pts'])
-        hold[a['id']] = {'id': a['id'], 'kind': 'foot', 'name': None, 'x': x, 'y': y, 'outline': a['pts'], 'mirror': None}
-    for k, pts in e['outlines'].items():
-        h = hold.get(k)
-        if not h:
-            raise Refused('%s: no such hold (or it\'s being deleted)' % k)
-        old = live[k].get('outline') or []
-        h['outline'] = pts
-        if h['kind'] == 'foot':
-            h['x'], h['y'] = _xy(pts)
-        elif h['x'] is None or h['y'] is None:
-            h['x'], h['y'] = _xy(pts)
-        if old != pts:
-            lines.append('%s: outline %d -> %d points' % (h['name'], len(old), len(pts)))
-    # footholds' names: the page's FTn (left to right, bottom row up: bsFootNameList)
-    for k, n in e['names'].items():
-        if k in hold and hold[k]['kind'] == 'foot':
-            hold[k]['name'] = n
-    feet = [h for h in hold.values() if h['kind'] == 'foot']
-    if len(feet) > FOOT_MAX:
-        raise Refused('at most %d footholds' % FOOT_MAX)
-    for h in feet:
-        if not h['name'] or not FOOT_NAME.match(h['name']):
-            raise Refused('%s needs a name (FTn)' % h['id'])
-    names = [h['name'] for h in feet]
-    if len(set(names)) != len(names):
-        raise Refused('two footholds would share a name')
-    hand_names = {h['name'] for h in hold.values() if h['kind'] == 'hand'}
-    if hand_names & set(names):
-        raise Refused('a foothold would share a hand hold\'s name')
-    # pairs: foot <-> foot only, set both ways by the page; a partner that's gone is cleared
-    for k, v in e['pairs'].items():
-        if k not in hold or hold[k]['kind'] != 'foot':
-            raise Refused('pairs: %s is not a foothold of the board' % k)
-        if v is not None and (v not in hold or hold[v]['kind'] != 'foot'):
-            raise Refused('pairs: %s can only pair with a foothold' % hold[k]['name'])
-        hold[k]['mirror'] = v
-    for h in hold.values():
-        if h['mirror'] and h['mirror'] != h['id'] and h['mirror'] not in hold:
-            h['mirror'] = None
-    for h in hold.values():
-        m = h['mirror']
-        if m and m != h['id']:
-            p = hold[m]
-            if p['kind'] != h['kind'] or p['mirror'] != h['id']:
-                raise Refused('%s: its mirror partner %s must be the same kind and pair back' % (h['name'], p['name']))
-    # what changed, footholds by name
-    for h in sorted(feet, key=lambda h: int(h['name'][2:])):
-        old = live.get(h['id'])
-        nm = lambda i: hold[i]['name'] if i in hold else (live[i]['name'] if i in live else i)  # noqa: E731
-        if not old:
-            lines.append('%s: new foothold (%d points)%s' % (h['name'], len(h['outline']),
-                                                             ', paired with %s' % nm(h['mirror']) if h['mirror'] else ''))
-            continue
-        if old.get('name') != h['name']:
-            lines.append('%s: renamed %s (left to right, bottom row up; its id stays %s)' % (old.get('name'), h['name'], h['id']))
-        om, nmv = old.get('mirror') or None, h['mirror'] or None
-        if om == old['id']:
-            om = None
-        if nmv == h['id']:
-            nmv = None
-        if om != nmv:
-            lines.append('%s: %s' % (h['name'], ('paired with %s' % nm(nmv)) if nmv else 'unpaired (was %s)' % nm(om)))
-    payload = []
-    for h in sorted(hold.values(), key=lambda h: (h['kind'] != 'hand', h['id'])):
-        o = {'id': h['id'], 'kind': h['kind'], 'x': round(float(h['x']), 2), 'y': round(float(h['y']), 2),
-             'outline': h['outline'], 'mirror': h['mirror'] or None}
-        if h['kind'] == 'foot':
-            o['name'] = h['name']
-        payload.append(o)
-    return payload, lines
-
-
-def preview(edits, env=None):
-    """(change lines, the live board version) from the live rows, for the confirm."""
-    data = board(env)
-    _, lines = apply_edits(data['holds'], edits, data['feet_used'])
-    return lines, data['board']['version']
+    for o in ops:
+        if not isinstance(o, dict) or o.get('op') not in EDIT_OPS:
+            raise Refused('edits: %r isn\'t an edit the console sends' % (o.get('op') if isinstance(o, dict) else o,))
+        if not isinstance(o.get('id'), str) or not 1 <= len(o['id']) <= 20:
+            raise Refused('edits: every edit names its hold')
+    return ops
 
 
 # -- writes (direct Postgres, as the super admin) -----------------------------------
@@ -363,43 +198,48 @@ def _undo_file(kind, data):
     return path
 
 
-def publish(edits, version, out=print):
-    """One transaction: lock the board, refuse if its version isn't `version`, rebuild the
-    payload from the rows now, keep the old rows, then admin_publish_board() as the super
-    admin. Returns the new board version."""
+def _refusal(e):
+    """A database refusal (pg8000's error: a dict with M, D, C) -> Refused in words, or None."""
+    info = e.args[0] if getattr(e, 'args', None) and isinstance(e.args[0], dict) else None
+    if not info:
+        return None
+    msg, detail = info.get('M') or '', info.get('D') or ''
+    if msg == 'stale':
+        return Refused('the board changed since this page loaded it (a publish from the phone?): '
+                       'Reload, check your draft, and publish again')
+    if msg == 'no_change':
+        return Refused('nothing to publish (the draft matches the live board)')
+    return Refused(detail or msg or 'the database refused it')
+
+
+def _edit(ops, version, out, commit):
+    """admin_edit_holds() as the super admin in one transaction, committed or rolled back.
+    -> (result {version, changes}, the rows it replaces)."""
+    check_ops(ops)
     conn = _conn()
     try:
         conn.run('begin')
-        bc = conn.run('select updated_at, image_path, photo_path, corners from public.board_config '
-                      'where wall = :w for update', w=WALL)
-        if not bc:
-            raise Refused('no board_config row')
-        cur, image_path, photo_path, corners = bc[0]
-        if not same_version(cur.isoformat() if hasattr(cur, 'isoformat') else cur, version):
-            raise Refused('the board changed since this page loaded it (a publish from the phone?): '
-                          'Reload, check your draft, and publish again')
         rows = [dict(zip(('id', 'name', 'kind', 'led', 'x', 'y', 'outline', 'mirror'), r)) for r in conn.run(
             'select id, name, kind, led, x, y, outline, mirror from public.holds where wall = :w', w=WALL)]
         for r in rows:
             r['x'], r['y'] = _num(r['x']), _num(r['y'])
-        used = {}
-        for (f,) in conn.run('select unnest(feet_holds) from public.problems where feet_holds is not null'):
-            used[f] = used.get(f, 0) + 1
-        payload, lines = apply_edits(rows, edits, used)
-        out('%d change(s):' % len(lines))
-        for line in lines:
-            out('  ' + line)
-        out('publishing %d holds through admin_publish_board(), as the super admin, over direct Postgres (db/.env)'
-            % len(payload))
-        import procs
-        procs.check_cancelled(out)          # the last point to stop: inside the transaction, rolled back
+        if commit:
+            import procs
+            procs.check_cancelled(out)      # the last point to stop: inside the transaction, rolled back
         _as_super_admin(conn)
-        # corners null = kept as they are (BRD-13); the expected version is the page's (db/45)
-        res = conn.run('select public.admin_publish_board(:w, :img, :photo, null::jsonb, cast(:h as jsonb), '
-                       'null::numeric, cast(:v as timestamptz))',
-                       w=WALL, img=image_path, photo=photo_path, h=json.dumps(payload), v=str(version))
+        try:
+            res = conn.run('select public.admin_edit_holds(:w, cast(:v as timestamptz), cast(:e as jsonb))',
+                           w=WALL, v=str(version), e=json.dumps(ops))
+        except Exception as e:          # noqa: BLE001
+            r = _refusal(e)
+            if r:
+                raise r from None
+            raise
+        result = res[0][0]
+        if isinstance(result, str):
+            result = json.loads(result)
         conn.run('reset role')
-        conn.run('commit')
+        conn.run('commit' if commit else 'rollback')
     except Exception:
         try:
             conn.run('rollback')
@@ -408,10 +248,29 @@ def publish(edits, version, out=print):
         raise
     finally:
         conn.close()
-    out('published: board version %s' % res[0][0])
-    _record_undo(out, 'holds', {'table': 'holds', 'wall': WALL, 'board_version': str(cur),
-                                'published_version': str(res[0][0]), 'old': rows})
-    return res[0][0]
+    return result, rows
+
+
+def preview(ops, version):
+    """The change list the server would publish (the same call, rolled back)."""
+    result, _ = _edit(ops, version, print, commit=False)
+    return list(result.get('changes') or [])
+
+
+def publish(ops, version, out=print):
+    """One transaction: admin_edit_holds() as the super admin, naming the page's version,
+    committed; then the old rows to console/data/undo/. Returns the new board version."""
+    out('publishing %d edit(s) through admin_edit_holds(), as the super admin, over direct Postgres (db/.env)'
+        % len(check_ops(ops)))
+    result, rows = _edit(ops, version, out, commit=True)
+    lines = result.get('changes') or []
+    out('%d change(s):' % len(lines))
+    for line in lines:
+        out('  ' + line)
+    out('published: board version %s' % result.get('version'))
+    _record_undo(out, 'holds', {'table': 'holds', 'wall': WALL, 'board_version': str(version),
+                                'published_version': str(result.get('version')), 'old': rows})
+    return result.get('version')
 
 
 def _record_undo(out, kind, data):

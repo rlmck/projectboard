@@ -113,8 +113,8 @@
   // if the fetch fails they stay up with a note (offline, Supabase down). All of it
   // is public data, so nothing needs clearing on sign-out. { t, rows }.
   const SAVED_KEYS = { problems: 'pb-saved-problems', circuits: 'pb-saved-circuits', names: 'pb-saved-names', challenges: 'pb-saved-challenges', holds: 'pb-saved-holds' };
-  function saveList(kind, rows) {
-    lsSet(SAVED_KEYS[kind], JSON.stringify({ t: Date.now(), rows }));
+  function saveList(kind, rows, extra) {
+    lsSet(SAVED_KEYS[kind], JSON.stringify(Object.assign({ t: Date.now(), rows }, extra || {})));
   }
   function savedList(kind) {
     try {
@@ -190,10 +190,11 @@
   }
   // A foothold (kind 'foot', db/42) with a known position.
   const isFootHold = h => !!(FOOT_HOLDS && FOOT_HOLDS[h]) && !!(HOLD_INFO && HOLD_INFO[h] && HOLD_INFO[h].kind === 'foot');
-  // Footholds come from the holds table, which is always the live board. Draw them
-  // over the live map, or offline when the bundled board's outlines fit (the
-  // saved holds are the board's as last seen online).
-  const feetUsable = () => !!FOOT_HOLDS && (configHasMap || shapesUsable());
+  // Footholds are drawn only over the board they belong to (review BRD-07): read live this
+  // session over the live map, or (offline) the saved copy or the bundled foot_holds.json
+  // when its board version is the map's in use, as shapesUsable() ties the outlines.
+  const feetUsable = () => !!FOOT_HOLDS && ((feetLive && configHasMap)
+    || (!!footVersion && footVersion === (configHasMap ? boardConfigVersion : bundledMapVersion)));
   // A foothold's mirror partner: always a foothold (never hand <-> foot), else itself.
   function mirrorFoot(f) {
     const m = HOLD_INFO && HOLD_INFO[f] && HOLD_INFO[f].mirror;

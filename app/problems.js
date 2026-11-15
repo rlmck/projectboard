@@ -1148,7 +1148,7 @@
   // small read of the footholds' outlines (all the hand outlines would be ~10x the
   // size). The saved copy is used at once, so a phone offline keeps the names and
   // the footholds. Read-only, public.
-  function useHolds(rows) {
+  function useHolds(rows, version, live) {
     if (!Array.isArray(rows) || !rows.length) return false;
     const info = {}, mirror = {}, feet = {};
     rows.forEach(r => {
@@ -1162,6 +1162,8 @@
     });
     HOLD_INFO = info;
     FOOT_HOLDS = feet;
+    footVersion = version || null;
+    feetLive = !!live;
     if (Object.keys(mirror).length) {
       MIRROR_MAP = mirror;
       holdsHaveMirror = configHasMirror = true;
@@ -1171,27 +1173,59 @@
   async function loadHolds() {
     if (!HOLD_INFO) {
       const saved = savedList('holds');
-      if (saved) useHolds(saved.rows);
+      if (saved) useHolds(saved.rows, saved.version, false);
     }
+    let ok = false;
     try {
-      const [all, outlines] = await Promise.all([
+      const [all, outlines, ver] = await Promise.all([
         sb.from('holds').select('id,name,kind,mirror,x,y').eq('wall', 'HangoutPortland').order('id').limit(2000),
-        sb.from('holds').select('id,outline').eq('wall', 'HangoutPortland').eq('kind', 'foot').limit(2000)
+        sb.from('holds').select('id,outline').eq('wall', 'HangoutPortland').eq('kind', 'foot').limit(2000),
+        sb.from('board_config').select('updated_at').eq('wall', 'HangoutPortland').maybeSingle()
       ]);
-      if (all.error) { console.warn('holds load failed', all.error); return; }
-      const rows = all.data || [];
-      if (!outlines.error && outlines.data) {
-        const o = Object.fromEntries(outlines.data.map(r => [r.id, r.outline]));
-        rows.forEach(r => { if (r.kind === 'foot' && o[r.id]) r.outline = o[r.id]; });
+      if (all.error) console.warn('holds load failed', all.error);
+      else {
+        const rows = all.data || [];
+        if (!outlines.error && outlines.data) {
+          const o = Object.fromEntries(outlines.data.map(r => [r.id, r.outline]));
+          rows.forEach(r => { if (r.kind === 'foot' && o[r.id]) r.outline = o[r.id]; });
+        }
+        const version = (!ver.error && ver.data && ver.data.updated_at) || null;   // the board these footholds belong to
+        if (useHolds(rows, version, true)) { saveList('holds', rows, { version }); ok = true; }
       }
-      if (useHolds(rows)) saveList('holds', rows);
     } catch (err) {
       console.warn('holds load failed', err);
     }
+    if (!ok) await loadBundledFeet();
     // Redraw what shows the mirror partners or footholds.
     if (currentView === 'detail' && currentProblem && (detailMirror || feetRule(currentProblem) === 'specific')) viewRefresh();
     else if (currentView === 'create') applyCreateRoles();
     if (WALL) wallRefreshBoard();
+  }
+
+  // ── The bundled footholds (offline fallback; tools/snapshot_board.py, BRD-07) ──
+  // Used when the holds table can't be read and the saved copy isn't of the same board as
+  // the bundled snapshot: foot_holds.json is taken with it, so they always agree.
+  async function loadBundledFeet() {
+    if (feetLive) return;
+    try {
+      const res = await fetch(assetUrl('foot_holds.json'), { cache: 'no-cache' });
+      if (!res.ok || feetLive) return;
+      const j = await res.json(), ver = (j.__meta && j.__meta.board_updated_at) || null;
+      delete j.__meta;
+      if (!ver || (FOOT_HOLDS && footVersion === ver)) return;    // the saved copy is of that board already
+      const feet = {}, info = Object.assign({}, HOLD_INFO || {});
+      Object.keys(info).forEach(id => { if (info[id].kind === 'foot') delete info[id]; });
+      Object.keys(j).forEach(id => {
+        const f = j[id], x = Number(f.x), y = Number(f.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        feet[id] = { x, y, pts: Array.isArray(f.pts) && f.pts.length >= 3 ? f.pts : null };
+        info[id] = { name: f.name, kind: 'foot', mirror: f.mirror || null };
+      });
+      FOOT_HOLDS = feet; HOLD_INFO = info; footVersion = ver;
+      refreshBoardViews();
+    } catch (err) {
+      console.warn('foot_holds.json load failed', err);
+    }
   }
 
   // ── Notice a board publish while the app is open (SEAM-04) ───────────────────

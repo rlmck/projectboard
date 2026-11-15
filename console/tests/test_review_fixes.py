@@ -6,9 +6,10 @@ No Pi, no database, no GitHub: a fake pg8000 connection records every statement,
 snapshot runs in a throwaway git repo with a bare "origin" in a temp folder, and the Pi is a
 fake that answers the drift listing.
 
-- holds.publish / undo_last (CON-07, CON-03): the version refusal under FOR UPDATE, the claims
-  and role set then reset, rollback on an RPC error, exactly one super admin, a cancel only
-  before the RPC, the undo record only after the commit.
+- holds.publish / preview / undo_last (CON-07, CON-03, db/48): admin_edit_holds() with the
+  page's version, the claims and role set then reset, the server's 'stale' refusal rolled back
+  and said in words, rollback on an RPC error, exactly one super admin, a cancel only before
+  the RPC, the undo record only after the commit, a preview always rolled back.
 - Ship the snapshot (CON-02, CON-03): only its own commit is pushed; refused when main is ahead
   or the tree is dirty; the gate failing or the hook refusing pushes nothing; a commit whose
   push never happened is pushed by the next ship; a cancel after the commit still pushes.
@@ -48,7 +49,7 @@ import procs  # noqa: E402
 import reports  # noqa: E402
 import security  # noqa: E402
 from test_console import TOKEN, ServerBase  # noqa: E402
-from test_holds import NAMES, SQ, V, rows  # noqa: E402
+from test_holds import SQ, V, rows  # noqa: E402
 
 V_DT = datetime.datetime.fromisoformat(V)
 COLS = ('id', 'name', 'kind', 'led', 'x', 'y', 'outline', 'mirror')
@@ -93,8 +94,10 @@ class FakeConn:
             return []
         if 'from public.profiles where is_super_admin' in s:
             return [['00000000-0000-0000-0000-000000000001']] * self.supers
-        if 'admin_publish_board' in s:
-            return [['2026-11-15T10:00:00+00:00']]
+        if 'admin_edit_holds' in s:
+            if not holds.same_version(kw.get('v'), self.version.isoformat()):
+                raise Exception({'S': 'ERROR', 'C': 'P0001', 'M': 'stale', 'D': 'The board changed since this was loaded'})
+            return [[{'version': '2026-11-15T10:00:00+00:00', 'changes': ['A1: outline 80 -> 4 points']}]]
         if 'count(*) from public.board_versions' in s:
             return [[self.versions]]
         if s.startswith('select updated_at from public.board_config'):
@@ -120,7 +123,7 @@ class Publish(unittest.TestCase):
 
     def publish(self, conn, out=None, version=V):
         with mock.patch.object(holds, '_conn', return_value=conn):
-            return holds.publish({'outlines': {'hold1': SQ}, 'names': NAMES}, version, out or Out())
+            return holds.publish([{'op': 'outline', 'id': 'hold1', 'outline': SQ}], version, out or Out())
 
     def undo_files(self):
         return os.listdir(holds.UNDO) if os.path.isdir(holds.UNDO) else []
@@ -131,16 +134,17 @@ class Publish(unittest.TestCase):
         self.assertEqual(self.publish(c, out), '2026-11-15T10:00:00+00:00')
         q = c.sqls()
         self.assertEqual(q[0], 'begin')
-        self.assertIn('for update', q[1])
         i_claims = next(i for i, s in enumerate(q) if 'set_config' in s)
         i_role = q.index('set local role authenticated')
-        i_rpc = next(i for i, s in enumerate(q) if 'admin_publish_board' in s)
+        i_rpc = next(i for i, s in enumerate(q) if 'admin_edit_holds' in s)
         self.assertLess(i_claims, i_role)
         self.assertLess(i_role, i_rpc)
         self.assertEqual(q[i_rpc + 1:], ['reset role', 'commit'])
         claims = json.loads(c.calls[i_claims][1]['c'])
         self.assertEqual(claims['role'], 'authenticated')
-        self.assertEqual(c.calls[i_rpc][1]['v'], V)                 # the page's version (db/45)
+        self.assertEqual(c.calls[i_rpc][1]['v'], V)                 # the page's version (db/45, db/48)
+        self.assertEqual(json.loads(c.calls[i_rpc][1]['e'])[0]['op'], 'outline')
+        self.assertIn('A1: outline 80 -> 4 points', out.text())
         self.assertTrue(c.closed)
         self.assertEqual(c.undo_at_commit, [])                      # no record before the commit (CON-07)
         self.assertEqual(len(self.undo_files()), 1)                 # one after it
@@ -151,16 +155,16 @@ class Publish(unittest.TestCase):
 
     def test_a_moved_version_is_refused_and_rolled_back(self):
         c = FakeConn(version=datetime.datetime(2026, 11, 14, tzinfo=datetime.timezone.utc))
-        with self.assertRaises(holds.Refused):
+        with self.assertRaises(holds.Refused) as cm:
             self.publish(c)
+        self.assertIn('the board changed', str(cm.exception))      # the server's 'stale', in words
         q = c.sqls()
         self.assertIn('rollback', q)
-        self.assertFalse(any('admin_publish_board' in s for s in q))
         self.assertNotIn('commit', q)
         self.assertEqual(self.undo_files(), [])
 
     def test_an_rpc_error_rolls_back_and_leaves_no_record(self):
-        c = FakeConn(fail_on='admin_publish_board')
+        c = FakeConn(fail_on='admin_edit_holds')
         with self.assertRaises(RuntimeError):
             self.publish(c)
         self.assertIn('rollback', c.sqls())
@@ -173,7 +177,7 @@ class Publish(unittest.TestCase):
             c = FakeConn(supers=n)
             with self.assertRaises(holds.Refused):
                 self.publish(c)
-            self.assertFalse(any('admin_publish_board' in s for s in c.sqls()))
+            self.assertFalse(any('admin_edit_holds' in s for s in c.sqls()))
             self.assertFalse(any('set local role' in s for s in c.sqls()))
             self.assertIn('rollback', c.sqls())
 
@@ -183,9 +187,20 @@ class Publish(unittest.TestCase):
         out.flag = True
         with self.assertRaises(procs.Cancelled):
             self.publish(c, out)
-        self.assertFalse(any('admin_publish_board' in s for s in c.sqls()))
+        self.assertFalse(any('admin_edit_holds' in s for s in c.sqls()))
         self.assertIn('rollback', c.sqls())
         self.assertEqual(self.undo_files(), [])
+
+    def test_a_preview_is_always_rolled_back(self):
+        c = FakeConn(undo_dir=holds.UNDO)
+        with mock.patch.object(holds, '_conn', return_value=c):
+            lines = holds.preview([{'op': 'outline', 'id': 'hold1', 'outline': SQ}], V)
+        self.assertEqual(lines, ['A1: outline 80 -> 4 points'])
+        q = c.sqls()
+        self.assertNotIn('commit', q)
+        self.assertIn('rollback', q)
+        self.assertEqual(self.undo_files(), [])
+        self.assertTrue(c.closed)
 
     def test_undo_last_records_after_its_commit(self):
         c = FakeConn(undo_dir=holds.UNDO)

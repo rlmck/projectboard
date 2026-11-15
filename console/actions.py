@@ -415,14 +415,11 @@ def build(kind, args):
         if not isinstance(version, str) or not 10 <= len(version) <= 40:
             raise Invalid('holds-publish: version, the board version the page loaded')
         try:
-            lines, live = holds.preview(edits)
+            lines = holds.preview(edits, version)     # admin_edit_holds() run and rolled back (db/48)
         except holds.Refused as e:
             raise Invalid('holds-publish: %s' % e)
-        except (OSError, RuntimeError, ValueError) as e:
-            raise Invalid('holds-publish: reading the live board: %s' % e)
-        if not holds.same_version(live, version):
-            raise Invalid('holds-publish: the board changed since this page loaded it (a publish from the phone?). '
-                          'Reload, check your draft, and publish again.')
+        except Exception as e:          # noqa: BLE001 (the database or the network)
+            raise Invalid('holds-publish: checking it with the database: %s' % e)
         if not lines:
             raise Invalid('holds-publish: nothing to publish (the draft matches the live board)')
 
@@ -432,11 +429,11 @@ def build(kind, args):
             out('Next: Ship the snapshot (the app\'s offline copy of the board), here on the Holds tab.')
             return 0
         return func_action('holds publish', publish,
-                           'Publish %d change(s) to the LIVE board through admin_publish_board(), as the super admin '
+                           'Publish %d change(s) to the LIVE board through admin_edit_holds(), as the super admin '
                            '(a new board version: everyone sees it on their next load). Once it has committed, the '
                            'old rows go to console/data/undo/, and "Undo the last publish" puts the board back.'
                            % len(lines),
-                           shown='admin_publish_board() over direct Postgres (db/.env)', confirm=True, timeout=120,
+                           shown='admin_edit_holds() over direct Postgres (db/.env)', confirm=True, timeout=120,
                            preview={'diff': '\n'.join(lines)})
     if kind == 'holds-undo-publish':
         import holds

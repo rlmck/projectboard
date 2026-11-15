@@ -98,6 +98,7 @@ FILES=(
   hold_map.json
   mirror_map.json
   hold_shapes.json
+  foot_holds.json
 
   # board graphic
   ProjectBoard.png
