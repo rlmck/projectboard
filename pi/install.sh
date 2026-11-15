@@ -195,7 +195,7 @@ if any(l.strip().startswith('psk=') for l in lines) or '[wifi-security]' not in 
 i = lines.index('[wifi-security]') + 1
 while i < len(lines) and lines[i].strip() and not lines[i].startswith('['):
     i += 1
-new = '\n'.join(lines[:i] + psk + lines[i:]) + '\n'
+new = '\n'.join(lines[:i] + kept + lines[i:]) + '\n'
 if new == old:
     print('same'); sys.exit()
 if not dry:
