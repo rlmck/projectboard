@@ -142,9 +142,9 @@ class Actions(unittest.TestCase):
 
     def test_undo_and_snapshot_are_confirmed(self):
         self.assertTrue(actions.build('holds-undo-publish', {}).confirm)
-        with mock.patch.object(actions.gitops, 'status', return_value={'branch': 'main', 'files': [], 'unpushed': []}):
+        with mock.patch.object(actions.gitops, 'out', return_value='main'):
             self.assertTrue(actions.build('holds-ship-snapshot', {}).confirm)
-        with mock.patch.object(actions.gitops, 'status', return_value={'branch': 'dev', 'files': [], 'unpushed': []}):
+        with mock.patch.object(actions.gitops, 'out', return_value='dev'):
             with self.assertRaises(actions.Invalid):
                 actions.build('holds-ship-snapshot', {})
 

@@ -10,17 +10,20 @@ console's side of the same thing:
 - the page sends only its edits (outlines by hold id, new footholds, deleted footholds,
   foothold pairs, the footholds' FTn names); apply_edits() lays them over the live rows
   and builds exactly the payload hePayload() builds in the app;
-- publish() runs over direct Postgres (db/.env, the Data phase's path, as tracks.py),
-  in one transaction: the board row is locked and the write refused if the board
-  version moved since the page loaded it; the payload is rebuilt from the rows as they
-  are then; the old rows go to console/data/undo/; then, as the super admin (the
+- publish() runs over direct Postgres (db/.env, the Data phase's path, castlog.py's
+  connection), in one transaction: the board row is locked and the write refused if the
+  board version moved since the page loaded it; the payload is rebuilt from the rows as
+  they are then; then, as the super admin (the
   request's JWT claims set to that profile, role authenticated: what PostgREST does for
   a signed-in phone), the very same admin_publish_board() call, naming the version it
   was built on (db/45: the server refuses any other). Its checks (every hand hold once,
   outlines 3-400 points, foot <-> foot pairs that point back, no foothold a problem
   uses dropped, a new foothold's number above every one ever used (foot_id_max),
   is_super_admin()) all apply unchanged. The board's corners are sent as null (kept as
-  they are). undo_last() is the app's Undo the last publish (admin_undo_board).
+  they are). Only once the transaction has committed are the old rows written to
+  console/data/undo/ (review CON-07: a refused or rolled-back publish leaves no record).
+  undo_last() is the app's Undo the last publish (admin_undo_board), and records the rows
+  it replaced the same way. A closed tab stops a publish only before the RPC (CON-03).
 
 No board image is ever written here: Storage needs a signed-in session, which the console
 doesn't have (Turnstile guards sign-in). A turn (which re-draws the hold's pixels) and a
@@ -383,12 +386,13 @@ def publish(edits, version, out=print):
         for (f,) in conn.run('select unnest(feet_holds) from public.problems where feet_holds is not null'):
             used[f] = used.get(f, 0) + 1
         payload, lines = apply_edits(rows, edits, used)
-        undo = _undo_file('holds', {'table': 'holds', 'wall': WALL, 'board_version': str(cur), 'old': rows})
         out('%d change(s):' % len(lines))
         for line in lines:
             out('  ' + line)
         out('publishing %d holds through admin_publish_board(), as the super admin, over direct Postgres (db/.env)'
             % len(payload))
+        import procs
+        procs.check_cancelled(out)          # the last point to stop: inside the transaction, rolled back
         _as_super_admin(conn)
         # corners null = kept as they are (BRD-13); the expected version is the page's (db/45)
         res = conn.run('select public.admin_publish_board(:w, :img, :photo, null::jsonb, cast(:h as jsonb), '
@@ -396,8 +400,6 @@ def publish(edits, version, out=print):
                        w=WALL, img=image_path, photo=photo_path, h=json.dumps(payload), v=str(version))
         conn.run('reset role')
         conn.run('commit')
-        out('published: board version %s (old rows: %s)' % (res[0][0], os.path.relpath(undo, REPO)))
-        return res[0][0]
     except Exception:
         try:
             conn.run('rollback')
@@ -406,23 +408,41 @@ def publish(edits, version, out=print):
         raise
     finally:
         conn.close()
+    out('published: board version %s' % res[0][0])
+    _record_undo(out, 'holds', {'table': 'holds', 'wall': WALL, 'board_version': str(cur),
+                                'published_version': str(res[0][0]), 'old': rows})
+    return res[0][0]
+
+
+def _record_undo(out, kind, data):
+    """After a commit: the rows it replaced, in console/data/undo/. A failure here is reported,
+    never raised: the database change has already happened."""
+    try:
+        path = _undo_file(kind, data)
+        out('old rows: %s' % os.path.relpath(path, REPO))
+    except OSError as e:
+        out('! the change is made, but its undo record could not be written: %s' % e)
 
 
 def undo_last(out=print):
-    """The app's Undo the last publish: admin_undo_board() as the super admin."""
+    """The app's Undo the last publish: admin_undo_board() as the super admin. Once it has
+    committed, the rows it replaced go to console/data/undo/ (as a publish's do)."""
+    import procs
     conn = _conn()
     try:
         conn.run('begin')
         n = conn.run('select count(*) from public.board_versions where wall = :w', w=WALL)[0][0]
         if not n:
             raise Refused('there is no earlier board version to go back to')
+        before = conn.run('select updated_at from public.board_config where wall = :w for update', w=WALL)
+        rows = [dict(zip(('id', 'name', 'kind', 'led', 'x', 'y', 'outline', 'mirror'), r)) for r in conn.run(
+            'select id, name, kind, led, x, y, outline, mirror from public.holds where wall = :w', w=WALL)]
+        procs.check_cancelled(out)          # the last point to stop: rolled back
         _as_super_admin(conn)
         conn.run('select public.admin_undo_board(:w)', w=WALL)
         conn.run('reset role')
         ver = conn.run('select updated_at from public.board_config where wall = :w', w=WALL)[0][0]
         conn.run('commit')
-        out('undone: the board is back to version %s' % ver)
-        return ver
     except Exception:
         try:
             conn.run('rollback')
@@ -431,6 +451,10 @@ def undo_last(out=print):
         raise
     finally:
         conn.close()
+    out('undone: the board is back to version %s' % ver)
+    _record_undo(out, 'undo', {'table': 'holds', 'wall': WALL, 'board_version': str(before[0][0]) if before else None,
+                               'undone_to_version': str(ver), 'old': rows})
+    return ver
 
 
 # -- the bundled snapshot -------------------------------------------------------------

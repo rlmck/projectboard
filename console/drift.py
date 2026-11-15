@@ -8,6 +8,7 @@ install.sh). The hashes are read as pi with sha256sum; the few root-only files
 import glob
 import hashlib
 import os
+import posixpath
 import re
 import shlex
 
@@ -115,16 +116,32 @@ def compare(text, root_hashes=''):
     return {'files': rows, 'extra': [{'path': p, 'pull_to': pull_target(p)} for p in extras], 'nm': nm}
 
 
+PULL_DIRS = {'/usr/local/bin': 'pi/ops/', '/usr/local/sbin': 'pi/ops/', '/etc/systemd/system': 'pi/systemd/'}
+
+
 def pull_target(pi_path):
-    """Where a Pi-only file would go in the repo, or None if it isn't something to pull."""
-    base = os.path.basename(pi_path)
-    if not re.match(r'^[A-Za-z0-9_.@-]+$', base):
+    """Where a Pi-only file would go in the repo, or None if it isn't something to pull.
+    The path must already be normal (no `..`, no `.`, no doubled or trailing slash) and its
+    folder exactly one of PULL_DIRS (review CON-01): `/usr/local/bin/../../home/pi/x` is refused."""
+    if not isinstance(pi_path, str) or not pi_path.startswith('/') or '\\' in pi_path:
         return None
-    if pi_path.startswith('/etc/systemd/system/') and base.endswith(('.service', '.timer')):
-        return 'pi/systemd/' + base
-    if pi_path.startswith(('/usr/local/sbin/', '/usr/local/bin/')):
-        return 'pi/ops/' + base
-    return None
+    if posixpath.normpath(pi_path) != pi_path or '..' in pi_path.split('/'):
+        return None
+    parent, base = posixpath.split(pi_path)
+    if parent not in PULL_DIRS or not re.match(r'^[A-Za-z0-9_@-][A-Za-z0-9_.@-]*$', base):
+        return None
+    if parent == '/etc/systemd/system' and not base.endswith(('.service', '.timer')):
+        return None
+    return PULL_DIRS[parent] + base
+
+
+def extras(remote):
+    """The Pi-only files the drift check lists now ([path]), read afresh from the Pi: pull-file
+    takes only one of these (CON-01), never whatever path the page sends."""
+    code, text, err = remote.run(remote_script(), timeout=60)
+    if code == 255:
+        raise RuntimeError(err.strip() or 'ssh failed')
+    return [e['path'] for e in compare(text)['extra']]
 
 
 def nm_target(name):
@@ -135,5 +152,12 @@ def nm_target(name):
 SECRET = re.compile(r'^\s*[A-Za-z0-9_-]*(psk|password|passwd|secret|private-key|wep-key\d*|pin)[A-Za-z0-9_-]*\s*=', re.I)
 
 
+# A private-key block, or a line that is nothing but a long base64/hex run (a raw token or key):
+# a path (it starts with /) or a line of dashes or # isn't one. Review CON-01.
+PRIVATE_KEY = re.compile(r'-----BEGIN [A-Z0-9 ]*PRIVATE KEY')
+RAW_TOKEN = re.compile(r'^\s*["\']?(?=[A-Za-z0-9+/_-]*\d)(?=[A-Za-z0-9+/_-]*[A-Za-z])[A-Za-z0-9+_-][A-Za-z0-9+/_-]{31,}'
+                       r'={0,2}["\']?\s*$')
+
+
 def has_secret(text):
-    return any(SECRET.match(l) for l in text.splitlines())
+    return bool(PRIVATE_KEY.search(text)) or any(SECRET.match(l) or RAW_TOKEN.match(l) for l in text.splitlines())

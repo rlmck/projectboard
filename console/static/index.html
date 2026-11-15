@@ -36,13 +36,13 @@
 <div class="main-col">
 
 <div id="no-token" class="banner bad" hidden>
-  This page needs this launch's token. Start the console with <code>bash console/start.sh</code> from the repo root in Git Bash; it opens the right address.
+  This tab has no session. Start the console with <code>bash console/start.sh</code> from the repo root in Git Bash (or the desktop icon): it opens a tab with a one-time code, which this page swaps for the session. A code works once, so a copied or reloaded address with an old code needs a fresh start.
 </div>
 <div id="stale" class="banner bad" hidden>
   The console's server is older than this page (it was started before the last update). Close the console window and run <code>bash console/start.sh</code> again.
 </div>
 <div id="no-helper" class="banner warn" hidden>
-  The Pi doesn't have <code>pb-console-helper</code> yet, so Services, night mode and the screen buttons can't run. Install it with one deploy (<code>bash pi/deploy.sh</code>, password once).
+  The Pi doesn't have <code>pb-console-helper</code> yet, so Services, night mode and the screen buttons can't run. Install it with one deploy (<code>bash pi/deploy.sh</code>; no password).
 </div>
 
 <main>
@@ -264,7 +264,7 @@
       <span id="ledmap-state" class="muted"></span>
     </div>
     <div class="board-grid">
-      <iframe id="ledmap-frame" class="ledmap-frame" title="The LED mapping tool"></iframe>
+      <iframe id="ledmap-frame" class="ledmap-frame" title="The LED mapping tool" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads" referrerpolicy="no-referrer"></iframe>
       <div class="cam card"><h2>Webcam</h2><img id="ledmap-cam" alt="The board from the webcam"></div>
     </div>
     <div class="card">
@@ -289,15 +289,15 @@
       </div>
     </details>
     <details class="adv card" id="adv-backups" data-adv="backups">
-      <summary><strong>Backups</strong> <span class="muted">The Pi's settings and the public tables: weekly by themselves.</span></summary>
+      <summary><strong>Backups</strong> <span class="muted">Every database table and the Pi's settings: weekly by themselves.</span></summary>
       <div class="adv-body">
     <div class="btn-row">
       <button class="btn primary" id="backup-now">Back up now</button>
       <button class="btn" id="backup-pi">The Pi only</button>
-      <button class="btn" id="backup-sb">Supabase only</button>
+      <button class="btn" id="backup-db">The database only</button>
     </div>
     <p id="backup-state" class="note"></p>
-    <p class="note">Saved under <code>backups/&lt;date&gt;/</code> at the repo root (gitignored). The Pi backup holds config.env and its earlier copies, the units and drop-ins, the scripts and the NetworkManager profiles with every password line removed on the Pi.</p>
+    <p class="note">Saved under <code>backups/&lt;date&gt;/</code> at the repo root: gitignored, refused by the pre-commit hook, on this laptop only (never uploaded), not encrypted. The database dump (<code>db-HHMMSS/</code>) is every public table, members' data too (profiles, ticks, favourites, circuit runs, challenge attempts, the cast log, board versions, …), read in one read-only transaction over <code>db/.env</code>, one JSON file per table plus <code>manifest.json</code> (row counts and columns), each table checked against <code>count(*)</code>; the newest 8 are kept. Not in it: the sign-ins (Supabase Auth) and the board images. How to restore one by hand: <code>console/README.md</code> → Backups. The Pi backup holds config.env and its earlier copies, the units and drop-ins, the scripts and the NetworkManager profiles with every password line removed on the Pi.</p>
     <ul id="backups-list"></ul>
       </div>
     </details>

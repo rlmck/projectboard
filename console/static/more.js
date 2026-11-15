@@ -245,7 +245,8 @@
       $('backup-state').textContent = 'Last good backup: ' + when(s.ok_at) + (s.how ? ' (' + s.how + ')' : '') +
         (s.result === 'failed' ? '. The last try (' + when(s.tried_at) + ') failed: ' + (s.error || '?') : '') +
         '. Next: ' + (s.next_at ? when(s.next_at) : 'as soon as the laptop\'s scheduled task next runs') +
-        ' (weekly, by the scheduled task that keeps the Pi up to date).';
+        ' (weekly, by the scheduled task that keeps the Pi up to date).' +
+        (s.db ? ' Last database dump: ' + s.db.path + ', ' + s.db.tables + ' tables, ' + s.db.rows + ' rows, each checked against count(*).' : '');
       $('backups-list').innerHTML = d.backups.length ? d.backups.map((b) => '<li>' + esc(b.path) + ' <span class="muted">' +
         Math.max(1, Math.round(b.bytes / 1024)) + ' KB</span></li>').join('') : '<li class="muted">None yet.</li>';
     } catch (e) { $('backups-list').textContent = e.message; }
@@ -306,5 +307,5 @@
   $('night-check').addEventListener('click', lastNight);
   $('backup-now').addEventListener('click', () => PB.runAction('backup-now', {}, 'Back up now'));
   $('backup-pi').addEventListener('click', () => PB.runAction('backup-pi', {}, 'Back up the Pi'));
-  $('backup-sb').addEventListener('click', () => PB.runAction('backup-supabase', {}, 'Export Supabase'));
+  $('backup-db').addEventListener('click', () => PB.runAction('backup-db', {}, 'Dump the database'));
 }());

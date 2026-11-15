@@ -283,18 +283,32 @@ def build(kind, args):
                       shown='bash pi/deploy.sh%s' % (' --dry-run' if dry else ''),
                       confirm=True, busy=not dry, timeout=600)
     if kind == 'pull-file':
+        # Review CON-01: a normal path straight inside one of the three folders, listed by the drift
+        # check (read again from the Pi when it runs), into a repo file that doesn't exist yet.
         path = args.get('path')
-        target = drift.pull_target(path) if isinstance(path, str) else None
+        target = drift.pull_target(path)
         if not target:
             raise Invalid('pull-file: a Pi-only unit or script the drift check listed')
+        why = _target_taken(target)
+        if why:
+            raise Invalid('pull-file: %s' % why)
 
         def pull_file(app, out):
-            code, text, err = app.remote.run('cat %s' % shlex.quote(path))
+            listed = drift.extras(app.remote)
+            if path not in listed:
+                out('refused: %s is not in the drift check\'s "not in the repo" list now' % path)
+                return 1
+            why = _target_taken(target)
+            if why:
+                out('refused: %s' % why)
+                return 1
+            code, text, err = app.remote.run('cat -- %s' % shlex.quote(path))
             if code != 0:
                 out('reading %s failed: %s' % (path, err.strip()))
                 return 1
             if drift.has_secret(text):
-                out('refused: %s has a password-like line; copy it by hand without it' % path)
+                out('refused: %s has a password-like line, a private key or a long token-like line; '
+                    'copy it by hand without it' % path)
                 return 1
             _write_repo(target, text)
             out('%s -> %s (%d bytes). Add its install line to pi/install.sh before the next deploy.'
@@ -379,18 +393,21 @@ def build(kind, args):
                              confirm=True, busy=True, timeout=60)
 
     # -- phase 12: backups (console/backups.py; weekly by itself since 10 Nov 2026) --------------------
-    if kind in ('backup-now', 'backup-pi', 'backup-supabase'):
+    if kind in ('backup-now', 'backup-pi', 'backup-db'):
         import backups
-        parts = {'backup-now': ('pi', 'supabase'), 'backup-pi': ('pi',), 'backup-supabase': ('supabase',)}[kind]
+        parts = {'backup-now': ('pi', 'db'), 'backup-pi': ('pi',), 'backup-db': ('db',)}[kind]
 
         def backup(app, out):
             return backups.run(app.remote, app.env, out, parts=parts)
+        db = ('a dump of every table in the database (members\' data too: profiles, ticks, favourites, circuit '
+              'runs, challenge attempts, the cast log, board versions, ...) over db/.env, read-only, each table\'s '
+              'rows checked against its count, into backups/ (gitignored, this laptop only; the newest %d kept)'
+              % backups.KEEP_DUMPS)
         return func_action(kind.replace('-', ' '), backup,
-                           {'backup-now': "Back up the Pi's settings (secrets stripped on the Pi) and export the public "
-                                          'Supabase tables into backups/ (gitignored). This happens weekly by itself.',
+                           {'backup-now': "Back up the Pi's settings (secrets stripped on the Pi) and make " + db +
+                                          '. This happens weekly by itself.',
                             'backup-pi': "Back up the Pi's settings into backups/ (gitignored).",
-                            'backup-supabase': 'Export the public tables (problems, circuits, board_config, '
-                                               'challenges) into backups/ (gitignored).'}[kind])
+                            'backup-db': 'Make ' + db + '.'}[kind])
     # -- holds: outlines, footholds, foothold pairs (db/42, db/44; console/holds.py) ---------------------
     if kind == 'holds-publish':
         import holds
@@ -410,14 +427,15 @@ def build(kind, args):
             raise Invalid('holds-publish: nothing to publish (the draft matches the live board)')
 
         def publish(app, out):
-            holds.publish(edits, version, out)
+            holds.publish(edits, version, out)       # stops only before the RPC, never after the commit
             out('phones and the wall show it on their next load; the Pi reads holds at each cast.')
             out('Next: Ship the snapshot (the app\'s offline copy of the board), here on the Holds tab.')
             return 0
         return func_action('holds publish', publish,
                            'Publish %d change(s) to the LIVE board through admin_publish_board(), as the super admin '
-                           '(a new board version: everyone sees it on their next load). The old rows go to '
-                           'console/data/undo/, and "Undo the last publish" puts the board back.' % len(lines),
+                           '(a new board version: everyone sees it on their next load). Once it has committed, the '
+                           'old rows go to console/data/undo/, and "Undo the last publish" puts the board back.'
+                           % len(lines),
                            shown='admin_publish_board() over direct Postgres (db/.env)', confirm=True, timeout=120,
                            preview={'diff': '\n'.join(lines)})
     if kind == 'holds-undo-publish':
@@ -430,54 +448,123 @@ def build(kind, args):
         return func_action('holds undo publish', undo,
                            'Undo the last board publish (from the phone or here): admin_undo_board() puts the board '
                            'saved before it back (outlines, footholds, pairs, image), as the super admin. The board '
-                           'it replaces is kept too, so this can be undone the same way.',
+                           'it replaces is kept too, so this can be undone the same way. Once it has committed, the '
+                           'rows it replaced go to console/data/undo/.',
                            shown='admin_undo_board() over direct Postgres (db/.env)', confirm=True, timeout=120)
     if kind == 'holds-ship-snapshot':
-        import holds
-        st = gitops.status()
-        if st['branch'] != 'main':
-            raise Invalid('holds-ship-snapshot: work on main (on %s)' % st['branch'])
-
-        def ship_snapshot(app, out):
-            if not _fetch_ok(out):
-                return 1
-            if gitops.count('HEAD', 'origin/main'):
-                code, o, e = gitops.git('pull', '--ff-only', timeout=120)
-                out('$ git pull --ff-only\n%s%s' % (o, e))
-                if code:
-                    out("main on GitHub has commits this copy lacks and they didn't pull in cleanly: "
-                        'ask Claude Code to sort it out, then ship the snapshot.')
-                    return 1
-            out('$ python tools/snapshot_board.py')
-            if holds.run_tool(['tools/snapshot_board.py'], out):
-                return 1
-            out('$ python tools/check_holds.py')
-            if holds.run_tool(['tools/check_holds.py'], out):
-                out('! the hold check found a mismatch (above): the snapshot is still shipped, since it is a copy of live')
-            changed = [f for f in holds.SNAPSHOT_FILES if gitops.git('diff', '--quiet', '--', f)[0]]
-            if not changed:
-                out('the snapshot already matches the live board: nothing to ship')
-                return 0
-            if not _gate(out):
-                return 1
-            if _commit(changed, 'Board snapshot after a holds publish (PB Console)\n\n'
-                       'tools/snapshot_board.py: the app\'s offline copy of the live board.\n', out):
-                return 1
-            code = _push(['git', 'push', 'origin', 'HEAD:main'], out)
-            if code:
-                return code
-            import autodeploy
-            autodeploy.start_background()
-            out('pushed: Cloudflare builds it (a new CACHE); the Pi gets hold_map.json from the automatic deploy '
-                '(started now; it waits for a quiet board in the opening hours).')
-            return 0
-        return func_action('holds ship snapshot', ship_snapshot,
+        branch = gitops.out('rev-parse', '--abbrev-ref', 'HEAD')
+        if branch != 'main':
+            raise Invalid('holds-ship-snapshot: work on main (on %s)' % branch)
+        return func_action('holds ship snapshot', lambda app, out: ship_snapshot(out),
                            'Copy the live board into the app (tools/snapshot_board.py: the board image, hold map, '
                            'mirror map and outlines the app falls back to offline), check it (tools/check_holds.py), '
                            'commit those files alone and push main: THIS DEPLOYS TO REAL USERS. Then the Pi\'s '
                            'automatic deploy.', shown='python tools/snapshot_board.py && bash build.sh --check && '
                            'git commit -- app/<4 snapshot files> && git push origin HEAD:main', confirm=True, timeout=600)
     raise Invalid('no action called %r' % kind)
+
+
+# -- Ship the snapshot (Holds) ---------------------------------------------------
+# Review CON-02 and CON-03 (15 Nov 2026): it pushes its own commit and nothing else, the build
+# gate checks exactly what is pushed (a tree clean apart from the snapshot files), and once the
+# commit is made it always pushes: a closed tab stops it only before the commit, and a ship
+# whose push never happened is pushed by the next one.
+
+SNAPSHOT_SUBJECT = 'Board snapshot after a holds publish (PB Console)'
+
+
+def _dirty_outside(allowed):
+    """Paths git status lists (staged, changed or untracked) other than `allowed`."""
+    rows = gitops.git('status', '--porcelain=v1', '-uall')[1].splitlines()
+    paths = [r[3:].strip().strip('"').split(' -> ')[-1] for r in rows if len(r) > 3]
+    return [p for p in paths if p not in allowed]
+
+
+def _is_snapshot_commit(ref, files):
+    """ref is a commit this console made: the snapshot subject and only snapshot files."""
+    if gitops.out('log', '-1', '--format=%s', ref) != SNAPSHOT_SUBJECT:
+        return False
+    touched = gitops.out('diff-tree', '--no-commit-id', '--name-only', '-r', ref).splitlines()
+    return bool(touched) and set(touched) <= set(files)
+
+
+def _push_snapshot(out):
+    """Push HEAD to main, only when it is exactly one snapshot commit ahead of origin/main."""
+    import holds
+    if gitops.count('origin/main', 'HEAD') != 1 or gitops.count('HEAD', 'origin/main') != 0 \
+            or not _is_snapshot_commit('HEAD', holds.SNAPSHOT_FILES):
+        out('Stopped: HEAD is not exactly one snapshot commit ahead of origin/main, so nothing was pushed.')
+        return 1
+    code = _push(['git', 'push', 'origin', 'HEAD:main'], out)
+    if code:
+        out('The snapshot commit is made but not pushed: Ship the snapshot again pushes it.')
+        return code
+    import autodeploy
+    autodeploy.start_background()
+    out('pushed: Cloudflare builds it (a new CACHE); the Pi gets hold_map.json from the automatic deploy '
+        '(started now; it waits for a quiet board in the opening hours).')
+    return 0
+
+
+def ship_snapshot(out):
+    import holds
+    files = holds.SNAPSHOT_FILES
+    if not _fetch_ok(out):
+        return 1
+    ahead, behind = gitops.count('origin/main', 'HEAD'), gitops.count('HEAD', 'origin/main')
+    if ahead is None or behind is None:
+        out("Stopped: couldn't compare main with origin/main.")
+        return 1
+    dirty = _dirty_outside(files)
+    if dirty:
+        out('Stopped: the repo has changes outside the snapshot files, and the build gate must check exactly '
+            'what is pushed:\n  ' + '\n  '.join(dirty[:15]) + ('\n  …' if len(dirty) > 15 else '') +
+            '\nAsk Claude Code to commit or park them, then ship the snapshot.')
+        return 1
+    if ahead == 1 and behind == 0 and _is_snapshot_commit('HEAD', files):
+        # An earlier ship committed but never pushed (a closed tab, a failed push): push that first.
+        out('An earlier Ship the snapshot committed %s but never pushed it: pushing it now.'
+            % gitops.out('rev-parse', '--short', 'HEAD'))
+        if gitops.git('diff', '--quiet', 'HEAD')[0]:
+            out('Stopped: the snapshot files changed since that commit; ship again after this is sorted.')
+            return 1
+        if not _gate(out):
+            return 1
+        code = _push_snapshot(out)
+        if code:
+            return code
+        ahead = 0
+    elif ahead:
+        log = gitops.out('log', 'origin/main..HEAD', '--format=  %h %s')
+        out('Stopped: main has %d local commit(s) that are not on GitHub:\n%s\nShip the snapshot pushes only '
+            'its own commit. Ask Claude Code to push or park them first.' % (ahead, log))
+        return 1
+    if behind and not ahead:
+        code, o, e = gitops.git('pull', '--ff-only', timeout=120)
+        out('$ git pull --ff-only\n%s%s' % (o, e))
+        if code:
+            out("main on GitHub has commits this copy lacks and they didn't pull in cleanly: "
+                'ask Claude Code to sort it out, then ship the snapshot.')
+            return 1
+    procs.check_cancelled(out)                      # safe: nothing written yet
+    out('$ python tools/snapshot_board.py')
+    if holds.run_tool(['tools/snapshot_board.py'], out):
+        return 1
+    out('$ python tools/check_holds.py')
+    if holds.run_tool(['tools/check_holds.py'], out):
+        out('! the hold check found a mismatch (above): the snapshot is still shipped, since it is a copy of live')
+    changed = [f for f in files if gitops.git('diff', '--quiet', '--', f)[0]]
+    if not changed:
+        out('the snapshot already matches the live board: nothing more to ship')
+        return 0
+    procs.check_cancelled(out)                      # safe: only the snapshot files changed, nothing committed
+    if not _gate(out):
+        return 1
+    procs.check_cancelled(out)                      # the last safe point: after the commit it always pushes
+    if _commit(changed, SNAPSHOT_SUBJECT + '\n\ntools/snapshot_board.py: the app\'s offline copy of the live board.\n',
+               out):
+        return 1
+    return _push_snapshot(out)
 
 
 def _receipt(json_lines, name, sent):
@@ -501,6 +588,15 @@ def _receipt(json_lines, name, sent):
         elif msg.startswith('unknown problem ' + q):
             got['unknown'] = msg
     return got
+
+
+def _target_taken(rel):
+    """Why a pull may not write rel, or None: git tracks it, or a file is already there (CON-01)."""
+    if gitops.git('ls-files', '--error-unmatch', '--', rel)[0] == 0:
+        return '%s is already in the repo (git tracks it): a pull never overwrites one' % rel
+    if os.path.exists(os.path.join(REPO, *rel.split('/'))):
+        return '%s already exists on the laptop: move it away first' % rel
+    return None
 
 
 def _write_repo(rel, text):

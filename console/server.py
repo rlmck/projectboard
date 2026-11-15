@@ -11,7 +11,6 @@ Origin, Sec-Fetch-Site, the session token on /api/, POST only as JSON). One
 action at a time (a lock); every action goes to console/audit.log.
 
     GET  /api/overview[?refresh=1]   the tiles (Pi probe every 30 s, laptop checks every 60 s)
-    GET  /api/realtime               a Realtime join test now
     GET  /api/state                  lock, helper installed, patterns, camera URL, audit tail
     GET  /api/logs?source=&since=&until=&lines=&filter=&follow=1   streamed text
     POST /api/preview {action, args}                 what a confirm would say, and the busy check
@@ -20,6 +19,8 @@ action at a time (a lock); every action goes to console/audit.log.
     GET  /api/holds                  the live holds, board version, image path, feet in use (holds.py, public reads)
     GET  /api/holds-image?path=      the live board image's bytes (the public bucket, through here: the CSP)
     GET  /api/whoami                 pid, code stamp, busy: a new launch reuses or replaces this one (session.py)
+    POST /api/session {code}         a one-time code from the opened address -> {token} (no token needed; CON-09)
+    POST /api/bootstrap              a fresh one-time code, for a second launch opening this console
     POST /api/shutdown               stop, for a newer launch (refused mid-action)
 """
 import argparse
@@ -28,6 +29,7 @@ import json
 import os
 import queue
 import re
+import secrets
 import shlex
 import socket
 import sys
@@ -47,6 +49,7 @@ import backups  # noqa: E402
 import castlog  # noqa: E402
 import checks  # noqa: E402
 import drift  # noqa: E402
+import procs  # noqa: E402
 import reports  # noqa: E402
 import supabase_api as supa  # noqa: E402
 import security  # noqa: E402
@@ -71,6 +74,7 @@ STATIC = {
     '/tokens.css': ('../app/tokens.css', 'text/css; charset=utf-8'),   # the app's own design tokens
 }
 PI_TTL, LAPTOP_TTL, REALTIME_TTL, HEALTH_TTL = 25, 60, 300, 240
+CODE_TTL = 120                     # a one-time code's life, in seconds
 KEEPALIVE_S = 15
 
 LOG_SOURCES = {
@@ -112,6 +116,26 @@ class Console:
         self._hist, self._hist_at, self._hist_lock = None, 0.0, threading.Lock()
         self._backup_running = False
         self.auto_backup = remote is None       # the real console; never from the tests' fake Pi
+        self.token = token
+        self._codes, self._codes_lock = {}, threading.Lock()
+
+    def mint_code(self):
+        """A one-time code for the address the browser opens (review CON-09): the token itself
+        never goes in a URL. It works once, within CODE_TTL seconds."""
+        code = secrets.token_urlsafe(24)
+        with self._codes_lock:
+            now = time.monotonic()
+            self._codes = {c: t for c, t in self._codes.items() if t > now}
+            self._codes[code] = now + CODE_TTL
+        return code
+
+    def redeem(self, code):
+        """The token for a valid, unused, unexpired code (which is then gone), else None."""
+        if not isinstance(code, str) or not 20 <= len(code) <= 64:
+            return None
+        with self._codes_lock:
+            t = self._codes.pop(code, None)
+        return self.token if t is not None and t > time.monotonic() else None
 
     def pi(self, refresh=False):
         with self._pi_lock:
@@ -258,24 +282,12 @@ def r_problems(app, q):
     return {'problems': supa.problems(app.env)}
 
 
-def r_problem(app, q):
-    name = q.get('name') or ''
-    row = supa.problem(name, app.env)
-    if not row:
-        raise ValueError('no problem called %r' % name)
-    return {'name': row['name'], 'grade': row.get('grade'),
-            'holds': supa.holds_with_mirror(row, supa.board(app.env).get('mirror_map'))}
-
-
 def r_activity(app, q):
     days = _num(q, 'days', 14, 1, 60)
     raw = app.remote.probe('activity %d' % days)
     if not raw.get('ok'):
         raise RuntimeError(raw.get('error') or 'the Pi did not answer')
-    # Members' nicknames from the private cast log (db/34, direct Postgres): the overview's
-    # tile asks for days=7 every refresh, so only the Activity tab (names=1) reads it.
-    members = castlog.members(days) if q.get('names') == '1' else None
-    return reports.activity(raw, members)
+    return reports.activity(raw, None)     # Home's 7-day tile: no names (Activity has them, castlog.history)
 
 
 def r_activity_history(app, q):
@@ -329,7 +341,7 @@ def r_runbook(app, q):
 
 
 GET_ROUTES = {'/api/config': r_config, '/api/drift': r_drift,
-              '/api/ledmap': r_ledmap, '/api/problems': r_problems, '/api/problem': r_problem,
+              '/api/ledmap': r_ledmap, '/api/problems': r_problems,
               '/api/activity': r_activity, '/api/activity-history': r_activity_history, '/api/acceptance': r_acceptance, '/api/last-night': r_last_night,
               '/api/backups': r_backups, '/api/runbook': r_runbook, '/api/health-history': r_health_history,
               '/api/holds': r_holds}
@@ -399,8 +411,6 @@ def make_handler(app):
                 return self.wfile.write(data)
             if path == '/api/overview':
                 return self._json(200, app.overview(q.get('refresh') == '1'))
-            if path == '/api/realtime':
-                return self._json(200, app.laptop_checks(realtime=True).get('realtime') or {})
             if path == '/api/whoami':           # a new launch asks before reusing or replacing this console
                 return self._json(200, {'pid': os.getpid(), 'code': CODE, 'busy': app.current})
             if path == '/api/state':
@@ -457,6 +467,14 @@ def make_handler(app):
                 if app.httpd:
                     threading.Thread(target=app.httpd.shutdown, daemon=True).start()
                 return
+            if path == '/api/session':          # the one route without the token (security.NO_TOKEN)
+                tok = app.redeem(body.get('code'))
+                if not tok:
+                    actions.audit('console session', 'refused', 'an unknown, used or expired one-time code')
+                    return self._json(403, {'error': 'that code is used or expired: start the console again'})
+                return self._json(200, {'token': tok})
+            if path == '/api/bootstrap':        # a second launch (session.py) opening this console
+                return self._json(200, {'code': app.mint_code()})
             if path == '/api/preview':
                 return self.preview(body)
             if path == '/api/action':
@@ -547,8 +565,12 @@ def make_handler(app):
                     extra = "couldn't read the Pi's config.env back: pi/config.env not updated"
             if a.name == 'reboot' and code == 255:
                 code = 0          # ssh drops as the Pi goes down
-            result = 'cancelled' if cut else 'ok' if code == 0 else 'failed'
-            actions.audit(a.name, result, 'exit %s%s' % (code, '; ' + extra if extra else ''), ms)
+            # What the action itself returned (review CON-03): a func that finished after the tab
+            # closed is 'ok'; one stopped at a safe point exits 130.
+            killed = cut and not isinstance(proc, procs.FuncProc)      # a program is stopped; a func finishes
+            result = 'ok' if code == 0 else 'cancelled' if code == 130 or killed else 'failed'
+            detail = 'exit %s%s%s' % (code, '; the tab closed first' if cut else '', '; ' + extra if extra else '')
+            actions.audit(a.name, result, detail, ms)
             app._pi_at = 0       # the next overview probes afresh
             if not cut:
                 try:
@@ -651,10 +673,15 @@ def main(argv):
     if len(token) < 20:
         sys.exit('PB_CONSOLE_TOKEN is not set: start it with  bash console/start.sh')
     running = session.existing(log=lambda m: print(m, flush=True))
-    if running:                         # already up (and current, or busy): open that one
-        print('PB Console is already running: opened it in the browser (%s).' % session.url(running), flush=True)
+    if running:                         # already up (and current, or busy): open that one, with a fresh code
+        link = session.open_url(running)
+        if not link:
+            sys.exit('PB Console is running on port %d but gave no sign-in code: close its window and start again'
+                     % running['port'])
+        print('PB Console is already running on http://127.0.0.1:%d/ : opened it in the browser.' % running['port'],
+              flush=True)
         if a.open:
-            webbrowser.open(session.url(running))
+            webbrowser.open(link)
         return 0
     httpd = app = None
     for port in range(first, first + session.PORTS):
@@ -669,9 +696,11 @@ def main(argv):
                  % (first, first + session.PORTS - 1))
     app.httpd = httpd
     session.write(port, token)
-    url = 'http://127.0.0.1:%d/#t=%s' % (port, token)
+    url = 'http://127.0.0.1:%d/#c=%s' % (port, app.mint_code())      # one-time: never the token (CON-09)
     print('PB Console on http://127.0.0.1:%d/  (Pi: %s)' % (port, app.remote.host), flush=True)
-    print('this launch: %s' % url, flush=True)
+    print('The browser opens it with a one-time code. Another tab: run bash console/start.sh again.', flush=True)
+    if not a.open:
+        print('open within %d s: %s' % (CODE_TTL, url), flush=True)
     print('Ctrl+C stops it.', flush=True)
     actions.audit('console start', 'ok', 'port %d' % port)
     if a.open:

@@ -80,6 +80,7 @@ try "binary blob, nothing secret"           0 "printf 'PK\\003\\004\\000\\000\\0
 try "secrets.env (forced add)"        1 "echo 'A=1' > pi/secrets.env; git add -f pi/secrets.env"
 try "pi/config.env (forced add)"      1 "echo 'A=1' > pi/config.env; git add -f pi/config.env"
 try "pi/config.env.tmp (forced add)"  1 "echo 'A=1' > pi/config.env.tmp; git add -f pi/config.env.tmp"
+try "backups/ dump (forced add)"     1 "mkdir -p backups/2026-11-15/db-1 && echo '[]' > backups/2026-11-15/db-1/ticks.json; git add -f backups/2026-11-15/db-1/ticks.json"
 try "pi/config.env.example edited"    0 "echo '# note' >> pi/config.env.example"
 try "docs/security-findings.md"       1 "echo 'x' > docs/security-findings.md; git add -f docs/security-findings.md"
 try "an ordinary change"              0 "echo '# hi' >> tools/serve.py"

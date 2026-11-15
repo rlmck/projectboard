@@ -4,6 +4,11 @@ lines, poll, wait, kill), so the server streams every kind of action the same wa
     local(argv, stdin=None)    a program on the laptop, in the repo root
     func(fn)                   a Python function run in a thread; fn(out) writes lines with out(text),
                                returns an exit code (or raises: exit 1 with the error)
+
+A closed tab or the action's timeout only *asks* a func to stop (review CON-03, 15 Nov 2026):
+out() never raises, so nothing is cut off between two irreversible steps (a commit and its
+push, a publish and its record). The function checks out.cancelled() at the points where
+stopping is safe and raises Cancelled there (exit 130). Its own return value is the result.
 """
 import os
 import shutil
@@ -47,6 +52,11 @@ def local(argv, stdin=None, cwd=REPO, env=None):
     return p
 
 
+class Cancelled(Exception):
+    """Raised by a func at a safe point once out.cancelled() says the tab went away (exit 130).
+    An Exception, not a BaseException, so `except Exception: rollback` still rolls back."""
+
+
 class FuncProc:
     """A Python function behind a Popen-like face."""
 
@@ -56,12 +66,16 @@ class FuncProc:
         self._w = os.fdopen(w, 'wb')
         self.returncode = None
         self.cancelled = False
+
+        def out(text):
+            self._out(text)
+        out.cancelled = lambda: self.cancelled
+        self.out = out
         self._t = threading.Thread(target=self._run, args=(fn,), daemon=True)
         self._t.start()
 
     def _out(self, text):
-        if self.cancelled:
-            raise KeyboardInterrupt('cancelled')
+        """Write a line; never raises (a reader that went away just loses the line)."""
         try:
             self._w.write((text if text.endswith('\n') else text + '\n').encode('utf-8'))
             self._w.flush()
@@ -71,16 +85,14 @@ class FuncProc:
     def _run(self, fn):
         code = 1
         try:
-            code = fn(self._out)
+            code = fn(self.out)
             code = 0 if code is None else int(code)
-        except KeyboardInterrupt:
+        except (Cancelled, KeyboardInterrupt):
+            self._out('stopped (the tab closed or the action took too long), at a safe point')
             code = 130
         except Exception as e:
-            try:
-                self._out('error: %s: %s' % (type(e).__name__, e))
-                self._out(traceback.format_exc(limit=3))
-            except Exception:
-                pass
+            self._out('error: %s: %s' % (type(e).__name__, e))
+            self._out(traceback.format_exc(limit=3))
         finally:
             self.returncode = code
             try:
@@ -96,8 +108,16 @@ class FuncProc:
         return self.returncode
 
     def kill(self):
+        """Ask the function to stop at its next safe point (it isn't interrupted)."""
         self.cancelled = True
 
 
 def func(fn):
     return FuncProc(fn)
+
+
+def check_cancelled(out):
+    """At a safe point: raise Cancelled if the tab went away. out may be a plain callable (tests, print)."""
+    c = getattr(out, 'cancelled', None)
+    if c and c():
+        raise Cancelled()

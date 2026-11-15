@@ -5,7 +5,9 @@
 #
 # Makes a fresh random session token for this launch (the page needs it for every
 # /api/ request; a page from an earlier launch stops working), starts the backend
-# on 127.0.0.1 only, and opens http://127.0.0.1:<port>/#t=<token>. Ctrl+C stops it.
+# on 127.0.0.1 only, and opens http://127.0.0.1:<port>/#c=<one-time code>: the page
+# swaps the code for the token once (POST /api/session), so the token itself is never
+# in a URL, the browser's command line or its history (review CON-09). Ctrl+C stops it.
 # Settings: console/.env.local (PB_HOST, PB_CONSOLE_PORT, ...; see .env.local.example).
 
 set -euo pipefail

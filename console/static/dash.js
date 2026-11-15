@@ -543,8 +543,12 @@
 
   function backupDetails() {
     const b = (data && data.backup) || {};
-    return '<section class="d-sec"><p class="note">The Pi\'s settings (secrets stripped on the Pi) and the public Supabase tables go into ' +
-      '<code>backups/&lt;date&gt;/</code> every week, by the laptop\'s scheduled task (the one that keeps the Pi up to date).' +
+    const db = b.db || null;
+    return '<section class="d-sec"><p class="note"><b>What a backup covers:</b> ' + esc(b.covers || 'every database table and the Pi\'s settings') +
+      '. A read-only dump over <code>db/.env</code>, each table checked against its row count, into ' +
+      '<code>backups/&lt;date&gt;/</code> (gitignored, on this laptop only, never uploaded; the newest ' + esc(b.keep || 8) +
+      ' dumps kept) every week, by the laptop\'s scheduled task (the one that keeps the Pi up to date).' +
+      (db ? ' Last dump: ' + esc(db.tables) + ' tables, ' + esc(db.rows) + ' rows.' : '') +
       (b.running ? ' A backup is running now.' : '') + '</p><div class="btn-row"><button class="btn primary" data-act="backup">Back up now</button>' +
       '<button class="btn" data-goto="backups">Advanced → Backups</button></div></section>';
   }

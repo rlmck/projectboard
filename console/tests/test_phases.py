@@ -30,7 +30,6 @@ import actions  # noqa: E402
 import drift  # noqa: E402
 import gitops  # noqa: E402
 import reports  # noqa: E402
-import supabase_api as supa  # noqa: E402
 import probe  # noqa: E402  (the script the console runs on the Pi)
 from test_console import ServerBase  # noqa: E402
 
@@ -155,7 +154,7 @@ class OldActionsGone(unittest.TestCase):
                 actions.build(kind, {'circuit': 'x', 'commit': 'abc1234'})
 
     def test_backup_actions(self):
-        for kind in ('backup-now', 'backup-pi', 'backup-supabase'):
+        for kind in ('backup-now', 'backup-pi', 'backup-db'):
             a = actions.build(kind, {})
             self.assertFalse(a.confirm)
             self.assertIn('backups/', a.describe)
@@ -384,14 +383,6 @@ class Reports(unittest.TestCase):
     def test_runbook_from_the_readme(self):
         titles = [s['title'] for s in reports.runbook()]
         self.assertIn('Deploying', titles)
-
-    def test_holds_with_mirror(self):
-        row = {'finish_hold': 'hold41', 'intermediate_holds': ['hold102'], 'start_holds': ['hold240']}
-        h = supa.holds_with_mirror(row, {'hold41': 'hold55'})
-        self.assertEqual([x['role'] for x in h], ['start', 'start', 'finish'])
-        self.assertEqual(h[0]['mirror_cell'], 'Q3')
-        self.assertEqual(supa.cell('hold1'), 'A1')
-        self.assertEqual(supa.cell('hold247'), 'S13')
 
 
 class NewRoutes(ServerBase):

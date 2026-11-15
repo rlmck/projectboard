@@ -4,15 +4,17 @@ A running console records itself in console/data/session.json (gitignored: its p
 port, token and a stamp of its code). A new launch (start.sh, the desktop icon) reads
 it first and asks that console who it is (GET /api/whoami, with its token):
 
-  - it's running this code, or it's in the middle of an action  -> open it in the
-    browser (with its own token) and stop: the tab you get works;
+  - it's running this code, or it's in the middle of an action  -> ask it for a fresh
+    one-time code (POST /api/bootstrap) and open it in the browser with that, then stop:
+    the tab you get works, and the token never goes in a URL (review CON-09);
   - it's running older code and is idle                          -> ask it to stop
     (POST /api/shutdown), then start fresh;
   - no answer (crashed, a stale file)                            -> start fresh.
 
 Starting fresh tries the configured port, then the next ten, so a port held by some
 other program doesn't stop it either. The token in the file is what the browser gets
-anyway; anything that can read files as you could already run the console itself.
+anyway (in exchange for the code); anything that can read files as you could already run
+the console itself.
 """
 import glob
 import hashlib
@@ -89,8 +91,12 @@ def ask(s, method, path, timeout=3):
         c.close()
 
 
-def url(s):
-    return 'http://127.0.0.1:%d/#t=%s' % (s['port'], s['token'])
+def open_url(s):
+    """The address that opens the running console s: a fresh one-time code from it, never the
+    token. None if it gave none."""
+    status, d = ask(s, 'POST', '/api/bootstrap')
+    code = d.get('code') if status == 200 and isinstance(d, dict) else None
+    return 'http://127.0.0.1:%d/#c=%s' % (s['port'], code) if code else None
 
 
 def existing(log=print, path=PATH):

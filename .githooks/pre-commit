@@ -8,7 +8,8 @@
 #
 # Blocks:
 #   - files that must never be committed: secrets.env, pi/config.env (and pi/config.env.*, e.g. the
-#     console's .tmp, except the committed .example), db/, .env files, docs/security-findings.md;
+#     console's .tmp, except the committed .example), db/, backups/ (PB Console's weekly database
+#     dumps: members' data, CON-04), .env files, docs/security-findings.md;
 #   - a Supabase key whose role isn't anon (the service-role key), and sb_secret_ keys;
 #   - any secret value from db/.env (the service key, the direct-Postgres URL and its password);
 #   - psk= / password= / secret= / private-key= lines with a literal value ($VAR, <placeholder>
@@ -38,7 +39,7 @@ while IFS= read -r f; do
   [[ -n "$f" ]] || continue
   case "$f" in
     pi/config.env.example) ;;
-    secrets.env|*/secrets.env|pi/config.env|pi/config.env.*|db/*|docs/security-findings.md|.env|*/.env|*.env.local)
+    secrets.env|*/secrets.env|pi/config.env|pi/config.env.*|db/*|backups/*|docs/security-findings.md|.env|*/.env|*.env.local)
       problems+=("$f: this file must never be committed") ;;
   esac
 done < <(git diff --cached --name-only --diff-filter=ACMR)

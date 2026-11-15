@@ -48,14 +48,14 @@ class Backups(unittest.TestCase):
 
     def test_run_records_ok_and_failed(self):
         with mock.patch.object(backups, 'backup_pi', return_value=None), \
-                mock.patch.object(backups, 'backup_supabase', return_value=None):
+                mock.patch.object(backups, 'backup_db', return_value=None):
             self.assertEqual(backups.run(remote=object(), out=lambda *_: None, how='automatic'), 0)
         s = backups.load_state()
         self.assertEqual((s['result'], s['how']), ('ok', 'automatic'))
         self.assertEqual(s['ok_at'], s['tried_at'])
         self.assertFalse(backups.due())
         with mock.patch.object(backups, 'backup_pi', return_value='the Pi: timed out'), \
-                mock.patch.object(backups, 'backup_supabase', return_value=None):
+                mock.patch.object(backups, 'backup_db', return_value=None):
             self.assertEqual(backups.run(remote=object(), out=lambda *_: None), 1)
         s = backups.load_state()
         self.assertEqual(s['result'], 'failed')
@@ -63,8 +63,8 @@ class Backups(unittest.TestCase):
         self.assertEqual(tiles.backup_tile(backups.summary())['level'], tiles.BAD)
 
     def test_one_part_is_not_the_weekly_backup(self):
-        with mock.patch.object(backups, 'backup_supabase', return_value=None):
-            backups.run(remote=object(), out=lambda *_: None, parts=('supabase',))
+        with mock.patch.object(backups, 'backup_db', return_value=None):
+            backups.run(remote=object(), out=lambda *_: None, parts=('db',))
         self.assertIsNone(backups.load_state().get('ok_at'))
 
     def test_warning(self):

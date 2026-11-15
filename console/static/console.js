@@ -1,6 +1,8 @@
-// PB Console page. Every data call goes to /api/ with this launch's token
-// (X-PB-Token); the token arrives in the address's #t= part from start.sh,
-// is kept in sessionStorage for this tab, and is taken out of the address bar.
+// PB Console page. Every data call goes to /api/ with this launch's session token
+// (X-PB-Token). The token never travels in a URL (review CON-09, 15 Nov 2026): start.sh
+// (or a second launch) opens the page with a one-time code in #c=, which POST
+// /api/session swaps for the token once; the server then forgets the code. The token
+// is kept in sessionStorage for this tab, and the code is taken out of the address bar.
 //
 // The sidebar (10 Nov 2026): Home · Holds · Activity · ⚙ Advanced, and the Runbook
 // only while the Pi is offline. Advanced is one page of closed sections (Logs, Config,
@@ -19,15 +21,20 @@ let overview = null;
 let running = false;
 let logAbort = null;
 
-function readToken() {
-  const m = location.hash.match(/(?:^#|&)t=([A-Za-z0-9_-]{20,})/);
+async function readToken() {
+  const m = location.hash.match(/(?:^#|&)c=([A-Za-z0-9_-]{20,})/);
+  if (location.hash) history.replaceState(null, '', location.pathname);
+  try { token = sessionStorage.getItem(TOKEN_KEY) || ''; } catch (e) { token = ''; }
+  if (!m) return;
   try {
-    if (m) sessionStorage.setItem(TOKEN_KEY, m[1]);
-    token = (m && m[1]) || sessionStorage.getItem(TOKEN_KEY) || '';
-  } catch (e) {
-    token = m ? m[1] : '';
-  }
-  if (m) history.replaceState(null, '', location.pathname);
+    const res = await fetch('/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: m[1] }) });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 200 && data.token) {
+      token = data.token;
+      try { sessionStorage.setItem(TOKEN_KEY, token); } catch (e) { /* this tab only */ }
+    }
+  } catch (e) { /* no answer: the banner says what to do */ }
 }
 
 function esc(s) {
@@ -188,14 +195,33 @@ function confirmDialog(pre, title) {
         (names.length ? ': ' + names.join(', ') : busy.last_touch_at && busy.last_touch_at === busy.last_use_at ? ' (the wall screen was touched)' : '') + '.') + ' Going ahead may cut them off.';
     }
     const diff = $('confirm-diff');
-    const extra = [pre.shown ? '$ ' + pre.shown : '', (pre.warnings || []).map((w) => '! ' + w).join('\n'),
-      pre.log ? 'Commits:\n' + pre.log : '', pre.diff || ''].filter(Boolean).join('\n\n');
+    const extra = [pre.shown ? '$ ' + pre.shown : '', pre.diff || ''].filter(Boolean).join('\n\n');
     diff.hidden = !(pre.config_drift || extra);
     diff.textContent = pre.config_drift || extra;
     $('confirm-ok').disabled = !!pre.config_drift;
     if (pre.config_drift) $('confirm-text').textContent = pre.describe + " — refused: the laptop's pi/config.env and the Pi's differ (below). Make them the same first.";
+    $('confirm-ok').textContent = 'Go ahead';
     d.returnValue = '';
-    d.onclose = () => resolve(d.returnValue === 'ok' ? { ok: true, override: !!(busy && busy.busy) || (pre.busy_check && busy == null) } : { ok: false });
+    d.onclose = () => resolve(d.returnValue === 'ok' ? { ok: true, override: !!(busy && busy.busy) || (pre.busy_check && busy == null), warning: bb.hidden ? '' : bb.textContent } : { ok: false });
+    d.showModal();
+  });
+}
+
+// The board is in use (or the Pi didn't answer the busy check): a second, separate step before
+// the action goes ahead anyway (review CON-08; console/README.md -> Safety).
+function busyDialog(label, warning) {
+  return new Promise((resolve) => {
+    const d = $('confirm');
+    $('confirm-title').textContent = label + ': go ahead anyway?';
+    $('confirm-text').textContent = 'Second check, because the board may be in use. Cancel leaves everything as it is.';
+    const bb = $('confirm-busy');
+    bb.hidden = false;
+    bb.textContent = warning;
+    $('confirm-diff').hidden = true;
+    $('confirm-ok').disabled = false;
+    $('confirm-ok').textContent = 'Go ahead anyway';
+    d.returnValue = '';
+    d.onclose = () => { $('confirm-ok').textContent = 'Go ahead'; resolve(d.returnValue === 'ok'); };
     d.showModal();
   });
 }
@@ -212,6 +238,7 @@ async function runAction(action, args, label) {
     if (pre.confirm) {
       go = await confirmDialog(pre, label);
       if (!go.ok) return;
+      if (go.override && !(await busyDialog(label, go.warning))) return;
     }
     const res = await api('/api/action', { action, args, confirm: pre.confirm ? true : undefined, override_busy: go.override || undefined });
     if (res.status !== 200) {
@@ -292,7 +319,7 @@ async function showLogs(ev) {
 // -- start -------------------------------------------------------------------------
 
 async function boot() {
-  readToken();
+  await readToken();
   if (!token) { $('no-token').hidden = false; return; }
   document.querySelectorAll('.nav [data-tab]').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
   document.querySelectorAll('details.adv').forEach((d) => d.addEventListener('toggle', () => { if (d.open) runHook(d.dataset.adv); }));

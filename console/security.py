@@ -10,16 +10,21 @@ before it reaches a route:
 - Sec-Fetch-Site on /api/, when present, must be same-origin or none.
 - /api/ requests must carry X-PB-Token, the random token start.sh made for this
   launch (compared in constant time). A custom header also means a foreign page
-  can't send it without a CORS preflight, which is never answered.
+  can't send it without a CORS preflight, which is never answered. The one
+  exception is POST /api/session, which swaps a one-time code for the token
+  (review CON-09): it still needs the console's own Origin, same-origin fetch
+  metadata and JSON, and a code works once, for two minutes.
 - Only GET and POST; a POST must be JSON. Routes that change anything are POST.
 
-The static shell (/, /static/*, /tokens.css) needs no token, since its URL
-can't carry one without putting it in history: it holds no data, and every
-call it makes for data is an /api/ request with the token.
+The static shell (/, /static/*, /tokens.css) needs no token: it holds no data,
+and every call it makes for data is an /api/ request with the token. The token
+itself never travels in a URL (the browser's command line, history, the
+terminal): only a one-time code does (server.Console.mint_code).
 """
 import hmac
 
 TOKEN_HEADER = 'X-PB-Token'
+NO_TOKEN = ('/api/session',)        # swaps a one-time code for the token (server.py)
 
 # Sent with every response. No CORS headers, ever.
 def headers(cam_origin='', frame_origin=''):
@@ -62,7 +67,10 @@ class Gate:
             # The shell may be opened from anywhere (a link, the launcher); its data calls may not.
             if site is not None and site.strip().lower() not in ('same-origin', 'none'):
                 return 403, 'cross-site request'
-            sent = (headers.get(TOKEN_HEADER) or '').encode()
+            if path in NO_TOKEN and method == 'POST' and origin is not None:
+                sent = self.token
+            else:
+                sent = (headers.get(TOKEN_HEADER) or '').encode()
             if not sent or not hmac.compare_digest(sent, self.token):
                 return 401, 'missing or wrong session token (start the console with bash console/start.sh)'
         elif method == 'POST':

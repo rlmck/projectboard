@@ -282,7 +282,11 @@ def backup_tile(b, now=None):
     lines = ['last good backup: %s%s' % (when(b.get('ok_at')), ' (%s)' % b['how'] if b.get('how') and b.get('ok_at') else ''),
              'last try: %s, %s' % (when(b.get('tried_at')), b.get('result') or '-') if b.get('tried_at') else None,
              "next: %s (weekly, by the laptop's scheduled task)" % when(b['next_at']) if b.get('next_at') else None,
-             'into backups/<date>/ at the repo root (gitignored)']
+             'covers: %s' % (b.get('covers') or 'every database table and the Pi\'s settings'),
+             'last dump: %s, %s tables, %s rows (each checked against count(*))'
+             % (b['db'].get('path'), b['db'].get('tables'), b['db'].get('rows')) if isinstance(b.get('db'), dict) else None,
+             'into backups/<date>/ at the repo root: gitignored, local to this laptop only, never uploaded; '
+             'the newest %s dumps are kept' % (b.get('keep') or 8)]
     if b.get('result') == 'failed':
         return tile('backup', 'Backups', BAD, 'the last backup failed', lines + ['why: %s' % b.get('error')],
                     sig='bad|%s' % b.get('tried_at'))
@@ -290,7 +294,7 @@ def backup_tile(b, now=None):
     if age is None or age > 8:
         return tile('backup', 'Backups', WARN, 'no backup yet' if age is None else 'last backup %d days ago' % age,
                     lines, sig='warn|%s' % b.get('ok_at'))
-    return tile('backup', 'Backups', OK, 'backed up %s' % ago(now - b['ok_at']), lines, sig='ok')
+    return tile('backup', 'Backups', OK, 'database and Pi backed up %s' % ago(now - b['ok_at']), lines, sig='ok')
 
 
 def snapshot_tile(c):
