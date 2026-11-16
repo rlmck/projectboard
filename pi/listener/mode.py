@@ -6,7 +6,11 @@ config file.
 
 Day = inside the day's opening hours (HOURS_MON ... HOURS_SUN in config.env,
 Europe/London wall-clock time, so the clocks changing needs nothing), or a
-"stay on until" override from PB Console. Night = everything else: LEDs dark,
+"stay on until" override from PB Console, or a cast's wake: a cast at night
+wakes the board for CAST_WAKE_MIN minutes (30), and every cast while it's awake
+pushes that on again (16 Nov 2026). The listener writes the wake's end to
+WAKE_FILE (a folder the listener's user owns); pb-mode reads it like the
+override, so the screen comes on too. Night = everything else: LEDs dark,
 casts ignored, the wall screen off.
 
     mode.py [--config FILE]      prints "day <reason>" or "night <reason>"
@@ -33,6 +37,7 @@ except Exception:          # no tz database: the system clock's own zone (Europe
 CONFIG = os.environ.get('PB_CONFIG', '/etc/projectboard/config.env')
 SYNC_FLAG = '/run/systemd/timesync/synchronized'   # written by systemd-timesyncd once per boot
 STAY_ON = '/var/lib/projectboard/stay-on-until'     # PB Console's override: "YYYY-MM-DDTHH:MM", London time
+WAKE = '/var/lib/projectboard/cache/cast-wake-until'  # a cast's wake (the listener writes it): the same format
 DAYS = ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN')
 DAY_NAMES = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
 HOURS_RX = re.compile(r'^(closed|([01][0-9]|2[0-3]):[0-5][0-9]-(([01][0-9]|2[0-3]):[0-5][0-9]|24:00))$')
@@ -67,6 +72,8 @@ DEFAULTS = {
     'NIGHT_MODE': 'on',
     'NIGHT_FORCE': '',
     'STAY_ON_FILE': STAY_ON,
+    'CAST_WAKE_MIN': '30',           # a cast at night wakes the board this long (0 = casts never wake it)
+    'WAKE_FILE': WAKE,
     'TIME_SYNC_FLAG': SYNC_FLAG,
     'WIFI_CONNECTION': 'hangout-fixed',
     'WIFI_IFACE': 'wlan0',
@@ -152,23 +159,56 @@ def scheduled_open(now, hours):
     return False, (DAY_NAMES[wd], today)
 
 
-def read_stay_on(cfg, now):
-    """The override's end (naive London time) if it's still going, else None."""
+def _read_until(path, now):
     try:
-        with open(cfg.get('STAY_ON_FILE') or STAY_ON, encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             until = datetime.datetime.strptime(f.read().strip()[:16], '%Y-%m-%dT%H:%M')
     except (OSError, ValueError):
         return None
     return until if now < until <= now + STAY_MAX else None
 
 
+def read_stay_on(cfg, now):
+    """The override's end (naive London time) if it's still going, else None."""
+    return _read_until(cfg.get('STAY_ON_FILE') or STAY_ON, now)
+
+
+def wake_minutes(cfg):
+    """CAST_WAKE_MIN as minutes, 0 = off; anything unreadable is the default 30, at most 24 h."""
+    try:
+        m = int(str(cfg.get('CAST_WAKE_MIN', DEFAULTS['CAST_WAKE_MIN'])).strip())
+    except ValueError:
+        m = int(DEFAULTS['CAST_WAKE_MIN'])
+    return max(0, min(m, 24 * 60))
+
+
+def read_wake(cfg, now):
+    """A cast's wake: its end (naive London time) if it's still going, else None."""
+    return _read_until(cfg.get('WAKE_FILE') or WAKE, now)
+
+
+def write_wake(cfg, now):
+    """Wake the board (or keep it awake) for wake_minutes() from `now`: the new end, or None
+    when casts don't wake it. Written whole, then renamed. Raises OSError."""
+    mins = wake_minutes(cfg)
+    if not mins:
+        return None
+    until = now + datetime.timedelta(minutes=mins)
+    path = cfg.get('WAKE_FILE') or WAKE
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        f.write(until.strftime('%Y-%m-%dT%H:%M') + '\n')
+    os.replace(tmp, path)
+    return until
+
+
 def clock_synced(cfg):
     return os.path.exists(cfg.get('TIME_SYNC_FLAG') or SYNC_FLAG)
 
 
-def current_mode(now, synced, cfg, stay_on=None):
+def current_mode(now, synced, cfg, stay_on=None, wake=None):
     """('day' | 'night', reason) at `now` (naive London time). Fails open: anything doubtful is day.
-    Order: NIGHT_FORCE, NIGHT_MODE=off, an unsynced clock, the stay-on override, the hours."""
+    Order: NIGHT_FORCE, NIGHT_MODE=off, an unsynced clock, the stay-on override, a cast's wake, the hours."""
     force = (cfg.get('NIGHT_FORCE') or '').strip().lower()
     if force in ('day', 'night'):
         return force, 'forced by NIGHT_FORCE'
@@ -178,6 +218,8 @@ def current_mode(now, synced, cfg, stay_on=None):
         return 'day', 'clock not synced (fail open)'
     if stay_on is not None and now < stay_on:
         return 'day', 'staying on until %s (PB Console)' % stay_on.strftime('%H:%M')
+    if wake is not None and now < wake:
+        return 'day', 'woken by a cast until %s' % wake.strftime('%H:%M')
     try:
         hours = week(cfg)
     except ValueError as e:
@@ -209,12 +251,12 @@ def _edges(cfg, start, days):
     return sorted(set(out))
 
 
-def next_change(now, cfg, stay_on=None):
+def next_change(now, cfg, stay_on=None, wake=None):
     """(when, mode after) of the next switch (naive London time), or (None, None)."""
-    mode, _ = current_mode(now, True, cfg, stay_on)
-    cands = _edges(cfg, now, 8) + ([stay_on] if stay_on else [])
+    mode, _ = current_mode(now, True, cfg, stay_on, wake)
+    cands = _edges(cfg, now, 8) + [t for t in (stay_on, wake) if t]
     for t in sorted(c for c in cands if c > now):
-        m, _ = current_mode(t, True, cfg, stay_on)
+        m, _ = current_mode(t, True, cfg, stay_on, wake)
         if m != mode:
             return t, m
     return None, None
@@ -243,17 +285,18 @@ def night_on(date, cfg):
 
 def mode_now(cfg):
     now = london_now()
-    return current_mode(now, clock_synced(cfg), cfg, read_stay_on(cfg, now))
+    return current_mode(now, clock_synced(cfg), cfg, read_stay_on(cfg, now), read_wake(cfg, now))
 
 
 def info(cfg):
     """Everything PB Console shows about the mode."""
     now = london_now()
     stay = read_stay_on(cfg, now)
+    wake = read_wake(cfg, now)
     synced = clock_synced(cfg)
-    mode, reason = current_mode(now, synced, cfg, stay)
+    mode, reason = current_mode(now, synced, cfg, stay, wake)
     force = (cfg.get('NIGHT_FORCE') or '').strip().lower()
-    when, after = (None, None) if force in ('day', 'night') else next_change(now, cfg, stay)
+    when, after = (None, None) if force in ('day', 'night') else next_change(now, cfg, stay, wake)
     try:
         hours = {d: hours_text(w) for d, w in zip(DAYS, week(cfg))}
     except ValueError as e:
@@ -261,6 +304,7 @@ def info(cfg):
     return {'mode': mode, 'reason': reason, 'now': now.isoformat(timespec='minutes'), 'synced': synced,
             'force': force, 'night_mode': (cfg.get('NIGHT_MODE') or 'on'),
             'stay_on_until': stay.isoformat(timespec='minutes') if stay else None,
+            'woken_until': wake.isoformat(timespec='minutes') if wake else None,
             'next_change': when.isoformat(timespec='minutes') if when else None, 'next_mode': after,
             'hours': hours}
 

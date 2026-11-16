@@ -19,8 +19,11 @@ docs/pi4-listener-kiosk-plan.md, section R1:
   time), so a circuit whose stop arrived while it was being fetched, or before
   its cast, never starts (review PI-01, 14 Nov 2026).
 - Night mode (mode.py: outside the opening hours, HOURS_MON..HOURS_SUN, unless
-  PB Console's stay-on override is going): the strip fades out and casts are
-  ignored, but the socket stays joined.
+  PB Console's stay-on override or a cast's wake is going): the strip fades out
+  and the socket stays joined. A cast at night (a problem, a circuit, a circuit
+  view) wakes the board for CAST_WAKE_MIN minutes (mode.py's WAKE_FILE, so the
+  screen comes on too) and is shown; every cast while woken pushes the wake on.
+  With CAST_WAKE_MIN=0, or NIGHT_FORCE=night, casts at night are ignored.
 - The strip belongs to the LED thread (renderer.py): a cast is lit at once,
   IDLE_AFTER_S after the last cast the idle pattern (patterns/, IDLE_PATTERN)
   fades in, and at night the strip fades to black. SIGUSR1 = idle now.
@@ -427,6 +430,34 @@ class Listener:
 
     # -- casts --------------------------------------------------------------
 
+    def cast_wake(self, what):
+        """A cast at night wakes the board for CAST_WAKE_MIN minutes, and a cast while it's
+        woken keeps it awake that long again (Ross, 16 Nov 2026). Returns True if it's day
+        now. mode.py works the mode out from the wake file, so pb-mode turns the screen on
+        within a minute and check_mode() agrees with what's done here."""
+        cfg = getattr(self, 'cfg', None)
+        if cfg is None:
+            return self.mode != 'night'
+        now = modelib.london_now()
+        if self.mode != 'night' and modelib.read_wake(cfg, now) is None:
+            return True                     # an ordinary day: nothing to keep awake
+        try:
+            until = modelib.write_wake(cfg, now)
+        except OSError as e:
+            self.error('%s: could not wake the board: %s' % (what, e))
+            return self.mode != 'night'
+        if until is None or self.mode != 'night':
+            return self.mode != 'night'
+        mode, reason = modelib.mode_now(cfg)
+        self.status['mode_reason'] = reason
+        if mode != 'day':
+            return False                    # NIGHT_FORCE=night, say: it stays dark
+        log('mode night -> day (%s; %s)' % (reason, what))
+        self.mode = 'day'
+        self.set(mode='day')
+        self.leds.set_night(False)
+        return True
+
     def on_cast(self, body):
         if not isinstance(body, dict):
             warn('cast_problem with a non-object payload ignored: %s' % clip(body))
@@ -440,7 +471,7 @@ class Listener:
             warn('cast_problem with a bad mirror ignored: %s' % clip(body))
             return
         tag = board.origin(body)            # ' [wall, guest]': PB Console's Activity reads it
-        if self.mode == 'night':
+        if not self.cast_wake('cast %r' % name):
             self.status['casts_ignored_night'] += 1
             log('cast %r%s ignored: night mode%s' % (name, ' mirrored' if mirror else '', tag))
             self.write_status()
@@ -482,7 +513,7 @@ class Listener:
         if token is not None and token in self.recent_stops():
             log('circuit %r not started: its stop arrived first, run %s%s' % (name, token, tag))
             return
-        if self.mode == 'night':
+        if not self.cast_wake('circuit %r' % name):
             self.status['casts_ignored_night'] += 1
             log('circuit %r ignored: night mode%s' % (name, tag))
             self.write_status()
@@ -502,7 +533,7 @@ class Listener:
             warn('show_circuit with a bad circuit_name ignored: %s' % clip(body))
             return
         tag = board.origin(body)
-        if self.mode == 'night':
+        if not self.cast_wake('circuit view %r' % name):
             self.status['casts_ignored_night'] += 1
             log('circuit view %r ignored: night mode%s' % (name, tag))
             self.write_status()

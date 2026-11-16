@@ -141,12 +141,13 @@ KEYS = {
        for d in DAYS},
     'NIGHT_MODE': (_choice('on', 'off'), 'Night', 'on (dark outside the hours) or off (never dark)'),
     'NIGHT_FORCE': (_choice('', 'day', 'night'), 'Night', 'empty (the hours), day or night'),
+    'CAST_WAKE_MIN': (_num(0, 240, True), 'Night', 'minutes a cast at night wakes the board (0 = never)'),
     'WIFI_CONNECTION': (_match(r'^[A-Za-z0-9_.-]{1,64}$'), 'Network', 'the NetworkManager connection pb-health brings up'),
     'WIFI_IFACE': (_match(r'^[a-z0-9]{1,15}$'), 'Network', 'the Wi-Fi interface'),
     'RELAY_PINS': (_pins, 'Relays', 'BCM pins, comma separated (empty: not built)'),
     'RELAY_ACTIVE_LOW': (_choice('yes', 'no'), 'Relays', 'yes or no'),
 }
-REREAD = ('HOURS_', 'NIGHT_', 'WIFI_', 'RELAY_')      # read again by the listener / pb-health / pb-mode each time
+REREAD = ('HOURS_', 'NIGHT_', 'CAST_WAKE_', 'WIFI_', 'RELAY_')      # read again by the listener / pb-health / pb-mode each time
 
 
 def needs_restart(key):

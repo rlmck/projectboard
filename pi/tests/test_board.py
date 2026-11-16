@@ -170,9 +170,9 @@ class DayNight(unittest.TestCase):
     """The opening hours (7 Nov 2026). 9 Nov 2026 is a Monday."""
     cfg = dict(mode.DEFAULTS)
 
-    def at(self, d, hh, mm, synced=True, stay=None, **over):
+    def at(self, d, hh, mm, synced=True, stay=None, wake=None, **over):
         cfg = dict(self.cfg, **over)
-        return mode.current_mode(datetime.datetime(2026, 11, d, hh, mm), synced, cfg, stay)[0]
+        return mode.current_mode(datetime.datetime(2026, 11, d, hh, mm), synced, cfg, stay, wake)[0]
 
     def test_default_week(self):
         self.assertEqual(self.at(9, 15, 29), 'night')       # Mon
@@ -235,6 +235,29 @@ class DayNight(unittest.TestCase):
                 with open(cfg['STAY_ON_FILE'], 'w') as f:
                     f.write(text)
                 self.assertEqual(mode.read_stay_on(cfg, now), want, text)
+
+    def test_cast_wake(self):
+        wake = datetime.datetime(2026, 11, 9, 14, 30)         # Mon, before the 15:30 opening
+        self.assertEqual(self.at(9, 14, 0, wake=wake), 'day')
+        self.assertEqual(self.at(9, 14, 30, wake=wake), 'night')
+        self.assertEqual(self.at(9, 14, 0, wake=wake, NIGHT_FORCE='night'), 'night')   # force beats a wake
+        now = datetime.datetime(2026, 11, 9, 14, 0)
+        self.assertEqual(mode.next_change(now, self.cfg, None, wake), (wake, 'night'))
+
+    def test_wake_file(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            cfg = dict(self.cfg, WAKE_FILE=os.path.join(d, 'wake'))
+            now = datetime.datetime(2026, 11, 9, 14, 0)
+            self.assertIsNone(mode.read_wake(cfg, now))
+            until = mode.write_wake(cfg, now)
+            self.assertEqual(until, datetime.datetime(2026, 11, 9, 14, 30))
+            self.assertEqual(mode.read_wake(cfg, now), until)
+            self.assertIsNone(mode.read_wake(cfg, until))      # over
+            self.assertEqual(mode.write_wake(dict(cfg, CAST_WAKE_MIN='45'), now), datetime.datetime(2026, 11, 9, 14, 45))
+            self.assertIsNone(mode.write_wake(dict(cfg, CAST_WAKE_MIN='0'), now))
+            self.assertEqual(mode.wake_minutes(dict(cfg, CAST_WAKE_MIN='junk')), 30)
+            self.assertEqual(mode.wake_minutes(dict(cfg, CAST_WAKE_MIN='-5')), 0)
 
     def test_next_change(self):
         nc = lambda d, h, m: mode.next_change(datetime.datetime(2026, 11, d, h, m), self.cfg)

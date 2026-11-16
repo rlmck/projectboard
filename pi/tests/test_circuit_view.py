@@ -108,9 +108,40 @@ class Listener(unittest.TestCase):
 
     def test_night(self):
         self.L.mode = 'night'
+        self.L.cfg = dict(self.L.cfg, CAST_WAKE_MIN='0')        # casts don't wake it
         self.L.on_show_circuit({'circuit_name': 'Pat Burner'})
         self.assertIsNone(self.L.pending)
         self.assertEqual(self.L.status['casts_ignored_night'], 1)
+
+    def test_a_cast_wakes_the_night(self):
+        """16 Nov 2026: a cast at night wakes the board for CAST_WAKE_MIN and is shown;
+        a cast while woken pushes the wake on; an ordinary day writes nothing."""
+        import tempfile
+        nights = []
+
+        class Leds:
+            def set_night(_, night):
+                nights.append(night)
+        with tempfile.TemporaryDirectory() as d:
+            wake = os.path.join(d, 'wake')
+            hours = {'HOURS_' + day: 'closed' for day in self.pb.modelib.DAYS}
+            self.L.cfg = dict(self.L.cfg, WAKE_FILE=wake, TIME_SYNC_FLAG=d, **hours)   # closed all week, clock synced
+            self.L.leds, self.L.mode = Leds(), 'night'
+            self.L.on_show_circuit({'circuit_name': 'Pat Burner'})
+            self.assertEqual(self.L.pending[:2], ('view', 'Pat Burner'))
+            self.assertEqual(self.L.mode, 'day')
+            self.assertEqual(nights, [False])
+            self.assertEqual(self.L.status['casts_ignored_night'], 0)
+            self.assertTrue(self.L.status['mode_reason'].startswith('woken by a cast until'))
+            os.remove(wake)
+            self.L.on_cast({'problem_name': 'Good Bug'})       # woken but the file's gone: an ordinary day
+            self.assertFalse(os.path.exists(wake))
+            self.L.on_show_circuit({'circuit_name': 'Pat Burner'})
+            self.assertFalse(os.path.exists(wake))
+            self.L.mode = 'night'
+            self.L.on_cast({'problem_name': 'Good Bug'})
+            self.assertTrue(os.path.exists(wake))
+            self.assertEqual(self.L.pending[:2], ('problem', 'Good Bug'))
 
     def run_view(self, row, pending=None):
         old = self.pb.supa.fetch_circuit
