@@ -6,7 +6,7 @@ Everything that runs on the Pi 4 behind the board: the cast listener that lights
 
 **Nothing secret lives here.** The Pi's settings are in `/etc/projectboard/config.env` on the Pi. The laptop keeps its copy in `pi/config.env`, which is gitignored. The Wi-Fi password and the Tailscale key only ever go through `secrets.env` on the SD card's boot partition (for `setup.sh`), which is also gitignored.
 
-**Which LED a hold lights (9 Nov 2026, db/41):** the listener reads every hold's LED and mirror partner from the database's `holds` table (contract §6.4) on each join and every 10 minutes, and keeps a copy in `/var/lib/projectboard/cache/holds.json` (directory made by `conf/projectboard.tmpfiles`, owned by pi), which it uses straight away at the next start, so a boot with no network still lights every hold and mirrors. With neither (a brand-new card offline), Gareth's formula lights the holds and mirrored casts are skipped. The table was seeded with the formula's LEDs; `python tools/check_holds.py` (on the laptop) checks the two still agree. `pb-status` shows `holds  190 from supabase|cache, loaded …`; the journal says `holds loaded from supabase: 190 (190 with an LED), 188 mirror pairs`. A foothold (`kind = foot`) has no LED and lights nothing; `feet_mode = 'specific'` (Specific feet) lights no sign.
+**Which LED a hold lights (9 Nov 2026, db/41):** the listener reads every hold's LED and mirror partner from the database's `holds` table (contract §6.4) on each join, every 10 minutes, and at once when a cast, circuit or preview names a hold id it hasn't got (a publish since the last read; at most once a minute, `HOLDS_ASK_GAP`; 16 Nov 2026, review PI-10), and keeps a copy in `/var/lib/projectboard/cache/holds.json` (directory made by `conf/projectboard.tmpfiles`, owned by pi), which it uses straight away at the next start, so a boot with no network still lights every hold and mirrors. With neither (a brand-new card offline), Gareth's formula lights the holds and mirrored casts are skipped. The table was seeded with the formula's LEDs; `python tools/check_holds.py` (on the laptop) checks the two still agree. `pb-status` shows `holds  190 from supabase|cache, loaded …`; the journal says `holds loaded from supabase: 190 (190 with an LED), 188 mirror pairs`. A foothold (`kind = foot`) has no LED and lights nothing; `feet_mode = 'specific'` (Specific feet) lights no sign.
 
 ## What runs
 
@@ -56,7 +56,7 @@ From `IDLE_AFTER_S` (900 s, 15 minutes since 2 Nov 2026; was 1200) after the las
 
 | Pattern | What it does | Pi 4 ms/frame |
 |---|---|---|
-| `glisten` (default) | a navy, teal and violet shimmer, cool white sparkles, now and then a diagonal glint | 3.1 |
+| `glisten` | a navy, teal and violet shimmer, cool white sparkles, now and then a diagonal glint | 3.1 |
 | `chase` | four comets (pink, blue, green, gold) with fading tails chasing round a loop just inside the edge on an otherwise dark board, weaving, now and then one surging past | 3.3 |
 | `lava` | big soft blobs drifting slowly, merging (their colours blend) and glowing in and out | 4.1 |
 | `breathe` | the whole board breathing between two palette colours, each breath rising from the bottom row; the pair moves on every 5 breaths | 2.5 |
@@ -64,7 +64,7 @@ From `IDLE_AFTER_S` (900 s, 15 minutes since 2 Nov 2026; was 1200) after the las
 | `rain` | soft drops falling down the columns with short trails | 2.4 |
 | `ripples` | rings spreading from random spots and fading | 2.8 |
 | `fireflies` | a handful of warm points fading in and out, drifting slightly | 2.6 |
-| `wave` (chosen 28 Oct) | a vertical band 15% of the board wide sweeping left to right and back every 8 s on a dark board: green in the bottom quarter (rows 1–3), red in the top three rows, blue between | 1.1 |
+| `wave` (the default; chosen 28 Oct) | a vertical band 15% of the board wide sweeping left to right and back every 8 s on a dark board: green in the bottom quarter (rows 1–3), red in the top three rows, blue between | 1.1 |
 | `teaser` | every 15–25 s a random benchmark problem fades in (its cast colours, dimmer), holds 5 s and fades out, over a turned-down shimmer | 3.2 |
 
 The colours come from the app's `tokens.css` (accent pink, the hold colours, gold), copied into `listener/patterns/common.py` (a test checks they still match). Frame times were measured on the Pi on 28 Oct 2026 with `pi/tools/idle_bench.py`, with the listener and kiosk running; SPI adds about 6 ms (frames write the board's 248 pixels, not all 1200). At a pattern change the new pattern is created in one frame: up to ~20 ms once, still inside the 33 ms frame.

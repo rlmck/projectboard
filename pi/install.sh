@@ -366,7 +366,7 @@ fi
 echo "== Services"
 if [ "$(systemctl is-enabled cast-listener 2>/dev/null)" = enabled ] || [ "$(systemctl is-active cast-listener 2>/dev/null)" = active ]; then
     run systemctl disable --now cast-listener
-    echo "   (the stopgap stays in /home/pi for a rollback)"
+    echo "   (the old stopgap unit, disabled; a rollback is a git revert + deploy: pi/README.md -> Deploying)"
 fi
 # leds-off-at-boot runs at the next boot; running it now would only clear the strip.
 # pb-ledmap is deliberately not in this list: it only runs when started by hand.

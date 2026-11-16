@@ -63,6 +63,7 @@ STABLE_AFTER = 60          # a connection joined this long resets the backoff
 TICK = 10                  # watchdog ping and status write
 MODE_EVERY = 10             # day/night (mode.py): the opening hours switch within 10 s
 HOLDS_EVERY = 600           # the holds table (each hold's LED and mirror partner, db/41)
+HOLDS_ASK_GAP = 60          # a cast naming a hold id the table hasn't got re-reads it, at most this often (PI-10)
 BENCHMARKS_EVERY = 1800    # the teaser's problems: one small read
 IDLE_FILE = 'idle-pattern'  # pb-idle writes it next to the status file, then sends SIGUSR2
 LED_STALL = 20             # the LED thread silent this long = stuck: exit, systemd restarts us
@@ -127,6 +128,7 @@ class Listener:
         self.stop_any_at = None       # when a stop with no token last arrived
         self.cast_ready = asyncio.Event()
         self.holds_wanted = asyncio.Event()
+        self.holds_asked_at = None    # when a cast's unknown hold id last asked for the holds (monotonic)
         self.holds_cache = supa.HOLDS_CACHE
         self.benchmarks_wanted = asyncio.Event()
         self.idle_file = os.path.join(os.path.dirname(status_path), IDLE_FILE) if status_path else None
@@ -261,6 +263,23 @@ class Listener:
         self.set(holds=len(leds), holds_source=source, mirror_map_at=time.time())
         return changed
 
+    def holds_unknown(self, what, ids):
+        """A cast naming hold ids the loaded table hasn't got: the board was published since
+        the last read, so re-read it now rather than at the next HOLDS_EVERY (review PI-10).
+        This cast is shown as it is (those holds dark); the next one has them. At most once
+        a HOLDS_ASK_GAP, so a problem naming a hold that's really gone can't hammer Supabase."""
+        unknown = board.unknown_ids(ids)
+        if not unknown:
+            return
+        now = time.monotonic()
+        last = getattr(self, 'holds_asked_at', None)
+        if last is not None and now - last < HOLDS_ASK_GAP:
+            return
+        self.holds_asked_at = now
+        log('%s names hold ids not in the holds table (%s): re-reading the holds' % (
+            what, ', '.join(unknown[:5]) + (' …' if len(unknown) > 5 else '')))
+        self.holds_wanted.set()
+
     async def holds_loop(self):
         """The holds table: the cached copy at once (a boot with no network still lights
         every hold and mirrors), then Supabase on each join and every HOLDS_EVERY.
@@ -337,6 +356,7 @@ class Listener:
         leds, dropped = board.frame(row, mirror, self.mirror_map)
         if dropped:
             warn('cast %r: hold ids with no LED ignored: %s' % (name, dropped))
+            self.holds_unknown('cast %r' % name, board.problem_order(row))
         out, cap, ma = board.scale(leds, self.cfg['BRIGHTNESS'], float(self.cfg['POWER_BUDGET_MA']),
                                    float(self.cfg['MA_PER_CHANNEL']))
         if self.mode == 'night':
@@ -362,6 +382,7 @@ class Listener:
         leds, dropped = circuit.static_frame(row.get('hold_sequence'), row.get('start_count'))
         if dropped:
             warn('circuit view %r: hold ids with no LED ignored: %s' % (name, sorted(dropped)))
+            self.holds_unknown('circuit view %r' % name, row.get('hold_sequence'))
         out, cap, ma = board.scale(leds, self.cfg['BRIGHTNESS'], float(self.cfg['POWER_BUDGET_MA']),
                                    float(self.cfg['MA_PER_CHANNEL']))
         if self.mode == 'night':
@@ -393,6 +414,7 @@ class Listener:
                           self.mirror_map if mirror else None, tag, **opts)
         if run.dropped:
             warn('circuit %r: hold ids with no LED ignored: %s' % (name, sorted(run.dropped)))
+            self.holds_unknown('circuit %r' % name, row.get('hold_sequence'))
         if self.mode == 'night':
             log('circuit %r ignored: night began while it was fetched' % name)
             return
@@ -547,7 +569,9 @@ class Listener:
         if self.mode == 'night':
             self.leds.preview(token, {}, False)     # the LED thread logs it once per session
             return
-        leds, _ = board.preview_frame(*sel)
+        leds, dropped = board.preview_frame(*sel)
+        if dropped:
+            self.holds_unknown('preview %s' % token, [h for part in sel[:3] for h in part])
         out, _, _ = board.scale(leds, self.cfg['BRIGHTNESS'], float(self.cfg['POWER_BUDGET_MA']),
                                 float(self.cfg['MA_PER_CHANNEL']))
         self.leds.preview(token, out, body.get('show') is True)

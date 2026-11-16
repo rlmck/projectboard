@@ -75,7 +75,6 @@
   // the grade range, each quick filter, and the picked holds (as one).
   const problemFilterCount = () =>
     (listSort !== 'new') + gradeNarrowed() + favesOnly + benchOnly + excludeDone + (holdPicks.length > 0);
-  const listFiltersAtDefault = () => problemFilterCount() === 0;
 
   // Back to the defaults (Reset, Clear filters, and the wall going idle). State only: the caller renders.
   function resetListFilters() {

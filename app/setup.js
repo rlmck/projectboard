@@ -46,7 +46,6 @@ const BS_PAIR = 0.03;            // a reflection finds its partner within this s
 const BS_STEPS = ['start', 'photos', 'corners', 'lineup', 'trace', 'review', 'mirror', 'publish'];
 const BS_STEP_NAMES = { photos: 'Photos', corners: 'Corners', lineup: 'Line up', trace: 'Trace', review: 'Review', mirror: 'Mirror pairs', publish: 'Publish' };
 const BS_LU_SPREAD = 0.08;       // line-up: the smallest triangle of the four holds, as a share of the hand holds' box
-const BS_CORNER_NAMES = ['top left', 'top right', 'bottom right', 'bottom left'];
 
 const BS = {
   step: 'start',
@@ -139,11 +138,6 @@ function bsHomInv(H) {
   return [A / det, -(b * i - c * h) / det, (b * f - c * e) / det,
           B / det, (a * i - c * g) / det, -(a * f - c * d) / det,
           C / det, -(a * h - b * g) / det, (a * e - b * d) / det];
-}
-// % of an image -> board (u, v) in 0..1 through that image's corners, and back.
-function bsToBoard(kind, x, y) {
-  const H = bsHomInv(bsHom(BS.corners[kind]));
-  return bsHomApply(H, x, y);
 }
 // Pixel size of the board on the cartoon (for distances that mean the same both ways).
 function bsBoardPx() {

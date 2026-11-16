@@ -45,7 +45,7 @@ DEFAULTS = {
     'POWER_BUDGET_MA': '8000',
     'MA_PER_CHANNEL': '20',
     'IDLE_ANIMATION': 'on',
-    'IDLE_PATTERN': 'glisten',
+    'IDLE_PATTERN': 'wave',          # Ross's choice (28 Oct 2026); was glisten
     'IDLE_CYCLE': '',
     'IDLE_CYCLE_MIN': '10',
     'IDLE_AFTER_S': '900',

@@ -14,7 +14,11 @@
 #   - any secret value from db/.env (the service key, the direct-Postgres URL and its password);
 #   - psk= / password= / secret= / private-key= lines with a literal value ($VAR, <placeholder>
 #     and empty pass). This is what guards NetworkManager profiles pulled into pi/conf/
-#     (the console strips those lines on the Pi; this catches one that slipped through);
+#     (the console strips those lines on the Pi; this catches one that slipped through).
+#     In code (.py .js .ts .mjs .cjs) a value that's a name, a call or a comparison
+#     (password = get_pw()) isn't a literal and passes; a quoted string is still refused;
+#   - the same keys in YAML / JSON (password: x, "password": "x") in .yml .yaml .json with a
+#     literal value (empty, $VAR / ${{ … }}, <placeholder>, null, ~ and *** pass; 16 Nov 2026);
 #   - a private-key block (-----BEGIN ... PRIVATE KEY-----: RSA, EC, OpenSSH, PKCS#8, encrypted);
 #   - a postgres:// or postgresql:// URL with a password in it (whether or not db/.env exists,
 #     so a fresh clone or a web session is covered too). Placeholders pass: [YOUR-PASSWORD],
@@ -97,10 +101,24 @@ check_file() {
   # psk= / password= lines (ini, env, NetworkManager, shell): a literal value is refused.
   local bad
   bad=$(grep -iE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_]*(psk|password|passwd|_pw|secret|private-key)[[:space:]]*=' <<<"$added" \
-        | grep -viE '=[[:space:]]*("|'"'"')?([$<]|$)' | head -1)
+        | grep -viE '=[[:space:]]*("|'"'"')?([$<]|$)')
+  case "$file" in
+    *.py|*.js|*.ts|*.mjs|*.cjs)   # code: a name, a call or a comparison isn't a literal secret
+      bad=$(grep -vE '=[[:space:]]*(=|[A-Za-z_][A-Za-z0-9_.]*[[:space:]]*([(;,)#]|//|$))' <<<"$bad") ;;
+  esac
   if [[ -n "$bad" ]]; then
     problems+=("$file: a psk=/password=/secret= line with a literal value")
   fi
+  # The same keys in YAML / JSON (key: value), with a literal value.
+  case "$file" in
+    *.yml|*.yaml|*.json)
+      bad=$(grep -iE '^[[:space:]]*(-[[:space:]]+)?["'"'"']?[A-Za-z_-]*(psk|password|passwd|secret|private[-_]key)["'"'"']?[[:space:]]*:' <<<"$added" \
+            | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]*,?[[:space:]]*$//; s/^["'"'"']//; s/["'"'"']$//' \
+            | grep -viE '^$|^[$<]|^(null|~|\*+)$' | head -1)
+      if [[ -n "$bad" ]]; then
+        problems+=("$file: a password:/secret: key with a literal value")
+      fi ;;
+  esac
   # A private key, in any PEM flavour.
   if grep -qE -- '-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY( BLOCK)?-----' <<<"$added"; then
     problems+=("$file: a private-key block (BEGIN ... PRIVATE KEY)")

@@ -36,7 +36,6 @@
   --text-faint: #55556a;
   --placeholder: #5a5a66;  /* the create view's name field */
   --placeholder-focus: #45454f;
-  --comment-text: #c8c8da;
   --on-accent: #fff;  /* text and icons on an accent or danger fill */
   --on-board: #fff;  /* controls and labels drawn over the board photo */
 
@@ -91,7 +90,6 @@
   --success-a12: rgba(74,222,128,0.12);
   --success-a45: rgba(74,222,128,0.45);
   --error-text-a40: rgba(248,113,113,0.4);
-  --bg-a00: rgba(10,10,10,0);
   --bg-a55: rgba(10,10,10,0.55);
   --bg-a70: rgba(10,10,10,0.7);
   --bg-a80: rgba(10,10,10,0.8);
@@ -121,6 +119,24 @@
   /* Type */
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;  /* PINs and passphrases */
+
+  /* Font sizes: the one scale every component uses (styles.css, privacy.html).
+     Made from the sizes in use (16 Nov 2026, review APP-11): each old literal went
+     to the nearest step, never more than 1px away. Add a step only for a real new size. */
+  --text-2xs: 10px;  /* small text: tags, badges, captions, meta lines (2xs–sm) */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-base: 15px;  /* body text (md–lg) */
+  --text-lg: 16px;
+  --text-xl: 18px;  /* titles and the wall's rows and controls (xl–4xl) */
+  --text-2xl: 20px;
+  --text-3xl: 22px;
+  --text-4xl: 24px;
+  --text-5xl: 27px;  /* headings and big numbers: timers, the wall's slides (5xl–8xl) */
+  --text-6xl: 37px;
+  --text-7xl: 43px;
+  --text-8xl: 64px;
 
   /* Radii */
   --radius: 12px;  /* cards, menus, panels */

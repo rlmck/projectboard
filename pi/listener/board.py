@@ -114,6 +114,15 @@ def holds_loaded():
     return _LEDS is not None
 
 
+def unknown_ids(ids):
+    """The hold ids in `ids` that aren't in the loaded holds table (review PI-10): a
+    board published since the last read. Empty while the formula is in use."""
+    m = _LEDS
+    if m is None:
+        return []
+    return sorted({h for h in (ids or ()) if isinstance(h, str) and h not in m and h not in FEET_HOLDS})
+
+
 def _as_list(v):
     if v is None:
         return []

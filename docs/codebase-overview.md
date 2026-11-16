@@ -68,14 +68,14 @@ build.sh  wrangler.jsonc  CLAUDE.md  .gitignore  .gitattributes   (the repo root
 | Path | What | Deployed? |
 |---|---|---|
 | `app/index.html` | All markup: splash, welcome overlay, 11 view `<section>`s, 8 modals, nav, install banner, toast | yes |
-| `app/tokens.css` | The shared design tokens: every colour, font stack, radius, shadow and size, as custom properties on `:root`, shared by the phone app and the planned wall-screen mode. Loaded before `styles.css` by `index.html` and `privacy.html` | yes (and precached) |
+| `app/tokens.css` | The shared design tokens: every colour, font stack, font size (the `--text-2xs`…`--text-8xl` scale, 16 Nov 2026), radius, shadow and size, as custom properties on `:root`, shared by the phone app and the wall-screen mode. Loaded before `styles.css` by `index.html` and `privacy.html` | yes (and precached) |
 | `app/styles.css` | All styling (dark theme), written only in `var(--token)`s from `tokens.css` | yes |
 | `app/state.js` … `app/app.js` | The fourteen app scripts (section 4) | yes |
 | `app/sw.js`, `app/manifest.json` | Service worker, PWA manifest | yes |
 | `app/privacy.html` | Static privacy page; keep its claims true | yes |
+| `app/404.html` | The not-found page (16 Nov 2026): served by Cloudflare for any path that isn't a file (`not_found_handling: "404-page"` in `wrangler.jsonc`); absolute URLs, no scripts, not precached | yes |
 | `app/supabase-js-2.116.0.js` | **Vendored, pinned** `supabase-js` (npm `dist/umd/supabase.js`, verified against the registry hash). Loaded before `state.js`; defines the global `supabase` | yes (and precached) |
 | `app/board-fallback.jpg` | Bundled **fallback** board image: a snapshot of the live board, written by `tools/snapshot_board.py` (the photo, ~300 KB JPEG). Precached; only shown when `board_config` can't be fetched (offline, Supabase down), since `pb-v103` | yes |
-| `app/ProjectBoard.png` | The old **drawing** of the board (2.1 MB), the fallback until 19 Sep 2026. Not referenced or precached; still in the `build.sh` allowlist only so an app left open from before `pb-v101` doesn't lose its image, and can be dropped from it later. `register_holds.py` records how its map was made | yes |
 | `app/hold_map.json` | Fallback hold → `{x,y}` % map, a snapshot of the live board, written by `tools/snapshot_board.py` (188 holds), plus `__meta.board_updated_at`, which `loadHoldMap` strips into `bundledMapVersion` | yes |
 | `app/mirror_map.json` | Fallback hold → mirror-partner map, a snapshot of the live board, written by `tools/snapshot_board.py` | yes |
 | `app/foot_holds.json` | Fallback footholds (id → name, x, y, pts, mirror) with `__meta.board_updated_at`, a snapshot of the live board's `holds` (15 Nov 2026, review BRD-07), written by `tools/snapshot_board.py`; drawn only when its version is the map's (`feetUsable()`) | yes |
@@ -503,15 +503,15 @@ Behind the scenes: `signUp({ email: 'u-<16 base32>@users.invalid', password: pin
    - **The checks** (`bash build.sh --check` runs only these): every allowlisted file exists; every file in `app/` is allowlisted and `app/` has no folder; every `sw.js` `ASSETS` entry ships; every shipped file is in `ASSETS` except `NOT_PRECACHED`; every shipped `.js`/`.css` is referenced from `index.html` or `privacy.html` (commented-out `ASSETS` lines and `<!-- -->` in the pages don't count); the app scripts, joined in `index.html`'s order, parse as one classic script (`vm.Script`) and declare no top-level name twice (the module-goal parse), and `sw.js` parses as a classic script; `app/sw.js` holds the `pb-local` placeholder exactly once. The build then stamps `?v=<CACHE>` onto the pages' script and stylesheet URLs and checks every one got it.
    - It then wipes `public/` and copies the **explicit allowlist** of files from `app/` into it, one-to-one (flat); anything unlisted never ships, even if it's in `app/`.
    - **It stamps `CACHE`** in `public/sw.js` (section 7). A local build with uncommitted `app/` changes gets `-dirty` on the end.
-   - `wrangler.jsonc` sets `assets.directory: ./public`, with no `main` and no `not_found_handling`, so unknown paths get Cloudflare's blank 404. There's no custom 404 page.
+   - `wrangler.jsonc` sets `assets.directory: ./public` and `not_found_handling: "404-page"` (16 Nov 2026), with no `main`: an unknown path gets `404.html` with a 404 status (it was a blank 404 before).
    - **Preview locally** with `python -m http.server 8000` inside `app/`: it's the same tree as the site.
    - **Compare what Cloudflare would deploy** by building from a clean export: `git -c core.autocrlf=false archive HEAD` into a temp folder, then run `build.sh` there. The Windows checkout has CRLF line endings, so a build from the working tree doesn't match the live bytes (the stamp does: it comes from git's blob ids).
 4. **The three-places rule:** a new deployable file lives in `app/`, and goes in the `build.sh` allowlist **and** `sw.js` `ASSETS` **and** is referenced from `index.html` (or another shipped page). `build.sh` enforces it.
-   - Exceptions, shipped but not precached (`NOT_PRECACHED`): `sw.js`, `_headers`, `_redirects`, `ProjectBoard.png`, `screenshot-*.png`.
+   - Exceptions, shipped but not precached (`NOT_PRECACHED`): `sw.js`, `_headers`, `_redirects`, `404.html`, `screenshot-*.png`. (`ProjectBoard.png`, the old drawing of the board, left the deploy on 16 Nov 2026, review BLD-09: nothing used it; it's in the archive outside the repo.)
    - A new PNG also needs a `.gitignore` `!app/…` exception.
 5. **`_headers`:**
    - `no-cache` on `/sw.js` and `/`.
-   - Site-wide: `nosniff`, `Referrer-Policy`, `Permissions-Policy: geolocation=(self)` (the geofence needs it), `X-Frame-Options: DENY`, HSTS (1 year), and a **Content-Security-Policy**.
+   - Site-wide: `nosniff`, `Referrer-Policy`, `Permissions-Policy: geolocation=(self)` (the geofence needs it), `X-Frame-Options: DENY`, HSTS (1 year, `includeSubDomains` since 16 Nov 2026: only the apex and `www` exist, both HTTPS), and a **Content-Security-Policy**.
    - The CSP allows scripts only from the site itself plus Cloudflare's analytics beacon, and network connections only to Supabase (https + wss) and the analytics endpoint.
    - It keeps `'unsafe-inline'` for styles only, because the overlays use `style="left/top"`. Images may come from the site and Supabase Storage (`blob:` went with the calibrate tool on 16 Sep 2026).
    - There are **no inline scripts or inline event handlers anywhere; keep it that way.**
@@ -575,30 +575,16 @@ All of these live in `tools/`. The Python scripts find their files relative to t
 
 ## 13. Known issues (bugs and debt)
 
-Security findings are **not** listed here; they're in `docs/security-findings.md` (local). This list folds in the still-open items from the 2 July 2026 review, which it supersedes.
+Security findings are **not** listed here; they're in `docs/security-findings.md` (local). Rewritten on 16 Nov 2026 from the full code review of 12 Nov (local `review_output.md`, section 3) once its thirteen fix sessions were done: what's fixed or turned out not to be a bug is gone; the history is in `PROJECT_STATUS.md`'s log and `docs/log/`.
 
-**Fixed on 10 Sep 2026.** `supabase-js` is vendored and pinned (it no longer loads from a CDN), a CSP and security headers were added, `trace_holds.html` is off the deploy, and the missing favicon is fixed (all SW `pb-v75`). Earlier the same day (DB changes live, SW `pb-v74`):
-- the admin "Sends" stat always read 0;
-- OAuth errors were dropped silently;
-- the sign-up name clash and the email-prefix names;
-- an owner could delete a problem others had ticked, or self-mark it as a benchmark;
-- a problem delete blocked by RLS reported success;
-- the first-run name modal had no autofocus.
+**Low**
+- **An app from before 10 Nov 2026 doesn't know Specific feet** (`feetRule()` then read `specific` as Any): it shows such a problem as Any feet with no footholds, and its Edit would save `feet_mode: 'any'`, which `problems_guard_feet` turns into no footholds. Only a phone that stayed offline with that old version is affected, and only if its owner (or an admin) edits a Specific feet problem from it; casting is unaffected (the Pi reads the row). It expires by itself: drop this item at the end of 2026.
+- **The hold order is stored inverted** (CLAUDE.md → Data traps): the flip lives in JS (`problemHoldOrder()`, `saveProblem`), SQL (`wall_create_problem`, Move to Circuits) and Python (`board.problem_order()`, the teaser). It can't share one copy across three languages; the real fix is a data migration together with the Pi change, as one dedicated session. Not planned.
+- **The anon key and the project URL are in several places** (a public key: it only changes if the Supabase project moves). The full list is §14's checklist.
+- **The icon geometry in three places that matter** (`icon.svg`, `make_icons.py`, the poster; two more copies are on the frozen `legacy` branch). Left until a rebrand (§14).
 
-**Medium**
-- **An app from before 10 Nov 2026 doesn't know Specific feet** (`feetRule()` then read `specific` as Any): it shows such a problem as Any feet with no footholds, and its Edit would save `feet_mode: 'any'`, which `problems_guard_feet` turns into no footholds. The fix is the new app itself: JS is fetched network-first and the stamped `CACHE` reaches open clients, so only a phone that stays offline with the old version is affected, and only if its owner (or an admin) edits a Specific feet problem from it. Casting is unaffected (the Pi reads the row).
-
-**Fixed on 15 Nov 2026 (review fix session 11):** the nearest-hold duplicates: `nearestHold`, `ccNearestHold` and `createPick` are one `hitHold()` in `core.js` (Create, circuit create, the fullscreen viewer, the hold filter's picker, the wall), checked tap for tap against the old ones on the live map; the editors (Board setup, Edit holds, PB Console) share its first step (`traceInnermost()`) and keep their own reach for a near miss. One geometry module (`trace.js`): `smoothShapePath` and `traceCurve` are one curve (`traceCurveSegs`), one rotation (`traceTurn`), no other point-in-polygon or area copies.
-
-**Fixed on 14 Nov 2026 (review fix session 6):** the create boards' taps before `HOLD_MAP` (they now say "Loading the board…"), `router()` side effects on data arrival (§4.3), the toast behind sheets, Escape (it threw and closed nothing), `escAttr` (now `escHtml` + `'`), the in-app Copy link (keeps the hash), the confirm modals (one helper). `loadHoldMap`/`loadMirrorMap` re-check their guard after the fetch (already fixed).
-
-**Minor**
-- **Bundled data:**
-  - The live mirror table differs from Gareth's in 5 entries (see §4.4). Worth checking mirrored casts on the wall; the Pi uses the same table.
-- **Missing site polish:** no custom 404 page.
-- **Duplication worth consolidating before the next board feature:**
-  - the anon key and URL in `state.js` and (once rebuilt) the Pi listener;
-  - the icon geometry in five places (`icon.svg`, `make_icons.py`, the poster, and the legacy `index.html`/`404.html`).
+**Not bugs (kept here so nobody re-reports them)**
+- The live mirror table differs from Gareth's `MirrorDic.txt` in 5 entries: intended (db/32), checked on site, and every reader uses the live table (CLAUDE.md → Data traps).
 
 ## 14. Rebrand checklist (the "Project Board" name and the logo)
 
@@ -629,7 +615,20 @@ The domain `symmetryboard.co.uk` doesn't contain the brand, so **a name change d
 - the manifest `id` (it creates a second app identity, so Android users get duplicates);
 - the `pb-` localStorage keys (the welcome would reappear for everyone);
 - the Worker name `projectboard` (it changes the staging URL, so the Supabase redirect list and docs would need updating, for no user-visible gain);
-- `ProjectBoard.png` / `board-fallback.jpg` and the internal identifiers.
+- `board-fallback.jpg` and the internal identifiers.
+
+**If the Supabase project ever moves** (a new project URL and anon key; checked 16 Nov 2026, `git grep uqirowyfqwiceyjznosl` finds the committed ones):
+- [ ] `app/state.js` (URL + anon key: the app);
+- [ ] `app/_headers` (the CSP's `img-src` and `connect-src`, https and wss);
+- [ ] the Pi's `config.env` (`SUPABASE_URL`, `SUPABASE_ANON_KEY`; the laptop's copy `pi/config.env`, then a deploy);
+- [ ] `pi/conf/chromium-kiosk.json` (the kiosk's URL allowlist);
+- [ ] `pi/ops/pb-console-helper` (`SUPABASE_HOST`);
+- [ ] `supabase/functions/admin-reset-passphrase/index.ts` (its deploy command's `--project-ref`; deploy it to the new project);
+- [ ] `tools/snapshot_board.py`, `tools/check_holds.py` (URL; the first also the key), `tools/cast-test.js` and `tools/circuit-led-simulator.html` (URL + key);
+- [ ] `console/tests/test_phases.py` and `.githooks/test-pre-commit.sh` (fixtures);
+- [ ] `db/.env` (local: the direct-Postgres URL and service key);
+- [ ] CLAUDE.md (→ Supabase), this file, `docs/cast-contract.md`, `docs/rollout-plan.md`, `db/README.md` (local);
+- [ ] outside the repo: the Supabase redirect list and Site URL, the Turnstile secret in the new project, the MCP server's `project_ref` in the local Claude config.
 
 **If the *domain* ever changes, it's a full migration like this one:**
 - a new origin, so everyone reinstalls;
@@ -641,7 +640,7 @@ The domain `symmetryboard.co.uk` doesn't contain the brand, so **a name change d
 - **`.icon-btn { display:flex }` beats the browser's `[hidden]` rule**, so every hideable icon button needs an explicit `#id[hidden]{display:none}` guard.
 - **Cloudflare 307s `/x.html` → `/x` and `/index.html` → `/`.** Links to `privacy.html` work; just never cache or precache a redirect.
 - **The hold outlines are useless after the board is re-mapped** until they're re-traced; the version stamp enforces this, for the published copy as much as the bundled one.
-- **The live board image is `board.jpg` in Storage**, not the bundled PNG. The two are framed differently: never mix the live map with the bundled image, or the other way round.
+- **The live board image is `board.jpg` in Storage**; the bundled `board-fallback.jpg` is a snapshot of it (`tools/snapshot_board.py`). After a publish they differ until the snapshot is shipped: never mix the live map with the bundled image, or the other way round.
 - **Supabase errors:**
   - `23505` = duplicate; toggles treat it as success, creates as "name taken".
   - `42501` = RLS denial. It's raised when a *new* row fails a policy check (an insert, an upsert, or an update's `WITH CHECK`). An update or delete whose `USING` clause hides the row raises nothing and just returns 0 rows.
@@ -651,7 +650,7 @@ The domain `symmetryboard.co.uk` doesn't contain the brand, so **a name change d
 - **Nickname errors arrive as SQLSTATE `23514` with the bare code** (`taken`, `offensive`…) as the message; `nickSaveError()` maps them. A sign-up refused by the database only says "Database error saving new user".
 - **`sb.functions` is a getter** in supabase-js: it returns a new client each time, so stub `Object.getPrototypeOf(sb.functions).invoke` when testing, not `sb.functions.invoke`.
 - **Pages builds:** a Pages source change through the GitHub API doesn't trigger a build; request one explicitly.
-- **`docs/` is gitignored** except `rollout-plan.md` and this file. Anything else you write there stays local.
+- **`docs/` is gitignored** except `rollout-plan.md`, this file, `cast-contract.md`, `console-plan.md`, `circuits-phase2.md`, `pi4-listener-kiosk-plan.md`, `token-audit.md`, `log/` and `screenshots/` (`.gitignore`). Anything else you write there stays local.
 
 ## 16. How this file relates to CLAUDE.md
 

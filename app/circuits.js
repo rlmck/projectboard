@@ -379,8 +379,8 @@
       </div>
       <div class="info-row">
         <div class="info-label">Cast</div>
-        <div class="info-value">Lights the circuit on the wall at your speed: first a white light runs round the route, then a 5-second countdown on the start holds, then one move at a time. Solid blue is the hold to go to, amber the one after, and the hold you've just let go of fades out in red. ${
-          c.loops ? 'It loops until you press Stop.' : 'At the top the route runs up in green.'} Signed in, each run is saved to your log.</div>
+        <div class="info-value">Lights the circuit on the wall at your speed: the whole route in dim blue, a 5-second countdown blinking on the start holds, then one move at a time: the hold to go to is green, and blinks twice when it's a match. ${
+          c.loops ? 'Choose laps, or Loop to go round until you press Stop.' : 'At the top the finish blinks red three times.'} Signed in, each run is saved to your log.</div>
       </div>
     `;
     document.getElementById('info-modal').classList.add('show');

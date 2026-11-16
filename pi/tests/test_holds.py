@@ -313,6 +313,56 @@ class Listener(unittest.TestCase):
         self.assertEqual(board.hold_led('hold24'), 54)
         self.assertEqual(supa.load_cache(self.L.holds_cache), seed_rows())   # the bad copy isn't cached
 
+    def test_unknown_hold_rereads_the_table(self):
+        """PI-10: a cast naming a hold id the table hasn't got asks for the holds at once,
+        at most once a HOLDS_ASK_GAP; a known id, or the formula, never asks."""
+        L = self.L
+        L.holds_unknown('cast', ['hold24'])                # formula in use: nothing to compare
+        self.assertFalse(L.holds_wanted.is_set())
+        board.set_holds(board.check_holds(seed_rows(('F1',)))[0])
+        L.holds_unknown('cast', ['hold24', 'F1', 'hold2'])  # hand, foothold, feet sign: all known
+        self.assertFalse(L.holds_wanted.is_set())
+        L.holds_unknown('cast', ['hold24', 'hold999'])
+        self.assertTrue(L.holds_wanted.is_set())
+        self.assertTrue(any('hold999' in m for m in self.logs))
+        L.holds_wanted.clear()
+        L.holds_unknown('cast', ['hold998'])               # within the minute: no second read
+        self.assertFalse(L.holds_wanted.is_set())
+        L.holds_asked_at -= self.pb.HOLDS_ASK_GAP + 1
+        L.holds_unknown('cast', ['hold998'])
+        self.assertTrue(L.holds_wanted.is_set())
+
+    def test_cast_with_a_new_hold_is_picked_up(self):
+        """A publish adds hold999: the cast that names it lights the rest and asks for the
+        holds; the re-read brings hold999 in, so the next cast lights it."""
+        L = self.L
+        L.cfg = {'BRIGHTNESS': '1', 'POWER_BUDGET_MA': '100000', 'MA_PER_CHANNEL': '20'}
+        L.mode, L.pending = 'day', None
+        L.status.update(casts_shown=0)
+        shown = []
+
+        class Leds:
+            def cast(_, frame):
+                shown.append(frame)
+        L.leds = Leds()
+        rows = seed_rows()
+        board.set_holds(board.check_holds(rows)[0])
+        new = dict(rows[0], id='hold999', name='Z99', led=1000, mirror=None)
+        problem = {'name': 'New', 'finish_hold': 'hold999', 'intermediate_holds': ['hold100'],
+                   'start_holds': ['hold24', 'hold25'], 'feet_mode': 'any'}
+        real = supa.fetch_problem
+        supa.fetch_problem = lambda cfg, name: problem
+        try:
+            asyncio.run(L.show('New', False, 0))
+            self.assertNotIn(1000, shown[-1])
+            self.assertTrue(L.holds_wanted.is_set())
+            supa.fetch_holds = lambda cfg: rows + [new]
+            self.run_loop(wanted=False)                    # the event is already set
+            asyncio.run(L.show('New', False, 0))
+            self.assertIn(1000, shown[-1])
+        finally:
+            supa.fetch_problem = real
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -382,14 +382,11 @@
   // used holds stay bright. Returns null when shapes can't be used so callers
   // fall back to boardOverlayHtml().
   //
-  // Shapes are traced (Board Setup, Edit holds, PB Console → Holds) against ONE specific
-  // board — the LIVE board_config image + hold map — and hold_shapes.json records
-  // that board's updated_at in __meta.board_updated_at. They only fit that board,
-  // so the overlay stays off unless board_config supplied the map AND its version
-  // still matches the traced one. That covers the offline/bundled fallback (the
-  // bundled ProjectBoard.png has different framing) and a board that has been
-  // re-mapped since — which bumps updated_at and drops everyone back to the
-  // always-correct dot overlay until the shapes are re-traced and published.
+  // Outlines belong to ONE version of the board (its updated_at, recorded in
+  // __meta.board_updated_at): the live board_config's, or offline the one the bundled
+  // snapshot was taken from (tools/snapshot_board.py writes the five files together).
+  // When the map in use is from another version (a publish since, an old offline copy)
+  // the outlines are off and everyone gets the always-correct dot overlay.
   let hsMaskSeq = 0;
   function shapesUsable() {
     if (!HOLD_SHAPES || !HOLD_MAP) return false;
@@ -1177,7 +1174,7 @@
   // ── Routing ──────────────────────────────────────────────────────────────────
   function parseHash() {
     const raw = location.hash.replace(/^#/, '') || 'list';
-    // After a Google redirect the hash carries OAuth tokens (or an error) — never route to that.
+    // A hash carrying auth tokens or an error (a stray auth redirect: there is no OAuth sign-in) is never a route.
     if (raw.includes('access_token') || raw.includes('error=')) return { route: 'list', param: '' };
     const idx = raw.indexOf('/');
     if (idx === -1) return { route: raw, param: '' };

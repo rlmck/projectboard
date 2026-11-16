@@ -272,7 +272,6 @@
       authError('Couldn’t load the robot check. Check your connection, then go back and try again.');
     }
   }
-  function hideCaptcha() { document.getElementById('auth-captcha').hidden = true; }
   // After every attempt (a token works once), ask for a new one.
   function resetCaptcha() {
     captchaToken = '';

@@ -52,6 +52,7 @@ FILES=(
   # markup
   index.html
   privacy.html
+  404.html      # any missing path (wrangler.jsonc not_found_handling); no scripts
 
   # styles (tokens.css first: the shared design tokens)
   tokens.css
@@ -100,8 +101,7 @@ FILES=(
   hold_shapes.json
   foot_holds.json
 
-  # board graphic
-  ProjectBoard.png
+  # the offline board photo (tools/snapshot_board.py)
   board-fallback.jpg
 
   # Cloudflare static-asset config
@@ -110,7 +110,7 @@ FILES=(
 )
 
 # Shipped but deliberately not precached by sw.js.
-NOT_PRECACHED=(sw.js _headers _redirects ProjectBoard.png screenshot-list.png screenshot-detail.png)
+NOT_PRECACHED=(sw.js _headers _redirects 404.html screenshot-list.png screenshot-detail.png)
 
 in_list() {  # in_list NEEDLE ITEM...
   local n=$1; shift
